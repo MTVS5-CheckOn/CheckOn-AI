@@ -1,0 +1,242 @@
+# 백엔드 → AI 요청 JSON 모음 v0.1.1
+
+모든 요청 공통 헤더: `X-Tenant-Id`(강사 alias) · `X-Request-Id` · 쓰기는 `Idempotency-Key`. 실명·연락처 필드는 어디에도 없음(alias만). 상세 규약·응답 스키마는 `체크온_AI_API·데이터계약_v0.1.md` 참조.
+
+> **v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[Open-11]` A+B 합의 전 잠정) ② `/drafts` kind에 리포트 2종 구분(월별 일괄 / 단건 수시) ③ 리포트 요청에 `benchmarks` 추가(노출 3층 — teacher_only는 학부모向 컨텍스트에서 구조적 제외)
+
+---
+
+## 1. `POST /v1/detect` — 야간 감지 (일 1회)
+
+```json
+{
+  "snapshot_meta": {
+    "week_start": "2026-07-06",
+    "snapshot_hash": "sha256:9f2c...",
+    "term_context": "normal",              // normal | new_term | vacation
+    "classes": [
+      { "class_ref": "cl_a1" },
+      { "class_ref": "cl_b2" }
+    ]
+  },
+  "students": [
+    {
+      "student_ref": "st_8f2a",            // alias
+      "class_ref": "cl_a1",
+      "enrolled_weeks": 14,                 // 2 미만이면 '관찰 중' 처리됨
+      "status": "enrolled",                 // enrolled | paused | returned(복귀 첫 주)
+      "consent": "granted"                  // granted 외에는 이벤트가 와도 폐기
+    }
+  ],
+  "learning_events": [
+    {
+      "record_id": "le_1029",               // MySQL PK — 근거 역추적 키, 불변 필수
+      "student_ref": "st_8f2a",
+      "type": "solve",                      // solve | submit | attend | consult
+      "occurred_at": "2026-07-08T19:20:00+09:00",
+      "correct": false,                     // solve만
+      "duration_sec": 183,                  // solve만, 없으면 null (R4 미적용)
+      "passage_word_count": 812,            // 지문형 문항만 — 어절 정규화용
+      "area_tag": "reading",                // 있으면 — 수능 기준: reading(독서) | literature(문학) | speech(화법) | writing(작문) | language(언어/문법) | media(매체) ⚠ Open-11(A+B 합의 전 잠정)
+      "subject_track": "common",            // 있으면: common(공통) | elective(선택과목) — 수능 공통/선택 메타
+      "type_tag": "infer",                  // 있으면: fact | infer | critic | concept
+      "item_format": "mcq",                 // 있으면: mcq(객관식) | short(단답) | essay(서술형) — R6·약점 지도가 형식별로 분리 집계
+      "assignment_title_text": "6월 모의고사 비문학 대비 #3",   // ⚠ Open-4b: 태깅 제안 입력
+      "source": "trackB"                    // trackA | trackB | studentHome
+    }
+  ]
+}
+```
+
+→ 응답: 신호 목록(evidence·브리핑 문장 포함) + observed_only + stats
+
+---
+
+## 2. `POST /v1/feedback` — 경보 평가 회신 (강사가 누를 때마다)
+
+```json
+{
+  "alert_ref": "al_5521",                   // 백엔드 Alert ID
+  "signal_id": "0a1b2c3d-...",              // /detect가 반환한 signal_id
+  "verdict": "not_applicable"               // useful | not_applicable
+}
+```
+
+---
+
+## 3. `POST /v1/confirmations` — 제안 확정·수정 회신
+
+```json
+{
+  "kind": "tag",                            // tag | label | classification | draft_edit
+  "suggestion_id": "0a1b...",
+  "action": "corrected",                    // confirmed | rejected | corrected
+  "corrected_value": {                      // corrected일 때만
+    "area_tag": "language",                 // 수능 enum (Open-11)
+    "type_tag": "concept",
+    "item_format": "mcq"
+  }
+}
+```
+
+```json
+// kind=draft_edit — 강사 수정 diff 회신 (문체 프로필 재료)
+{
+  "kind": "draft_edit",
+  "suggestion_id": null,
+  "draft_id": "d_7788",
+  "action": "corrected",
+  "corrected_value": {
+    "block_seq": 2,
+    "original_text": "다만 추론 유형에 들어가며...",
+    "edited_text": "요즘 추론 문제를 새로 시작해서..."
+  }
+}
+```
+
+---
+
+## 4. `POST /v1/drafts` — 초안 생성 (202, 문의 도착 즉시 / 리포트)
+
+```json
+{
+  "kind": "reply",                          // reply | report(월별 일괄 — 매월 1일 전월분, 할당 미소모) | report_single(단건 수시 — limit_kind: report_single) | counsel_pack_single
+  "student_ref": "st_8f2a",
+  "guardian_ref": "gd_11b0",
+  "label_snapshot": {                       // 백엔드 확정 라벨만 (ai_suggested 금지)
+    "comm": "narrative",                    // data | narrative
+    "interest": "attitude",                 // grade | attitude | admission
+    "sensitivity": "anxious",               // anxious | direct
+    "frequency": "frequent"                 // frequent | monthly
+  },
+  "inquiry": {                              // kind=reply일 때만
+    "inquiry_ref": "iq_204",
+    "body_text": "요즘 아이가 힘들어하는 것 같은데 학원에서는 뭘 하고 있는 건가요?",
+    "received_at": "2026-07-10T21:04:00+09:00"
+  },
+  "context": {
+    "interventions": [
+      { "record_id": "iv_31", "type": "counsel", "memo_text": "학교 시험 불안 언급", "at": "2026-05-16T20:00:00+09:00" }
+    ],
+    "comm_history": [                       // 최근 10건·90일, 백엔드 1차 마스킹 (Open-4d)
+      { "record_id": "cm_88", "direction": "inbound", "text": "숫자로 정리해 주세요", "at": "2026-06-12T10:11:00+09:00" }
+    ],
+    "benchmarks": {                         // kind=report·report_single일 때만 — 백엔드 집계 API 산출, AI는 수치 생성 불가
+      "national_percentile": { "value": 68, "as_of": "2026-06-30", "source": "모의고사연계 (Open-9)", "audience": "guardian" },
+      "class_avg":           { "value": 74, "audience": "teacher_only" }   // 학부모向 draft의 LLM 컨텍스트에서 구조적 제외(프롬프트 미포함 = 유출 불가)
+    }
+  }
+}
+```
+
+→ 202 `{ "draft_id": "..." }` → `GET /v1/drafts/{draft_id}`로 조회
+**리포트 규약:** 대상 선정(15일 규칙)은 백엔드 소유 — AI는 받은 목록대로 생성하되 DataSufficiency 게이트(2주 미만 거부)가 우선(Open-10). 응답 블록에 `block_type: "chart_analysis"` + `chart_ref`(영역별 약점 · 개선 추이 · 전국 백분위) — 수치는 코드/백엔드 확정, LLM은 해설 문장만.
+
+## 4b. `POST /v1/drafts/{draft_id}/refine` — 채팅형 다듬기 (202, 핑퐁)
+
+```json
+{
+  "scope": "block",                         // whole | block
+  "block_seq": 2,                           // scope=block일 때만
+  "instruction": "마지막에 다음 상담 일정을 제안하는 문장 하나 넣어주세요. 전체적으로 조금 더 짧게.",
+  "preset": null                            // 또는 softer | conclusion_first | shorter (버튼 = 프리셋)
+}
+```
+
+→ 202 → `GET /v1/drafts/{draft_id}` 조회 시 `revision_no` 증가, `revisions[]`에 턴 이력.
+**규약:** 다듬기 1턴 = **상담 초안 할당 1 소모**(플랜 월 할당이 자연 상한 — 별도 세션 턴 제한 없음, 소진 시 429 `limit_kind: draft`). 매 턴 결과도 게이트 전체(Evidence·SourceGrounding·ToneSafety) 재통과 — 지시에 없는 수치·근거는 생성 불가, 강사 지시가 게이트를 이기지 못함(차단 시 사유 반환). 이전 리비전으로 롤백은 `{ "revert_to": 1 }`(할당 미소모).
+
+---
+
+## 5. `POST /v1/classify` — 문의 분류 (동기, 문의 도착 즉시)
+
+```json
+{
+  "inquiry_ref": "iq_205",
+  "body_text": "여름방학 특강 시간표가 궁금합니다"
+}
+```
+
+→ `{ "topic": "schedule", "urgency": "normal", "confidence": 0.95 }`
+
+---
+
+## 6. `POST /v1/tags/suggest` — 태그 제안 (동기, 과제 입력 화면)
+
+```json
+{
+  "source_kind": "trackB_grading",          // trackA_upload | trackB_grading
+  "title_text": "6월 모의고사 비문학 대비 #3"
+}
+```
+
+→ `{ "suggestion_id": "...", "area_tag": "reading", "type_tag": "infer", "item_format": "mcq", "confidence": 0.92, "cached": true }` — area는 수능 6영역 enum(Open-11)
+
+---
+
+## 7. `POST /v1/labels/suggest` — 라벨 제안 (202, 주간 배치)
+
+```json
+{
+  "guardians": [
+    {
+      "guardian_ref": "gd_11b0",
+      "history": [                          // 이력 5건 이상인 학부모만
+        { "record_id": "cm_88", "direction": "inbound", "text": "숫자로 정리해 주세요", "at": "2026-06-12T10:11:00+09:00" },
+        { "record_id": "cm_91", "direction": "inbound", "text": "점수 추이 표로 부탁드려요", "at": "2026-07-01T09:30:00+09:00" }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## 8. 스마트 데이터 이전 `/v1/imports`
+
+```json
+// ① POST /v1/imports — 기동 (Open-3: 스토리지 URL 방식 가정)
+{
+  "file_url": "https://storage.internal/uploads/abc.xlsx",   // 사전서명 URL
+  "file_hash": "sha256:77aa...",
+  "filename": "학원조아_원생내보내기_202607.xlsx"
+}
+```
+
+```json
+// ② GET /v1/imports/{job_id} 로 미리보기 확인 후
+// ③ POST /v1/imports/{job_id}/confirm — 강사 확정 (수정 반영)
+{
+  "spec_overrides": [
+    { "source_column": "점수B", "target_field": "weekly_score_2" },
+    { "source_column": "비고",  "target_field": "submitted_at" }
+  ],
+  "confirmed_by": "teacher"
+}
+```
+
+---
+
+## 9. 상담팩 에이전트 `/v1/agents/counsel-pack`
+
+```json
+// ① POST — 기동 (202)
+{
+  "class_ref": "cl_a1",
+  "student_refs": ["st_8f2a", "st_3c1d", "st_77aa"],
+  "contexts": {                             // 학생별 — 4번 context와 동일 구조
+    "st_8f2a": {
+      "guardian_ref": "gd_11b0",
+      "label_snapshot": { "comm": "narrative", "interest": "attitude", "sensitivity": "anxious", "frequency": "frequent" },
+      "interventions": [ { "record_id": "iv_31", "type": "counsel", "memo_text": "...", "at": "..." } ],
+      "comm_history":  [ { "record_id": "cm_88", "direction": "inbound", "text": "...", "at": "..." } ]
+    }
+  }
+}
+```
+
+```json
+// ② GET /v1/agents/{agent_run_id} — 진행 조회 (body 없음)
+// ③ POST /v1/agents/{agent_run_id}/resume — paused 재개 (body 없음)
+{}
+```

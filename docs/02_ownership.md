@@ -1,0 +1,168 @@
+# [체크온] `ai/` 폴더 소유권 분장 v2 — R&R v1 + v2 증분(에이전트·보조 AI·데이터 파일) 반영
+
+> **v1 → v2 변경:** ① 에이전트 2종(counsel_pack·mapping_probe)과 보조 4종(ⓐⓑⓒⓓ)의 파일 소유 명시 ② 데이터 파일 신설분(`tone_map.yaml` · `redaction_patterns.yaml`) 추가 ③ **수능 태그 enum을 공용 어휘로 승격** — `contracts/taxonomy.py` 신설, 양자 승인 대상 6곳 → **7곳** ④ `evaluation/golden/` 하위를 평가 계획서 v0 구성으로 세분 ⑤ F17(Phase 2) 분담 예고 각주.
+>
+> **원칙(불변)** — 폴더 구조는 AI 아키텍처 지시서 그대로 유지한다(사람 기준 재편 금지). 모든 폴더·파일에 단독 오너를 지정한다. "공동 소유"는 소유가 아니므로, 공동 영역은 최소화하고 변경 절차(양자 승인)로만 남긴다.
+>
+> **오너의 의미** — 그 코드의 설계 결정권 + PR 최종 승인 책임. 상대방도 코드는 자유롭게 읽고 PR을 보낼 수 있다 — 머지 승인만 오너가 한다.
+>
+> **참조** — 체크온_AI파트_RnR_v1.md · AI 아키텍처 지시서(폴더 구조 원본) · 파이프라인 v2(에이전트·보조 설계) · 수능태그 어휘집 v0(taxonomy 내용)
+
+---
+
+## 1. Capability 소유 — 겹침 없음
+
+| 패키지 | 오너 | 근거 |
+| --- | --- | --- |
+| `detection/` | 박진희 | R&R: 탐지 담당. 규칙 R1~R6·베이스라인·랭킹·캘리브레이션. **보조 ⓐ(브리핑 문장화)는 소비 측 기능으로 composition에 두되 오너 동일** |
+| `composition/` | **박진희** | R&R: 소통 초안 담당. 라벨→톤 매핑·게이트 구현·완충 사전 + **(v2) 핑퐁 다듬기(refine)·리포트 chart_analysis·에이전트 ①(counsel_pack)·보조 ⓐⓑⓓ** |
+| `diagnosis/` | 염준영 | R&R: 약점 진단 체계는 B 소유. `curriculum_graph.yaml` 포함 — **(v2) 그래프의 영역 어휘는 `contracts/taxonomy.py`를 따른다** |
+| `problem_generation/` | 염준영 | R&R: 출제 파이프라인 전체. **(v2) F17(Phase 2) 시험지 PDF 조판도 여기 — 문항 메타(area·type·item_format) 보존 책임** |
+| `import_mapping/` | **박진희** | 결정론 변환 + 데이터 품질 게이트 재사용 — A의 데이터 파이프라인 축. **(v2) 에이전트 ②(mapping_probe)·보조 ⓒ(태깅 제안) 포함.** 착수 시기는 파일럿 안정화 이후(단, 태깅 제안ⓒ는 F5 채점 UX에 걸려 있어 선행 가능) |
+
+## 2. 플랫폼 모듈 소유 — 최다 이해관계자 원칙
+
+| 패키지 | 오너 | 근거 |
+| --- | --- | --- |
+| `evidence/` | **박진희** | 근거 체계의 원천이 감지(경보 evidence). 경계 규약 ②의 관리자 |
+| `gates/` (chain 실행기) | **박진희** | 최다 사용자가 composition 게이트 체인. **(v2) refine의 매 턴 재통과·사전 정적 검사도 이 실행기 위에서** |
+| `llm/` (gateway·structured·providers) | 염준영 | 구조화 출력·교차 풀이의 최대 이해관계자가 출제. FakeProvider 포함. **(v2) usage_daily 미터링 훅은 gateway에 — 스키마는 A와 양자(§4)** |
+| `llm/prompts/templates/composition/` | **박진희** | 템플릿은 사용하는 capability 오너를 따라감 — **(v2) refine·chart_analysis·brief·classify·label_suggest 템플릿 포함** |
+| `llm/prompts/templates/problem_generation/` | 염준영 | 〃 |
+| `llm/prompts/templates/import_mapping/` | **박진희** | 〃 — **(v2) probe(도구 선택)·tag_suggest 템플릿 포함** |
+| `llm/prompts/loader.py`·`registry.yaml` | 염준영 | llm/ 소유에 귀속. 단 registry.yaml에 상대 프롬프트 등록 행 변경 시 해당 오너 리뷰 |
+| `registry/` | **박진희** | 감지 엔진(규칙→GRU) 교체 지점의 메타. A의 Phase 3 준비물 |
+| `runtime/` (metrics·redaction·errors) | 박진희 | redaction은 A의 개인정보 방어선. **(v2) `redaction_patterns.yaml`(마스킹 정의서 P1~P8)·`errors.py`(에러·상태 코드 사전 §4 구현) 포함.** 비용 지표 스키마 변경은 B 승인(§4) |
+| **(v2 신설) `agents/` 공통 유틸** (체크포인터 설정·AGENT_RUN 기록기) | **박진희** | 현재 에이전트 2종이 전부 A 소유 — B가 에이전트를 만들기 시작하면 재논의 각주. LangGraph 버전 고정은 B(llm/ 의존성)와 협의 |
+
+## 3. `contracts/` — 파일 단위 소유
+
+| 파일 | 오너 | 비고 |
+| --- | --- | --- |
+| `detection.py` · `composition.py` | **박진희** | composition.py에 **(v2) RefineRequest·DraftRevision·ChartAnalysisBlock 타입 추가분 포함** |
+| `diagnosis.py` · `problem_generation.py` | 염준영 | |
+| `import_mapping.py` | **박진희** | (v2) ProbeStep·도구 시그니처 3종 포함 |
+| **(v2 신설) `taxonomy.py`** | **공통 계약** | **수능 6영역 area enum + subject_track + type_tag + item_format** — 감지 R6·약점 지도·태깅ⓒ·출제가 전부 이 어휘를 씀(어휘집 v0이 사양 원본). Open-11 합의로 확정 |
+| `execution.py` · `llm.py` · `gates.py` · `evaluation.py` | **공통 계약** | 단독 오너 없음 — 변경 시 A·B 양자 승인 필수. 신규 필드 추가도 예외 없음 |
+
+## 4. 공동 영역의 변경 절차 (겹침을 규칙으로 관리)
+
+1. **양자 승인 대상 — 7곳(v2에서 1곳 추가):** `contracts/execution.py·llm.py·gates.py·evaluation.py`, **`contracts/taxonomy.py`(신규)**, `evidence/models.py`(EvidenceRef 스키마), `runtime/metrics.py`의 이벤트 스키마. 이 7곳만 두 명 승인, 나머지는 전부 단독 오너.
+2. **경계를 넘는 입력:** B가 감지 산출을 더 원하면 A의 `contracts/detection.py`에 PR → A 승인. 반대 방향도 동일. **상대 capability 내부 파일 직접 수정은 금지**(지시서 2.2).
+3. **골든셋·평가:** `evaluation/detection_eval.py`·`draft_eval.py`·`import_eval.py` = A, `problem_eval.py` = B. golden/ 하위는 §5 트리의 코퍼스별 소유 — **(v2) `golden/tagging/`은 정답 라벨 확정이 [A+B]**(어휘집 §2 판정 기준 합의 후 각자 라벨링, 불일치가 경계 사례집 증보분). 엔진·프롬프트 버전업 시 골든셋 diff는 상호 리뷰(오너 아닌 쪽이 리뷰어).
+4. **tests/ai/:** 프로덕션 대칭 — 소유도 대응 파일을 따름. `tests/ai/fakes/`(FakeProvider 시나리오)는 llm/ 소유자인 B — **(v2) 단 refine 게이트 공격·에이전트 장애 시나리오는 A가 시나리오 명세를 제공**(B는 Fake 구현만).
+5. **(v2 신설) 데이터 파일 규칙:** `tone_map.yaml`·`buffer_lexicon.yaml`·`redaction_patterns.yaml`은 코드와 동일하게 PR 리뷰 대상(오너 단독) — 단 **golden 코퍼스 통과가 머지 조건**(사전 갱신도 테스트를 거친다).
+
+## 5. 소유권 주석 트리 (v2 — 복붙용)
+
+```mathematica
+ai/
+│
+│ ═══════════════ 플랫폼 (공통 규율) ═══════════════
+│
+├── contracts/                          # 파일 단위 소유 — 폴더 오너 없음
+│   ├── execution.py                    [박진희+염준영]  ExecutionContext · RunMetadata
+│   ├── detection.py                    [박진희]
+│   ├── diagnosis.py                    [염준영]
+│   ├── composition.py                  [박진희]         ← v2: Refine·Revision·ChartAnalysis 타입
+│   ├── problem_generation.py           [염준영]
+│   ├── import_mapping.py               [박진희]         ← v2: Probe 도구 시그니처
+│   ├── taxonomy.py                     [박진희+염준영]  ★v2 신설 — 수능 area·type·item_format enum (Open-11)
+│   ├── llm.py                          [박진희+염준영]  LLMProvider · ModelRole(+classifier) · 공통 예외
+│   ├── gates.py                        [박진희+염준영]  Gate · GateResult
+│   └── evaluation.py                   [박진희+염준영]  Evaluator · 지표 타입
+│
+├── evidence/                           [박진희]    근거 추적 규율
+│   ├── models.py                       [박진희+염준영]  ← EvidenceRef 스키마만 양자
+│   ├── collector.py · validator.py · resolver.py   [박진희]
+│
+├── gates/                              [박진희]    게이트 체인 실행기 (+refine 정적 검사)
+│   └── chain.py                        [박진희]
+│
+├── agents/                             [박진희]    ★v2 신설 — 에이전트 공통 유틸
+│   ├── checkpointer.py                 [박진희]    PostgresSaver 설정 · state_schema_version 검사
+│   └── recorder.py                     [박진희]    AGENT_RUN · AGENT_STEP 기록
+│
+├── llm/                                [염준영]    provider 독립성의 경계
+│   ├── gateway.py                      [염준영]    라우팅 · retry · 비용 집계 (+usage_daily 훅)
+│   ├── structured.py                   [염준영]
+│   ├── providers/                      [염준영]    어댑터 · FakeProvider
+│   └── prompts/
+│       ├── loader.py · registry.yaml   [염준영]    ← A 프롬프트 등록 행 변경 시 A 리뷰
+│       └── templates/
+│           ├── composition/            [박진희]    reply · report(+chart_analysis) · counsel_pack · refine · brief(ⓐ) · classify(ⓑ) · label_suggest(ⓓ)
+│           ├── problem_generation/     [염준영]    passage · items · cross_solve
+│           └── import_mapping/         [박진희]    infer_mapping · probe(②) · tag_suggest(ⓒ)
+│
+├── registry/                           [박진희]    엔진 레지스트리 (규칙→GRU 교체 지점)
+│
+├── runtime/                            [박진희]    관측성 · 마스킹 · 오류 분류
+│   ├── metrics.py                      [박진희+염준영]  ← 이벤트 스키마만 양자
+│   ├── redaction.py                    [박진희]
+│   ├── redaction_patterns.yaml         [박진희]    ★v2 — 마스킹 정의서 P1~P8 (골든 코퍼스 통과가 머지 조건)
+│   └── errors.py                       [박진희]    에러·상태 코드 사전 §4 구현
+│
+│ ═══════════════ Capability (기능) ═══════════════
+│
+├── detection/                          [박진희]    위험신호 감지 — 결정론 · LLM 금지
+│   ├── features.py · baseline.py · rules.py · thresholds.py · ranking.py
+│
+├── diagnosis/                          [염준영]    약점 진단 — 그래프 탐색 · LLM 금지
+│   ├── skill_graph.py · diagnoser.py
+│   └── data/curriculum_graph.yaml      [염준영]    ← 영역 어휘는 contracts/taxonomy.py 준수
+│
+├── composition/                        [박진희]    라벨 기반 초안 + 핑퐁 + 리포트 + 에이전트①
+│   ├── context_builder.py              [박진희]    ← audience 필터(teacher_only 구조적 제외) 여기
+│   ├── tone_mapping.py                 [박진희]
+│   ├── tone_map.yaml                   [박진희]    ★v2 — 24조합 매핑표 (매핑표 v0이 사양 원본)
+│   ├── buffer_lexicon.yaml             [박진희]
+│   ├── composer.py · gates_impl.py · pipeline.py   [박진희]
+│   ├── refine.py                       [박진희]    ★v2 — 핑퐁(정적 검사·리비전·롤백)
+│   ├── report_blocks.py                [박진희]    ★v2 — chart_analysis · numbers_used 대조
+│   ├── briefing.py                     [박진희]    ★v2 — 보조 ⓐ 문장화 + 왜곡 게이트 (detection 무변경)
+│   ├── classify.py                     [박진희]    ★v2 — 보조 ⓑ 문의 분류
+│   ├── label_suggest.py                [박진희]    ★v2 — 보조 ⓓ 라벨 제안 + 인용 실존 게이트
+│   └── workflow_counsel_pack.py        [박진희]    ★v2 — 에이전트 ① LangGraph (B-1 합의 후 착수)
+│
+├── problem_generation/                 [염준영]    문항 생성 — LangGraph
+│   ├── passage.py · generator.py · verification.py
+│   ├── cross_solver.py · workflow.py
+│   └── (P2 예약) print_layout.py       [염준영]    F17 시험지 조판 — 문항 메타 보존
+│
+├── import_mapping/                     [박진희]    엑셀 Import + 에이전트② + 보조ⓒ
+│   ├── profiler.py · masking.py · inferencer.py
+│   ├── transformer.py · gates_impl.py · spec_store.py
+│   ├── probe_agent.py                  [박진희]    ★v2 — 에이전트 ② ReAct (B-1 합의 후 착수)
+│   ├── probe_tools.py                  [박진희]    ★v2 — get_unique_values 등 3종 (마스킹 내장)
+│   └── tag_suggest.py                  [박진희]    ★v2 — 보조 ⓒ (enum은 taxonomy 준수 · 캐시)
+│
+│ ═══════════════ 평가 (프로덕션 격리) ═══════════════
+│
+└── evaluation/
+    ├── detection_eval.py · draft_eval.py · import_eval.py   [박진희]
+    ├── problem_eval.py                 [염준영]
+    └── golden/                         # 평가 계획서 v0 §1 구성
+        ├── detection/  (G1~G12)        [박진희]
+        ├── tone/       (24조합 스냅숏)  [박진희]
+        ├── tagging/                    [박진희+염준영]  ★정답 라벨 확정만 양자 (어휘집 §2 기준)
+        ├── refine_attack/ (A1~A8)      [박진희]    ★v2
+        ├── redaction/  (코퍼스 30건)    [박진희]
+        ├── import_corpus/ (양식 10종)   [박진희]
+        ├── classify/                   [박진희]
+        └── problems/   (문항 검증)      [염준영]
+
+tests/ai/                               # 대응 프로덕션 파일의 오너를 그대로 따름
+├── unit/ · contract/ · integration/ · gates/ · golden/ · failure/
+└── fakes/                              [염준영]    FakeProvider (refine·에이전트 장애 시나리오 명세는 A 제공)
+```
+
+## 6. 부하 요약 (v2)
+
+| | **박진희** | 염준영 |
+| --- | --- | --- |
+| capability | detection · composition(+핑퐁·리포트·ⓐⓑⓓ·에이전트①) · import_mapping(+에이전트②·ⓒ) | diagnosis · problem_generation(+P2 조판) |
+| 플랫폼 | evidence · gates · agents · registry · runtime | llm 전체(prompts 코어·FakeProvider·미터링 훅) |
+| 성격 | 폭이 넓음(결정론+생성+에이전트 2종) — 각 항목은 상대적으로 가벼우나 **v2에서 항목 수 증가** — 착수 순서가 중요(체크리스트 v2 §5) | 깊음(최고 난도 체인) — 한 체인에 집중. F17 조판은 P2라 당장 부담 없음 |
+| 시기 | Phase 0~1 초반 크리티컬(감지→초안→핑퐁). 에이전트 2종은 B-1 합의 후 | 파일럿 중반부터 크리티컬(검증 게이트). 초기엔 diagnosis 그래프·taxonomy 합의부터 |
+
+> **한 줄 요지** — 폴더는 capability 기준 그대로, 소유는 주석 트리로. 겹치는 곳은 '공동 소유'가 아니라 **'양자 승인이 필요한 7개 파일'**(v2: taxonomy.py 추가)로 좁혀서 관리한다. F17(P2)로 새 폴더는 생기지 않는다 — OCR 소유만 B-4 미팅에서 미정 항목으로 남음.
