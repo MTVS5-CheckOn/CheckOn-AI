@@ -63,4 +63,4 @@ src/ai/
 | 박진희 (member-A) | 탐지·소통·Import | detection · composition · import_mapping + 플랫폼 대부분 |
 | 염준영 (member-B) | 진단·출제 | diagnosis · problem_generation · llm/ |
 
-경계 규칙: 상대 capability 내부 파일 직접 수정 금지 — `contracts/`에 PR로. 양자 승인 7파일은 두 명 승인 필수.
+경계 규칙: 상대 capability 내부 파일 직접 수정 금지 — `contracts/`에 PR로. 양자 승인 7파일은 두 명 승인 필수
