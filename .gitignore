@@ -1,0 +1,43 @@
+# ── 비밀값 ───────────────────────────────────────
+# LLM API 키 · DB 접속 정보. .env.example만 커밋해서 필요한 키 목록을 공유한다.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Python ──────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+
+# ── uv / 가상환경 ────────────────────────────────
+# uv.lock과 .python-version은 커밋 대상이므로 제외하지 않는다.
+.venv/
+venv/
+
+# ── 테스트 · 린트 캐시 ────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ── 런타임 산출물 ────────────────────────────────
+*.log
+logs/
+
+# ── Excel 임시파일 ───────────────────────────────
+# import_mapping 작업 중 Excel이 만드는 잠금파일
+~$*.xls*
+.~lock.*
+
+# ── 에디터 · OS ──────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
