@@ -34,7 +34,7 @@ uv run ruff check . && uv run mypy .
 ```
 
 의존성: FastAPI · SQLAlchemy(+asyncpg) · Alembic · pandas/numpy/openpyxl · LangGraph(+postgres checkpointer).
-**LLM 벤더 SDK는 아직 설치하지 않습니다** — 벤더 선정은 미확정(B-4), 개발은 FakeProvider로.
+**LLM 벤더 SDK는 아직 설치하지 않습니다** — 벤더 선정은 미확정(B-5), 개발은 FakeProvider로.
 
 ## 폴더 구조 (AI 아키텍처 지시서 기준 — 소유권은 `docs/02_ownership.md`)
 

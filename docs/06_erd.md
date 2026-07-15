@@ -4,6 +4,8 @@
 
 v2 추가분: `AGENT_RUN` `AGENT_STEP`(LangGraph 에이전트 2종) · `SIGNAL_BRIEF`(ⓐ) · `INQUIRY_CLASS`(ⓑ) · `TAG_SUGGESTION`(ⓒ) · `LABEL_SUGGESTION`(ⓓ)
 
+**(7/15) `AI_RUN` 버전 세트를 6종으로 통일** — `pipeline` · `engine` · `threshold` · `prompt` · `schema` · `contract`. 이 문서와 계약서 §2.2가 각각 4종씩 **서로 다르게** 적고 있었다(이 문서=prompt·schema 포함 / §2.2=threshold·contract 포함). 합집합으로 맞추고 양쪽 문서와 `contracts/execution.py`를 함께 개정했다. `threshold_version`은 감지 임계값 시트(`threshold_config`)의 버전으로 **detection 실행에만 의미가 있어 nullable** — 이 값이 없으면 과거 경보를 재현할 수 없다(CLAUDE.md 불변식 8).
+
 ```mermaid
 erDiagram
   %% ───────── 실행 메타 (플랫폼) ─────────
@@ -40,8 +42,10 @@ erDiagram
     varchar capability "detection|composition|import_mapping"
     varchar pipeline_version
     varchar engine_version
+    varchar threshold_version "감지 임계값 시트 버전 — detection 외에는 null"
     varchar prompt_version "LLM 미사용 시 null"
     varchar schema_version
+    varchar contract_version "API 계약 버전 — meta.versions.contract"
     varchar model_provider
     varchar model_name
     jsonb generation_params
