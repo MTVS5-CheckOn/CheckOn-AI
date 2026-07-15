@@ -61,12 +61,23 @@
   "error": null,
   "meta": {
     "execution_id": "uuid",
-    "versions": { "pipeline": "1.0.0", "engine": "rule-1.3", "threshold": "v4", "contract": "0.1" }
+    "versions": {
+      "pipeline": "1.0.0",
+      "engine": "rule-1.3",
+      "threshold": "v4",
+      "prompt": "v0.1",
+      "schema": "0.1",
+      "contract": "0.1"
+    }
   }
 }
 ```
 
 실패 시 `data: null`, `error: {"code", "message", "detail"}`. **meta.versions는 항상 실린다** — 재현성·디버깅의 기준.
+
+**(7/15) 버전 세트는 6종으로 통일** — 이 §2.2와 ERD의 `AI_RUN`이 각각 4종씩 서로 다르게 적고 있어(§2.2=threshold·contract / ERD=prompt·schema) 합집합으로 맞췄다. `AI_RUN` 컬럼 · `contracts/execution.py`의 `VersionSet`과 1:1이다.
+
+두 값은 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 LLM 미사용 실행(감지)에서 null.
 
 ### 2.3 에러 코드 `[제안]`
 
