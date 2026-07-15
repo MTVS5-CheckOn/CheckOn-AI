@@ -41,7 +41,7 @@ class _RejectingGate:
 
 
 def test_gate_name_values_frozen() -> None:
-    """ERD GATE_RESULT.gate_name의 8종."""
+    """A 공용 8종 + B 출제 3단 게이트."""
     assert {gate.value for gate in GateName} == {
         "Consent",
         "DataSufficiency",
@@ -51,11 +51,14 @@ def test_gate_name_values_frozen() -> None:
         "RequiredField",
         "MappingConfidence",
         "TeacherConfirm",
+        "RuleValidation",
+        "BlindCrossSolve",
+        "ReleaseDecision",
     }
 
 
 def test_owner_kind_values_frozen() -> None:
-    assert {kind.value for kind in OwnerKind} == {"draft", "import_job"}
+    assert {kind.value for kind in OwnerKind} == {"draft", "import_job", "problem_set"}
 
 
 def test_blocked_reason_values_frozen() -> None:
@@ -66,6 +69,9 @@ def test_blocked_reason_values_frozen() -> None:
         "tone_violation",
         "pii_exposure",
         "out_of_scope",
+        "answer_integrity",
+        "banned_topic",
+        "prompt_injection",
     }
 
 

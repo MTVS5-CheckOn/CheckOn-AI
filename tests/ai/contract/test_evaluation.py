@@ -38,6 +38,7 @@ def test_golden_suite_values_frozen() -> None:
         "import_corpus",
         "classify",
         "problems",
+        "diagnosis",
     }
 
 

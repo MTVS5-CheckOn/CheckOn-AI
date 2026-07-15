@@ -32,6 +32,10 @@ htmlcov/
 *.log
 logs/
 
+# ── 로컬 AI 작업 자료 ────────────────────────────
+# Codex·Fable에 전달하는 기획서와 프롬프트는 로컬에서만 관리한다.
+/CODEXPROMPT/
+
 # ── Excel 임시파일 ───────────────────────────────
 # import_mapping 작업 중 Excel이 만드는 잠금파일
 ~$*.xls*

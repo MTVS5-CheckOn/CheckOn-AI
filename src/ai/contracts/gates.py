@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class GateName(StrEnum):
-    """GATE_RESULT.gate_name — ERD의 값 집합 그대로."""
+    """GATE_RESULT.gate_name — A 체인과 B 출제 게이트의 공용 값 집합."""
 
     CONSENT = "Consent"
     """동의 확인 — 미동의 시 생성 자체가 불가 (error_codes.md §1: 422)."""
@@ -44,12 +44,22 @@ class GateName(StrEnum):
     TEACHER_CONFIRM = "TeacherConfirm"
     """강사 확정 — 자동 확정 금지 지점."""
 
+    RULE_VALIDATION = "RuleValidation"
+    """B 게이트 ① — 구조·근거·금칙·중복의 결정론 검사."""
+
+    BLIND_CROSS_SOLVE = "BlindCrossSolve"
+    """B 게이트 ② — blind 교차 풀이와 약점 의미 정렬 결과 기록."""
+
+    RELEASE_DECISION = "ReleaseDecision"
+    """B 게이트 ③ — pass·needs_review·reject의 결정론 판정."""
+
 
 class OwnerKind(StrEnum):
     """GATE_RESULT.owner_kind — 게이트 이력이 달리는 산출물 종류."""
 
     DRAFT = "draft"
     IMPORT_JOB = "import_job"
+    PROBLEM_SET = "problem_set"
 
 
 class BlockedReason(StrEnum):
@@ -65,6 +75,9 @@ class BlockedReason(StrEnum):
     TONE_VIOLATION = "tone_violation"
     PII_EXPOSURE = "pii_exposure"
     OUT_OF_SCOPE = "out_of_scope"
+    ANSWER_INTEGRITY = "answer_integrity"
+    BANNED_TOPIC = "banned_topic"
+    PROMPT_INJECTION = "prompt_injection"
 
 
 class GateResult(BaseModel):
