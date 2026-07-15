@@ -1,6 +1,7 @@
 # 체크온 (Check-On) — AI 서비스
 
-중·고등 **국어 학원 개인 강사**를 위한 AI SaaS의 AI 서비스 저장소입니다.
+**수능 대비 국어 학원의 개인 강사(고등)**를 위한 AI SaaS의 AI 서비스 저장소입니다.
+(7/15 확정: 타겟을 수능 국어로 좁혀 시작 — 중등·내신 대비는 고도화 로드맵.)
 감지(위험신호) → 우선순위 → 소통(상담 초안) 분석 레이어를 담당합니다.
 
 > 프로젝트는 3개 저장소로 구성됩니다: `ai`(이 저장소, Python) · `backend`(Java 21 / Spring Boot 4, MySQL — 도메인 원본 소유) · `frontend`.
@@ -63,4 +64,4 @@ src/ai/
 | 박진희 (member-A) | 탐지·소통·Import | detection · composition · import_mapping + 플랫폼 대부분 |
 | 염준영 (member-B) | 진단·출제 | diagnosis · problem_generation · llm/ |
 
-경계 규칙: 상대 capability 내부 파일 직접 수정 금지 — `contracts/`에 PR로. 양자 승인 7파일은 두 명 승인 필수
+경계 규칙: 상대 capability 내부 파일 직접 수정 금지 — `contracts/`에 PR로. 양자 승인 7파일은 두 명 승인 필수.

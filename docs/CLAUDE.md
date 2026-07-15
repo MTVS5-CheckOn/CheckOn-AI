@@ -1,10 +1,10 @@
 # CLAUDE.md — 체크온 AI 서비스 · 코딩 에이전트 지침
 
-> 이 파일은 Claude Code / Codex 등 코딩 에이전트가 이 저장소에서 작업할 때의 규칙이다. 사람 리뷰어도 같은 기준으로 PR을 본다.
+> 이 파일은 Claude Code / Codex 등 코딩 에이전트가 이 저장소에서 작업할 때의 규칙이다. `AGENTS.md`는 동일 내용이다. 사람 리뷰어도 같은 기준으로 PR을 본다.
 
 ## 0. 이 저장소가 하는 일 (3줄)
 
-중·고등 국어 학원 강사용 SaaS의 AI 서비스. 백엔드(Java/MySQL — 도메인 원본)가 alias 처리된 학습 스냅숏을 REST로 보내면, 위험신호(결정론)·상담 초안(LLM+게이트)·엑셀 매핑·태깅을 생성해 돌려준다. 승인·발송은 전부 백엔드(HITL) — 이 저장소에 발송 코드는 없다.
+**수능 대비 고등 국어 학원 강사**용 SaaS의 AI 서비스(중등·내신은 고도화 — v1 코드에 중등 분기 만들지 말 것). 백엔드(Java/MySQL — 도메인 원본)가 alias 처리된 학습 스냅숏을 REST로 보내면, 위험신호(결정론)·상담 초안(LLM+게이트)·엑셀 매핑·태깅을 생성해 돌려준다. 승인·발송은 전부 백엔드(HITL) — 이 저장소에 발송 코드는 없다.
 
 ## 1. 절대 불변식 — 위반하는 코드는 작성하지 마라
 
@@ -28,17 +28,17 @@
 
 | 항목 | 이유 | 대신 |
 | --- | --- | --- |
-| LangGraph 에이전트 2종 구현 (counsel_pack · mapping_probe) | 지시서 개정 B-1 합의 전 | 상태 스키마 초안(`docs/policies/langgraph_state.md`)까지만 |
-| `taxonomy.py` enum 확정 | Open-11 [A+B] 합의 전 | 어휘집 v0 값을 잠정 사용 + `# TODO(Open-11)` 표기 |
+| 슈퍼바이저-워커 오케스트레이션 구현 | B-1 승인(7/15)으로 **에이전트 3종+슈퍼바이저 착수 가능**하나 슈퍼바이저 state 스키마 미작성 | 워커(counsel_pack·mapping_probe) 단독 구현 먼저(`docs/policies/langgraph_state.md`), 슈퍼바이저는 스키마 합의 후 |
+| `item_format`의 short·essay 분기 코드 | 7/15 확정: **v1은 mcq만 사용** | enum엔 예약값만 두고 처리 로직 만들지 말 것 (area 6영역은 확정 — TODO 제거 가능) |
 | LLM 벤더 SDK 설치·직접 호출 | 벤더 미정(B-4), 게이트웨이는 B 소유 | `contracts/llm.py` 인터페이스 + FakeProvider로 개발 |
-| 백엔드 실연동 | 계약 v0.1 → v1.0 승격 전 | FakeSnapshot 픽스처 (`docs/05_request_json.md` 형태) |
+| 백엔드 실연동 | 계약 리뷰는 완료(7/15) — **v1.0 승격 커밋 + Kafka 토픽 스키마 확정 전** | FakeSnapshot 픽스처 (`docs/05_request_json.md` 형태) + Kafka는 뼈대만 |
 | F17(지면 시험 OCR) 구현 | Phase 2 | 스키마 선반영만(`docs/policies/f17_paper_exam.md` §4) |
 
 ## 4. 스택·명령어
 
 - Python 3.12 + uv. `uv sync` → `uv run pytest` / `uv run ruff check .` / `uv run mypy .`
 - 패키지 루트 = `src/ai/` (src 레이아웃). 서버: `uv run uvicorn ai.main:app --reload`
-- FastAPI(async) · SQLAlchemy 2.x + asyncpg · Alembic · LangGraph(+postgres checkpointer) · pandas/numpy/openpyxl
+- FastAPI(async) · SQLAlchemy 2.x + asyncpg · Alembic · LangGraph(+postgres checkpointer) · pandas/numpy/openpyxl · **Kafka(7/15 확정 — 비동기 완료 통지·월별 리포트 벌크. 토픽 확정 전엔 consumer/producer 뼈대만, aiokafka)**
 - AI PG는 산출물·메타·캐시만(24테이블 — `docs/06_erd.md`). 도메인 원본 테이블을 만들지 마라.
 - 전 테이블 `tenant_id` 필수. 테넌트 격리 없는 쿼리는 반려.
 
@@ -68,6 +68,8 @@
 | Import·에이전트② | `docs/part_a/01_pipeline.md` + 유스케이스 I1~I3 |
 | API 형태 | `docs/04_api_contract.md` + `docs/05_request_json.md` |
 | DB | `docs/06_erd.md` |
-| 쿼터 | `docs/policies/quota_metering.md` (차단은 백엔드 — 여긴 미터링만) |
+| 표준 스키마(템플릿·Import 목적지) | `docs/07_standard_schema.md` |
+| Kafka 이벤트 | `docs/08_kafka_events.md` (확정 전 — 인터페이스만) |
+| 쿼터 | **AI는 쿼터 무관(7/15 확정)** — 차단·카운트·표시 전부 백엔드. AI에 남는 건 LLM 원가 기록뿐(quota_metering.md 상단 참조) |
 | 에러·상태 | `docs/policies/error_codes.md` |
 | 골든셋·평가 | `docs/part_a/08_evaluation_plan.md` |

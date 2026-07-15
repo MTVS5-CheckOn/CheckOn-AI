@@ -1,6 +1,6 @@
 # [체크온] LangGraph 상태 스키마 명세 v0 — 에이전트 2종 (⚠ 초안)
 
-> **지위:** B-1(지시서 개정 — 상담팩 LangGraph 승격·매핑 조사 도구 루프) **합의 전 초안** — 합의 전 구현 착수 금지 원칙 유지. 이 문서는 합의 미팅에서 "이렇게 만들 것"을 보여주는 자료를 겸한다.
+> **지위: B-1 승인 (7/15) — 착수 가능.** 단 회의에서 구조가 확장됐다: **상위 슈퍼바이저 1 + 워커 에이전트 3** — ① counsel_pack(상담팩, A) ② mapping_probe(매핑 조사, A) ③ problem_generation(문제 생성, B). 본 문서의 워커 2종 state는 그대로 유효. **슈퍼바이저 state 초안은 §5에 작성 완료(B 리뷰 대기)**. 문제 생성 워커의 state는 B 소유.
 > 체크포인터: LangGraph PostgresSaver → AI PG(`AGENT_RUN.state_checkpoint`) — 별도 스토리지 없음.
 
 ---
@@ -114,3 +114,35 @@ class MappingProbeState(BaseModel):
 1. state에 B 소유 타입(DraftContext 등) 의존 — `contracts/`로 승격할 최소 집합
 2. PostgresSaver 테이블을 AGENT_RUN.state_checkpoint(jsonb)로 흡수할지, LangGraph 기본 테이블 별도로 둘지 (A 제안: 기본 테이블 별도 + AGENT_RUN은 최신 스냅숏 캐시)
 3. probe 도구 3종의 시그니처 동결(마스킹 규칙 포함 — 마스킹 정의서 §4)
+
+
+---
+
+## 5. (7/15 신규 — B-1 확장) 슈퍼바이저 state 초안 `[B 리뷰 대상]`
+
+구조: **슈퍼바이저 1 + 워커 3** — counsel_pack(A) · mapping_probe(A) · problem_generation(B). 슈퍼바이저의 역할은 **큐·라우팅·상태 집계·재개 관리**이며, 판단을 하지 않는다.
+
+```python
+class WorkerJob(BaseModel):
+    job_id: UUID
+    worker: Literal["counsel_pack", "mapping_probe", "problem_generation"]
+    tenant_id: str
+    payload_ref: str                   # 요청 원본 참조 (state에 페이로드 복제 금지)
+    status: Literal["queued", "running", "paused", "done", "failed"]
+    agent_run_id: UUID | None          # 기동 후 연결
+    priority: int = 0                  # 인터랙티브(문항 생성) > 배치(상담팩)
+
+class SupervisorState(BaseModel):
+    jobs: list[WorkerJob] = []
+    running: dict[str, UUID] = {}      # worker → 현재 job (워커당 동시 1 — v1 단순화)
+    completed_count: int = 0
+    schema_version: str = "sup-1"
+```
+
+**불변식(제안):**
+1. **라우팅은 결정론** — 요청 kind → worker 매핑은 고정 테이블. 슈퍼바이저에 LLM 없음(LLM 호출 0회).
+2. **워커 결과 불변** — 슈퍼바이저는 워커 산출물(draft·spec·문항)을 수정·요약·재작성하지 않는다. 상태 집계만.
+3. **격리 유지** — 워커 간 state 공유 금지. 슈퍼바이저는 job_id·status만 알고 내용을 모른다(내용은 각 워커 소유 테이블에).
+4. 재개는 워커 체크포인트에 위임 — 슈퍼바이저는 `paused` job의 resume 신호만 전달.
+
+**B와 확인할 것:** ① problem_generation 워커의 잡 단위(문항 세트 1건?) ② 우선순위 정책(인터랙티브 선점 여부) ③ 슈퍼바이저 소유 — 제안: `agents/`(A)에 두되 라우팅 테이블은 양자 승인.

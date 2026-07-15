@@ -2,7 +2,9 @@
 
 모든 요청 공통 헤더: `X-Tenant-Id`(강사 alias) · `X-Request-Id` · 쓰기는 `Idempotency-Key`. 실명·연락처 필드는 어디에도 없음(alias만). 상세 규약·응답 스키마는 `체크온_AI_API·데이터계약_v0.1.md` 참조.
 
-> **v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[Open-11]` A+B 합의 전 잠정) ② `/drafts` kind에 리포트 2종 구분(월별 일괄 / 단건 수시) ③ 리포트 요청에 `benchmarks` 추가(노출 3층 — teacher_only는 학부모向 컨텍스트에서 구조적 제외)
+> ****7/15 회의 확정 반영:** 비동기 완료 통지 Kafka(Open-2) · 월별 리포트 일괄 1회(BE-5) · item_format v1=mcq만(Open-11) · 쿼터는 AI 무관(BE-4) — 상세는 04_api_contract·99_open_items.
+
+v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[Open-11]` A+B 합의 전 잠정) ② `/drafts` kind에 리포트 2종 구분(월별 일괄 / 단건 수시) ③ 리포트 요청에 `benchmarks` 추가(노출 3층 — teacher_only는 학부모向 컨텍스트에서 구조적 제외)
 
 ---
 
@@ -144,7 +146,7 @@
 ```
 
 → 202 → `GET /v1/drafts/{draft_id}` 조회 시 `revision_no` 증가, `revisions[]`에 턴 이력.
-**규약:** 다듬기 1턴 = **상담 초안 할당 1 소모**(플랜 월 할당이 자연 상한 — 별도 세션 턴 제한 없음, 소진 시 429 `limit_kind: draft`). 매 턴 결과도 게이트 전체(Evidence·SourceGrounding·ToneSafety) 재통과 — 지시에 없는 수치·근거는 생성 불가, 강사 지시가 게이트를 이기지 못함(차단 시 사유 반환). 이전 리비전으로 롤백은 `{ "revert_to": 1 }`(할당 미소모).
+**규약:** 다듬기 1턴 = 상담 초안 할당 1 소모 — **과금·차단은 백엔드 집행(7/15 확정 BE-4), AI는 쿼터 무관·무제한 처리(세션 턴 제한 없음).** 매 턴 결과도 게이트 전체(Evidence·SourceGrounding·ToneSafety) 재통과 — 지시에 없는 수치·근거는 생성 불가, 강사 지시가 게이트를 이기지 못함(차단 시 사유 반환). 이전 리비전으로 롤백은 `{ "revert_to": 1 }`(할당 미소모).
 
 ---
 

@@ -16,21 +16,23 @@
 | `01_overview.md` | 제품·AI 역할·용어 사전 | ✅ |
 | `02_ownership.md` | 폴더 소유권 — **양자 승인 7파일** | ✅ |
 | `03_coding_rules.md` | 코드 규칙(하드코딩·라이브러리 우선·모듈화·PR) — **리뷰 반려 기준** | ✅ |
-| `04_api_contract.md` | REST API·데이터 계약 v0.1 — §2 공통 규약은 B 엔드포인트도 준수 | 🟠 Open-1~12 |
-| `05_request_json.md` | 백엔드→AI 요청 JSON 9종 | 🟠 04와 동기 |
+| `04_api_contract.md` | REST API·데이터 계약 — §2 공통 규약은 B 엔드포인트도 준수 | 🟢 7/15 리뷰 완료 — v1.0 승격 대기 |
+| `05_request_json.md` | 백엔드→AI 요청 JSON 9종 | 🟢 04와 동기 |
 | `06_erd.md` | AI PG 24테이블 (B의 출제 테이블은 증분 추가 예정) | ✅ |
+| `07_standard_schema.md` | **표준 스키마 정의서** — 템플릿=Import 목적지=스냅숏 3자 일치 (BE-7) | 🟠 백엔드 리뷰 대기 |
+| `08_kafka_events.md` | **Kafka 토픽·이벤트 스키마** — 완료 통지·월별 벌크 (Open-2·BE-5) | 🟠 백엔드 공동 확정 대기 |
 | `99_open_items.md` | 미확정 안건 추적표 (Open·B·BE 전체) | 진행 중 |
 
 ## 공용 정책 (`policies/` — 전원 준수)
 
 | 문서 | 내용 | 상태 |
 | --- | --- | --- |
-| `taxonomy.md` | 수능 영역·문항 형식 어휘집 — **[A+B] 공용 어휘, B-3 합의 자료** | 🟠 Open-11 |
+| `taxonomy.md` | 수능 영역·문항 형식 어휘집 — [A+B] 공용 어휘 | ✅ 7/15 확정(6영역·v1=mcq만) — 경계 사례 판정만 잔여 |
 | `masking_redaction.md` | 마스킹 P1~P8 — LLM 경로 전체에 적용(B의 출제 프롬프트 포함) | ✅ |
 | `error_codes.md` | 에러·'정상 상태' 코드 사전 — 전 엔드포인트 공통 | ✅ |
-| `quota_metering.md` | 쿼터·미터링 — problem(출제) 할당도 여기 | 🟠 BE-4 |
-| `langgraph_state.md` | 에이전트 state 스키마 — **B-1 합의 대상 초안** | 🟠 B-1 |
-| `f17_paper_exam.md` | 지면 시험 메모 — 조판(B)·OCR 분담은 B-4에서 | 🕓 P2 |
+| `quota_metering.md` | 쿼터·미터링 — (7/15) 전부 백엔드 소유로 이관, AI는 LLM 원가 관측만 | ✅ 백엔드 참고용 |
+| `langgraph_state.md` | 에이전트 state — 워커 2종 + **§5 슈퍼바이저 초안(7/15 신규)** | 🟠 슈퍼바이저만 B 리뷰 대기 |
+| `f17_paper_exam.md` | 지면 시험 메모 — 서술형 폐기(7/15)로 OCR 소유만 P2 시점 재론 | 🕓 P2 |
 
 ## A 파트 상세 (`part_a/` — B는 참고만)
 
@@ -41,8 +43,8 @@
 | `03_usecases.md` | 유스케이스 v3 — 시나리오 17종 | ✅ |
 | `04_threshold_config.md` | R1~R6 기본값·섀도 모드 | ✅ |
 | `05_tone_mapping.md` | 라벨 24조합 + buffer_lexicon 50항 | ✅ |
-| `06_refine_policy.md` | 핑퐁 다듬기 정책 | 🟠 §5만 BE-4 |
-| `07_report_spec.md` | 리포트 사양 — 노출 3층 | 🟠 Open-9·10 |
+| `06_refine_policy.md` | 핑퐁 다듬기 정책 | ✅ §5도 확정(집행=백엔드) |
+| `07_report_spec.md` | 리포트 사양 — 노출 3층 · 벌크=Kafka 일괄 | 🟠 Open-9 출처만 잔여 |
 | `08_evaluation_plan.md` | 평가 계획 — golden/ 구성 (tagging 정답 라벨만 [A+B]) | ✅ |
 
 ## 저장소 밖 (노션/드라이브)
