@@ -47,6 +47,9 @@ class GoldenSuite(StrEnum):
     PROBLEMS = "problems"
     """문항 검증 — B 소유."""
 
+    DIAGNOSIS = "diagnosis"
+    """약점 진단 그래프·결정론 회귀 — B 소유."""
+
 
 class MetricKind(StrEnum):
     """지표 종류 — 계획서 §2~§7의 합격 기준에서 실제로 쓰이는 축만."""

@@ -7,7 +7,8 @@
 불변식 8(CLAUDE.md): 모든 실행은 AI_RUN(버전 세트 + snapshot_hash)을 기록한다.
 동일 입력 + 동일 버전 = 동일 출력(결정론 경로는 바이트 동일).
 
-버전 세트는 6종이다(pipeline·engine·threshold·prompt·schema·contract).
+버전 세트는 공통 6종(pipeline·engine·threshold·prompt·schema·contract)과
+B 실행 전용 nullable 4종(graph·taxonomy·verify_config·difficulty_calib)이다.
 과거 두 문서가 각각 4종씩 서로 다르게 적고 있었고(§2.2=threshold·contract 포함,
 ERD=prompt·schema 포함), 7/15 판단으로 합집합인 6종에 통일하면서 ERD·계약 문서를
 같이 고쳤다.
@@ -21,20 +22,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Capability(StrEnum):
-    """AI_RUN.capability — ERD의 값 집합 그대로.
-
-    **B의 출제·진단이 없는 것은 의도된 것이다** — ERD는 A 산출물 테이블만 담고,
-    B 테이블은 증분으로 추가된다(00_INDEX: "B의 출제 테이블은 증분 추가 예정").
-    B가 자기 테이블을 올릴 때 이 enum도 함께 넓히면 되고, 그때는 양자 승인 대상이다.
-    """
+    """AI_RUN.capability — A·B capability의 공용 값 집합."""
 
     DETECTION = "detection"
     COMPOSITION = "composition"
     IMPORT_MAPPING = "import_mapping"
+    DIAGNOSIS = "diagnosis"
+    PROBLEM_GENERATION = "problem_generation"
 
 
 class VersionSet(BaseModel):
-    """재현성 키가 되는 버전 묶음 — AI_RUN의 *_version 필드군 6종.
+    """재현성 키가 되는 버전 묶음 — 공통 6종 + B nullable 4종.
 
     이 버전 세트 + input_snapshot_hash가 같으면 같은 출력이 나와야 한다.
     API 응답의 meta.versions로도 항상 실린다 (04_api_contract.md §2.2).
@@ -61,6 +59,18 @@ class VersionSet(BaseModel):
 
     prompt_version: str | None = None
     """LLM 미사용 실행(감지 등)에서는 None — ERD: "LLM 미사용 시 null"."""
+
+    graph_version: str | None = None
+    """curriculum_graph.yaml 버전 — 진단·출제 외 실행에서는 None."""
+
+    taxonomy_version: str | None = None
+    """수능 영역·유형 공용 어휘 버전 — 진단·출제 외 실행에서는 None."""
+
+    verify_config_version: str | None = None
+    """B 진단·품질 게이트 설정 버전 — 관련 실행 외에는 None."""
+
+    difficulty_calib_version: str | None = None
+    """난이도 보정 버전 — 문항 생성 외 실행에서는 None."""
 
 
 class GenerationParams(BaseModel):
@@ -119,6 +129,10 @@ class ExecutionContext(BaseModel):
             prompt_version=self.versions.prompt_version,
             schema_version=self.versions.schema_version,
             contract_version=self.versions.contract_version,
+            graph_version=self.versions.graph_version,
+            taxonomy_version=self.versions.taxonomy_version,
+            verify_config_version=self.versions.verify_config_version,
+            difficulty_calib_version=self.versions.difficulty_calib_version,
             model_provider=model_provider,
             model_name=model_name,
             generation_params=generation_params,
@@ -152,6 +166,18 @@ class RunMetadata(BaseModel):
     schema_version: str
     contract_version: str
     """API 계약 버전 — meta.versions.contract (04_api_contract.md §2.2)."""
+
+    graph_version: str | None = None
+    """curriculum_graph.yaml 버전 — 진단·출제 외에는 null."""
+
+    taxonomy_version: str | None = None
+    """수능 영역·유형 공용 어휘 버전 — 진단·출제 외에는 null."""
+
+    verify_config_version: str | None = None
+    """B 진단·품질 게이트 설정 버전 — 관련 실행 외에는 null."""
+
+    difficulty_calib_version: str | None = None
+    """난이도 보정 버전 — 문항 생성 외에는 null."""
 
     model_provider: str | None = None
     """LLM 미사용 실행에서는 null."""

@@ -29,6 +29,10 @@ AI_RUN_COLUMNS = {
     "prompt_version",
     "schema_version",
     "contract_version",
+    "graph_version",
+    "taxonomy_version",
+    "verify_config_version",
+    "difficulty_calib_version",
     "model_provider",
     "model_name",
     "generation_params",
@@ -36,15 +40,27 @@ AI_RUN_COLUMNS = {
     "created_at",
 }
 
-#: 버전 세트 6종 — 04_api_contract.md §2.2 meta.versions와 1:1 (7/15 통일).
+#: 공통 6종 + B 실행 전용 nullable 4종 — 승인된 VersionSet 확장.
 #: 키 이름은 응답 envelope 표기(접미사 없음) 기준.
-META_VERSION_KEYS = {"pipeline", "engine", "threshold", "prompt", "schema", "contract"}
+META_VERSION_KEYS = {
+    "pipeline",
+    "engine",
+    "threshold",
+    "prompt",
+    "schema",
+    "contract",
+    "graph",
+    "taxonomy",
+    "verify_config",
+    "difficulty_calib",
+}
 
 FIXED_TIME = datetime(2026, 7, 15, 3, 0, tzinfo=UTC)
 EXECUTION_ID = UUID("00000000-0000-4000-8000-000000000001")
 
 
 def _context(capability: Capability = Capability.DETECTION) -> ExecutionContext:
+    is_b_capability = capability in {Capability.DIAGNOSIS, Capability.PROBLEM_GENERATION}
     return ExecutionContext(
         execution_id=EXECUTION_ID,
         tenant_id="teacher_alias_001",
@@ -56,6 +72,12 @@ def _context(capability: Capability = Capability.DETECTION) -> ExecutionContext:
             schema_version="0.1",
             contract_version="0.1",
             threshold_version="v4" if capability is Capability.DETECTION else None,
+            graph_version="0.1.0" if is_b_capability else None,
+            taxonomy_version="v1" if is_b_capability else None,
+            verify_config_version="b-defaults-v1" if is_b_capability else None,
+            difficulty_calib_version=(
+                "difficulty-v1" if capability is Capability.PROBLEM_GENERATION else None
+            ),
         ),
     )
 
@@ -66,7 +88,7 @@ def test_run_metadata_matches_ai_run_columns() -> None:
 
 
 def test_version_set_matches_meta_versions() -> None:
-    """VersionSet ↔ meta.versions 6종 1:1 (04_api_contract.md §2.2).
+    """VersionSet ↔ 승인된 meta.versions 10종 1:1.
 
     두 문서가 각각 4종씩 다르게 적고 있던 것을 7/15에 합집합 6종으로 통일했다.
     한쪽만 바뀌면 이 단언이 깨진다.
@@ -93,11 +115,13 @@ def test_contract_version_is_required() -> None:
 
 
 def test_capability_values_frozen() -> None:
-    """ERD: capability "detection|composition|import_mapping"."""
+    """A 3종 + B 진단·출제 2종."""
     assert {item.value for item in Capability} == {
         "detection",
         "composition",
         "import_mapping",
+        "diagnosis",
+        "problem_generation",
     }
 
 
@@ -120,6 +144,22 @@ def test_to_run_metadata_carries_version_set() -> None:
     assert metadata.threshold_version == "v4"
     assert metadata.execution_id == EXECUTION_ID
     assert metadata.input_snapshot_hash == "sha256:" + "0" * 64
+
+
+def test_problem_generation_run_records_b_versions() -> None:
+    metadata = _context(Capability.PROBLEM_GENERATION).to_run_metadata(created_at=FIXED_TIME)
+    assert metadata.graph_version == "0.1.0"
+    assert metadata.taxonomy_version == "v1"
+    assert metadata.verify_config_version == "b-defaults-v1"
+    assert metadata.difficulty_calib_version == "difficulty-v1"
+
+
+def test_a_capability_has_null_b_versions() -> None:
+    metadata = _context(Capability.COMPOSITION).to_run_metadata(created_at=FIXED_TIME)
+    assert metadata.graph_version is None
+    assert metadata.taxonomy_version is None
+    assert metadata.verify_config_version is None
+    assert metadata.difficulty_calib_version is None
 
 
 def test_llm_free_run_has_null_prompt_and_model() -> None:
