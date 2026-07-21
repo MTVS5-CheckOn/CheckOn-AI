@@ -55,6 +55,8 @@
 
 ### 2.2 응답 envelope `[제안]`
 
+아래 JSON은 `problem_generation` 실행에서 `VersionSet`의 정식 10키 집합을 모두 표시한 예시다.
+
 ```json
 {
   "data": { },
@@ -64,10 +66,14 @@
     "versions": {
       "pipeline": "1.0.0",
       "engine": "rule-1.3",
-      "threshold": "v4",
+      "threshold": null,
       "prompt": "v0.1",
       "schema": "0.1",
-      "contract": "0.1"
+      "contract": "0.1",
+      "graph": "curriculum-0.1",
+      "taxonomy": "taxonomy-0.1",
+      "verify_config": "verify-0.1",
+      "difficulty_calib": "difficulty-0.1"
     }
   }
 }
@@ -75,9 +81,11 @@
 
 실패 시 `data: null`, `error: {"code", "message", "detail"}`. **meta.versions는 항상 실린다** — 재현성·디버깅의 기준.
 
-**(7/15) 버전 세트는 6종으로 통일** — 이 §2.2와 ERD의 `AI_RUN`이 각각 4종씩 서로 다르게 적고 있어(§2.2=threshold·contract / ERD=prompt·schema) 합집합으로 맞췄다. `AI_RUN` 컬럼 · `contracts/execution.py`의 `VersionSet`과 1:1이다.
+**(7/15) 공통 버전 세트는 6종으로 통일** — 이 §2.2와 ERD의 `AI_RUN`이 각각 4종씩 서로 다르게 적고 있어(§2.2=threshold·contract / ERD=prompt·schema) 합집합으로 맞췄다.
 
-두 값은 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 LLM 미사용 실행(감지)에서 null.
+**[PART_A+PART_B] 승인 확장:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이며, `AI_RUN` 컬럼·`meta.versions`와 1:1이다. 현재 정식 키 집합은 공통 6종(`pipeline`·`engine`·`threshold`·`prompt`·`schema`·`contract`) + [PART_B] 실행 전용 nullable 4종(`graph`·`taxonomy`·`verify_config`·`difficulty_calib`)인 **총 10종**이다. 위 JSON은 특정 capability의 예시이며, nullable 값은 실행 종류에 따라 달라진다.
+
+nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 LLM 미사용 실행(감지·진단)에서 null · `graph`·`taxonomy`·`verify_config`는 관련 [PART_B] 실행 외에는 null · `difficulty_calib`은 `problem_generation` 외에는 null.
 
 ### 2.3 에러 코드 `[제안]`
 
