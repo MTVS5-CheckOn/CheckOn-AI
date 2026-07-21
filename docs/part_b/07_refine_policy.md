@@ -21,6 +21,18 @@
 
 교체는 대화형 수정의 다른 이름이 아니다 — 수정은 맥락·리비전 이력을 유지하고, 교체는 새 생성 계보를 만든다. `직접 검토`(서술형 아닌 경계 문항 확인)는 화면 동작일 뿐 AI 처리 없음.
 
+**계약 연결(`contracts/problem_generation.py` — `ItemAction` 5종의 워크플로 매핑):**
+
+| ItemAction | 요청 모델 | 비고 |
+| --- | --- | --- |
+| `refine` | `ItemRevisionRequest(revision_kind=ai_refine)` | 리비전 생성 |
+| `teacher_direct` | `ItemRevisionRequest(revision_kind=teacher_direct)` | 리비전 생성 |
+| `rollback` | `ItemRevisionRequest(revision_kind=rollback)` | 리비전 생성(복원) |
+| `replace` | **ItemRevisionRequest 대상 아님** — 기존 문항의 리비전이 아니라 **새 문항 생성 계보**(세트 생성 경로 재사용, 새 item_id·새 item_attempt 예산) | — |
+| `delete` | **ItemRevisionRequest 대상 아님** — LLM 호출·리비전 생성이 없는 API 동작(이력은 감사용 보존) | — |
+
+`ItemAction`은 Step 3에서 사용하는 문항 행동 어휘이며 리비전 3종만 `ItemRevisionRequest`로 표현된다 — enum이 고립된 것이 아니라 replace·delete가 리비전 경로 밖의 동작이라는 뜻이다. API 경로 확정은 [`09_integration_proposals.md`](09_integration_proposals.md) §2-1 제안(백엔드 합의 대상) 유지.
+
 ## 2. 지시문 해석 규칙 — 허용/근거 검증/정책 차단 3분류
 
 | 분류 | 예시 지시 | 처리 |
@@ -33,7 +45,7 @@
 
 **수정 중 불변(위반 지시는 C 분류):** 대상 학생·약점 목표 · 문항의 area·type·skill_node(측정 대상) · 정답·해설의 근거 요구 · 금칙·저작권·사실성 정책 · 개인정보 마스킹 · 승인 전 노출 금지. **약점 목표 자체를 바꾸려면 수정이 아니라 Step 1~2로 돌아가 새 조건으로 생성**한다.
 
-## 3. `blocked_reason` enum (공용 error_codes와 공유 — B 증분은 09 §2-2 제안)
+## 3. `blocked_reason` enum (B 증분 코드 enum은 ✅ 승인·구현 완료 — 공용 error_codes 문서 편입은 09 §2-10 요청 대기)
 
 | 코드 | 뜻 | 검출 시점 | 화면 문구 `[제안]` |
 | --- | --- | --- | --- |
@@ -44,7 +56,7 @@
 | `prompt_injection` | 지시 이탈 패턴(05 §8.2) | 사전 정적 검사 | "요청을 처리할 수 없어요" |
 | `out_of_scope` | 문항 수정과 무관(약점 목표 변경·타 학생) | 사전 정적 검사 | "이 문항의 수정 범위를 벗어나요 — 새 출제로 진행해 주세요" |
 
-`pii_exposure`·`out_of_scope`는 A의 refine enum 재사용, 나머지 3종은 B 증분 제안.
+`pii_exposure`·`out_of_scope`는 A의 refine enum을 재사용한다. 나머지 3종(`answer_integrity`·`banned_topic`·`prompt_injection`)은 코드 enum에 ✅ A+B 승인·구현 완료(`d5283d0`)됐고, `error_codes.md` 문서 편입만 [`09`](09_integration_proposals.md) §2-10 요청 대기다.
 
 ## 4. 매 수정 턴의 처리 순서 — 부분 수정도 전체 재검증
 

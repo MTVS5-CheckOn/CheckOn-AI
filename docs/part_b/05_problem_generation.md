@@ -89,6 +89,8 @@ class ProblemRequest(BaseModel):
 
 **결과 메타:** `target_source=teacher_manual` 세트는 응답과 저장에 `personalized=false`를 명시 — 화면 "약점 데이터 기반 개인화 아님" 표기의 근거 필드.
 
+**taxonomy_version 정본 규칙:** 실행 단위의 정본은 `ExecutionContext.versions.taxonomy_version`이다. `ProblemRequest.taxonomy_version`은 요청 대상 약점 지도·실행 버전 확인용 **에코**이고, `WeaknessMap.taxonomy_version`([`04`](04_curriculum_graph.md) §5.5)과 함께 **세 값이 해당 실행에서 반드시 같아야 한다.** 값이 다르면 LLM 호출·문항 생성을 시작하지 않는다 — 워크플로 입력 조립 단계에서 결정론적으로 거부(임의 보정·최신 버전 자동 변환 금지). 강제 주체는 개별 Pydantic 모델이 아니라 워크플로 구현이다.
+
 ### 4.2 문항 구조화 출력 (items 템플릿 계약)
 
 ```python
@@ -145,7 +147,7 @@ class SolveResult(BaseModel):
 
 ### 4.4 응답·상태 — 공용 규약 준수
 
-- 응답은 공용 envelope: `data` / `meta.execution_id` / `meta.versions` / `error`. **meta.versions는 공용 `VersionSet` 6종**(pipeline·engine·schema·contract + nullable threshold·prompt — `contracts/execution.py`, 7/15 통일)을 그대로 따른다. B 전용 버전(graph·taxonomy·verify_config·difficulty_calib)은 `extra="forbid"`라 임의 추가 불가 — **VersionSet nullable 확장을 양자 승인으로 제안**([`09`](09_integration_proposals.md) §2-9)하고, 승인 전에는 산출물 행(WEAKNESS_MAP·PROBLEM_ITEM)과 `data`로만 반환한다. **meta.quota는 없다**(7/15 폐기 — AI는 쿼터 무관).
+- 응답은 공용 envelope: `data` / `meta.execution_id` / `meta.versions` / `error`. **meta.versions는 공용 `VersionSet`** — 공통 6종(pipeline·engine·schema·contract + nullable threshold·prompt) + **B 전용 nullable 4종(graph·taxonomy·verify_config·difficulty_calib — ✅ A+B 승인·`d5283d0` 구현 완료, [`09`](09_integration_proposals.md) §2-9)** 을 그대로 따른다. B 버전은 산출물 행(WEAKNESS_MAP·PROBLEM_ITEM)에도 함께 저장된다(재현 조회 키 — 공용 문서 동기화는 09 §2-10 요청). **meta.quota는 없다**(7/15 폐기 — AI는 쿼터 무관).
 - 비동기 세트 상태: `queued → generating → generated | partial_success | failed` + 진행률(`"7/10"`). 완료 통지는 Kafka(09 §2-1), GET은 보조. `partial_success` 등 상태 사전 추가는 공용 제안(09 §2-2) — 확정 전 `[제안]`.
 - 결과: `ProblemSetResult { set_id, status, stop_reason, personalized, items: list[ItemResult], summary, dropped_reasons }` — 수량 미달을 숨기지 않는다.
 

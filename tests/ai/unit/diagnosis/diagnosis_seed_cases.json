@@ -1,0 +1,158 @@
+{
+  "cases": [
+    {
+      "case_id": "cell_cut_boundary",
+      "config": {
+        "cell_min_items": 2,
+        "relative_cut_pp": -25,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 2
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:seed-boundary",
+        "events": [
+          {"event_id": "b-1", "area_tag": "language", "type_tag": "concept", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "b-2", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "b-3", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "b-4", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "generated",
+        "cells": {"language×concept": "weak", "reading×fact": "ok"},
+        "nodes": {"lang.middle": "suspect", "lang.root": "suspect"},
+        "overall_low": false,
+        "error": null
+      }
+    },
+    {
+      "case_id": "insufficient_samples",
+      "config": {
+        "cell_min_items": 3,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 2
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:seed-insufficient",
+        "events": [
+          {"event_id": "i-1", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "rejected_insufficient",
+        "cells": {},
+        "nodes": {},
+        "overall_low": null,
+        "error": null
+      }
+    },
+    {
+      "case_id": "overall_low_ignores_unknown",
+      "config": {
+        "cell_min_items": 2,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 2
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:seed-overall-low",
+        "events": [
+          {"event_id": "o-1", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "o-2", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "o-3", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "generated",
+        "cells": {"language×concept": "weak", "reading×fact": "unknown"},
+        "nodes": {"lang.middle": "suspect", "lang.root": "suspect"},
+        "overall_low": true,
+        "error": null
+      }
+    },
+    {
+      "case_id": "direct_node_above_overall",
+      "config": {
+        "cell_min_items": 2,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 2
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:seed-direct-ok",
+        "events": [
+          {"event_id": "d-1", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.root", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "d-2", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.root", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "d-3", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "d-4", "area_tag": "reading", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "generated",
+        "cells": {"language×concept": "ok", "reading×fact": "weak"},
+        "nodes": {"lang.root": "ok"},
+        "overall_low": false,
+        "error": null
+      }
+    },
+    {
+      "case_id": "conflicting_duplicate",
+      "config": {
+        "cell_min_items": 2,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 2
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:seed-conflict",
+        "events": [
+          {"event_id": "c-1", "area_tag": "language", "type_tag": "concept", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "c-1", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": null,
+        "cells": {},
+        "nodes": {},
+        "overall_low": null,
+        "error": "DiagnosisInputConflictError"
+      }
+    }
+  ]
+}
