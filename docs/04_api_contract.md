@@ -87,18 +87,11 @@
 
 nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 LLM 미사용 실행(감지·진단)에서 null · `graph`·`taxonomy`·`verify_config`는 관련 [PART_B] 실행 외에는 null · `difficulty_calib`은 `problem_generation` 외에는 null.
 
-### 2.3 에러 코드 `[제안]`
+### 2.3 에러 코드
 
-| HTTP | code | 의미 |
-| --- | --- | --- |
-| 400 | `VALIDATION_FAILED` | 스키마 위반 (detail에 필드별 사유) |
-| 401 | `UNAUTHORIZED` | 토큰 무효 |
-| 403 | `TENANT_MISMATCH` | 헤더 tenant ≠ 페이로드 tenant |
-| 404 | `NOT_FOUND` | 리소스 없음 — 동의 없는 학생 참조 포함(존재 자체를 숨김) |
-| 409 | `IDEMPOTENT_REPLAY` | 동일 Idempotency-Key → 기존 결과 반환 |
-| 429 | `RATE_LIMITED` | 순간 폭주 방어용만 — **(7/15) 쿼터 차단은 백엔드 선집행이라 AI 레이어에 QUOTA_EXCEEDED 없음** |
-| 503 | `LLM_UNAVAILABLE` | LLM 장애(재시도 소진) → 백엔드는 재시도 예약 표시 |
-| 500 | `INTERNAL` | 그 외 |
+**에러 코드의 정본은 [`docs/policies/error_codes.md`](policies/error_codes.md) §1이다 — 여기 중복 정의하지 않는다.** (과거 이 표의 일부 코드가 정본과 코드명·409 의미가 어긋나 있어 표를 제거 — 7/21 통일, 상세는 99_open_items #12. 404의 "동의 없는 학생 참조 포함"·429 쿼터 주석은 정본 §1로 이관.)
+
+- **멱등(409):** 같은 `Idempotency-Key` + **같은 바디** = 기존 결과를 200으로 반환 · 같은 키 + **다른 바디** = `409 IDEMPOTENCY_CONFLICT`로 거부(기존 결과 반환 안 함).
 
 > ⭐ **가장 중요한 원칙:** '정상적 미생성'은 에러가 아니다.
 > `rejected_insufficient`(데이터 부족) · `template_only`(데이터 무관 문의) · `fallback_used`(문장화 폴백)는 **200 + `data.status`**로 온다. 화면 문구 번역은 백엔드/프론트 몫.
