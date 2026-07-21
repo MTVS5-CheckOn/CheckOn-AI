@@ -86,3 +86,6 @@
 | ⑤ /confirmations 구현 (BE-8) · Import 산출물 출력 스펙 (BE-9) | ☐ |
 | ⑥ Kafka consumer/producer 뼈대 (08 확정 후) | ☐ |
 | ⑦ capped_out '다음 날 재평가 대기열'(04 §3) — 순수 함수 범위 밖이라 v0는 집계만, API/저장 계층 도입 시 구현 | ☐ |
+| ⑧ **api/ 계층 신설 — B 합의 대상** ⚠ — HTTP 노출 계층(app·envelope=공통계약, 라우터=capability 오너). 02_ownership §5 트리 개정, PR ⚠ 승인 규칙 적용. B 확인 후 §4 양자 승인 목록 편입 여부 결정 | ☐ |
+| ⑨ 멱등 저장소 DB 교체 — v0는 프로세스 내 인메모리(재시작 시 소실 · uvicorn 멀티워커 간 비공유 — 실배포 전 필수 교체). Idempotency-Key→snapshot_hash 매핑을 D-②(Alembic) 후 영속 저장소로 | ☐ |
+| ⑩ 섀도 모드 표시 방식 — `error_codes.md` §2.3에 `shadow: true` 행이 있으나 09 §3 응답엔 없음. 섀도 구현 시점(D-② 후)에 09 응답 편입 vs 운영 설정 결정 + 두 문서 정합 | ☐ |

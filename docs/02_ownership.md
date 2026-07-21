@@ -102,6 +102,12 @@ ai/
 │   ├── redaction_patterns.yaml         [박진희]    ★v2 — 마스킹 정의서 P1~P8 (골든 코퍼스 통과가 머지 조건)
 │   └── errors.py                       [박진희]    에러·상태 코드 사전 §4 구현
 │
+├── api/                                ★(v3 신설) ⚠ B 확인 대기 — HTTP 노출 계층
+│   ├── app.py                          [공통 계약]  FastAPI 앱 팩토리 · 예외 핸들러 — 여러 라우터 공용이라 양자
+│   ├── envelope.py                     [공통 계약]  공통 응답 조립(data·error·meta envelope) — 〃
+│   └── routers/                                    ← 라우터는 해당 capability 오너를 따름
+│       └── detect.py                   [박진희]    감지 라우터 (POST /v1/detect)
+│
 │ ═══════════════ Capability (기능) ═══════════════
 │
 ├── detection/                          [박진희]    위험신호 감지 — 결정론 · LLM 금지
