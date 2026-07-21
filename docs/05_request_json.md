@@ -46,23 +46,26 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
       "assignment_title_text": "6월 모의고사 비문학 대비 #3",   // ⚠ Open-4b: 태깅 제안 입력
       "source": "trackB"                    // trackA | trackB | studentHome
     }
+  ],
+  "alert_context": [                        // ★(7/16 신설) 최근 30일 경보 이력 — lifecycle 판정 입력 (명세 09 §2·§4)
+    {
+      "student_ref": "st_8f2a",
+      "signal_type": "hidden_risk",         // 명세 09 §1의 6값
+      "status": "open",                     // open | resolved
+      "resolved_at": null,                  // resolved일 때 해소 일시 — "해소 후 2주" 쿨다운 기준
+      "followed_up": false                  // 해소 후 팔로업 카드가 이미 나갔는지 (중복 방지)
+    }
   ]
 }
 ```
 
-→ 응답: 신호 목록(evidence·브리핑 문장 포함) + observed_only + stats
+→ 응답: 신호 목록(evidence·브리핑 문장 + display_label·lifecycle 포함) + stats. **observed_only 목록은 제거(7/16)** — `stats.excluded_under_2w` 숫자만. 상세는 명세 `docs/part_a/09_detect_spec.md` §3.
 
 ---
 
-## 2. `POST /v1/feedback` — 경보 평가 회신 (강사가 누를 때마다)
+## 2. `POST /v1/feedback` — 경보 평가 회신 🕓 보류(7/16)
 
-```json
-{
-  "alert_ref": "al_5521",                   // 백엔드 Alert ID
-  "signal_id": "0a1b2c3d-...",              // /detect가 반환한 signal_id
-  "verdict": "not_applicable"               // useful | not_applicable
-}
-```
+🕓 **보류(7/16) — 임계 캘리브레이션 재개 시 활성.** API·화면 버튼 모두 이번 범위에서 뺀다. `/detect` 응답의 `signal_id`는 향후 회신 대비 백엔드가 계속 저장한다. 상세는 `04_api_contract.md` §3.2.
 
 ---
 

@@ -99,7 +99,7 @@
 
 | 방식 | 대상 | 규칙 |
 | --- | --- | --- |
-| 동기 (≤2s) | `/classify` `/tags/suggest` `/detect`(야간이라 지연 무관) `/feedback` `/confirmations` | 타임아웃 10s |
+| 동기 (≤2s) | `/classify` `/tags/suggest` `/detect`(야간이라 지연 무관) `/confirmations` | 타임아웃 10s (`/feedback`은 7/16 보류 — §3.2) |
 | 비동기 (202) | `/drafts` `/imports` `/agents/*` `/labels/suggest` | 202 + `job_id` → **완료 통지는 Kafka 이벤트 (7/15 확정)** · `GET`은 상태 보조 조회로 유지 · 작업 총 5분 초과 시 failed |
 
 ### 2.5 사용량 한도 — 기능별 할당 + 일일 상한 `[제안]`
@@ -125,8 +125,7 @@
 
 | 엔드포인트 | 방식 | 언제 호출 | 돌려주는 것 |
 | --- | --- | --- | --- |
-| `POST /detect` | 동기 | 야간 배치 02:10 | 신호 TOP 3~5 + 근거 + 브리핑 문장 |
-| `POST /feedback` | 동기 | 강사가 경보 평가할 때마다 | ack (캘리브레이션 재료) |
+| `POST /detect` | 동기 | 야간 배치 02:10 | 신호 TOP 3~5 + display_label + lifecycle + 근거 + 브리핑 문장 |
 | `POST /confirmations` | 동기 | 태그·라벨·분류·초안수정 확정 시 | ack (품질 평가셋 재료) |
 | `POST /drafts` → `GET /drafts/{id}` | 202 | 문의 도착 즉시 · 리포트 주기 | 블록별 초안 + 근거 + 게이트 + status |
 | `POST /drafts/{id}/refine` | 202 | 채팅형 다듬기(자유 지시 · 핑퐁) | 지시 반영 리비전 — 매 턴 게이트 재통과, 1턴 = 초안 할당 1 |
@@ -141,22 +140,31 @@
 
 ### 3.1 `POST /v1/detect` — 야간 감지 `[Open-1: push 가정]`
 
+> **사양 원본: `docs/part_a/09_detect_spec.md`(AI 확정 · 백엔드 전달본).** 여기는 요약이며 필드 주석·저장 규칙·lifecycle 판정표(§4)는 그 문서가 원본이다. 아래 예시와 09가 어긋나면 09가 정답.
+
 | 방식 | 호출자 | 멱등 |
 | --- | --- | --- |
 | 동기 | 백엔드 배치 | `Idempotency-Key = tenant + week_start` |
 
-**Request** — 필드별 타입·필수 여부는 §4.1 표 참조 (주석은 JSON5 스타일 — 실제 전송 시 제거):
+**Request** — 필드별 타입·필수 여부는 §4.1 표 · 09 §2 참조 (주석은 JSON5 스타일 — 실제 전송 시 제거):
 
 ```json
 {
   "snapshot_meta": {
-    "week_start": "2026-07-06",          // 이 주차의 월요일 — 피처 계산 기준 키
-    "snapshot_hash": "sha256:...",       // 부록 A 규칙으로 백엔드가 산정 — 재현성·중복 방지 키
-    "term_context": "normal",            // normal | new_term | vacation — 신학기·방학 오경보 방지용 (백엔드 학사 설정이 원천)
+    "week_start": "2026-07-13",          // 이 주차의 월요일 — 피처 계산 기준 키
+    "snapshot_hash": "sha256:...",       // 부록 A 규칙으로 백엔드가 산정 — alert_context 포함해 해시
+    "term_context": "normal",            // normal | new_term | vacation — 신학기·방학 오경보 방지용
     "classes": [{ "class_ref": "cl_a1" }]  // 반 목록 — 경보 상한(반별 TOP 3~5) 계산에 필요
   },
-  "students":        [ { "...": "§4.1 students 표 참조" } ],        // 재원생 전체 (consent 포함)
-  "learning_events": [ { "...": "§4.1 learning_events 표 참조" } ]  // 지난 주차 증분만 — 전체 재전송 아님
+  "students":        [ { "...": "§4.1 · 09 §2 students 표 참조" } ],        // 재원생 전체 (consent 포함)
+  "learning_events": [ { "...": "§4.1 · 09 §2 learning_events 표 참조" } ], // 지난 주차 증분만
+  "alert_context":   [ {                 // ★(7/16 신설) 최근 30일 경보 이력 — lifecycle 판정 입력 (09 §2·§4)
+    "student_ref": "st_8f2a",
+    "signal_type": "hidden_risk",        // 09 §1의 6값 중 하나
+    "status": "open",                    // open | resolved
+    "resolved_at": null,                 // resolved일 때 해소 일시 — "해소 후 2주" 쿨다운 기준
+    "followed_up": false                 // 해소 후 팔로업 카드가 이미 나갔는지 (중복 방지)
+  } ]
 }
 ```
 
@@ -166,11 +174,14 @@
 {
   "data": {
     "signals": [{                        // 반별 TOP 3~5 상한 적용 후의 신호만
-      "signal_id": "uuid",               // 이후 /feedback 회신에 쓰는 키 — 백엔드가 Alert와 함께 저장 필요
+      "signal_id": "uuid",               // AI 신호 ID — Alert와 함께 저장(향후 강사 평가 회신 대비)
       "student_ref": "st_8f2a",
-      "rule_id": "R4",                   // R1~R6 — 어떤 규칙이 발화했는지
-      "signal_type": "hidden_risk",
-      "score": 0.78, "rank": 2,          // rank = 반 내 우선순위 (브리핑 정렬용)
+      "class_ref": "cl_a1",
+      "rule_id": "R4",                   // R1~R6 — 내부 규칙 번호(로그용, 화면 미노출)
+      "signal_type": "hidden_risk",      // 09 §1의 6값
+      "display_label": "숨은 위기",        // ★(7/16 신설) 화면에 그대로 쓸 한글 문구(AI 확정) — 09 §1 표
+      "score": 0.78, "rank": 2,          // score는 로그용(화면 미노출) · rank = 반 내 우선순위
+      "lifecycle": "new",                // ★(7/16 신설) new | ongoing | follow_up — AI 경보 생애 판정(09 §4)
       "brief": {                         // 브리핑에 바로 실을 한 줄 문장 (LLM 생성 + 왜곡 게이트 통과분)
         "text": "비문학 지문을 붙잡는 시간이 3주째 늘고 있어요 — 정답률은 아직 버티는 중이에요.",
         "gate_passed": true,
@@ -182,30 +193,24 @@
         "summary": "7/3 숙제 지연 제출"
       }]
     }],
-    "observed_only": ["st_c3d1"],        // 데이터 2주 미만 → 판단 보류 학생 ("관찰 중" 뱃지용 — 경보 아님)
-    "stats": { "students_evaluated": 58, "signals_raised": 3, "capped_out": 2 }  // capped_out = 상한에 밀린 후보 수
+    "stats": {                           // 운영 지표(로그용, 화면 미노출)
+      "students_evaluated": 58,
+      "signals_raised": 3,
+      "excluded_under_2w": 4,            // ★(7/16) 재원 2주 미만 제외 수 — 구 observed_only 목록을 숫자로 대체
+      "capped_out": 2,                   // 상한에 밀린 후보 수
+      "rules_skipped": [{ "rule_id": "R4", "reason": "duration_missing", "students": 5 }]
+    }
   }
 }
 ```
 
-**규약:** evidence 빈 신호는 스키마상 불가 · `observed_only` = 데이터 2주 미만(경보 제외) · **Alert 생성·상태 관리는 백엔드 소유** — AI는 신호 산출까지.
+**규약:** evidence 빈 신호는 스키마상 불가 · **`observed_only` 목록은 제거(7/16)** — AI는 `stats.excluded_under_2w` 숫자만 내고, "관찰 중"(재원 14일 미만) 표시는 백엔드가 `enrolled_at`으로 직접 계산(09 §3) · **lifecycle 판정은 AI 소유**(09 §4 · 쿨다운 2주) · **Alert 생성·상태 관리는 백엔드 소유** — AI는 신호 산출까지.
 
 ---
 
-### 3.2 `POST /v1/feedback` — 경보 평가 회신 `[제안]`
+### 3.2 `POST /v1/feedback` — 경보 평가 회신 `🕓 보류(7/16)`
 
-```json
-// Request — 강사가 브리핑에서 경보 평가 버튼을 누를 때마다 즉시 호출
-{
-  "alert_ref": "al_5521",       // 백엔드 Alert ID (백엔드 소유 개념)
-  "signal_id": "uuid",          // /detect 응답의 signal_id — 둘을 함께 보내야 매칭 가능
-  "verdict": "not_applicable"   // useful | not_applicable
-}
-// Response 200
-{ "data": { "accepted": true } }
-```
-
-'해당 없음' 비율 30% 초과 시 임계값 보수화 제안이 A(운영자)에게 감 — 자동 변경 없음. 백엔드는 그냥 회신만 하면 된다.
+🕓 **보류(7/16) — 임계 캘리브레이션 재개 시 활성.** API·화면 버튼 모두 이번 범위에서 뺀다. 단 `/detect` 응답의 `signal_id`는 향후 회신 대비해 백엔드가 계속 저장한다(09 §3). 보류 기간의 오경보 보정은 threshold 시트 §5 섀도 모드 수동 리뷰가 대신한다.
 
 ### 3.3 `POST /v1/confirmations` — 제안 확정 회신 `[Open-7: 분리 제안]`
 
@@ -514,7 +519,8 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 sha256( canonical_json({
   snapshot_meta: { week_start, term_context },
   students:        sorted by student_ref,
-  learning_events: sorted by record_id
+  learning_events: sorted by record_id,
+  alert_context:   sorted by (student_ref, signal_type)   // (7/16) lifecycle 입력이라 해시 대상에 포함
 }) )
 ```
 

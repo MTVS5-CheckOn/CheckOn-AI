@@ -46,6 +46,7 @@
 | `06_refine_policy.md` | 핑퐁 다듬기 정책 | ✅ §5도 확정(집행=백엔드) |
 | `07_report_spec.md` | 리포트 사양 — 노출 3층 · 벌크=Kafka 일괄 | 🟠 Open-9 출처만 잔여 |
 | `08_evaluation_plan.md` | 평가 계획 — golden/ 구성 (tagging 정답 라벨만 [A+B]) | ✅ |
+| `09_detect_spec.md` | 감지 API 명세 — alert_context·lifecycle·display_label·excluded_under_2w (`/detect` 요청/응답 원본) | ✅ AI 확정 — 백엔드 전달본 |
 
 ## 저장소 밖 (노션/드라이브)
 
