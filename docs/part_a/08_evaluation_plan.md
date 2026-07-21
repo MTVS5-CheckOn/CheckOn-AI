@@ -37,7 +37,7 @@ golden/
 | G11 | 경계값(R1 drop 정확히 15.0%p) | R1 발화 | ≥ 판정 명세화 |
 | G12 | 복합(R1+R2+R4 동시) | **경보 1건**에 신호 3개 병합, score=max | 병합·상한 |
 
-추가 검증(시나리오 횡단): 데이터 2주 미만 학생 → 어느 규칙도 미발화 + `observed_only` 목록 포함 · TOP 3~5 상한 · evidence의 record_id가 입력 스냅숏에 전부 실존.
+추가 검증(시나리오 횡단): 데이터 2주 미만 학생 → 어느 규칙도 미발화 + **`signals` 배열에 미포함 + `stats.excluded_under_2w`에 집계**(7/16 — 구 `observed_only` 목록 제거, 명세 09 §3) · TOP 3~5 상한 · evidence의 record_id가 입력 스냅숏에 전부 실존.
 
 ## 3. 라벨 24조합 프롬프트 스냅숏 (`tone/`)
 
