@@ -245,3 +245,7 @@ AI는 재원 2주 미만 학생을 판정에서 조용히 제외하고, **목록
 | 해소 후 2주 이내 + 팔로업 이미 나감 | (응답에서 제외) | 없음 — 브리핑에 안 뜸 |
 | 해소 후 2주 지나서 같은 유형 재발 | `new` | 새 Alert 생성 |
 | 이력 없음 또는 다른 유형 | `new` | 새 Alert 생성 — 다른 문제는 쿨다운 없이 바로 알림 |
+
+---
+
+**실물 예시:** `examples/detect_demo_request.json`(학생 10명×10주) → `examples/detect_demo_response.json`(6규칙 발화·`ongoing` 포함). 재생성: `python -m ai.evaluation.demo_snapshot`
