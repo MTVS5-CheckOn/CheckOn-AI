@@ -4,7 +4,7 @@
 
 > ****7/15 회의 확정 반영:** 비동기 완료 통지 Kafka(Open-2) · 월별 리포트 일괄 1회(BE-5) · item_format v1=mcq만(Open-11) · 쿼터는 AI 무관(BE-4) — 상세는 04_api_contract·99_open_items.
 
-v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[Open-11]` A+B 합의 전 잠정) ② `/drafts` kind에 리포트 2종 구분(월별 일괄 / 단건 수시) ③ 리포트 요청에 `benchmarks` 추가(노출 3층 — teacher_only는 학부모向 컨텍스트에서 구조적 제외)
+v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[Open-11]` 확정 7/15 · v1=mcq만) ② `/drafts` kind에 리포트 2종 구분(월별 일괄 / 단건 수시) ③ 리포트 요청에 `benchmarks` 추가(노출 3층 — teacher_only는 학부모向 컨텍스트에서 구조적 제외)
 
 ---
 
@@ -39,30 +39,33 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
       "correct": false,                     // solve만
       "duration_sec": 183,                  // solve만, 없으면 null (R4 미적용)
       "passage_word_count": 812,            // 지문형 문항만 — 어절 정규화용
-      "area_tag": "reading",                // 있으면 — 수능 기준: reading(독서) | literature(문학) | speech(화법) | writing(작문) | language(언어/문법) | media(매체) ⚠ Open-11(A+B 합의 전 잠정)
+      "area_tag": "reading",                // 있으면 — 수능 기준: reading(독서) | literature(문학) | speech(화법) | writing(작문) | language(언어/문법) | media(매체) — Open-11 확정(7/15)
       "subject_track": "common",            // 있으면: common(공통) | elective(선택과목) — 수능 공통/선택 메타
       "type_tag": "infer",                  // 있으면: fact | infer | critic | concept
       "item_format": "mcq",                 // 있으면: mcq(객관식) | short(단답) | essay(서술형) — R6·약점 지도가 형식별로 분리 집계
       "assignment_title_text": "6월 모의고사 비문학 대비 #3",   // ⚠ Open-4b: 태깅 제안 입력
       "source": "trackB"                    // trackA | trackB | studentHome
     }
+  ],
+  "alert_context": [                        // ★(7/16 신설) 최근 30일 경보 이력 — lifecycle 판정 입력 (명세 09 §2·§4)
+    {
+      "student_ref": "st_8f2a",
+      "signal_type": "hidden_risk",         // 명세 09 §1의 6값
+      "status": "open",                     // open | resolved
+      "resolved_at": null,                  // resolved일 때 해소 일시 — "해소 후 2주" 쿨다운 기준
+      "followed_up": false                  // 해소 후 팔로업 카드가 이미 나갔는지 (중복 방지)
+    }
   ]
 }
 ```
 
-→ 응답: 신호 목록(evidence·브리핑 문장 포함) + observed_only + stats
+→ 응답: 신호 목록(evidence·브리핑 문장 + display_label·lifecycle 포함) + stats. **observed_only 목록은 제거(7/16)** — `stats.excluded_under_2w` 숫자만. 상세는 명세 `docs/part_a/09_detect_spec.md` §3.
 
 ---
 
-## 2. `POST /v1/feedback` — 경보 평가 회신 (강사가 누를 때마다)
+## 2. `POST /v1/feedback` — 경보 평가 회신 🕓 보류(7/16)
 
-```json
-{
-  "alert_ref": "al_5521",                   // 백엔드 Alert ID
-  "signal_id": "0a1b2c3d-...",              // /detect가 반환한 signal_id
-  "verdict": "not_applicable"               // useful | not_applicable
-}
-```
+🕓 **보류(7/16) — 임계 캘리브레이션 재개 시 활성.** API·화면 버튼 모두 이번 범위에서 뺀다. `/detect` 응답의 `signal_id`는 향후 회신 대비 백엔드가 계속 저장한다. 상세는 `04_api_contract.md` §3.2.
 
 ---
 

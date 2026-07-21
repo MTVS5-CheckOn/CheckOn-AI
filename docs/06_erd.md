@@ -124,6 +124,8 @@ erDiagram
     varchar student_ref
     varchar rule_id
     varchar signal_type
+    varchar display_label "화면 표시 한글 문구(AI 확정) — 09 §1"
+    varchar lifecycle "new|ongoing|follow_up — AI 경보 생애 판정, 09 §4"
     numeric score
     int rank "상한 적용 후"
     timestamptz created_at
@@ -138,7 +140,7 @@ erDiagram
     uuid llm_call_id FK
   }
   RULE_FEEDBACK {
-    uuid id PK
+    uuid id PK "예약(7/16 보류) — /feedback 보류로 미적재, 캘리브레이션 재개 시 활성"
     varchar tenant_id
     varchar rule_id
     varchar alert_ref "백엔드 Alert ID(논리)"
@@ -286,7 +288,7 @@ erDiagram
     varchar tenant_id
     varchar source_text_hash "과제명 해시 = 캐시 키(재호출 방지)"
     varchar source_kind "trackA_upload|trackB_grading"
-    varchar area_tag "수능 기준 개정 제안: reading|literature|speech|writing|language|media (Open-11·A+B 합의)"
+    varchar area_tag "수능 6영역: reading|literature|speech|writing|language|media (Open-11 확정 7/15)"
     varchar type_tag "fact|infer|critic|concept + item_format(mcq|short|essay) 병행"
     numeric confidence
     varchar status "suggested|confirmed|rejected"

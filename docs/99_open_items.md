@@ -10,6 +10,11 @@
 7. **Open-1·3·4a~4d·5~8·10 ✅ 일괄 합의** — 전부 A 제안대로(push · 스토리지 URL · 주차 분할 백필 · **과제명 제공 OK(태깅 기능 생존)** · AI 자체 요약 · 10건/90일+1차 마스킹 · 표준 인증·snake_case·분리·배치 02:00→02:10→03:30 · 게이트 우선). Open-9는 "모수 미달 시 차트 생략"만 합의, 출처는 잔여
 8. **타겟 협소화 ✅** — "중·고등 국어"가 아니라 **수능 대비 국어 학원(고등) 기준으로 시작.** 중등·내신 대비는 고도화 로드맵(README·CLAUDE·overview·taxonomy 반영 완료). v1 코드에 중등 분기 금지
 
+## ★ 7/16 감지 응답 명세 확정 (`docs/part_a/09_detect_spec.md` — 백엔드 전달본)
+9. **alert_context·lifecycle 신설 ✅** — `/detect` 요청에 `alert_context[]`(최근 30일 경보 이력) 신설, 응답 `signals[]`에 `lifecycle`(new·ongoing·follow_up)·`display_label` 신설. **경보 생애 판정(쿨다운 2주)을 AI가 소유**(09 §4). 반영: 04 §3.1·부록A · 05 §1 · 06_erd SIGNAL · `contracts/detection.py`
+10. **observed_only 제거 ✅** — 응답에서 판단 보류 학생 목록 제거, `stats.excluded_under_2w` 숫자만. "관찰 중" 기준(재원 14일 미만)은 09 §3으로 고정, 표시는 백엔드 자체 계산. 반영: 04 §3.1 · 05 §1 · 03_usecases D1
+11. **`/feedback` 보류 ✅(7/16)** — API·화면 버튼 모두 뺌(임계 캘리브레이션 재개 시 활성). `signal_id`는 향후 대비 저장 유지. 보류 기간 보정은 threshold 시트 §5 섀도 모드 수동 리뷰. 반영: 04 §3.0·§3.2 · 05 §2 · 03_usecases D3 · 04_threshold §4 · 06_erd RULE_FEEDBACK(예약)
+
 > 규칙: 안건이 닫히면 ① 이 표의 상태를 ✅로 ② 관련 문서의 `[제안]`/`TODO(Open-n)` 제거 ③ 계약 문서는 버전 승격. **닫히기 전에는 잠정값으로 개발하되 코드에 `# TODO(Open-n)` 주석 필수.**
 
 ## A. 계약 Open 안건 (백엔드 리뷰 미팅에서 일괄 — `04_api_contract.md` §1)

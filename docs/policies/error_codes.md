@@ -49,9 +49,10 @@
 
 | 필드 | 뜻 | 문구 |
 | --- | --- | --- |
-| `observed_only[]` | 데이터 2주 미만 — 판단 보류 학생 목록 | "관찰 중" 뱃지(경보 아님) |
 | `rule_skipped[]` | 규칙별 미적용 사유 — `{rule: "R4", reason: "duration_missing"}` `{rule: "R6", reason: "tagging_below_60pct"}` | 강사 노출 없음 — 운영 대시보드만 |
 | `shadow: true` | 섀도 모드 실행분 | 브리핑 미발송 |
+
+> **(7/16) `observed_only[]` 제거.** "관찰 중"(재원 14일 미만) 표시는 백엔드가 `enrolled_at`으로 자체 계산한다(명세 `part_a/09_detect_spec.md` §3 관찰 중 처리) — AI 응답은 학생 목록을 돌려주지 않고 `stats.excluded_under_2w` 숫자만 낸다.
 
 ### 2.4 Import (`GET /v1/imports/{job_id}`)
 

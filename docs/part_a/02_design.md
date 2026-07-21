@@ -33,7 +33,7 @@ flowchart LR
   RK --> OUT["Signal + EvidenceBundle<br/>PG 저장 → 백엔드 반환<br/>(Alert 생성은 백엔드)"]
   OUT -.->|"v2: 확정 신호를 입력으로"| BRF["ⓐ 브리핑 문장화 (1-D)<br/>LLM 한 줄 + 왜곡 게이트<br/>실패 시 템플릿 폴백"]
   TH["thresholds.py<br/>강사별 임계값 vN"] -.-> RU
-  FBK["rule_feedback<br/>(해당 없음 비율)"] -.->|"30% 초과 시 보수화 제안<br/>운영자 승인 후 vN+1"| TH
+  FBNOTE["※ 피드백 루프 보류(7/16)<br/>/feedback API·화면 버튼 v1 제외<br/>signal_id 저장·RULE_FEEDBACK 예약 (명세 09)"]
 ```
 
 **불변식:** evidence 빈 신호는 `EmptyEvidenceError` · 데이터 2주 미만 제외(관찰 중) · 임계값 변경은 버전으로만. **문장화(ⓐ)는 detection 밖의 소비 기능** — detection 코드는 v2에서도 무변경·LLM 0.
@@ -158,7 +158,7 @@ sequenceDiagram
   end
   API-->>BE: 신호 목록 + 브리핑 문장 반환
   BE->>BE: Alert 생성 (MySQL) — 상태 관리는 백엔드
-  Note over BE: 피드백('해당 없음')은 POST /feedback → rule_feedback
+  Note over BE: 피드백 루프 보류(7/16) — /feedback API·화면 버튼 v1 제외 · signal_id 저장·RULE_FEEDBACK 예약 (명세 09)
 ```
 
 ### 2-B. 학부모 답변 초안 — 분류 연결 (v2 갱신)
@@ -242,8 +242,7 @@ sequenceDiagram
   participant DET as ai/detection
   participant OP as 운영자 (member-A)
   participant PG as AI PostgreSQL
-  BE->>API: POST /feedback (alert_ref, verdict)
-  API->>PG: rule_feedback 적재
+  Note over BE,PG: 피드백 루프 보류(7/16) — /feedback API·화면 버튼 v1 제외 · signal_id 저장·RULE_FEEDBACK 테이블 예약 (명세 09). 아래는 캘리브레이션 재개 시의 흐름
   Note over DET: 주간 배치 — 규칙별 '해당 없음' 비율
   alt 30% 초과 규칙 존재
     DET-->>OP: 보수화 제안 (diff+근거 통계)
@@ -587,7 +586,7 @@ erDiagram
     varchar tenant_id
     varchar source_text_hash "과제명 해시 = 캐시 키(재호출 방지)"
     varchar source_kind "trackA_upload|trackB_grading"
-    varchar area_tag "수능 기준 제안: reading|literature|speech|writing|language|media (Open-11)"
+    varchar area_tag "수능 6영역: reading|literature|speech|writing|language|media (Open-11 확정 7/15)"
     varchar type_tag "fact|infer|critic|concept + item_format(mcq|short|essay)"
     numeric confidence
     varchar status "suggested|confirmed|rejected"
