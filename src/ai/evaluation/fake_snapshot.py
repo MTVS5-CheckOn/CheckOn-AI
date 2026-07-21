@@ -128,6 +128,14 @@ class StudentPlan:
     bias_accuracy: float = 0.35
     """편중 셀의 낮은 정답률 (bias가 있을 때만)."""
 
+    events_despite_exclusion: bool = False
+    """True면 무동의·paused 학생에게도 learning_events를 생성한다.
+
+    09 §2는 "consent≠granted면 이벤트가 **와도** 버린다"는 AI 방어 규칙을 둔다 —
+    즉 백엔드가 못 거른 경우를 조립해 엔진의 제외 처리(폐기)를 테스트할 수 있어야 한다.
+    기본값 False는 현실 스냅숏(백엔드가 걸러 보냄)을 따른다.
+    """
+
 
 def _per_week_float(value: float | tuple[float, ...], weeks: int) -> tuple[float, ...]:
     if isinstance(value, tuple):
@@ -328,9 +336,11 @@ def build_detect_request(
                 "consent": plan.consent,
             }
         )
-        # 무동의·휴원 학생도 학생 목록에는 오되, 이벤트는 정책상 백엔드가 걸러 보내므로
-        # 여기서는 재원+동의 학생만 이벤트를 만든다(스냅숏 현실성).
-        if plan.status is StudentStatus.PAUSED or plan.consent != "granted":
+        # 무동의·휴원 학생은 기본적으로 이벤트를 만들지 않는다(백엔드가 걸러 보냄).
+        # events_despite_exclusion=True면 "백엔드가 못 거른 경우"를 조립한다 — 엔진의
+        # 제외 방어를 테스트하기 위한 명시적 경로 (09 §2).
+        excluded = plan.status is StudentStatus.PAUSED or plan.consent != "granted"
+        if excluded and not plan.events_despite_exclusion:
             continue
         learning_events.extend(_solve_events(plan, week_monday, rng, next_id))
 
