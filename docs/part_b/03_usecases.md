@@ -3,6 +3,7 @@
 > **지위:** member-B 공식 유스케이스 v1. part_a/03_usecases의 형식(상황→흐름→**검증하는 것**→테스트 매핑)만 차용 — 내용은 B의 진단·출제·수정 흐름. 각 시나리오는 [`08_evaluation_plan.md`](08_evaluation_plan.md)의 골든셋·failure 테스트와 1:1 매핑된다.
 >
 > **변경 이력**
+> - v1.1 (2026-07-15): U1에 충돌 event_id 입력 실패 사례 추가(04 §3.2 확정 규칙 대응).
 > - v1 (2026-07-15): 신규 작성. 입력: `CODEXPROMPT/(염준영)_출제스튜디오_Step3_검증라벨_핑퐁수정_요구사항_v0.md` + 7/15·대화 확정 결정(재시도 총 3회 · 정렬 판정 · 수동 목표 허용 · 직접 수정 재검증 · 수동 예외 불허 · 낙관적 잠금 · 조기 중단 · refine MVP).
 
 ---
@@ -19,7 +20,9 @@
 4. Kafka `problem_set.completed` → Step 3 화면에 검증 라벨 표시.
 5. 강사 선별·승인 ✋ 전까지 학생 노출 0.
 
-**검증하는 것:** 동일 스냅숏·버전 재실행 시 바이트 동일(재현성). 근거 없는 verdict 저장 실패. 멱등키 재요청 시 중복 생성 0.
+**검증하는 것:** 동일 스냅숏·버전 재실행 시 바이트 동일(재현성 — 이벤트 입력 순서를 섞어도 동일, event_id 정렬 집계). 근거 없는 verdict 저장 실패. 멱등키 재요청 시 중복 생성 0.
+
+**실패 사례 — 충돌 event_id 입력:** 스냅숏에 동일 `event_id`인데 필드가 하나라도 다른 이벤트 쌍이 섞여 오면, 임의 선택하지 않고 `DiagnosisInputConflictError`로 **전체 진단 중단**(부분 데이터로 약점 결과 생성 금지 — 04 §3.2 확정). API 경계에서는 기존 `SnapshotInvalid → 400 INVALID_SCHEMA` 매핑 — 게이트 거부(200 정상 상태)가 아니라 입력 데이터 결함이다. 완전 동일 재수신은 1건으로 처리하고 정상 진행.
 
 ### 시나리오 U2 — 데이터 부족: 자동 개인화 거부 → 수동 목표 출제 (확정)
 
@@ -162,7 +165,7 @@
 
 | 시나리오 | 테스트 |
 | --- | --- |
-| U1 | golden/diagnosis(결정론·바이트 동일) · integration/멱등 · contract/근거 필수 |
+| U1 | golden/diagnosis(결정론·바이트 동일·순서 셔플) · failure/충돌 event_id 진단 중단 · integration/멱등 · contract/근거 필수 |
 | U2 | contract/rejected_insufficient · contract/manual 비개인화 표기 · gates/부족 판정 |
 | U3 | failure/기준 자료 장애 → 발행 차단 · failure/연속 검증 불능 조기 중단 |
 | U4 | golden/problems·alignment(의미 불일치·confidence 경계) · unit/공통 예산 소모 |

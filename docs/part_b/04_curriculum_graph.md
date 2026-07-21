@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 사양 v1. `src/ai/diagnosis/`(skill_graph.py · diagnoser.py)와 `diagnosis/data/curriculum_graph.yaml`의 사양 원본. 영역 어휘는 `contracts/taxonomy.py` 준수 — **6영역 enum은 7/15 확정**, 경계 사례 7건 판정(B-3 잔여)만 남음.
 >
 > **변경 이력**
+> - v1.2 (2026-07-15): 구현 착수 전 규칙 3건 확정 — ① 중복 이벤트: 완전 동일 재수신만 dedupe, 필드 상이 시 진단 중단(§3.2) ② 노드 severity 정의: suspect=연결 weak 셀 최댓값·weak_confirmed=직접 재계산+직접 weak 기준 명시(§5.1~§5.2) ③ overall_low 분모=판정 가능 셀(§4).
 > - v1.1 (2026-07-15): 파일 번호 이동(02→04) + 7/15 반영 — 6영역 확정 표기, 중등은 v1 범위 아님(타겟 협소화), 데이터 부족 시 수동 목표 출제 분기 연결. 상호 링크 재편.
 > - v1 (2026-07-15): 입력 초안 `CODEXPROMPT/(염준영)_curriculum_graph_사양서_v0.md` 정리 — 진단 입력 계약·중복/재처리 규칙·severity 공식·suspect 제한·병합 예제·버전 필드 추가.
 >
@@ -57,7 +58,8 @@ class DiagnosisEvent(BaseModel):
 
 ### 3.2 중복·재처리 규칙
 
-- **중복 이벤트:** `event_id` 기준 dedupe — 동일 ID 재수신은 1건 처리(먼저 온 것 유지, 불일치 시 오류 기록).
+- **중복 이벤트(확정):** **완전 동일 재수신만 dedupe** — 동일 `event_id`이고 전 필드가 동등(frozen 모델 동등성)한 이벤트만 1건으로 처리한다. 동일 `event_id`인데 **필드가 하나라도 다르면 임의 선택 없이 `DiagnosisInputConflictError`로 전체 진단을 중단**한다 — 일부 데이터만으로 약점 결과를 만들지 않는다(fail-closed). 이 예외는 diagnosis 내부 예외이며 **공용 에러 코드를 신설하지 않는다** — API 경계에서는 기존 `SnapshotInvalid → 400 INVALID_SCHEMA` 매핑(error_codes §4)을 따른다(게이트 거부의 200 정상 상태가 아님 — 입력 데이터 결함).
+- **집계 순서(확정):** 정상 이벤트는 `event_id` 기준 정렬 후 집계 — 입력 배열 순서가 달라도 동일 결과 보장(event_id는 유일 키라 총순서 성립).
 - **동일 스냅숏 재처리:** `(tenant_id, student_ref, graph_version, config_version, snapshot_hash)`가 같으면 기존 WeaknessMap 반환(재계산해도 바이트 동일 — 결정론 회귀 기준). 하나라도 다르면 새 버전 생성, 이전 버전 보존.
 - **미확정 태그:** `tag_confirmed=false` 이벤트는 집계 제외 — A의 "미확정 태그 피처 미반영"과 대칭.
 
@@ -79,7 +81,15 @@ class DiagnosisEvent(BaseModel):
 | `ok` | 그 외 |
 
 - **`cell_min_items` 공급 키:** 감지 R6과 **동일 값 참조** — `part_a/04_threshold_config.md` R6 행의 `cell_min_items`(v0 기본 10). B 임의 값 별도 운영 금지. 진단 전용 파라미터는 [`06_quality_gates.md`](06_quality_gates.md) 부록 'B 기본값 시트'의 `config_version`으로 관리.
-- 절대 컷을 쓰지 않는 이유: 상위권의 "상대적 구멍"과 하위권의 "전면 부진"을 같은 자로 재면 출제 타겟이 왜곡된다. 전면 부진(전 셀 weak)은 `overall_low` 플래그로 분리 — 역추적 대신 기초 레벨(level 1 / DAG 루트) 우선 출제 권고.
+- 절대 컷을 쓰지 않는 이유: 상위권의 "상대적 구멍"과 하위권의 "전면 부진"을 같은 자로 재면 출제 타겟이 왜곡된다.
+- **`overall_low` 판정(확정 — 분모는 판정 가능 셀만, `unknown` 제외):** ① 판정 가능 셀(weak/ok) 0개 → `rejected_insufficient`(§3.4) ② 판정 가능 셀 **1개 이상이고 전부 weak** → `overall_low=True` `[잠정 — 파일럿 재평가: 판정 가능 셀이 극소수일 때의 과잉 판정 여부]` ③ 하나라도 ok → `overall_low=False`. unknown까지 분모에 넣으면 표본이 조금 부족한 셀 하나 때문에 전면 부진 플래그가 막히는 문제를 피한다. overall_low 시 역추적 대신 기초 레벨(level 1 / DAG 루트) 우선 출제 권고 — 플래그만 산출하고 권고 적용은 소비자 몫.
+
+```
+cell_delta_pp = (cell_acc − student_overall_acc) × 100   # %p 단위 — 비율(acc)에 100을 곱해 스케일을 맞춘다
+weak ⟺ n ≥ cell_min_items AND cell_delta_pp ≤ relative_cut_pp   # relative_cut_pp=−15 → "−15%p 이하"
+```
+
+§4.1의 `gap`(비율, severity 전용)과 위 `cell_delta_pp`(%p, 판정 전용)는 서로 다른 변수다 — 혼동 금지.
 
 ### 4.1 severity 공식 `[잠정]`
 
@@ -96,6 +106,8 @@ severity = min(1.0, gap / 0.30)                            # 30%p 결손에서 �
 
 각 노드는 `(area_tag, type_affinity)` 조합으로 셀에 귀속. 귀속 셀 중 하나라도 `weak`면 노드는 **`suspect`**(용의 상태 — 현 해상도로 확정 불가함을 정직하게 표기).
 
+**suspect severity(확정):** 노드가 여러 weak 셀에 연결되면 `node_severity = 연결된 weak 셀 severity의 최댓값` — 평균을 쓰면 강한 약점이 정상 인접 셀에 희석되므로 최댓값을 쓴다.
+
 **suspect 사용 제한(불변식):**
 - 화면에 "약점"으로 확정 표시 금지(verdict 그대로 전달, 표시 구분은 프론트).
 - 확정 약점 기반 출제 근거로 사용 금지 — 유일한 용도는 **탐색 출제**(§7 우선순위 3, `diagnostic_purpose` 플래그 필수·승인율 분리 집계).
@@ -103,6 +115,12 @@ severity = min(1.0, gap / 0.30)                            # 30%p 결손에서 �
 ### 5.2 직접 매핑 — `weak_confirmed`
 
 `skill_node_id` 보유 제출분은 노드 단위 직접 집계 — `n ≥ node_min_items`(기본 6 `[잠정]`)부터 `suspect`를 `weak_confirmed`/`ok`로 승격·해소.
+
+**직접 판정 기준·severity(확정 — 셀과 동일 규칙):**
+- weak 판정: `node_delta_pp = (node_acc − student_overall_acc) × 100`이 `relative_cut_pp` 이하(node_delta_pp > relative_cut_pp면 weak 아님) — 셀 판정(§4)과 동일한 상대 기준·동일 단위(%p).
+- `weak_confirmed`의 severity는 **비율 gap으로 재계산**: `node_ratio_gap = max(0, student_overall_acc − node_acc)`, `node_severity = min(1.0, node_ratio_gap / severity_saturation)` — §4.1의 셀 severity 공식과 동일한 스케일(0~1 비율)이며, 판정에 쓰는 `node_delta_pp`(%p)와는 별개 값이다. 직접 데이터가 충분하면 간접(suspect) severity를 대체한다(직접 > 간접).
+- 직접 `ok`: 역전파의 **출발점에서 제외**하고, 다른 노드로부터의 **유입 추정도 기각**한다 — 직접 관측이 추정보다 우선.
+- 직접 표본 부족(`n < node_min_items`): 직접 severity를 만들지 않는다 — 간접 suspect가 있으면 간접 verdict·severity 유지, 간접 근거도 없으면 노드 결과를 만들지 않는다.
 
 ### 5.3 직접·간접 병합 규칙 (직접 > 간접)
 
@@ -119,12 +137,13 @@ severity = min(1.0, gap / 0.30)                            # 30%p 결손에서 �
 ### 5.4 역전파 (root cause 후보)
 
 ```
-for node in weak_confirmed ∪ suspect (위상 역순):
+for node in weak_confirmed ∪ suspect (위상 역순):   # 직접 ok 노드는 집합에서 제외 — 출발점 불가
     for prereq in node.requires_parents:      # builds_on 포함 · related 제외
         prereq.propagated_score += node.severity × edge.weight × decay
+        # node.severity: suspect = 연결 weak 셀 최댓값(§5.1) · weak_confirmed = 직접 재계산(§5.2)
         # decay = 0.7^거리 [잠정] · suspect 출발은 간접 감쇠 0.5 [잠정] 추가
 propagated_score ≥ 0.5 [잠정] → prereq를 root_candidate로 표기
-단, prereq가 직접 데이터로 ok 확정이면 전파 무시 (데이터 > 추정)
+단, prereq가 직접 데이터로 ok 확정이면 유입 전파 기각 (데이터 > 추정 — §5.2)
 ```
 
 **불변식:** ① 전파는 `requires`·`builds_on` **역방향만**(순방향 금지 — 선수가 약하다고 후행을 확정하지 않는다) ② `unknown`은 전파 출발점 불가(추정 위에 추정 금지) ③ 모든 verdict에 근거 셀/문항 참조 동반(공용 EvidenceRef).
@@ -145,6 +164,8 @@ propagated_score ≥ 0.5 [잠정] → prereq를 root_candidate로 표기
 ```
 
 버전 3종(graph·taxonomy·config)과 snapshot_hash는 행 컬럼으로도 저장(재현 조회 키 — §3.2).
+
+**taxonomy_version 정본 규칙:** 실행 단위의 정본은 `ExecutionContext.versions.taxonomy_version`이다. `WeaknessMap.taxonomy_version`은 진단 산출 당시 실행 버전의 **에코**이며, 같은 실행에서 두 값은 반드시 같아야 한다. 불일치는 **워크플로 입력 조립 단계에서 결정론적으로 거부**한다 — 임의 보정·최신 버전 자동 변환 금지. 이 규칙은 개별 Pydantic 모델이 아니라 워크플로 구현이 강제한다(출제 측 대응 규칙은 [`05_problem_generation.md`](05_problem_generation.md) §4.1).
 
 ## 6. YAML 스키마
 
