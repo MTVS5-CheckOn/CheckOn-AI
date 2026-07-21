@@ -1,10 +1,14 @@
-# [체크온] AI PostgreSQL 전체 ERD v2 — member-A (v1 17테이블 + v2 증분 6테이블 통합)
+# [체크온] AI PostgreSQL 전체 ERD v2 — [PART_A] 소유 · [PART_A+PART_B] 공용 계약 확장 반영
 
 원칙(변경 없음): AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본(학생·학습 기록·Alert 상태·문의 원문·Draft 승인)은 백엔드 MySQL 소유 — `…_ref`는 전부 MySQL을 가리키는 **논리 참조**(물리 FK 아님). 전 테이블 `tenant_id` 필수 + RLS.
 
 v2 추가분: `AGENT_RUN` `AGENT_STEP`(LangGraph 에이전트 2종) · `SIGNAL_BRIEF`(ⓐ) · `INQUIRY_CLASS`(ⓑ) · `TAG_SUGGESTION`(ⓒ) · `LABEL_SUGGESTION`(ⓓ)
 
-**(7/15) `AI_RUN` 버전 세트를 6종으로 통일** — `pipeline` · `engine` · `threshold` · `prompt` · `schema` · `contract`. 이 문서와 계약서 §2.2가 각각 4종씩 **서로 다르게** 적고 있었다(이 문서=prompt·schema 포함 / §2.2=threshold·contract 포함). 합집합으로 맞추고 양쪽 문서와 `contracts/execution.py`를 함께 개정했다. `threshold_version`은 감지 임계값 시트(`threshold_config`)의 버전으로 **detection 실행에만 의미가 있어 nullable** — 이 값이 없으면 과거 경보를 재현할 수 없다(CLAUDE.md 불변식 8).
+**`AI_RUN` 버전 세트:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이다. 공통 6종(`pipeline` · `engine` · `threshold` · `prompt` · `schema` · `contract`)과 [PART_B] 실행 전용 nullable 4종(`graph` · `taxonomy` · `verify_config` · `difficulty_calib`)으로 구성되며, **버전 컬럼은 총 10개**다. 실행 식별자·모델 정보·재현성 키·생성 시각까지 포함한 `AI_RUN` 전체 컬럼은 **총 18개**다.
+
+`threshold_version`은 감지 임계값 시트(`threshold_config`) 버전으로 `detection` 실행에만 의미가 있고, 그 외 실행에서는 null이다. 이 값이 없으면 과거 경보를 재현할 수 없다(CLAUDE.md 불변식 8).
+
+**공용 enum 소유 구분:** `AI_RUN.capability`의 `detection`·`composition`·`import_mapping`은 [PART_A], `diagnosis`·`problem_generation`은 [PART_B]다. `GATE_RESULT`의 `problem_set`과 `RuleValidation`·`BlindCrossSolve`·`ReleaseDecision`은 [PART_B] 출제 검증에서 사용한다.
 
 ```mermaid
 erDiagram
@@ -39,13 +43,17 @@ erDiagram
   AI_RUN {
     uuid execution_id PK
     varchar tenant_id "teacher alias · RLS 키"
-    varchar capability "detection|composition|import_mapping"
+    varchar capability "detection|composition|import_mapping|diagnosis|problem_generation"
     varchar pipeline_version
     varchar engine_version
     varchar threshold_version "감지 임계값 시트 버전 — detection 외에는 null"
     varchar prompt_version "LLM 미사용 시 null"
     varchar schema_version
     varchar contract_version "API 계약 버전 — meta.versions.contract"
+    varchar graph_version "교육과정 그래프 버전 — diagnosis·problem_generation 외에는 null"
+    varchar taxonomy_version "영역·유형 공용 어휘 버전 — 관련 [PART_B] 실행 외에는 null"
+    varchar verify_config_version "진단·품질 게이트 설정 버전 — 관련 [PART_B] 실행 외에는 null"
+    varchar difficulty_calib_version "난이도 보정 버전 — problem_generation 외에는 null"
     varchar model_provider
     varchar model_name
     jsonb generation_params
@@ -186,9 +194,9 @@ erDiagram
   GATE_RESULT {
     uuid id PK
     varchar tenant_id
-    varchar owner_kind "draft|import_job"
+    varchar owner_kind "draft|import_job|problem_set"
     uuid owner_id
-    varchar gate_name "Consent|DataSufficiency|Evidence|SourceGrounding|ToneSafety|RequiredField|MappingConfidence|TeacherConfirm"
+    varchar gate_name "Consent|DataSufficiency|Evidence|SourceGrounding|ToneSafety|RequiredField|MappingConfidence|TeacherConfirm|RuleValidation|BlindCrossSolve|ReleaseDecision"
     int seq
     boolean passed
     varchar reason

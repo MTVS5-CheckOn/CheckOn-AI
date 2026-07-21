@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 평가 계획 v1. A의 `part_a/08_evaluation_plan.md` 증보 — 운영 규율(CI 3단·버전 연동·PR 규칙)은 A 문서 §8 준용, part_b 병렬 문서로 유지. A 문서 §1 트리 증보 요청은 [`09_integration_proposals.md`](09_integration_proposals.md) §1-4.
 >
 > **변경 이력**
+> - v1.2 (2026-07-15): 진단 규칙 3건 확정(04 v1.2) 대응 회귀 추가 — 충돌 event_id 진단 중단·정렬 결정론·노드 severity(최댓값/직접 재계산)·overall_low 분모 3분기(§6).
 > - v1.1 (2026-07-15): 파일 번호 이동(05→08) + 확정 반영 — ① 재시도 총 3회 기준으로 기대값 정렬 ② v1 mcq만(코퍼스에서 short 제외) ③ **약점 정렬 회귀**(§3) ④ **refine 회귀**(§9) 신규 ⑤ 조기 중단·수동 목표·장기 장애 failure 추가(§10) ⑥ 최악 비용 논리 6콜·HTTP 12.
 > - v1 (2026-07-15): 입력 초안 `CODEXPROMPT/(염준영)_평가_계획서_증보_v0.md` 정리 — 게이트/진단 장 분리, 결정론·체크포인트·멱등·gateway·보안 테스트.
 >
@@ -91,11 +92,14 @@ R-1~R-7을 전부 통과하지만 결함이 있는 문항 — ②단의 존재 �
 | 그룹 | 케이스 | 기대 |
 | --- | --- | --- |
 | 그래프 무결성 | 사이클 포함 YAML · 미정의 area_tag · 엣지 양단 미실존 · taxonomy_version 불일치 | **기동 실패**(로드 검증 — [`04`](04_curriculum_graph.md) §6) |
-| 판정 규칙 | `n < cell_min_items` 셀 · 전 셀 weak(overall_low) · 상대 컷 경계(정확히 −15%p) | `unknown` 명시 · overall_low 플래그 · 경계 판정 명세화 |
-| 전파 | related 전파 제외 · decay 거리별 감쇠 · unknown 출발 금지 · 직접 ok가 전파 기각 · 순방향 전파 없음 | 04 §5.4 불변식 전부 |
+| 판정 규칙 | `n < cell_min_items` 셀 · 상대 컷 경계(정확히 −15%p — `cell_delta_pp`/`node_delta_pp` ≤ `relative_cut_pp`, 04 §4·§5.2) | `unknown` 명시 · 경계 판정 명세화 |
+| **overall_low 3분기** | 판정 가능 셀 0개 · 판정 가능 전부 weak(+unknown 셀 혼재) · 하나라도 ok | `rejected_insufficient` · `overall_low=True`(unknown이 분모에서 제외됨 검증) · `False` — 04 §4 확정 규칙 |
+| **노드 severity** | weak 셀 2개 연결 suspect(severity 상이) · 직접 데이터 충분한 weak_confirmed · 직접 ok 노드로의 유입 전파 · 직접 표본 부족(n<node_min_items) | **최댓값 채택**(평균 아님) · **직접 정답률로 재계산**(간접 대체) · 유입 기각 · 간접 유지/근거 없으면 노드 결과 없음 — 04 §5.1~§5.2 확정 규칙 |
+| 전파 | related 전파 제외 · decay 거리별 감쇠 · unknown 출발 금지 · 직접 ok 출발 제외 · 순방향 전파 없음 | 04 §5.4 불변식 전부 |
 | 직접·간접 병합 | 04 §5.3 표 5행 각 1건 | 최종 verdict 일치 |
-| **결정론** | 동일 입력·동일 버전 3종·동일 snapshot_hash 2회 실행 | **바이트 동일** + 기존 WeaknessMap 재사용(04 §3.2) |
-| 재처리 | event_id 중복 수신 · snapshot_hash 동일 재요청 | dedupe 1건 · 재계산 없이 기존본 반환 |
+| **결정론** | 동일 입력·동일 버전 3종·동일 snapshot_hash 2회 실행 · **이벤트 입력 순서 셔플** | **바이트 동일**(event_id 정렬 집계 — 04 §3.2) + 기존 WeaknessMap 재사용 |
+| **입력 정합** | 완전 동일 event_id 재수신 · **동일 event_id에 필드 하나 상이** | dedupe 1건 · **`DiagnosisInputConflictError`로 전체 진단 중단(부분 결과 없음)** — API 경계는 기존 `SnapshotInvalid → 400 INVALID_SCHEMA` 매핑(공용 코드 신설 없음) |
+| 재처리 | snapshot_hash 동일 재요청 | 재계산 없이 기존본 반환 |
 | **데이터 부족** | 전 셀 unknown 스냅숏 | `rejected_insufficient` 반환(200 정상 상태) — 억지 진단 없음 |
 
 **합격 기준: 전 케이스 통과 — CI 게이트(결정론 단, 커밋마다).** LLM 무관이므로 100% 요구.

@@ -35,7 +35,15 @@
 
 ### 2.2 refine 리비전 (`revisions[]` — 핑퐁 정책서 §4와 동일 enum)
 
-`blocked_reason: evidence_missing | comparison_exposure | tone_violation | pii_exposure | out_of_scope` — 문구는 핑퐁 정책서 §4 표가 원본(여기 중복 정의하지 않음).
+공통·[PART_A] 차단 사유는 `blocked_reason: evidence_missing | comparison_exposure | tone_violation | pii_exposure | out_of_scope`다. 문구는 `part_a/06_refine_policy.md` §4 표가 원본이다(여기 중복 정의하지 않음).
+
+[PART_B] 문항 refine은 `answer_integrity | banned_topic | prompt_injection`을 추가로 사용한다. 규칙 원본은 `part_b/07_refine_policy.md` §3이다.
+
+| [PART_B] blocked_reason | 의미 |
+| --- | --- |
+| `answer_integrity` | 정답 유일성·정답 구조를 깨뜨리는 수정 지시 |
+| `banned_topic` | 금지 소재를 사용하라는 수정 지시 |
+| `prompt_injection` | 기존 규칙이나 검증 절차를 무시·우회하라는 공격 지시 |
 
 ### 2.3 감지 (`/v1/detect` 응답 내)
 
