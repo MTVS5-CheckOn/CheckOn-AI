@@ -229,7 +229,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
   "suggestion_id": "uuid",              // 제안 API가 반환했던 ID
   "action": "corrected",                // confirmed | rejected | corrected
   "corrected_value": {                  // corrected일 때만 — 강사가 고친 최종값
-    "area_tag": "language",             // 수능 6영역 enum (Open-11 합의 전 잠정)
+    "area_tag": "language",             // 수능 6영역 enum (Open-11 확정 7/15)
     "type_tag": "concept",
     "item_format": "mcq"
   }
@@ -338,7 +338,7 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 {
   "data": {
     "suggestion_id": "uuid",
-    "area_tag": "reading",             // 수능 6영역 enum (Open-11 잠정): reading·literature·speech·writing·language·media
+    "area_tag": "reading",             // 수능 6영역 enum (Open-11 확정 7/15): reading·literature·speech·writing·language·media
     "type_tag": "infer",               // fact | infer | critic | concept
     "item_format": "mcq",              // mcq | short | essay
     "confidence": 0.92,
@@ -480,7 +480,7 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 | `correct` | bool | solve만 | 정답률(R1·R6) | |
 | `duration_sec` | int | solve만 | 풀이시간(R4) | 없으면 R4 미적용(대체 신호) |
 | `passage_word_count` | int | 지문형만 | **어절 정규화** | 국어 특화의 핵심 필드 |
-| `area_tag` / `type_tag` | enum | 있으면 | 유형별 정답률(R6)·약점 지도 | 미태깅 허용 — 태깅 제안이 채움. **area 값(수능 기준 개정 제안): `reading(독서)·literature(문학)·speech(화법)·writing(작문)·language(언어/문법)·media(매체)`** + `subject_track: common·elective` 메타 · `item_format: mcq·short·essay` 병행 — 최종 enum은 `[Open-11]` [A+B] 합의 |
+| `area_tag` / `type_tag` | enum | 있으면 | 유형별 정답률(R6)·약점 지도 | 미태깅 허용 — 태깅 제안이 채움. **area 값(수능 6영역): `reading(독서)·literature(문학)·speech(화법)·writing(작문)·language(언어/문법)·media(매체)`** + `subject_track: common·elective` 메타 · `item_format: v1은 mcq만`(short·essay 예약) — Open-11 확정(7/15) |
 | `assignment_title_text` | string | 있으면 | **태깅 제안(ⓒ) 입력** | ⚠ `[Open-4b]` 제공 불가 시 기능 자체 불가 |
 | `source` | enum `trackA·trackB·studentHome` | ✅ | 품질 가중 | |
 
