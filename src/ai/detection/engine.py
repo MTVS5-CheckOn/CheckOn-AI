@@ -4,7 +4,8 @@
 소유: 박진희 (detection).
 
 단계(02_design·04): ① 제외 처리 ② 개인 베이스라인 ③ 세그먼트 계수 ④ R1~R6 판정
-⑤ 병합·상한 ⑥ lifecycle ⑦ 응답 조립. DB 저장·증분 축적·HTTP는 이번 범위 밖.
+⑤ 병합 ⑥ lifecycle 억제 ⑦ 랭킹·상한 ⑧ 응답 조립. **lifecycle 억제는 랭킹보다
+먼저**다(7/22 확정 — 억제 후보가 TOP 슬롯을 소비하지 않게). DB 저장·증분 축적·HTTP는 범위 밖.
 
 결정론(불변식 8): signal_id는 uuid5(입력 기반)로 재현 가능하게 만든다 — 랜덤 uuid 금지.
 현재 시각 미사용 — 모든 시간 기준은 snapshot_meta.week_start에서 유도한다.
@@ -84,8 +85,9 @@ def detect(request: DetectRequest, config: ThresholdConfig | None = None) -> Det
             merge_student(student.student_ref, student.class_ref, findings)
         )
 
-    signals = _assemble_signals(request, class_alerts, config, week_start, evidence_index)
-    capped_out = _total_capped(class_alerts, config)
+    signals, capped_out = _rank_with_lifecycle(
+        request, class_alerts, config, week_start, evidence_index
+    )
 
     stats = DetectStats(
         students_evaluated=evaluated,
@@ -100,32 +102,44 @@ def detect(request: DetectRequest, config: ThresholdConfig | None = None) -> Det
     return DetectResponse(signals=tuple(signals), stats=stats)
 
 
-def _assemble_signals(
+def _rank_with_lifecycle(
     request: DetectRequest,
     class_alerts: dict[str, list[StudentAlert]],
     config: ThresholdConfig,
     week_start: date,
     evidence_index: dict[tuple[str, date], list[str]],
-) -> list[Signal]:
-    """반별 순위·상한 적용 후 lifecycle 판정·응답 조립. 억제(None)는 제외한다."""
+) -> tuple[list[Signal], int]:
+    """lifecycle 억제를 랭킹·상한보다 **먼저** 적용한다 (04 §3 · 09 §4, 7/22 확정).
+
+    억제 후보(lifecycle=None)는 TOP 슬롯을 소비하지 않고 랭킹 이전에 탈락한다 —
+    그래야 하위 유효 신호가 상한 안으로 승격된다. capped_out도 억제 후 기준으로 센다.
+    """
     signals: list[Signal] = []
+    capped_out = 0
     for _class_ref, alerts in sorted(class_alerts.items()):
-        result = rank_class(alerts, config.cap_max)
-        for ranked in result.ranked:
+        # ① lifecycle 판정 → 억제 탈락 (랭킹 이전)
+        kept: list[StudentAlert] = []
+        lifecycles: dict[tuple[str, str], Lifecycle] = {}
+        for alert in alerts:
             student_context = tuple(
                 item
                 for item in request.alert_context
-                if item.student_ref == ranked.alert.student_ref
+                if item.student_ref == alert.student_ref
             )
             lifecycle = resolve_lifecycle(
-                ranked.alert.primary.signal_type, student_context, week_start
+                alert.primary.signal_type, student_context, week_start
             )
             if lifecycle is None:
-                continue  # 억제 — 응답에서 제외
-            signals.append(
-                _build_signal(ranked, lifecycle, week_start, evidence_index)
-            )
-    return signals
+                continue  # 억제 — 슬롯 미소비
+            kept.append(alert)
+            lifecycles[(alert.student_ref, alert.primary.rule_id.value)] = lifecycle
+        # ② 남은 신호만 랭킹·상한
+        result = rank_class(kept, config.cap_max)
+        capped_out += result.capped_out
+        for ranked in result.ranked:
+            key = (ranked.alert.student_ref, ranked.alert.primary.rule_id.value)
+            signals.append(_build_signal(ranked, lifecycles[key], week_start, evidence_index))
+    return signals, capped_out
 
 
 def _build_signal(
@@ -143,8 +157,9 @@ def _build_signal(
         for week_monday in finding.evidence_weeks:
             record_ids.extend(evidence_index.get((alert.student_ref, week_monday), []))
     if not record_ids:
-        # 발화 주에 record_id가 없으면 그 학생의 아무 이벤트로 근거를 채운다(evidence 필수).
-        record_ids = _any_records(alert.student_ref, evidence_index)
+        # 부재형 신호(R2·R3·R5): 판정 창에 관련 기록이 없으면 **가장 최근** 실존 기록을
+        # 맥락 근거로 인용한다 — 임의 무관(첫 매치) 대체 금지 (09 §3 A판정 7/22).
+        record_ids = _latest_records(alert.student_ref, evidence_index)
     unique_ids = list(dict.fromkeys(record_ids))[:_MAX_EVIDENCE]
 
     evidence = tuple(
@@ -173,10 +188,6 @@ def _build_signal(
     )
 
 
-def _total_capped(class_alerts: dict[str, list[StudentAlert]], config: ThresholdConfig) -> int:
-    return sum(rank_class(alerts, config.cap_max).capped_out for alerts in class_alerts.values())
-
-
 def _build_evidence_index(request: DetectRequest) -> dict[tuple[str, date], list[str]]:
     """(student_ref, week_monday) → record_id 목록. evidence 조립용."""
 
@@ -188,8 +199,10 @@ def _build_evidence_index(request: DetectRequest) -> dict[tuple[str, date], list
     return index
 
 
-def _any_records(student_ref: str, index: dict[tuple[str, date], list[str]]) -> list[str]:
-    for (ref, _monday), ids in index.items():
-        if ref == student_ref and ids:
-            return ids
-    return []
+def _latest_records(student_ref: str, index: dict[tuple[str, date], list[str]]) -> list[str]:
+    """그 학생의 **가장 최근 주**의 record_id — 부재형 신호의 맥락 근거 (09 §3 A판정)."""
+    dated = [(monday, ids) for (ref, monday), ids in index.items() if ref == student_ref and ids]
+    if not dated:
+        return []
+    _monday, ids = max(dated, key=lambda pair: pair[0])
+    return ids

@@ -39,8 +39,13 @@ _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id", "Idempotency-Key")
 _idempotency_store: dict[str, tuple[str, dict[str, Any]]] = {}
 
 
-def _detection_versions(config: ThresholdConfig) -> VersionSet:
-    """detection 실행의 버전 세트 — threshold는 config 버전, LLM/B 전용 키는 None."""
+def detection_versions(config: ThresholdConfig | None = None) -> VersionSet:
+    """detection 실행/엔드포인트의 버전 세트 — threshold는 config 버전, LLM/B 키는 None.
+
+    config가 없으면(실행 전 오류의 meta.versions 조립) 기본 config로 정적 버전을 낸다
+    (04 §2.2 A판정 — 실패 응답도 이 엔드포인트의 버전을 싣는다).
+    """
+    config = config or default_threshold_config()
     return VersionSet(
         pipeline_version=_PIPELINE_VERSION,
         engine_version=_ENGINE_VERSION,
@@ -95,7 +100,7 @@ async def post_detect(request: Request) -> dict[str, Any]:
     envelope = success_envelope(
         data=response.model_dump(mode="json"),
         execution_id=str(uuid.uuid4()),
-        versions=_detection_versions(config),
+        versions=detection_versions(config),
     )
     _idempotency_store[idempotency_key] = (snapshot_hash, envelope)
     return envelope

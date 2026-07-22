@@ -18,6 +18,9 @@
 ## ★ 7/21 에러 코드 사전 정합
 12. **에러 코드 정본 = `error_codes.md`로 통일 ✅(7/21)** — 04 §2.3 표 제거(정본과 코드명·409 의미 드리프트), `IDEMPOTENCY_CONFLICT` 의미 채택(같은 키+다른 바디=거부), `QUOTA_EXCEEDED`는 AI 사전에서 제거(7/15 결정 반영 — 백엔드 Billing 선차단), `rule_skipped`→`rules_skipped` 개명(09 §3·detection.py 정합). 반영: error_codes §1·§2.3·§4·§5 · 04 §2.3
 
+## ★ 7/22 B 크로스체킹 회신
+13. **B 크로스체킹 전 항목 A 판정 ✅(7/22)** — PR #9의 `[PART_B 크로스체킹 요청]` 회신. 주요 판정: **① 상한-억제 순서 버그 수정**(lifecycle 억제를 랭킹·상한 앞으로 — 억제 후보가 TOP 슬롯 미소비) · **② score 0점 기준=원임계**(세그먼트 유효 임계 아님 — 상대 비교 일관·G11 유지) · **③ `REVISION_CONFLICT` 정본 편입**(B 규약 수용, detail.reason 내부 노출 허용) · **④ 실패 envelope도 meta.versions 조립**(계약이 정본) · **⑤ 404/422 동의 경계 구분**(조회=404·생성 선조건=422, [백엔드 확인 대기]) · **⑥ INVALID_SCHEMA=요청 계약 위반**(헤더 누락 포함) · **⑦ §4 트리에 IdempotencyConflict·LlmTimeout 편입**(adapter=runtime/errors.py) · **⑧ 부재형 신호 evidence 규칙 명문화**(관련 최근 실존 기록만, 임의 대체 금지) · **⑨ consent enum 강제 안 함**(granted만 존재·발명 금지, 비-granted는 폐기가 사양). 반영: 04_threshold §2·§3·§3.1 · 09 §2·§3·§4 · 04 §2.2·§2.3 · error_codes §1·§2.6·§4 · 신규 협의 안건 2건(아래 B-8·D⑪)
+
 > 규칙: 안건이 닫히면 ① 이 표의 상태를 ✅로 ② 관련 문서의 `[제안]`/`TODO(Open-n)` 제거 ③ 계약 문서는 버전 승격. **닫히기 전에는 잠정값으로 개발하되 코드에 `# TODO(Open-n)` 주석 필수.**
 
 ## A. 계약 Open 안건 (백엔드 리뷰 미팅에서 일괄 — `04_api_contract.md` §1)
@@ -48,6 +51,7 @@
 | B-5 | LLM 게이트웨이 인터페이스·벤더 — **확정 전 벤더 SDK 설치 금지** | contracts/llm.py | ☐ |
 | B-6 | LangSmith 도입 | runtime/ | ✅ **(7/15) 공통 1개로 도입** — 프로젝트·키 공용. 마스킹 훅은 게이트웨이 앞단(트레이스에 마스킹 통과분만) |
 | B-7 | evidence resolver 주입 시그니처 | evidence/resolver.py | ☐ |
+| B-8 | **VersionSet capability별 validator [양자]** | contracts/execution.py | ☐ **(7/22 등록)** — A 실행에 B 버전 키 혼입 금지·B 실행에 B 키 필수를 `ExecutionContext` 조립 경계에서 강제할지. `execution.py`(양자 승인 파일) 변경이라 A·B 강제 수준 합의 필요. 04 §2.2 크로스체킹 회신 |
 
 ## C. 백엔드 합의 안건
 
@@ -89,3 +93,4 @@
 | ⑧ **api/ 계층 신설** — HTTP 노출 계층(app·envelope=공통계약, 라우터=capability 오너) | ✅ B 확인 완료(7/22) — `api/app.py`·`api/envelope.py`를 §4 양자 승인 목록에 편입(총 9곳). 공통 wire 간극은 각 원본의 `[PART_B 크로스체킹 요청]`으로 별도 추적 |
 | ⑨ 멱등 저장소 DB 교체 — v0는 프로세스 내 인메모리(재시작 시 소실 · uvicorn 멀티워커 간 비공유 — 실배포 전 필수 교체). Idempotency-Key→snapshot_hash 매핑을 D-②(Alembic) 후 영속 저장소로 | ☐ |
 | ⑩ 섀도 모드 표시 방식 — `error_codes.md` §2.3에 `shadow: true` 행이 있으나 09 §3 응답엔 없음. 섀도 구현 시점(D-② 후)에 09 응답 편입 vs 운영 설정 결정 + 두 문서 정합 | ☐ |
+| ⑪ 부재형 신호(R2·R3·R5)의 evidence 전무 한계 — 관련 실존 기록이 전무하면 신호를 생성하지 않는다(계약상 evidence ≥1). 집계/상태 record 참조를 evidence로 허용할지 D-②(저장 계층) 시점 결정. 09 §3 A 판정(7/22) | ☐ |

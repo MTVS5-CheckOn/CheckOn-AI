@@ -30,21 +30,21 @@ def resolve_lifecycle(
     """
     same_type = [item for item in alert_context if item.signal_type is signal_type]
 
+    # open 우선 (09 §4 A판정 7/22): 같은 유형에 open이 하나라도 있으면 ongoing
     if any(item.status is AlertStatus.OPEN for item in same_type):
         return Lifecycle.ONGOING
 
-    recent_resolved = [
-        item
+    # resolved는 최신 건 기준 (09 §4 A판정): 여러 건이면 가장 최근 해소 건으로 판정
+    resolved_dated = [
+        (item, item.resolved_at)
         for item in same_type
-        if item.status is AlertStatus.RESOLVED
-        and item.resolved_at is not None
-        and _weeks_since(item.resolved_at.date(), week_start) <= LIFECYCLE_COOLDOWN_WEEKS
+        if item.status is AlertStatus.RESOLVED and item.resolved_at is not None
     ]
-    if recent_resolved:
-        # 2주 이내 재발 — 팔로업이 하나라도 안 나갔으면 follow_up, 전부 나갔으면 억제
-        if any(not item.followed_up for item in recent_resolved):
-            return Lifecycle.FOLLOW_UP
-        return None
+    if resolved_dated:
+        latest_item, latest_at = max(resolved_dated, key=lambda pair: pair[1])
+        # "2주 이내" = 14일 포함(≤ LIFECYCLE_COOLDOWN_WEEKS)
+        if _weeks_since(latest_at.date(), week_start) <= LIFECYCLE_COOLDOWN_WEEKS:
+            return None if latest_item.followed_up else Lifecycle.FOLLOW_UP
     return Lifecycle.NEW
 
 
