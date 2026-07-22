@@ -1,8 +1,9 @@
 # [체크온] B 통합 제안서 v1 — A 변경 요청 · 공용 문서/계약 변경 제안 · OPEN 총괄
 
-> **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따르며, B는 `docs/part_b/` 외 파일을 직접 수정하지 않는다.
+> **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v1.3 (2026-07-22): `develop`의 A PR 리뷰 요청 4건에 B 회신 — 승인 항목은 직접 반영하고, 그 과정에서 새로 발견한 간극만 해당 A·공용 원본에 **B 제안 해결안과 크로스체킹 요청**으로 등록. B 소유 충돌 규약·상태 필드 분류·HTTP DTO 경계와 §2-10 실제 완료 현황은 확정 반영.
 > - v1.2 (2026-07-15): **공용 계약 B 확장 14항목 A+B 승인 완료 반영** — §2-3·§2-9를 승인·구현 완료(커밋 `d5283d0`)로 전환(제안 이력 보존), §2-10(공용 문서 동기화 요청 일람) 신설, §3 B-2 갱신.
 > - v1.1 (2026-07-15): 파일 번호 이동(06→09) + 7/15 결정 정리 — 해소 안건 분리(§0), Kafka 이벤트·409 충돌 코드·라벨 사전 제안 추가, B-1 회신 갱신, 쿼터 제안 폐기 반영. part_b 재편(01~09)에 따른 참조 갱신.
 > - v1 (2026-07-15): part_b 정리 과정에서 도출된 요청·제안 일괄 등록.
@@ -22,7 +23,7 @@
 | D-02 | ✅ (대화 확정) 검증 차단 문항 저장 가능·발행 차단·**수동 예외 승인 불허** | 06 §3 |
 | 타겟 협소화 | ✅ 수능 고등 기준 — v1 중등 분기 금지 | 04 §2 |
 | (7/15 후속) contracts 공용 5파일 | ✅ A가 구현 완료(`feat/contracts-base` — taxonomy·execution·llm·gates·evaluation + 테스트 74종) | B 회신 §1-5 · (당시) 확장 제안 §2-3·§2-9 → 아래 행에서 승인 완료 |
-| (7/15 오프라인) **공용 계약 B 확장 14항목** | ✅ **A+B 승인 완료** — A와 실시간 협의로 승인, 커밋 `d5283d0` 구현 반영(Capability 2 · VersionSet 4 · GateName 3 · OwnerKind 1 · BlockedReason 3 · GoldenSuite 1) | §2-3·§2-9(승인 완료) — 잔여: 공용 문서 동기화 요청 §2-10 |
+| (7/15 오프라인) **공용 계약 B 확장 14항목** | ✅ **A+B 승인 완료** — A와 실시간 협의로 승인, 커밋 `d5283d0` 구현 반영(Capability 2 · VersionSet 4 · GateName 3 · OwnerKind 1 · BlockedReason 3 · GoldenSuite 1) | §2-3·§2-9(승인 완료) — §2-10 문서 동기화 **3/7 완료, 4건 잔여** |
 
 ## §1. A 소유 문서·코드 변경 요청 (승인 주체: 박진희)
 
@@ -54,6 +55,28 @@ A가 요청한 B 검토 2건에 대한 회신:
 | `execution.py` 신규 필드 2개(`threshold_version` nullable · `contract_version` non-null) — 양자 승인 | **승인** — 독자 설계가 아니라 §2.2/ERD 두 문서의 합집합 정합. **교집합 대안도 검토했으나 기각**: 교집합이면 `{pipeline, engine}` 2종만 남아 threshold(감지 판정 기준)·prompt(LLM 실행 기준)를 잃고 과거 실행 재현 불가(불변식 8). 두 문서는 별개 시스템이 아니라 같은 대상(실행 1건의 재현 키)의 불완전한 명세였으므로 합집합이 정답이고, 실행 유형별 차이(개별로 돌아가는 부분)는 필드 삭제가 아니라 **nullable로 흡수**(detection: prompt=null / LLM 실행: threshold=null). VersionSet은 워커 통합 스키마가 아니라 실행 1건마다 찍히는 재현 도장이라 슈퍼바이저 통합 여부와 무관. 같은 선례(용도별 nullable)에 따라 **B 버전 확장을 §2-9로 예고** — 승인 시점에 함께 논의 희망 |
 | `llm.py`의 `LLMProvider` Protocol을 B의 FakeProvider가 구현 가능한지 | **구현 가능 — 이견 없음.** `name` + `async complete(request, context) → LLMResult` 시그니처로 결정론 응답·장애 시나리오(timeout·parse_fail·연속 실패)를 `outcome`/`LlmError` 계열로 전부 재현 가능. 재시도·백오프를 어댑터가 아닌 게이트웨이(tenacity) 소유로 둔 규약도 B의 전송 재시도 설계([`06`](06_quality_gates.md) §4 `transport_retry`)와 정합. blind 계약은 `LLMRequest.prompt`가 조립 완료본이므로 조립 단계(verification.py) 책임으로 유지 — 계약 충돌 없음 |
 
+### 1-6. 7/22 A PR 리뷰 요청 4건 — B 회신
+
+아래는 A가 PR에서 이미 요청한 검토에 대한 B 회신이다. 다시 A 확인 안건으로 돌리지 않고 승인·보완 여부를 직접 정리했다.
+
+| A 요청 묶음 | B 회신 |
+| --- | --- |
+| 감지 계약(lifecycle AI 소유·3값, `display_label`, taxonomy 공용 enum) | ✅ 승인. 계약·구현·테스트가 일치하며 B 추가 변경 없음 |
+| FakeSnapshot 위치·제외 학생·hash 플레이스홀더 | ✅ `evaluation/fake_snapshot.py` 위치 승인. A 감지 픽스처를 B 소유 `tests/ai/fakes/`에 두지 않는 근거가 타당하며, 프로덕션 import 금지 원칙과 재현용 placeholder 설명도 수용. `02_ownership.md`·`99_open_items.md`에 완료 반영 |
+| score/readapt/R2·meta/capped_out 설계 | ✅ R2 v0 `consecutive_missing` 한정, 엔진 밖 `meta.versions`, `capped_out` 집계 한정은 승인. score/readapt에서 독립 크로스체크 중 새로 발견한 시간·유효 임계 모호성만 §1-7로 별도 요청 |
+| `api/` 구조·v0 한계 | ✅ `app.py`·`envelope.py` 공통 양자 승인 + 라우터 capability 오너 구조 승인. `02_ownership.md` 양자 승인 9곳과 99 ⑧에 확정 반영. 인메모리 멱등·DB 미적재 등 공지된 v0 한계는 백로그 유지; 별도로 발견한 wire·보안 간극만 §1-7로 요청 |
+
+### 1-7. 독립 크로스체크에서 새로 발견한 A·백엔드 협업 요청
+
+A PR 요청을 반영·검토한 뒤 B가 추가로 발견한 간극만 해당 원본 조항 바로 아래에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남겼다. 기존 A 규약 값은 바꾸지 않았다.
+
+| 원본·위치 | 새로 발견한 확인 요청 | 상태 |
+| --- | --- | --- |
+| `part_a/09_detect_spec.md` §2·§3·§4 | 증분 입력↔8주 baseline · date/enum 경계 검증 · 제외 이벤트 처리 순서 · AlertContext 불변식 · brief/evidence · lifecycle 다건/상한 순서 | ☐ A+BE 확인 |
+| `part_a/04_threshold_config.md` §2·§3·§3.1 | readapt 시간 검증 주체 · lifecycle 억제/상한 순서 · 세그먼트 유효 임계의 score 기준 | ☐ A+BE 확인 |
+| `04_api_contract.md` §2.2·§2.3 | capability별 version 불변식 · 실패 meta · tenant/경로 멱등 스코프 · 요청 검증 · 실제 LLM 예외 매핑 · 민감 detail · tracing | ☐ A+B+BE 확인 `[P0]` |
+| `02_ownership.md` §5 아래 | 프로덕션 capability → `ai.evaluation` 역방향 import 금지 자동 검사 | ☐ A 확인 |
+
 ## §2. 공용 문서·계약 변경 제안 (승인 주체: 02_ownership 절차)
 
 ### 2-1. API·Kafka 계약 증분 `[제안]` — D-10·BE-1 `(C-05)`
@@ -62,42 +85,46 @@ A가 요청한 B 검토 2건에 대한 회신:
 
 | 항목 | 내용 |
 | --- | --- |
-| `POST /problem-sets` `[가칭]` | 202 + job_id. Request = `ProblemRequest`([`05`](05_problem_generation.md) §4.1 — `target_source` 포함). 멱등: Idempotency-Key |
+| `POST /problem-sets` `[가칭]` | 최초 요청 202 + job_id. 내부 command = `ProblemRequest`([`05`](05_problem_generation.md) §4.1 — `target_source` 포함). 같은 Idempotency-Key+같은 바디 재전송은 기존 job 상태·결과 200 |
 | `GET /problem-sets/{job_id}` `[가칭]` | **디버그·복구 보조**(폴링 아님) — 상태·진행률·`ProblemSetResult` |
-| `POST /problem-sets/{set}/items/{item}/refine` `[가칭 · MVP]` | `instruction`+`base_revision_no` — [`07_refine_policy.md`](07_refine_policy.md). 롤백 `revert_to` |
+| `POST /problem-sets/{set}/items/{item}/refine` `[가칭 · MVP]` | `instruction`+`base_revision_no` — [`07_refine_policy.md`](07_refine_policy.md). 멱등 조회 → revision/진행 중 검사 순서. 롤백 `revert_to` |
 | **Kafka 이벤트 증분** | `docs/08_kafka_events.md` §4에 `problem_set.completed` / `problem_set.failed` `{ job_id, status, verified/review/dropped 수, stop_reason }` 추가 — 문항 본문 미포함(ID 참조만, 기존 규약 동일) |
 | 약점 지도 조회 API | **상세 제안 보류** — 세트 응답 동봉 vs 별도 조회 vs 백엔드 사본 동기화는 `OPEN`(D-10, BE+B) |
 
+**B HTTP 경계 확정:** `ProblemRequest`·`ItemRevisionRequest`는 워크플로 내부 command로 유지한다. 외부 HTTP body는 별도 DTO로 만들고 `X-Request-Id`·`Idempotency-Key`·`X-Tenant-Id`를 포함하지 않는다. 공통 헤더를 단일 원천으로 읽어 내부 command에 매핑한다. `api/` 소유권 승인은 완료됐으며, 실제 라우터 편입은 `04_api_contract.md`의 공통 wire 크로스체킹과 백엔드 D-10 합의가 닫힌 뒤 진행한다.
+
 ### 2-2. 상태·에러 코드 사전 증보 제안 — `docs/policies/error_codes.md` `(C-10)`
 
-**'정상 상태'(200 + status) 5종 추가:**
+**B 결과 어휘 5종 — 필드별 분류 확정, A 정본 편입 요청:** 전부 HTTP 에러가 아니라 성공 응답의 `data` 안에 있지만 같은 `status` 필드가 아니다.
 
-| 코드 | 뜻 | 근거 |
-| --- | --- | --- |
-| `partial_success` | 세트 일부 폐기 — 완료분 유효 + stop_reason·사유 보고 | 06 §6 |
-| `needs_review` | 게이트 통과 + 검토 필수 배지 — 승인 전 발행 불가 | 06 §5 |
-| `verification_unavailable` | 검증 불능 — 저장 가능·발행 차단·재검증 필수·**수동 우회 불가** | 06 §3 |
-| `generation_exhausted` | 재생성 상한(총 3회) 소진 폐기 — drop_reason | 06 §6 |
-| `source_unverified` | 사실검증 수단 부재 지문 — 발행 차단 | 05 §2.1 |
+| enum · wire 필드 | 값 | 뜻 | 근거 |
+| --- | --- | --- | --- |
+| `ProblemSetStatus.status` | `partial_success` | 세트 일부 폐기 — 완료분 유효 + stop_reason·사유 보고 | 06 §6 |
+| `ProblemItemStatus.items[].status` | `needs_review` | 게이트 통과 + 검토 필수 배지 — 승인 전 발행 불가 | 06 §5 |
+| `ProblemItemStatus.items[].status` | `verification_unavailable` | 검증 불능 — 저장 가능·발행 차단·재검증 필수·**수동 우회 불가** | 06 §3 |
+| `ProblemFailureReason.items[].failure_reason`·`dropped_reasons[]` | `generation_exhausted` | 재생성 상한(총 3회) 소진 폐기 | 06 §6 |
+| `ProblemFailureReason.items[].failure_reason`·`dropped_reasons[]` | `source_unverified` | 사실검증 수단 부재 지문 — 발행 차단 | 05 §2.1 |
 
-**HTTP 충돌 코드 1종 추가:** `409 REVISION_CONFLICT` — refine의 `base_revision_no`가 최신과 불일치(낙관적 잠금). 기존 `409 IDEMPOTENT_REPLAY`(동일 멱등키 재생)와 의미가 다르므로 별도 코드 필요.
+**409 멱등 의미 — ✅ A 정본 적용 완료:** 같은 멱등키+같은 바디는 기존 상태·결과 200, 같은 키+다른 바디는 `409 IDEMPOTENCY_CONFLICT`다. 폐기된 구 코드명과 “기존 결과를 409로 반환” 의미는 사용하지 않는다.
 
-**refine `blocked_reason` B 증분 3종:** `answer_integrity` · `banned_topic` · `prompt_injection`([`07`](07_refine_policy.md) §3 — `pii_exposure`·`out_of_scope`는 A enum 재사용).
+**별도 HTTP 충돌 코드 1종 — B 의미 확정·A 정본 편입 요청:** `409 REVISION_CONFLICT`. 새 키+stale `base_revision_no`면 `detail.reason=stale_base_revision`, 새 키+진행 중 refine이면 `detail.reason=revision_in_progress`다. 멱등 조회를 먼저 수행하며 `IDEMPOTENCY_CONFLICT`와 의미를 섞지 않는다.
+
+**refine `blocked_reason` B 증분 3종:** ✅ `answer_integrity` · `banned_topic` · `prompt_injection`은 `error_codes.md` §2.2 편입 완료([`07`](07_refine_policy.md) §3 — `pii_exposure`·`out_of_scope`는 A enum 재사용).
 
 **프론트 표시 라벨 사전 `[제안 — FE 확정]`:** 내부 상태→한국어 라벨 매핑([`06`](06_quality_gates.md) §0 표) — 검증 통과/검토 필수/검증 차단/생성 실패. 색상만으로 구분 금지, `검토 필수`와 `검증 차단`은 다른 아이콘·문구.
 
-**참고(B 무관 공용 불일치 — A 확인 요청):** `04_api_contract.md` §2.3과 `error_codes.md` §1의 코드명 불일치 — `IDEMPOTENT_REPLAY`↔`IDEMPOTENCY_CONFLICT`(의미도 상이), `VALIDATION_FAILED`↔`INVALID_SCHEMA`, `LLM_UNAVAILABLE`↔`LLM_UPSTREAM_DOWN`. B 엔드포인트 편입 전 통일 필요.
+**참고(B 무관 공용 불일치):** ✅ **7/21 통일 완료(`error_codes.md` 정본).**
 
 ### 2-3. 공용 enum·계약 확장 — ✅ **A+B 승인 완료 · `d5283d0` 구현 반영** `(C-07·C-09)`
 
-> **상태(7/15):** 아래 확장 중 EVIDENCE_ITEM 행을 제외한 전부가 A와 실시간 협의로 **승인 완료**됐고 커밋 `d5283d0`에 구현·테스트 반영됐다. `GoldenSuite.diagnosis`(`contracts/evaluation.py`)도 같은 승인에 포함. 잔여는 공용 문서 동기화 요청(§2-10)뿐. 아래 표·시안은 제안 당시 이력으로 보존한다.
+> **상태(7/21):** 아래 확장 중 EVIDENCE_ITEM 행을 제외한 전부가 A와 실시간 협의로 **승인 완료**됐고 커밋 `d5283d0`에 구현·테스트 반영됐다. `GoldenSuite.diagnosis`(`contracts/evaluation.py`)도 같은 승인에 포함. 공용 `error_codes.md` §2.2 동기화도 완료됐다. 아래 표·시안은 제안 당시 이력으로 보존한다.
 
 | 대상 (코드 + ERD) | 변경 | 절차 |
 | --- | --- | --- |
 | `contracts/execution.py` `Capability` | `diagnosis`·`problem_generation` 추가 — 현 enum은 A 3종뿐(docstring이 "B 테이블 증분 시 함께 확장" 명시) | ✅ 승인·구현 완료(`d5283d0`) |
 | `contracts/gates.py` `GateName` + `GATE_RESULT.gate_name` | `RuleValidation \| BlindCrossSolve \| ReleaseDecision` 추가 | ✅ 승인·구현 완료(`d5283d0`) |
 | `contracts/gates.py` `OwnerKind` + `GATE_RESULT.owner_kind` | `problem_set` 추가 | ✅ 승인·구현 완료(`d5283d0`) |
-| `contracts/gates.py` `BlockedReason` | `answer_integrity`·`banned_topic`·`prompt_injection` 추가([`07`](07_refine_policy.md) §3) | ✅ 승인·구현 완료(`d5283d0`) — error_codes §2.2 동기화는 §2-10 요청 |
+| `contracts/gates.py` `BlockedReason` | `answer_integrity`·`banned_topic`·`prompt_injection` 추가([`07`](07_refine_policy.md) §3) | ✅ 승인·구현 완료(`d5283d0`) — ✅ `error_codes.md` §2.2 동기화 완료 |
 | `EVIDENCE_ITEM.owner_kind` | `problem_item` 추가 | `evidence/models.py` 구현 시 양자 승인(현재 미구현 — ERD 제안 선반영) |
 
 **제안 당시 코드 시안** (이력 보존 — `d5283d0`에 동일 내용 반영 완료):
@@ -140,7 +167,7 @@ B 소유 7테이블(WEAKNESS_MAP·PASSAGE·PROBLEM_SET·PROBLEM_ITEM·VERIFICATI
 | 항목 | 선결 |
 | --- | --- |
 | 문법 DAG 실제 YAML 25~40노드 (`curriculum_graph.yaml`) | B-3 잔여(경계 사례) |
-| `golden/problems/` 코퍼스 실파일(§2 18건·§3 11건·§4 10건·§7·§8·§9 RF1~10) | — |
+| `golden/problems/` 코퍼스 실파일(§2 18건·§3 11건·§4 10건·§7·§8·§9 RF1~11) | — |
 | `golden/diagnosis/` 회귀 실파일 | — |
 | `t1_reference/` 케이스 | D-03 |
 | `pg_banned_topics.yaml` 실파일 | — |
@@ -157,7 +184,7 @@ learning_events의 `item_format` 주석 "R6·약점 지도가 **형식별로 분
 
 ### 2-9. `contracts/execution.py` `VersionSet` B 확장 — ✅ **A+B 승인 완료 · `d5283d0` 구현 반영**
 
-> **상태(7/15):** 아래 4필드 확장(+`RunMetadata`·`to_run_metadata` 동시 확장)은 A와 실시간 협의로 **승인 완료**됐고 커밋 `d5283d0`에 구현·테스트 반영됐다. 잔여는 `04_api_contract §2.2`·`06_erd AI_RUN` 문서 동기화 요청(§2-10)뿐. 아래는 제안 당시 근거·시안의 이력 보존이다.
+> **상태(7/22):** 아래 4필드 확장(+`RunMetadata`·`to_run_metadata` 동시 확장)은 A와 실시간 협의로 **승인 완료**됐고 커밋 `d5283d0`에 구현·테스트 반영됐다. `04_api_contract §2.2`·`06_erd AI_RUN` 문서 동기화도 완료됐다. 아래는 제안 당시 근거·시안의 이력 보존이다.
 
 (제안 당시 배경) `VersionSet`은 6종 고정(`extra="forbid"`)이라 B 실행의 재현 키가 실릴 자리가 없다. `threshold_version`(detection 전용 nullable)과 같은 선례로 **B 전용 nullable 필드 확장**을 제안:
 
@@ -170,7 +197,7 @@ learning_events의 `item_format` 주석 "R6·약점 지도가 **형식별로 분
 
 - 근거: 불변식 8 — 이 버전들 없이는 과거 진단·검증 판정을 재현할 수 없다(threshold_version과 동일 논리 — 스키마는 합집합, 실행별 차이는 nullable로 흡수. §1-5 회신의 교집합 기각 사유와 동일).
 - 대안(확장 부결 시): 산출물 행(WEAKNESS_MAP·PROBLEM_ITEM)에만 저장하고 meta.versions는 6종 유지 — 단 API 응답만으로 재현 키를 못 얻는 비대칭 발생.
-- (제안 당시 절차 항목) 양자 승인 + `04_api_contract §2.2`·`06_erd AI_RUN` 동시 개정 대상 → **승인·구현은 완료**, 문서 동기화만 §2-10 요청으로 잔존.
+- (제안 당시 절차 항목) 양자 승인 + `04_api_contract §2.2`·`06_erd AI_RUN` 동시 개정 대상 → ✅ **승인·구현·두 문서 동기화 완료**.
 
 **제안 당시 코드 시안** (이력 보존 — `d5283d0`에 동일 내용 반영 완료 · `threshold_version` docstring 패턴 준용):
 
@@ -193,21 +220,34 @@ class VersionSet(BaseModel):
     """난이도 보정 버전 — 출제 실행 외 None."""
 ```
 
-### 2-10. 승인 결과 공용 문서 동기화 요청 일람 `[신규 — 각 문서 소유자 반영 요청]`
+### 2-10. 승인 결과 공용 문서 동기화 실제 현황 `[7/22 재대조 — 3/7 완료, 4건 잔여]`
 
-공용 계약 B 확장 14항목의 승인·구현(`d5283d0`)은 완료됐으나 아래 공용·A 소유 문서가 이전 상태로 남아 있다. B는 직접 수정하지 않는다 — 문서 소유자 반영 요청:
+공용 계약 B 확장 14항목의 승인·구현(`d5283d0`)은 완료됐다. 7/22 원본을 다시 대조한 결과 아래 7건 중 3건은 이미 반영됐고 4건이 남아 있다.
 
-| 문서 | 소유 | 요청 내용 |
-| --- | --- | --- |
-| `docs/04_api_contract.md` §2.2 | 공용 | meta.versions "6종" → **공통 6종 + B nullable 4종**(graph·taxonomy·verify_config·difficulty_calib) |
-| `docs/06_erd.md` | A | AI_RUN에 B 버전 4컬럼 · capability 값 `diagnosis`·`problem_generation` · GATE_RESULT `gate_name` 3종·`owner_kind` `problem_set` 반영 (B 7테이블 통합은 §2-4 별도) |
-| `docs/99_open_items.md` | 공용 | B-2 승인·구현 완료 상태 반영(7/15 결정 로그 증분) |
-| `docs/policies/error_codes.md` §2.2 | A | BlockedReason 3종(`answer_integrity`·`banned_topic`·`prompt_injection`) 편입 + B 상태 코드 5종은 §2-2 제안 유지 |
-| `docs/part_a/08_evaluation_plan.md` §1 | A | `golden/diagnosis/` 행 추가 — `GoldenSuite.diagnosis` 승인 반영(§1-4와 동일 요청) |
-| `docs/02_ownership.md` §5 | 공용 | `golden/diagnosis/` [염준영] 소유 행 추가(§2-5와 동일 요청) |
-| `docs/00_INDEX.md` | 공용 | part_b 문서 9종 링크 절 신설(§2-8과 동일 요청) |
+| 문서 | 소유 | 요청 내용 | 실제 상태 |
+| --- | --- | --- | --- |
+| `docs/04_api_contract.md` §2.2 | 공용 | meta.versions = 공통 6종 + B nullable 4종 | ✅ 완료 — 10키 예시·정본 규칙 반영 |
+| `docs/06_erd.md` | A | AI_RUN B 버전 4컬럼·capability 2종, GATE_RESULT B enum 반영 | ✅ 완료 — B 7테이블 통합은 §2-4 별도 |
+| `docs/99_open_items.md` | 공용 | B-2 승인·구현 완료 상태 반영 | ☐ 잔여 — B-2가 아직 미완료 표기 |
+| `docs/policies/error_codes.md` §2.2 | A | BlockedReason 3종 편입 | ✅ 완료 — B 결과 어휘 5종·`REVISION_CONFLICT`는 §2-2의 별도 편입 요청 |
+| `docs/part_a/08_evaluation_plan.md` §1 | A | `golden/diagnosis/` 행 추가 | ☐ 잔여 |
+| `docs/02_ownership.md` §5 | 공용 | `golden/diagnosis/` [염준영] 소유 행 추가 | ☐ 잔여 — `api/`·FakeSnapshot 소유 반영과는 별개 |
+| `docs/00_INDEX.md` | 공용 | part_b 문서 9종 링크 절 신설 | ☐ 잔여 |
 
 ※ Kafka `problem_set.completed`·`problem_set.failed` 이벤트와 B API 경로(§2-1)는 **백엔드 합의(D-10) 전 — 제안 유지, 이번 승인 범위가 아니다.**
+
+### 2-11. `api/` 공통 계층 B 리뷰 — 구조 승인 완료·wire 크로스체크 잔여 `(99 ⑧·⑨)`
+
+> **B 회신:** `app.py`·`envelope.py`는 공통 양자 승인, capability 라우터는 해당 오너 소유로 확정 승인했다(`02_ownership.md` §4·§5, 99 ⑧). 아래 wire 간극은 이번 독립 리뷰에서 새로 발견해 `04_api_contract.md`·`error_codes.md`의 관련 조항에 해결안과 확인 요청을 남겼다. 해당 정본 값은 바꾸지 않았다.
+
+| 항목 | 원본 크로스체킹 위치 | 상태 |
+| --- | --- | --- |
+| 소유권 | `02_ownership.md` §4·§5 | ✅ B 승인·9곳 편입 완료 |
+| 실패 envelope | `04_api_contract.md` §2.2 | ☐ A+B 확인 |
+| 요청 검증·LLM 예외 매핑·민감 detail | `04_api_contract.md` §2.3 | ☐ A+B 확인 `[P0]` |
+| tenant/경로 멱등 스코프·서버 digest·tracing | `04_api_contract.md` §2.3 | ☐ A+B+BE 확인 `[P0]` |
+| B HTTP DTO | §2-1 | ✅ 외부 body DTO와 내부 command 분리 확정 |
+| 동의 오류 경계(404/422) | `policies/error_codes.md` §1 | ☐ A+BE 확인 |
 
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
@@ -215,7 +255,7 @@ class VersionSet(BaseModel):
 | --- | --- | --- | --- | --- |
 | B-3 잔여 | taxonomy 경계 사례 7건 판정 | 태깅 골든셋 시드와 동시 확정 | A+B | 04·06 §5 |
 | Open-12 | F17 OCR 실명→alias·OCR 소유 (P2) | 스캔·매칭·마스킹=BE 유지, 판독 소유는 벤더 선정과 함께 | BE(+A·B) | 02 §1-C |
-| B-2 | 공용 계약 리뷰 — 공용 5파일 구현 ✅(§0) · execution.py 신규 필드 승인 ✅(§1-5) · **Capability·VersionSet 확장 ✅ 승인·구현 완료(`d5283d0` — §2-3·§2-9)** · **B 소유 2파일(diagnosis·problem_generation) 초안 ✅ 구현 완료(`d5283d0`)** — **잔여: 공용 문서 동기화(§2-10)** | §2-10 요청 발송 | A+B | 02 §5 |
+| B-2 | 공용 계약 리뷰·구현·14항목 승인 완료 — **문서 동기화 3/7 완료, 4건 잔여(§2-10)** | 잔여 4건 소유자 반영 요청 | A+B | 02 §5 |
 | B-5 / D-06 | LLM 공급자·모델 패밀리 조합 + verifier 폴백 | generator/verifier 패밀리 분리, 폴백 패밀리 지정 | A+B | 06 §2·§3 |
 | B-7 | evidence resolver 주입 시그니처 | A 초안 리뷰 | A+B | — |
 | D-03 | T1 기준 자료(공급처·버전·라이선스) | 버전·라이선스 명확한 자료만, 장애 시 발행 차단 | B+기획 | 05 §1.1 |
@@ -230,3 +270,6 @@ class VersionSet(BaseModel):
 | — | 문학 풀 초기 등재 규모·라이선스 | — | BE+기획 | 05 §3 |
 | — | 프론트 라벨 문구·대화 UI 형태 | §2-2 라벨 사전 기준 | FE+기획 | 06 §0 |
 | Open-9 잔여 | 전국 백분위 출처(A 소관 — 참고) | — | BE+A | — |
+| 7/22 감지 리뷰 | A PR 요청 4건 B 회신 완료 · 독립 크로스체크 신규 간극 | 원본의 `[PART_B 크로스체킹 요청]` 검토 후 A·BE 회신 | A+BE(+B 리뷰) | §1-6·§1-7 |
+| 7/22 API 리뷰 | `api/` 소유 구조 ✅ · 실패 meta·검증/LLM 예외·민감 detail·tenant 멱등·tracing 잔여 | 원본의 `[PART_B 크로스체킹 요청]` 검토 후 공통 wire 확정 | A+B+BE | §2-11 |
+| 7/22 B HTTP 경계 | 공통 헤더와 내부 command의 중복 | ✅ 외부 HTTP DTO와 내부 command 분리 확정 | B(+A·BE 편입 리뷰) | 05 §4.1 · 07 · §2-1·§2-11 |
