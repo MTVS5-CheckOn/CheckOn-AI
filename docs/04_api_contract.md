@@ -88,8 +88,12 @@
 nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 LLM 미사용 실행(감지·진단)에서 null · `graph`·`taxonomy`·`verify_config`는 관련 [PART_B] 실행 외에는 null · `difficulty_calib`은 `problem_generation` 외에는 null.
 
 > **[PART_B 크로스체킹 요청 · 미확정 — capability별 version 조건]** 위 null 조건은 문서에는 있으나 현재 공용 모델이 capability별 필수·금지 조합을 강제하지 않아 B 실행의 B 버전 누락이나 A 실행의 B 버전 혼입이 통과할 수 있다. **제안 해결안:** `ExecutionContext` 조립 경계에서 capability별 VersionSet 불변식을 validator와 음수 테스트로 고정한다. A·B가 공용 계약의 강제 수준을 확인해 달라.
+>
+> ✅ **A 판정(7/22):** 타당한 지적이나 `execution.py`(양자 승인 파일) 변경이라 A 단독으로 확정하지 않는다 — **양자 협의 안건으로 등록**(99 등록). capability별 VersionSet validator(A 실행에 B 키 혼입 금지·B 실행에 B 키 필수)는 B와 강제 수준을 합의한 뒤 execution.py에 반영한다.
 
 > **[PART_B 크로스체킹 요청 · 미확정 — 실패 envelope]** 현재 공용 `api/envelope.py`는 실패 응답의 `meta`를 null로 만들 수 있어 위 “meta.versions는 항상” 규약과 어긋난다. **제안 해결안:** 실행 전 오류까지 포함해 version meta를 조립하는 단일 규칙을 두고 성공·실패 HTTP 테스트에서 10키 집합을 검증한다. 계약을 유지할지 구현 동작을 정본으로 삼을지 A·B 확인을 요청한다.
+>
+> ✅ **A 판정(7/22):** **계약이 정본** — 실패 응답에도 `meta.versions`를 싣는다(구현을 계약에 맞춰 수정 · ⚠ 양자 파일 `api/envelope.py`). 실행 전 오류(헤더 누락 등 config 확정 전)의 조립 규칙: 엔드포인트가 아는 **정적 앱 버전 + 기본 config의 threshold**로 채운다(실행 여부와 무관하게 그 엔드포인트의 버전 정보). 성공·실패 HTTP 테스트에서 10키 집합을 검증한다.
 
 ### 2.3 에러 코드
 
@@ -98,6 +102,11 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 - **멱등(409):** 같은 `Idempotency-Key` + **같은 바디** = 기존 결과를 200으로 반환 · 같은 키 + **다른 바디** = `409 IDEMPOTENCY_CONFLICT`로 거부(기존 결과 반환 안 함).
 
 > **[PART_B 크로스체킹 요청 · 미확정 — 공통 HTTP 경계]** 현재 감지 v0 캐시는 전역 Idempotency-Key와 클라이언트 `snapshot_hash`를 신뢰한다. **제안 해결안:** `(tenant_id, method/path, idempotency_key)`로 스코프하고 서버가 canonical body digest를 계산해 원자 저장·TTL·영속화를 보장한다. 아울러 `RequestValidationError`를 공통 envelope의 `400 INVALID_SCHEMA`로 매핑하고, 실제 `contracts.llm` 예외를 503/504로 변환하는 단일 adapter, `RedactionUncertain` 상세 강제 제거, `X-Request-Id` 응답 echo·로그 correlation을 공통 계층에 두는 안을 A·B·백엔드가 확인해 달라.
+>
+> ✅ **A 판정(7/22):**
+> - **멱등 고도화(스코프·TTL·서버 digest·영속화):** D-② 안건으로 이관(99 ⑨ 확장). 이 API는 내부 백엔드 전용(§2.1 Base URL — 외부 미노출)이라 v0는 클라이언트 `snapshot_hash` 신뢰 + 인메모리로 충분하고, 서버 digest·스코프·TTL은 DB 교체 시 함께 구현한다.
+> - **X-Request-Id 응답 echo·correlation:** 수용 — 공통 계층에 편입(커밋 api 공통부, ⚠ 양자).
+> - **예외→HTTP adapter:** `error_codes.md` §4 트리를 정본으로, canonical adapter 위치는 `runtime/errors.py`로 확정. `IdempotencyConflict`→409·`LlmTimeout`→504 편입(error_codes §4 갱신). `RequestValidationError`→400 INVALID_SCHEMA는 현 구현과 일치.
 
 > ⭐ **가장 중요한 원칙:** '정상적 미생성'은 에러가 아니다.
 > `rejected_insufficient`(데이터 부족) · `template_only`(데이터 무관 문의) · `fallback_used`(문장화 폴백)는 **200 + `data.status`**로 온다. 화면 문구 번역은 백엔드/프론트 몫.

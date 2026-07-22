@@ -8,21 +8,28 @@
 
 | HTTP | 코드 | 뜻 | 백엔드 처리 |
 | --- | --- | --- | --- |
-| 400 | `INVALID_SCHEMA` | 요청 바디 스키마 위반(detail에 필드 경로) | 개발 오류 — 로그·알럿, 강사 노출 없음 |
+| 400 | `INVALID_SCHEMA` | **요청 계약 위반** — 바디 스키마 위반 + 필수 헤더 누락 포함(detail로 필드 경로·헤더명 구분) | 개발 오류 — 로그·알럿, 강사 노출 없음 |
 | 401/403 | `UNAUTHORIZED` / `TENANT_MISMATCH` | 내부 토큰 불량 / tenant 불일치 | 보안 알럿 |
-| 404 | `NOT_FOUND` | draft_id·job_id 등 부재 · 동의 없는 학생 참조 포함(존재 자체를 숨김) | |
+| 404 | `NOT_FOUND` | draft_id·job_id 등 부재 · **조회·불투명 참조에서 동의 없는 학생**(존재 자체를 숨김) `[백엔드 확인 대기]` | |
 | 409 | `IDEMPOTENCY_CONFLICT` | 같은 Idempotency-Key로 다른 바디 | 기존 결과 반환 안 함 — 개발 오류 |
-| 422 | `CONSENT_ABSENT` | 대상 학생 동의 없음(생성류 요청 자체가 오면 안 됨 — 백엔드 선차단이 1차) | "동의가 필요한 기능이에요" |
+| 409 | `REVISION_CONFLICT` | 문항 refine의 `base_revision_no` 불일치·진행 중 — detail.reason: `stale_base_revision` \| `revision_in_progress` (내부 API라 reason 노출 허용) | B 규칙 원본 `part_b/07_refine_policy.md` §6 |
+| 422 | `CONSENT_ABSENT` | **존재가 확인된 생성 명령의 동의 선조건 위반**(백엔드 선차단이 1차) `[백엔드 확인 대기]` | "동의가 필요한 기능이에요" |
 | 429 | `RATE_LIMITED` | 순간 요청 폭주(할당과 무관한 기술적 제한) | 백엔드 재시도(backoff) |
 | 500 | `INTERNAL` | 미분류 서버 오류 | 재시도 1회 후 폴백 |
 | 503 | `LLM_UPSTREAM_DOWN` | LLM 벤더 장애 | **폴백 규약**: 감지=전일 브리핑 유지+배지 · 초안="잠시 후 다시" |
 | 504 | `TIMEOUT` | 동기 10s / 비동기 총 5분 초과 | 비동기는 status=failed로 수렴 |
 
 > **[PART_B 편입 요청 · B 규약 확정/정본 미편입] HTTP 충돌 코드 1종 추가:** `409 REVISION_CONFLICT` — 문항 refine의 새 멱등키 요청에서 `base_revision_no`가 최신과 다르거나 같은 문항의 refine이 이미 진행 중인 경우다. 같은 키+다른 바디의 정본 코드 `409 IDEMPOTENCY_CONFLICT`와 의미가 다르므로 별도 코드가 필요하다. B 상세 사유는 `stale_base_revision`과 `revision_in_progress`이며, 멱등 조회를 먼저 수행해 같은 키+같은 바디는 기존 상태·결과를 200으로 재반환한다. **정본 표 편입과 detail 공개 범위를 A가 확인해 달라.** B 규칙 원본은 `part_b/07_refine_policy.md` §6이다.
+>
+> ✅ **A 판정(7/22):** **정본 편입 완료** — §1 표에 `409 REVISION_CONFLICT` 추가. detail 공개 범위는 이 API가 내부 백엔드 전용(§2.1)이므로 `detail.reason`(`stale_base_revision` \| `revision_in_progress`) **노출 허용**. 멱등 선조회 규약(같은 키+같은 바디=200 재반환)도 IDEMPOTENCY_CONFLICT와 동일하게 적용.
 
 > **[PART_B 크로스체킹 요청 · 미확정] 동의 오류 경계:** 현재 404 `NOT_FOUND`의 “동의 없는 학생 참조”와 422 `CONSENT_ABSENT`의 적용 경계가 겹친다. **제안 해결안:** 존재 여부를 숨겨야 하는 조회·불투명 참조는 404, 존재가 이미 확인된 생성 명령의 동의 선조건 위반은 422로 구분한다. A·백엔드가 보안 의도와 맞는지 확인해 달라.
+>
+> ✅ **A 판정(7/22):** B 구분안 **채택** — 조회·불투명 참조에서 동의 없는 학생 = `404`(존재 은닉), 존재가 확인된 생성 명령의 동의 선조건 위반 = `422`. §1 표에 반영. 단 보안 의도 최종 확인은 **`[백엔드 확인 대기]`**(vault·존재 은닉 정책 소유가 백엔드).
 
 > **[PART_B 크로스체킹 요청 · 미확정] 요청 계약 위반 범위:** `INVALID_SCHEMA` 설명은 요청 바디로 한정돼 있지만 현재 HTTP 경계는 필수 헤더 누락에도 같은 코드를 사용한다. **제안 해결안:** 헤더·JSON·body를 포함한 “요청 계약 위반”으로 정본 의미를 넓히거나 헤더용 코드를 분리하고, 선택한 범위를 공통 검증 핸들러 테스트로 고정한다. A·B가 확인해 달라.
+>
+> ✅ **A 판정(7/22):** 의미를 **"요청 계약 위반"으로 확장**(헤더 누락·JSON 파싱 실패·바디 스키마 모두 포함, `detail`로 구분) — 현 구현과 일치. 헤더용 코드 분리는 하지 않는다(하나의 400으로 수렴, detail이 어느 헤더/필드인지 명시). §1 표 반영.
 
 > **쿼터 소진(`QUOTA_EXCEEDED`류)은 백엔드 선차단이라 이 사전에 없다(7/15 · BE-4).** 할당 차단·카운트·잔여 표시는 전부 백엔드 Billing 소유라 AI 레이어에 도달하지 않는다 — `RATE_LIMITED`(순간 폭주)는 할당과 무관한 기술적 제한이라 유지한다.
 
@@ -77,23 +84,43 @@
 
 > **[PART_B 편입 요청 · B 분류 확정/정본 미편입] 문항 생성 결과 어휘는 모두 같은 `status` 필드가 아니다.** B 계약 기준으로 `ProblemSetStatus.status`의 `partial_success`, `ProblemItemStatus.items[].status`의 `needs_review`·`verification_unavailable`, `ProblemFailureReason.items[].failure_reason` 및 `dropped_reasons[]`의 `generation_exhausted`·`source_unverified`로 분류된다. 모두 HTTP 에러가 아니라 성공 응답의 `data` 안에 있지만 필드별 enum이 다르므로, 정본 편입 시 이 세 범주를 나눠 기록해 달라.
 
+### 2.6 문항 생성·refine 결과 (B — `POST /v1/problems` 등, 성공 200 안의 필드)
+
+B 계약 기준. 모두 HTTP 에러가 아니라 성공 응답 `data` 안의 값이며, **필드별로 enum이 다르다**(A 판정 7/22 — 세 범주를 나눠 기록).
+
+| 범주 | 필드 | 값 | 뜻 |
+| --- | --- | --- | --- |
+| 세트 | `ProblemSetStatus.status` | `partial_success` | 일부 문항만 검증 통과 — 세트는 유효, 미통과 문항은 아래 분류 |
+| 문항 | `items[].status` | `needs_review` | 검증 신뢰 낮음 — 강사 확인 필요(숨기지 않고 노출) |
+| 문항 | `items[].status` | `verification_unavailable` | 검증기(교차 풀이 등) 일시 불가 — 재시도 대기 |
+| 실패 사유 | `items[].failure_reason` · `dropped_reasons[]` | `generation_exhausted` | 문항당 생성 시도 소진(≤3회) |
+| 실패 사유 | 〃 | `source_unverified` | 근거 원천 대조 실패 — 발행 차단 |
+
+> B 규칙 원본은 `part_b/06_quality_gates.md` · `07_refine_policy.md`. 이 표는 정본 편입만이며 값 정의는 B 소유.
+
 ## 3. LLM_CALL.outcome (내부 관측 — API 미노출)
 
 `ok | parse_fail | field_missing | bad_ref(근거 ID 실존 실패) | timeout | provider_error | redaction_blocked(전송 전 차단 — 마스킹 정의서 §3 fail-closed)`. 재시도 정책: parse_fail·field_missing은 블록 단위 ≤3회, bad_ref는 즉시 해당 문장 폐기(재시도 무의미 — 환각), redaction_blocked는 재시도 금지+알럿.
 
-## 4. 도메인 예외 ↔ HTTP 매핑 (runtime/errors 구현 지침)
+## 4. 도메인 예외 ↔ HTTP 매핑 (canonical adapter = `runtime/errors.py`)
+
+canonical 예외→HTTP adapter는 **`runtime/errors.py` 한 곳**에 둔다(공용). 아래 트리가 정본.
 
 ```
 DomainException (base)
 ├─ ConsentAbsent          → 422 CONSENT_ABSENT
-├─ SnapshotInvalid        → 400 INVALID_SCHEMA
+├─ SnapshotInvalid        → 400 INVALID_SCHEMA (헤더 누락·JSON·바디 포함)
+├─ IdempotencyConflict    → 409 IDEMPOTENCY_CONFLICT
 ├─ GateRejected           → 200 + status (에러로 승격 금지!)
 ├─ EvidenceUnresolvable   → 200 + 블록 empty_reason=bad_ref
 ├─ LlmUnavailable         → 503 LLM_UPSTREAM_DOWN
+├─ LlmTimeout             → 504 TIMEOUT
 └─ RedactionUncertain     → 500 INTERNAL (원문 노출 위험 — 상세 사유 응답에 미포함)
 ```
 
 > **[PART_B 크로스체킹 요청 · 미확정 — 예외 트리]** 실제 공통 계약의 `LlmTimeout`과 runtime의 `IdempotencyConflict`가 위 트리에 없고, `contracts.llm.LlmUnavailable`과 runtime 예외도 서로 다른 계층이다. **제안 해결안:** canonical 예외→HTTP adapter 한 곳을 정한 뒤 §4 트리에 `IdempotencyConflict`·`LlmTimeout`을 포함하고 HTTP 통합 테스트로 409·503·504를 고정한다. A·B가 확인해 달라.
+>
+> ✅ **A 판정(7/22):** 수용 — adapter 위치 `runtime/errors.py` 확정, 트리에 `IdempotencyConflict`→409·`LlmTimeout`→504 편입(위 반영). `contracts.llm` 예외(LlmUnavailable·LlmTimeout)는 runtime adapter가 받아 HTTP로 변환하는 단일 경계로 정리. 감지 경로엔 LLM 예외가 없으므로(결정론) 503·504는 다른 capability 편입 시 통합 테스트로 고정.
 
 > `QuotaExceeded`는 이 트리에 없다 — 쿼터 차단은 백엔드 Billing 선집행이라 AI 도메인 예외로 올라오지 않는다(7/15 · BE-4).
 
