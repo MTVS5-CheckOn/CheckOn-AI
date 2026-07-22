@@ -132,6 +132,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 >
 > ✅ **A 판정(7/22):**
 > - **① 증분 격차:** AI가 `FEATURE_WEEK`·`BASELINE`을 영속 축적하는 방향으로 확정한다(D-② Alembic에서 구현). 외부 계약(`learning_events`=지난 주 증분)은 그대로 유지한다 — 백엔드 rolling 동봉 대안은 채택하지 않는다. **누적 병합 규칙(D-② 확정 7/22):** 저장된 이력 + 이번 요청을 병합할 때 `record_id`(백엔드 MySQL 원본 PK)로 dedupe하고, 같은 주차는 `FEATURE_WEEK` upsert한다. **같은 `record_id`인데 내용이 다르면 최신 수신본으로 갱신 + 로그**(재전송 = 강사의 채점 정정으로 해석 — 원본의 진실은 백엔드에 있으므로 충돌 에러로 막지 않는다). 갱신된 record_id 수를 로그로 남겨 대량 재전송을 관찰한다. 요청만으로 이력이 충분하면(데모·골든·초기 연동) DB 없이도 기존과 동일하게 동작한다.
+>   - **정밀화(D-②b 확정 · 백엔드 통보 필요):** **축적 대상은 파생물(`FEATURE_WEEK`)이며 raw `learning_events`는 AI PG에 저장하지 않는다**(도메인 원본은 백엔드 MySQL 소유 — CLAUDE.md 상위 규범, ERD에도 raw 이벤트 테이블 없음). 그래서 `record_id` dedupe는 **요청 이벤트에 대한 순수 정리**(재전송 정정 최신 승리)이고, 엔진은 여전히 **요청 구동**(시그니처 무변경)이다. **baseline read-path**(판정 시 `FEATURE_WEEK` 축적분에서 기준선을 조립해 엔진에 주입 — 후속 안건 D-②b) 도입 **전까지**, 백엔드는 요청에 **판정에 충분한 이력(판정 창 2주 + 베이스라인 8주 = 최근 10주)**을 동봉해야 한다. **순수 증분(1주) 전용 계약으로의 전환은 read-path가 붙은 뒤**에만 실동작한다 — 그전에 1주만 보내면 baseline이 비어 R1·R4 등이 조용히 skip된다. **[A 확정 · 백엔드 통보 필요]**
 > - **② week_start·status 엄격 검증:** 수용. `week_start`는 ISO date 형식, `status`는 enum으로 경계 모델에서 검증하고 오타는 `400 INVALID_SCHEMA`로 수렴시킨다(계약 강화 커밋). `AlertContextItem` 상태 조합 validator(resolved↔resolved_at)·14일 경계·이력 격리 테스트도 함께 수용.
 > - **③ consent는 enum 강제하지 않는 것이 의도다.** 사양(09 §2)에 `granted`만 존재하며 다른 값을 발명하지 않는다("문서에 없는 설계 금지"). `granted`가 아닌 값은 `400`이 아니라 **'폐기'가 사양** — 09 §2 원문("granted가 아니면 이벤트를 전부 버림")대로 feature/evidence 조립 전에 폐기한다. `paused`도 판정 제외로 폐기. 두 적대 입력 회귀 테스트는 유지.
 

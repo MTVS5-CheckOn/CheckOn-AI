@@ -41,7 +41,7 @@
         "rule_id": "R4",
         "signal_type": "hidden_risk",
         "display_label": "숨은 위기",
-        "score": 0.6666666666666661,
+        "score": 0.6666666666666665,
         "rank": 2,
         "lifecycle": "new",
         "brief": {
@@ -101,39 +101,6 @@
         ]
       },
       {
-        "signal_id": "deccfc8f-1cce-5dbd-a577-3b0acdc02d19",
-        "student_ref": "st_10",
-        "class_ref": "cl_b2",
-        "rule_id": "R1",
-        "signal_type": "acc_drop",
-        "display_label": "정답률 하락",
-        "score": 1.0,
-        "rank": 1,
-        "lifecycle": "ongoing",
-        "brief": {
-          "text": "정답률이 평소보다 눈에 띄게 떨어진 상태가 이어지고 있어요.",
-          "gate_passed": true,
-          "fallback_used": false
-        },
-        "evidence": [
-          {
-            "source_table": "learning_event",
-            "record_id": "le_1053",
-            "summary": "acc_drop 근거 기록"
-          },
-          {
-            "source_table": "learning_event",
-            "record_id": "le_1054",
-            "summary": "acc_drop 근거 기록"
-          },
-          {
-            "source_table": "learning_event",
-            "record_id": "le_1055",
-            "summary": "acc_drop 근거 기록"
-          }
-        ]
-      },
-      {
         "signal_id": "bc2f4dcc-5117-51ea-ae33-65ae16db9224",
         "student_ref": "st_07",
         "class_ref": "cl_b2",
@@ -141,7 +108,7 @@
         "signal_type": "type_bias",
         "display_label": "유형 편중",
         "score": 1.0,
-        "rank": 2,
+        "rank": 1,
         "lifecycle": "new",
         "brief": {
           "text": "특정 영역·유형에 오답이 몰리고 있어요. (literature×infer 오답 8/12)",
@@ -174,7 +141,7 @@
         "signal_type": "volume_gap",
         "display_label": "학습 공백",
         "score": 0.09090909090909094,
-        "rank": 3,
+        "rank": 2,
         "lifecycle": "new",
         "brief": {
           "text": "이번 주 학습량이 평소보다 크게 줄었어요.",
@@ -207,7 +174,7 @@
         "signal_type": "return_care",
         "display_label": "복귀 케어",
         "score": 1.0,
-        "rank": 4,
+        "rank": 3,
         "lifecycle": "new",
         "brief": {
           "text": "복귀 첫 주예요 — 적응을 한 번 살펴봐 주세요. (복귀 첫 주 — 점수 무관 케어 신호)",
@@ -231,6 +198,39 @@
             "summary": "return_care 근거 기록"
           }
         ]
+      },
+      {
+        "signal_id": "deccfc8f-1cce-5dbd-a577-3b0acdc02d19",
+        "student_ref": "st_10",
+        "class_ref": "cl_b2",
+        "rule_id": "R1",
+        "signal_type": "acc_drop",
+        "display_label": "정답률 하락",
+        "score": 1.0,
+        "rank": 4,
+        "lifecycle": "ongoing",
+        "brief": {
+          "text": "정답률이 평소보다 눈에 띄게 떨어진 상태가 이어지고 있어요.",
+          "gate_passed": true,
+          "fallback_used": false
+        },
+        "evidence": [
+          {
+            "source_table": "learning_event",
+            "record_id": "le_1053",
+            "summary": "acc_drop 근거 기록"
+          },
+          {
+            "source_table": "learning_event",
+            "record_id": "le_1054",
+            "summary": "acc_drop 근거 기록"
+          },
+          {
+            "source_table": "learning_event",
+            "record_id": "le_1055",
+            "summary": "acc_drop 근거 기록"
+          }
+        ]
       }
     ],
     "stats": {
@@ -243,7 +243,7 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "4a216cfb-f0b1-4efa-91a3-b8a34cd8e112",
+    "execution_id": "6edda4a2-9c16-42db-a96a-83a4b8c226da",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.1",

@@ -74,16 +74,26 @@ _idempotency_store: IdempotencyStore = build_idempotency_store()
 _detection_store: DetectionStore = build_detection_store()
 
 
-def reset_detection_store() -> None:
-    """테스트 격리용 — 원장 저장소를 재빌드한다."""
+def set_idempotency_store(store: IdempotencyStore) -> None:
+    """저장소 주입 — 실 PG 배선(합성 루트)·테스트에서 특정 인스턴스를 꽂는다."""
+    global _idempotency_store
+    _idempotency_store = store
+
+
+def set_detection_store(store: DetectionStore) -> None:
+    """저장소 주입 — 실 PG 배선(합성 루트)·테스트에서 특정 인스턴스를 꽂는다."""
     global _detection_store
-    _detection_store = build_detection_store()
+    _detection_store = store
+
+
+def reset_detection_store() -> None:
+    """테스트 격리용 — 원장 저장소를 재빌드한다(기본 백엔드)."""
+    set_detection_store(build_detection_store())
 
 
 def reset_idempotency_store() -> None:
-    """테스트 격리용 — 멱등 저장소를 재빌드한다."""
-    global _idempotency_store
-    _idempotency_store = build_idempotency_store()
+    """테스트 격리용 — 멱등 저장소를 재빌드한다(기본 백엔드)."""
+    set_idempotency_store(build_idempotency_store())
 
 
 def detection_versions(config: ThresholdConfig | None = None) -> VersionSet:
