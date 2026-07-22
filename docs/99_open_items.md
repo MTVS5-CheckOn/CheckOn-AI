@@ -15,6 +15,9 @@
 10. **observed_only 제거 ✅** — 응답에서 판단 보류 학생 목록 제거, `stats.excluded_under_2w` 숫자만. "관찰 중" 기준(재원 14일 미만)은 09 §3으로 고정, 표시는 백엔드 자체 계산. 반영: 04 §3.1 · 05 §1 · 03_usecases D1
 11. **`/feedback` 보류 ✅(7/16)** — API·화면 버튼 모두 뺌(임계 캘리브레이션 재개 시 활성). `signal_id`는 향후 대비 저장 유지. 보류 기간 보정은 threshold 시트 §5 섀도 모드 수동 리뷰. 반영: 04 §3.0·§3.2 · 05 §2 · 03_usecases D3 · 04_threshold §4 · 06_erd RULE_FEEDBACK(예약)
 
+## ★ 7/21 에러 코드 사전 정합
+12. **에러 코드 정본 = `error_codes.md`로 통일 ✅(7/21)** — 04 §2.3 표 제거(정본과 코드명·409 의미 드리프트), `IDEMPOTENCY_CONFLICT` 의미 채택(같은 키+다른 바디=거부), `QUOTA_EXCEEDED`는 AI 사전에서 제거(7/15 결정 반영 — 백엔드 Billing 선차단), `rule_skipped`→`rules_skipped` 개명(09 §3·detection.py 정합). 반영: error_codes §1·§2.3·§4·§5 · 04 §2.3
+
 > 규칙: 안건이 닫히면 ① 이 표의 상태를 ✅로 ② 관련 문서의 `[제안]`/`TODO(Open-n)` 제거 ③ 계약 문서는 버전 승격. **닫히기 전에는 잠정값으로 개발하되 코드에 `# TODO(Open-n)` 주석 필수.**
 
 ## A. 계약 Open 안건 (백엔드 리뷰 미팅에서 일괄 — `04_api_contract.md` §1)
