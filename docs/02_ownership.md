@@ -166,6 +166,8 @@ tests/ai/                               # 대응 프로덕션 파일의 오너�
 ```
 
 > **[PART_B 크로스체킹 요청 · 미확정 — 평가 격리]** FakeSnapshot 위치와 소유권은 승인했지만 현재 프로덕션 capability의 `ai.evaluation` 역방향 import 금지는 문서 규칙으로만 보장된다. **제안 해결안:** import 경계 회귀 테스트에 `detection/`·`composition/`·`diagnosis/`·`problem_generation/`·`import_mapping/`이 `ai.evaluation`을 import하지 않는 조건을 추가한다. A가 기존 격리 테스트 범위에 포함할지 확인해 달라.
+>
+> ✅ **A 판정(7/22):** 수용 — 문서 규칙을 AST 회귀 테스트로 승격했다(`tests/ai/contract/test_evaluation_isolation.py`). 5개 프로덕션 capability가 `ai.evaluation`을 import하면 CI가 실패한다. 아직 파일이 없는 패키지(composition·import_mapping)는 파일 생성 시 자동으로 검사 대상에 편입된다.
 
 ## 6. 부하 요약 (v3)
 
