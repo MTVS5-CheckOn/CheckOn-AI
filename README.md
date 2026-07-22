@@ -26,7 +26,7 @@
 ```bash
 # Python 3.12 (uv)
 uv sync                          # uv.lock 기준 전체 설치
-cp .env.example .env             # DB URL 등 채우기
+# .env는 노션에서 받아 레포 루트에 둔다 (DATABASE_URL 등 — 커밋 안 함)
 uv run alembic upgrade head      # AI PG 스키마 (예정)
 uv run uvicorn ai.main:app --reload   # 패키지 루트 = src/ai/
 uv run pytest                    # 테스트
