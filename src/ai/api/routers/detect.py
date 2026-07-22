@@ -6,8 +6,9 @@ DB 저장(SIGNAL·AI_RUN)은 이번 범위 밖(D-② Alembic 이후).
 멱등(04 §2.3): 같은 Idempotency-Key + 같은 snapshot_hash = 기존 결과 200 재반환 ·
 같은 키 + 다른 hash = 409 IDEMPOTENCY_CONFLICT. 바디 동일성은 snapshot_hash로 판정한다
 (04 부록 A: 요청 본문 전체의 canonical 해시) — **내부 백엔드 전용 신뢰 전제이며,
-외부 노출 시 자체 검증을 재검토한다.** v0 저장소는 프로세스 내 인메모리(재시작 시 소실) —
-DB 교체는 D-② 후속(99 안건 ⑨).
+외부 노출 시 자체 검증을 재검토한다.** 저장소는 IdempotencyStore 인터페이스로 분리했다
+(db.repositories.idempotency) — 기본값은 인메모리(재시작 소실), 실 PG 주입은 DB 연동 시
+(D-②/99 안건 ⑨·⑫). 키 스코프 = (tenant_id, endpoint, idempotency_key).
 """
 
 from __future__ import annotations
@@ -21,6 +22,10 @@ from pydantic import ValidationError
 from ai.api.envelope import success_envelope
 from ai.contracts.detection import DetectRequest
 from ai.contracts.execution import VersionSet
+from ai.db.repositories.idempotency import (
+    IdempotencyStore,
+    InMemoryIdempotencyStore,
+)
 from ai.detection.engine import detect
 from ai.detection.thresholds import ThresholdConfig, default_threshold_config
 from ai.runtime.errors import IdempotencyConflict, SnapshotInvalid
@@ -35,8 +40,17 @@ _CONTRACT_VERSION = "0.1"
 
 _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id", "Idempotency-Key")
 
-#: 멱등 저장소 — Idempotency-Key → (snapshot_hash, 응답 envelope). 프로세스 내 인메모리.
-_idempotency_store: dict[str, tuple[str, dict[str, Any]]] = {}
+#: 이 엔드포인트의 멱등 키 스코프(endpoint 성분).
+_ENDPOINT = "POST /v1/detect"
+
+#: 멱등 저장소 — 기본은 인메모리(테스트·개발). 실 PG는 DB 연동 시 이 인스턴스를 교체 주입.
+_idempotency_store: IdempotencyStore = InMemoryIdempotencyStore()
+
+
+def reset_idempotency_store() -> None:
+    """테스트 격리용 — 멱등 저장소를 빈 인메모리로 되돌린다."""
+    global _idempotency_store
+    _idempotency_store = InMemoryIdempotencyStore()
 
 
 def detection_versions(config: ThresholdConfig | None = None) -> VersionSet:
@@ -70,6 +84,7 @@ async def post_detect(request: Request) -> dict[str, Any]:
     if missing:
         raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": missing})
 
+    tenant_id = request.headers["X-Tenant-Id"]
     idempotency_key = request.headers["Idempotency-Key"]
 
     try:
@@ -86,11 +101,12 @@ async def post_detect(request: Request) -> dict[str, Any]:
 
     snapshot_hash = detect_request.snapshot_meta.snapshot_hash
 
-    cached = _idempotency_store.get(idempotency_key)
-    if cached is not None:
-        cached_hash, cached_response = cached
-        if cached_hash == snapshot_hash:
-            return cached_response  # 같은 키 + 같은 바디 → 기존 결과 재반환
+    hit = await _idempotency_store.get(
+        tenant_id=tenant_id, endpoint=_ENDPOINT, idempotency_key=idempotency_key
+    )
+    if hit is not None:
+        if hit.snapshot_hash == snapshot_hash:
+            return hit.response_body  # 같은 키 + 같은 바디 → 기존 결과 재반환
         raise IdempotencyConflict(
             "같은 Idempotency-Key에 다른 바디", {"idempotency_key": idempotency_key}
         )
@@ -102,5 +118,11 @@ async def post_detect(request: Request) -> dict[str, Any]:
         execution_id=str(uuid.uuid4()),
         versions=detection_versions(config),
     )
-    _idempotency_store[idempotency_key] = (snapshot_hash, envelope)
+    await _idempotency_store.put(
+        tenant_id=tenant_id,
+        endpoint=_ENDPOINT,
+        idempotency_key=idempotency_key,
+        snapshot_hash=snapshot_hash,
+        response_body=envelope,
+    )
     return envelope
