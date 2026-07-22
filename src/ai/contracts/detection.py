@@ -10,10 +10,10 @@
 경계 밖 필드(실명 등)를 구조적으로 차단한다.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ai.contracts.taxonomy import AreaTag, ItemFormat, SubjectTrack, TypeTag
 
@@ -167,13 +167,23 @@ class SnapshotMeta(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     week_start: str = Field(min_length=1)
-    """이번 주 월요일 — "이번 주 vs 평소" 비교의 기준 키."""
+    """이번 주 월요일 — "이번 주 vs 평소" 비교의 기준 키. ISO date 형식 (09 §2)."""
 
     snapshot_hash: str = Field(min_length=1)
     """요청 본문 전체(alert_context 포함)의 해시 — 재현·감사 키 (04 부록 A)."""
 
     term_context: TermContext
     classes: tuple[ClassRef, ...] = Field(min_length=1)
+
+    @field_validator("week_start")
+    @classmethod
+    def validate_week_start_is_iso_date(cls, value: str) -> str:
+        """week_start를 ISO date로 엄격 검증 — 오타는 넘기지 않고 거부 (09 §2 A판정 7/22)."""
+        try:
+            date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(f"week_start는 ISO date(YYYY-MM-DD)여야 한다: {value!r}") from exc
+        return value
 
 
 class StudentInput(BaseModel):
@@ -243,6 +253,20 @@ class AlertContextItem(BaseModel):
 
     followed_up: bool
     """해소 후 팔로업 카드가 이미 나갔는지 — 중복 방지."""
+
+    @model_validator(mode="after")
+    def validate_status_resolved_at(self) -> "AlertContextItem":
+        """상태 조합 검증 (09 §2 A 판정 7/22): resolved면 resolved_at 필수, open이면 부재.
+
+        미래 해소 시각 금지는 week_start와의 비교라 모델 단독으론 판정할 수 없다 —
+        엔진 입력 검증(week_start를 아는 곳)이 적절하다. 이번 v0는 모델 단독 상태 조합만
+        강제하고, 미래 시각 검증은 엔진 편입을 후속 제안으로 남긴다.
+        """
+        if self.status is AlertStatus.RESOLVED and self.resolved_at is None:
+            raise ValueError("status=resolved면 resolved_at이 필수다")
+        if self.status is AlertStatus.OPEN and self.resolved_at is not None:
+            raise ValueError("status=open이면 resolved_at이 없어야 한다")
+        return self
 
 
 class DetectRequest(BaseModel):

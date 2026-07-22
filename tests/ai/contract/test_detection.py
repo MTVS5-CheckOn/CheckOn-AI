@@ -224,6 +224,47 @@ def test_request_rejects_real_name_field() -> None:
         )
 
 
+def test_week_start_rejects_non_iso_date() -> None:
+    """week_start ISO date 엄격 검증 (09 §2 A판정) — 오타는 거부."""
+    with pytest.raises(ValueError, match="week_start"):
+        SnapshotMeta.model_validate(
+            {
+                "week_start": "2026-13-99",
+                "snapshot_hash": "sha256:x",
+                "term_context": "normal",
+                "classes": [{"class_ref": "cl_a1"}],
+            },
+        )
+
+
+def test_alert_resolved_requires_resolved_at() -> None:
+    """resolved면 resolved_at 필수 (09 §2 A판정)."""
+    with pytest.raises(ValueError, match="resolved_at"):
+        AlertContextItem.model_validate(
+            {
+                "student_ref": "st_1",
+                "signal_type": "acc_drop",
+                "status": "resolved",
+                "resolved_at": None,
+                "followed_up": False,
+            },
+        )
+
+
+def test_alert_open_forbids_resolved_at() -> None:
+    """open이면 resolved_at 부재 (09 §2 A판정)."""
+    with pytest.raises(ValueError, match="resolved_at"):
+        AlertContextItem.model_validate(
+            {
+                "student_ref": "st_1",
+                "signal_type": "acc_drop",
+                "status": "open",
+                "resolved_at": "2026-07-06T00:00:00+09:00",
+                "followed_up": False,
+            },
+        )
+
+
 def test_response_has_no_observed_only() -> None:
     """observed_only 제거 확정 (명세 §3) — 응답에 학생 목록 필드가 없다."""
     assert "observed_only" not in DetectResponse.model_fields
