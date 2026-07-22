@@ -36,6 +36,8 @@ flowchart LR
   FBNOTE["※ 피드백 루프 보류(7/16)<br/>/feedback API·화면 버튼 v1 제외<br/>signal_id 저장·RULE_FEEDBACK 예약 (명세 09)"]
 ```
 
+> **[PART_B 크로스체킹 요청 · 미확정 — detection 상한 흐름]** 위 `ranking.py TOP 3~5` 도식과 아래 시퀀스·SIGNAL rank 설명은 모든 신호가 상한 대상인 것처럼 읽히지만, A 정본(04 §3·09 §4, #14)은 lifecycle 억제 후 `new`·`follow_up`만 상한을 적용하고 `ongoing`·R5를 상한 밖에서 합류시킨다. **제안 해결안:** 도식을 `병합 → lifecycle 억제 → new·follow_up 랭킹·상한 → ongoing·R5 합류`로 동기화하고 최종 응답 수·rank가 5를 넘을 수 있음을 표시한다. A가 설계도·시퀀스·내부 ERD 설명을 함께 갱신할지 확인해 달라. 기존 도식은 확인 전 변경하지 않는다.
+
 **불변식:** evidence 빈 신호는 `EmptyEvidenceError` · 데이터 2주 미만 제외(관찰 중) · 임계값 변경은 버전으로만. **문장화(ⓐ)는 detection 밖의 소비 기능** — detection 코드는 v2에서도 무변경·LLM 0.
 
 ### 1-B. composition (단건 답장·리포트) — 선형 + 재시도 ≤3 (v1 유지)

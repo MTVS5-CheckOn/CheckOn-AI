@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v1.4 (2026-07-22): PR #10·#11의 A 판정을 B 추적표에 회신 반영 — 기존 크로스체크의 완료·후속 백로그를 분리하고, `REVISION_CONFLICT`·B 결과 어휘 5종의 A 정본 편입 완료를 갱신. A가 새로 확정한 **ongoing·R5 상한 제외**는 B가 수용하되, 공용/API 요약 동기화·병합 lifecycle 경계·회귀/데모 보강은 해당 A 문서에 새 크로스체킹 요청으로 등록.
 > - v1.3 (2026-07-22): `develop`의 A PR 리뷰 요청 4건에 B 회신 — 승인 항목은 직접 반영하고, 그 과정에서 새로 발견한 간극만 해당 A·공용 원본에 **B 제안 해결안과 크로스체킹 요청**으로 등록. B 소유 충돌 규약·상태 필드 분류·HTTP DTO 경계와 §2-10 실제 완료 현황은 확정 반영.
 > - v1.2 (2026-07-15): **공용 계약 B 확장 14항목 A+B 승인 완료 반영** — §2-3·§2-9를 승인·구현 완료(커밋 `d5283d0`)로 전환(제안 이력 보존), §2-10(공용 문서 동기화 요청 일람) 신설, §3 B-2 갱신.
 > - v1.1 (2026-07-15): 파일 번호 이동(06→09) + 7/15 결정 정리 — 해소 안건 분리(§0), Kafka 이벤트·409 충돌 코드·라벨 사전 제안 추가, B-1 회신 갱신, 쿼터 제안 폐기 반영. part_b 재편(01~09)에 따른 참조 갱신.
@@ -63,7 +64,7 @@ A가 요청한 B 검토 2건에 대한 회신:
 | --- | --- |
 | 감지 계약(lifecycle AI 소유·3값, `display_label`, taxonomy 공용 enum) | ✅ 승인. 계약·구현·테스트가 일치하며 B 추가 변경 없음 |
 | FakeSnapshot 위치·제외 학생·hash 플레이스홀더 | ✅ `evaluation/fake_snapshot.py` 위치 승인. A 감지 픽스처를 B 소유 `tests/ai/fakes/`에 두지 않는 근거가 타당하며, 프로덕션 import 금지 원칙과 재현용 placeholder 설명도 수용. `02_ownership.md`·`99_open_items.md`에 완료 반영 |
-| score/readapt/R2·meta/capped_out 설계 | ✅ R2 v0 `consecutive_missing` 한정, 엔진 밖 `meta.versions`, `capped_out` 집계 한정은 승인. score/readapt에서 독립 크로스체크 중 새로 발견한 시간·유효 임계 모호성만 §1-7로 별도 요청 |
+| score/readapt/R2·meta/capped_out 설계 | ✅ R2 v0 `consecutive_missing` 한정, 엔진 밖 `meta.versions`, `capped_out` 집계 한정을 승인. A 후속 판정으로 readapt=최근 30일 이력 존재, score 0점=원임계, `capped_out`=`new`·`follow_up` 상한 탈락분으로 확정. ongoing·R5 상한 제외 후속은 §1-8 |
 | `api/` 구조·v0 한계 | ✅ `app.py`·`envelope.py` 공통 양자 승인 + 라우터 capability 오너 구조 승인. `02_ownership.md` 양자 승인 9곳과 99 ⑧에 확정 반영. 인메모리 멱등·DB 미적재 등 공지된 v0 한계는 백로그 유지; 별도로 발견한 wire·보안 간극만 §1-7로 요청 |
 
 ### 1-7. 독립 크로스체크에서 새로 발견한 A·백엔드 협업 요청
@@ -72,10 +73,25 @@ A PR 요청을 반영·검토한 뒤 B가 추가로 발견한 간극만 해당 �
 
 | 원본·위치 | 새로 발견한 확인 요청 | 상태 |
 | --- | --- | --- |
-| `part_a/09_detect_spec.md` §2·§3·§4 | 증분 입력↔8주 baseline · date/enum 경계 검증 · 제외 이벤트 처리 순서 · AlertContext 불변식 · brief/evidence · lifecycle 다건/상한 순서 | ☐ A+BE 확인 |
-| `part_a/04_threshold_config.md` §2·§3·§3.1 | readapt 시간 검증 주체 · lifecycle 억제/상한 순서 · 세그먼트 유효 임계의 score 기준 | ☐ A+BE 확인 |
-| `04_api_contract.md` §2.2·§2.3 | capability별 version 불변식 · 실패 meta · tenant/경로 멱등 스코프 · 요청 검증 · 실제 LLM 예외 매핑 · 민감 detail · tracing | ☐ A+B+BE 확인 `[P0]` |
-| `02_ownership.md` §5 아래 | 프로덕션 capability → `ai.evaluation` 역방향 import 금지 자동 검사 | ☐ A 확인 |
+| `part_a/09_detect_spec.md` §2·§3·§4 | 증분 입력↔8주 baseline · date/enum 경계 검증 · 제외 이벤트 처리 순서 · AlertContext 불변식 · brief/evidence · lifecycle 다건/억제 순서·14일 경계 | ◐ A 판정 대부분 완료 — 영속 baseline은 D-②, 관련 실존 evidence 전무 시 처리는 D⑪, 미래 `resolved_at` 거부 경계는 잔여 |
+| `part_a/04_threshold_config.md` §2·§3·§3.1 | readapt 시간 검증 주체 · lifecycle 억제/상한 순서 · score 0점 기준 | ✅ A 판정·엔진 반영 완료 — readapt=30일 이력, 억제 선적용, score=원임계, ongoing·R5 상한 제외(#14) |
+| `part_a/02_design.md` §1-A · `03_usecases.md` D1 · `08_evaluation_plan.md` §2 · `09_detect_spec.md` §3·§4 · `06_erd.md` SIGNAL | 새 상한 정책과 기존 “전체 TOP 3~5” 요약 동기화 · 병합 primary/secondary lifecycle 경계 · 초과/capped_out 회귀 · rank/데모 | ☐ A+BE 확인 — 원본 조항에 신규 메모, §1-8 |
+| `04_api_contract.md` §2.2·§2.3 | capability별 version 불변식 · 실패 meta · tenant/경로 멱등 스코프 · 요청 검증 · 실제 LLM 예외 매핑 · 민감 detail · tracing | ◐ A 방향 판정·detect 경로 일부 반영 — VersionSet 양자 협의, 공용 실패 meta/검증, LLM adapter, 민감 detail, 멱등 D-②, 로그 correlation 잔여 `[P0]` |
+| `04_api_contract.md` §3.0·§3.1·§4.1 | `signals[]` 수·rank·`capped_out`을 ongoing·R5 상한 제외 정책과 동기화 | ☐ A+B+BE 확인 — 원본 조항에 신규 메모, §1-8 |
+| `02_ownership.md` §5 아래 | 프로덕션 capability → `ai.evaluation` 역방향 import 금지 자동 검사 | ✅ A 수용·AST 회귀 테스트 반영 완료 (`tests/ai/contract/test_evaluation_isolation.py`) |
+
+### 1-8. ongoing·R5 상한 제외 — A 확정 수용·후속 크로스체크
+
+**A 확정(#14, 7/22)을 B도 수용한다.** 파이프라인은 `학생별 병합 → lifecycle 억제 탈락 → new·follow_up만 랭킹·상한 → ongoing·R5 상한 밖 합류 → 응답`이며, `capped_out`은 `new`·`follow_up` 후보의 탈락 수만 센다. 따라서 전체 응답 신호 수와 rank는 `cap_max`를 넘을 수 있다. 기존 Alert의 brief·evidence를 교체하는 백엔드 처리에는 변경이 없다.
+
+다만 아래는 A 확정값을 바꾸지 않고 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 등록했다.
+
+| 후속 | B 제안 · 확인 요청 | 상태 |
+| --- | --- | --- |
+| 요약 계약 동기화 | **확인된 불일치:** 공용 `04_api_contract` §3.0·§3.1은 아직 “신호 TOP 3~5”·“상한 적용 후의 신호만”·`capped_out=상한에 밀린 후보 수`로 적고, `contracts/detection.py`도 Signal·rank·capped_out을 전체 상한 기준으로 설명한다. `02_design`·`03_usecases`·`08_evaluation`·`09_detect_spec`까지 `new`·`follow_up` 대상, 최종 수/rank>5, `capped_out` 범위로 동기화하고 BE·FE의 길이/rank≤5 가정도 확인 | ☐ A+B+BE |
+| 병합 lifecycle 경계 | **확인된 현행:** `merge_student`는 비-R5를 1경보로 병합하고, 엔진은 `primary.signal_type` 하나로만 lifecycle을 판정한다. 따라서 primary=ongoing·secondary=new이면 전체가 ongoing 상한 밖이고, secondary의 finding은 `_build_signal` evidence 조립에만 쓰여 new lifecycle은 응답에서 드러나지 않는다. 반대 방향(secondary만 ongoing)도 해당 이력을 판정하지 않는다. 현행 primary 기준 고정과 lifecycle별 분리 중 A+BE가 결정하고 양방향 회귀 필요 | ☐ A+BE(+B 리뷰) |
+| 회귀 보강 | **확인된 커버리지:** `tests/ai/unit/detection/test_engine.py`에는 `cap_max`·`capped_out`·rank 조합 회귀가 0건이다. golden에는 new 6→5·억제 선탈락·`ongoing 3 + new 5 → 8, capped_out=0`만 있다. `ongoing 3 + new 6 → 8, capped_out=1`, new+follow_up 공동 상한, R5 상한 밖 조합, 다중 반 독립 rank/합산, 상한 밖 `student_ref` 정렬·정확한 rank, 병합 lifecycle 양방향을 추가 고정 | ☐ A |
+| 데모 rank | **확인된 stale:** `demo_snapshot.py`는 `st_10`에 `alert_open(acc_drop)`을 넣어 ongoing을 만들지만 저장 응답은 `st_10=1, st_07=2, st_09=3, st_08(R5)=4`다. 현재 정책 순서는 `st_07=1, st_09=2, st_08(R5)=3, st_10(ongoing)=4`이므로 병합/rank 결정 후 생성기로 request·response 쌍을 재생성하고 엔진 출력과 고정 | ☐ A |
 
 ## §2. 공용 문서·계약 변경 제안 (승인 주체: 02_ownership 절차)
 
@@ -95,7 +111,7 @@ A PR 요청을 반영·검토한 뒤 B가 추가로 발견한 간극만 해당 �
 
 ### 2-2. 상태·에러 코드 사전 증보 제안 — `docs/policies/error_codes.md` `(C-10)`
 
-**B 결과 어휘 5종 — 필드별 분류 확정, A 정본 편입 요청:** 전부 HTTP 에러가 아니라 성공 응답의 `data` 안에 있지만 같은 `status` 필드가 아니다.
+**B 결과 어휘 5종 — ✅ A 정본 편입 완료(7/22, `error_codes.md` §2.6):** 전부 HTTP 에러가 아니라 성공 응답의 `data` 안에 있지만 같은 `status` 필드가 아니다.
 
 | enum · wire 필드 | 값 | 뜻 | 근거 |
 | --- | --- | --- | --- |
@@ -107,7 +123,7 @@ A PR 요청을 반영·검토한 뒤 B가 추가로 발견한 간극만 해당 �
 
 **409 멱등 의미 — ✅ A 정본 적용 완료:** 같은 멱등키+같은 바디는 기존 상태·결과 200, 같은 키+다른 바디는 `409 IDEMPOTENCY_CONFLICT`다. 폐기된 구 코드명과 “기존 결과를 409로 반환” 의미는 사용하지 않는다.
 
-**별도 HTTP 충돌 코드 1종 — B 의미 확정·A 정본 편입 요청:** `409 REVISION_CONFLICT`. 새 키+stale `base_revision_no`면 `detail.reason=stale_base_revision`, 새 키+진행 중 refine이면 `detail.reason=revision_in_progress`다. 멱등 조회를 먼저 수행하며 `IDEMPOTENCY_CONFLICT`와 의미를 섞지 않는다.
+**별도 HTTP 충돌 코드 1종 — ✅ A 정본 편입 완료(7/22):** `409 REVISION_CONFLICT`. 새 키+stale `base_revision_no`면 `detail.reason=stale_base_revision`, 새 키+진행 중 refine이면 `detail.reason=revision_in_progress`다. 내부 API에서 두 reason 노출을 허용하며, 멱등 조회를 먼저 수행해 `IDEMPOTENCY_CONFLICT`와 의미를 섞지 않는다.
 
 **refine `blocked_reason` B 증분 3종:** ✅ `answer_integrity` · `banned_topic` · `prompt_injection`은 `error_codes.md` §2.2 편입 완료([`07`](07_refine_policy.md) §3 — `pii_exposure`·`out_of_scope`는 A enum 재사용).
 
@@ -229,7 +245,7 @@ class VersionSet(BaseModel):
 | `docs/04_api_contract.md` §2.2 | 공용 | meta.versions = 공통 6종 + B nullable 4종 | ✅ 완료 — 10키 예시·정본 규칙 반영 |
 | `docs/06_erd.md` | A | AI_RUN B 버전 4컬럼·capability 2종, GATE_RESULT B enum 반영 | ✅ 완료 — B 7테이블 통합은 §2-4 별도 |
 | `docs/99_open_items.md` | 공용 | B-2 승인·구현 완료 상태 반영 | ☐ 잔여 — B-2가 아직 미완료 표기 |
-| `docs/policies/error_codes.md` §2.2 | A | BlockedReason 3종 편입 | ✅ 완료 — B 결과 어휘 5종·`REVISION_CONFLICT`는 §2-2의 별도 편입 요청 |
+| `docs/policies/error_codes.md` §2.2·§2.6·§1 | A | BlockedReason 3종·B 결과 어휘 5종·`REVISION_CONFLICT` 편입 | ✅ 완료 — 세 범주 분리·409 reason 공개 범위·멱등 선조회까지 정본 반영 |
 | `docs/part_a/08_evaluation_plan.md` §1 | A | `golden/diagnosis/` 행 추가 | ☐ 잔여 |
 | `docs/02_ownership.md` §5 | 공용 | `golden/diagnosis/` [염준영] 소유 행 추가 | ☐ 잔여 — `api/`·FakeSnapshot 소유 반영과는 별개 |
 | `docs/00_INDEX.md` | 공용 | part_b 문서 9종 링크 절 신설 | ☐ 잔여 |
@@ -243,11 +259,14 @@ class VersionSet(BaseModel):
 | 항목 | 원본 크로스체킹 위치 | 상태 |
 | --- | --- | --- |
 | 소유권 | `02_ownership.md` §4·§5 | ✅ B 승인·9곳 편입 완료 |
-| 실패 envelope | `04_api_contract.md` §2.2 | ☐ A+B 확인 |
-| 요청 검증·LLM 예외 매핑·민감 detail | `04_api_contract.md` §2.3 | ☐ A+B 확인 `[P0]` |
-| tenant/경로 멱등 스코프·서버 digest·tracing | `04_api_contract.md` §2.3 | ☐ A+B+BE 확인 `[P0]` |
+| 실패 envelope | `04_api_contract.md` §2.2 | ◐ detect 경로의 실패 `meta.versions` 구현·테스트 완료, 공용 `error_envelope`의 versions 필수화 또는 전 라우터 조립 보장 잔여(양자) |
+| 요청 검증 | `04_api_contract.md` §2.3 · `error_codes.md` §1 | ◐ `INVALID_SCHEMA` 범위 확정·detect 구현 완료, 공용 재사용 handler 보장 잔여 |
+| LLM 예외 매핑 | `04_api_contract.md` §2.3 · `error_codes.md` §4 | ◐ `runtime/errors.py` adapter 위치·정본 트리 확정, `contracts.llm` 실제 예외 연결·503/504 통합 테스트 잔여 |
+| 민감 detail 강제 제거 | `04_api_contract.md` §2.3 · `error_codes.md` §4 | ☐ 공통 handler의 `RedactionUncertain.detail` 제거 보장·통합 테스트 확인 `[P0]` |
+| tenant/경로 멱등 스코프·서버 digest·TTL·영속화 | `04_api_contract.md` §2.3 | ☐ D-② DB 교체 안건(99 ⑨)으로 이관 `[P0]` |
+| tracing | `04_api_contract.md` §2.3 | ◐ `X-Request-Id` 응답 echo 완료, 로그 correlation 구현 근거·회귀 잔여 |
 | B HTTP DTO | §2-1 | ✅ 외부 body DTO와 내부 command 분리 확정 |
-| 동의 오류 경계(404/422) | `policies/error_codes.md` §1 | ☐ A+BE 확인 |
+| 동의 오류 경계(404/422) | `policies/error_codes.md` §1 | ◐ A 구분안 채택·정본 반영, 백엔드 보안 의도 확인 대기 |
 
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
@@ -270,6 +289,6 @@ class VersionSet(BaseModel):
 | — | 문학 풀 초기 등재 규모·라이선스 | — | BE+기획 | 05 §3 |
 | — | 프론트 라벨 문구·대화 UI 형태 | §2-2 라벨 사전 기준 | FE+기획 | 06 §0 |
 | Open-9 잔여 | 전국 백분위 출처(A 소관 — 참고) | — | BE+A | — |
-| 7/22 감지 리뷰 | A PR 요청 4건 B 회신 완료 · 독립 크로스체크 신규 간극 | 원본의 `[PART_B 크로스체킹 요청]` 검토 후 A·BE 회신 | A+BE(+B 리뷰) | §1-6·§1-7 |
-| 7/22 API 리뷰 | `api/` 소유 구조 ✅ · 실패 meta·검증/LLM 예외·민감 detail·tenant 멱등·tracing 잔여 | 원본의 `[PART_B 크로스체킹 요청]` 검토 후 공통 wire 확정 | A+B+BE | §2-11 |
+| 7/22 감지 리뷰 | 기존 크로스체크 A 판정·구현 완료 · ongoing 상한 제외 후 요약 동기화·병합 lifecycle·회귀/데모 잔여 | 원본의 신규 `[PART_B 크로스체킹 요청]` 검토 후 A·BE 회신 | A+BE(+B 리뷰) | §1-6·§1-7·§1-8 |
+| 7/22 API 리뷰 | `api/` 소유 ✅ · 실패 meta/검증/tracing 일부 반영 · VersionSet 양자 협의·LLM adapter·민감 detail·D-② 멱등·ongoing 응답 의미 잔여 | 원본의 `[PART_B 크로스체킹 요청]` 검토 후 공통 wire 확정 | A+B+BE | §1-7·§1-8·§2-11 |
 | 7/22 B HTTP 경계 | 공통 헤더와 내부 command의 중복 | ✅ 외부 HTTP DTO와 내부 command 분리 확정 | B(+A·BE 편입 리뷰) | 05 §4.1 · 07 · §2-1·§2-11 |
