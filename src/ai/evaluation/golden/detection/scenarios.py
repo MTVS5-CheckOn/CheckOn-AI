@@ -305,6 +305,37 @@ def g12_composite() -> GoldenScenario:
     )
 
 
+def suppression_promotion_request() -> DetectRequest:
+    """억제 승격 회귀(7/22 버그) — 반 6명 후보 중 최상위 1명이 억제(팔로업 기발송)되면
+    응답 5건(cap_max)에 6번째 후보가 승격돼 포함돼야 한다.
+
+    기대값 근거: 04 §3 "lifecycle 억제를 랭킹·상한보다 먼저 적용". 억제가 랭킹 뒤면
+    최상위 억제 후보가 슬롯을 소비해 응답이 4건이 되고 6번째가 누락된다(버그).
+    """
+    # drop이 클수록 score가 높다 — st_sup_1이 최상위(억제 대상), st_sup_6이 최하위.
+    finals = [0.40, 0.45, 0.50, 0.55, 0.60, 0.62]
+    students = [
+        StudentPlan(
+            student_ref=f"st_sup_{i + 1}",
+            class_ref="cl_sup",
+            weeks=10,
+            solves_per_week=100,
+            accuracy=(0.8,) * 8 + (final, final),
+        )
+        for i, final in enumerate(finals)
+    ]
+    # 최상위(st_sup_1)를 억제: 해소 후 2주 이내 재발 + 팔로업 기발송 → follow_up 억제
+    resolved_recent = _monday() - timedelta(days=7)
+    return _req(
+        students,
+        alert_context=[
+            alert_resolved(
+                "st_sup_1", SignalType.ACC_DROP, resolved_at=resolved_recent, followed_up=True
+            )
+        ],
+    )
+
+
 def all_scenarios() -> list[GoldenScenario]:
     """G1~G12 전체."""
     return [

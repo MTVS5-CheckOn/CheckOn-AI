@@ -12,7 +12,11 @@ from ai.contracts.evaluation import GoldenSuite
 from ai.detection.engine import detect
 from ai.evaluation.detection_eval import DetectionEvaluator
 from ai.evaluation.fake_snapshot import StudentPlan, build_detect_request
-from ai.evaluation.golden.detection.scenarios import GoldenScenario, all_scenarios
+from ai.evaluation.golden.detection.scenarios import (
+    GoldenScenario,
+    all_scenarios,
+    suppression_promotion_request,
+)
 
 WEEK_START = "2026-07-13"
 
@@ -73,6 +77,19 @@ def test_top_cap_applied_and_capped_out_counted() -> None:
     assert response.stats.capped_out == 1
     ranks = sorted(signal.rank for signal in response.signals)
     assert ranks == [1, 2, 3, 4, 5]
+
+
+def test_suppression_before_ranking_promotes_sixth() -> None:
+    """억제 승격(7/22 버그) — 반 6명 중 최상위 1명 억제 시 6번째가 5슬롯에 승격.
+
+    억제를 랭킹 뒤에 적용하면(구 버그) 응답 4건 + st_sup_6 누락. 앞에 적용하면 5건 + 포함.
+    """
+    response = detect(suppression_promotion_request())
+    refs = [signal.student_ref for signal in response.signals]
+    assert len(response.signals) == 5, refs
+    assert "st_sup_1" not in refs, "억제된 최상위는 응답에서 빠져야 한다"
+    assert "st_sup_6" in refs, "억제로 열린 슬롯에 6번째 후보가 승격돼야 한다"
+    assert response.stats.capped_out == 0  # 억제 후 5명 = cap_max이므로 컷 없음
 
 
 def test_evidence_record_ids_all_exist() -> None:
