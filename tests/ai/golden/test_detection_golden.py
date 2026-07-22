@@ -15,6 +15,7 @@ from ai.evaluation.fake_snapshot import StudentPlan, build_detect_request
 from ai.evaluation.golden.detection.scenarios import (
     GoldenScenario,
     all_scenarios,
+    ongoing_over_cap_request,
     suppression_promotion_request,
 )
 
@@ -90,6 +91,16 @@ def test_suppression_before_ranking_promotes_sixth() -> None:
     assert "st_sup_1" not in refs, "억제된 최상위는 응답에서 빠져야 한다"
     assert "st_sup_6" in refs, "억제로 열린 슬롯에 6번째 후보가 승격돼야 한다"
     assert response.stats.capped_out == 0  # 억제 후 5명 = cap_max이므로 컷 없음
+
+
+def test_ongoing_exempt_from_cap() -> None:
+    """ongoing 상한 제외(7/22) — ongoing 3 + new 5 → 8건, capped_out=0."""
+    response = detect(ongoing_over_cap_request())
+    lifecycles = [signal.lifecycle.value for signal in response.signals]
+    assert len(response.signals) == 8, lifecycles
+    assert lifecycles.count("ongoing") == 3, "ongoing 3건 전부 응답에 남아야 한다"
+    assert lifecycles.count("new") == 5, "new 5건이 상한을 채운다"
+    assert response.stats.capped_out == 0  # ongoing은 슬롯 미소비
 
 
 def test_evidence_record_ids_all_exist() -> None:

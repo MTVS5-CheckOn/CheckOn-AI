@@ -3,9 +3,10 @@
 사양 원본: docs/part_a/02_design.md(파이프라인)·09 §3(응답)·04(임계).
 소유: 박진희 (detection).
 
-단계(02_design·04): ① 제외 처리 ② 개인 베이스라인 ③ 세그먼트 계수 ④ R1~R6 판정
-⑤ 병합 ⑥ lifecycle 억제 ⑦ 랭킹·상한 ⑧ 응답 조립. **lifecycle 억제는 랭킹보다
-먼저**다(7/22 확정 — 억제 후보가 TOP 슬롯을 소비하지 않게). DB 저장·증분 축적·HTTP는 범위 밖.
+단계(02_design·04): ① 제외 ② 베이스라인 ③ 세그먼트 ④ R1~R6 ⑤ 병합
+⑥ lifecycle 억제(탈락) ⑦ new·follow_up만 랭킹·상한 ⑧ ongoing·R5 상한 밖 합류 ⑨ 응답.
+**억제는 랭킹보다 먼저 · 상한은 new·follow_up에만**(7/22 확정 — ongoing이 슬롯을 소비해
+신규 위험을 가리지 않게). DB 저장·증분 축적·HTTP는 범위 밖.
 
 결정론(불변식 8): signal_id는 uuid5(입력 기반)로 재현 가능하게 만든다 — 랜덤 uuid 금지.
 현재 시각 미사용 — 모든 시간 기준은 snapshot_meta.week_start에서 유도한다.
@@ -109,13 +110,19 @@ def _rank_with_lifecycle(
     week_start: date,
     evidence_index: dict[tuple[str, date], list[str]],
 ) -> tuple[list[Signal], int]:
-    """lifecycle 억제를 랭킹·상한보다 **먼저** 적용한다 (04 §3 · 09 §4, 7/22 확정).
+    """파이프라인: 병합 → lifecycle 억제(탈락) → new·follow_up만 랭킹·상한 →
+    ongoing·R5 상한 밖 합류 → 응답 (04 §3 · 09 §4, 7/22 확정).
 
-    억제 후보(lifecycle=None)는 TOP 슬롯을 소비하지 않고 랭킹 이전에 탈락한다 —
-    그래야 하위 유효 신호가 상한 안으로 승격된다. capped_out도 억제 후 기준으로 센다.
+    - 억제 후보(lifecycle=None)는 슬롯을 소비하지 않고 랭킹 이전에 탈락한다.
+    - **상한 대상은 new·follow_up만**이다. ongoing(기존 카드 갱신)과 R5(정책 신호)는
+      "오늘 새로 봐야 할 카드"가 아니므로 상한 밖에서 합류한다 — 만성 미해소가 슬롯을
+      점유해 신규 위험을 가리는 것을 막는다. capped_out은 new·follow_up 후보 기준.
+    - rank: 상한 통과분(new·follow_up) 다음에 상한 밖(ongoing·R5)을 student_ref순으로
+      이어붙인다 — 기존 R5(care) 처리 방식과 일관.
     """
     signals: list[Signal] = []
     capped_out = 0
+    capped_kinds = {Lifecycle.NEW, Lifecycle.FOLLOW_UP}
     for _class_ref, alerts in sorted(class_alerts.items()):
         # ① lifecycle 판정 → 억제 탈락 (랭킹 이전)
         kept: list[StudentAlert] = []
@@ -133,12 +140,35 @@ def _rank_with_lifecycle(
                 continue  # 억제 — 슬롯 미소비
             kept.append(alert)
             lifecycles[(alert.student_ref, alert.primary.rule_id.value)] = lifecycle
-        # ② 남은 신호만 랭킹·상한
-        result = rank_class(kept, config.cap_max)
+
+        # ② 상한 대상(new·follow_up의 non-R5)과 상한 밖(ongoing·R5)을 분리
+        capped_pool = [
+            a
+            for a in kept
+            if not a.is_auto_flag
+            and lifecycles[(a.student_ref, a.primary.rule_id.value)] in capped_kinds
+        ]
+        free_pool = [
+            a
+            for a in kept
+            if a.is_auto_flag
+            or lifecycles[(a.student_ref, a.primary.rule_id.value)] is Lifecycle.ONGOING
+        ]
+
+        # ③ new·follow_up만 랭킹·상한 (capped_pool엔 R5가 없어 rank_class care는 빈다)
+        result = rank_class(capped_pool, config.cap_max)
         capped_out += result.capped_out
         for ranked in result.ranked:
             key = (ranked.alert.student_ref, ranked.alert.primary.rule_id.value)
             signals.append(_build_signal(ranked, lifecycles[key], week_start, evidence_index))
+
+        # ④ ongoing·R5 상한 밖 합류 — 통과분 뒤에 student_ref순 rank 부여
+        next_rank = len(result.ranked) + 1
+        for alert in sorted(free_pool, key=lambda a: a.student_ref):
+            key = (alert.student_ref, alert.primary.rule_id.value)
+            ranked_free = RankedAlert(alert=alert, rank=next_rank)
+            signals.append(_build_signal(ranked_free, lifecycles[key], week_start, evidence_index))
+            next_rank += 1
     return signals, capped_out
 
 

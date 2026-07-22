@@ -22,6 +22,7 @@ from ai.contracts.detection import (
 from ai.contracts.taxonomy import AreaTag, TypeTag
 from ai.evaluation.fake_snapshot import (
     StudentPlan,
+    alert_open,
     alert_resolved,
     build_detect_request,
 )
@@ -334,6 +335,38 @@ def suppression_promotion_request() -> DetectRequest:
             )
         ],
     )
+
+
+def ongoing_over_cap_request() -> DetectRequest:
+    """ongoing 상한 제외(7/22) — 반에 ongoing 3 + 오늘 new 5 → 응답 8건(상한 밖 ongoing).
+
+    기대값 근거: 04 §3 "상한은 new·follow_up에만". ongoing 3건은 상한(5)을 소비하지 않고
+    전부 응답에 남고, new 5건이 상한을 채운다 → capped_out=0, 총 8건.
+    """
+    acc = (0.8,) * 8 + (0.55, 0.55)  # 전원 R1 발화
+    ongoing = [
+        StudentPlan(
+            student_ref=f"st_ong_{i + 1}",
+            class_ref="cl_cap",
+            weeks=10,
+            solves_per_week=100,
+            accuracy=acc,
+        )
+        for i in range(3)
+    ]
+    fresh = [
+        StudentPlan(
+            student_ref=f"st_new_{i + 1}",
+            class_ref="cl_cap",
+            weeks=10,
+            solves_per_week=100,
+            accuracy=acc,
+        )
+        for i in range(5)
+    ]
+    # ongoing 3명은 같은 유형(acc_drop) open 이력 → lifecycle=ongoing
+    context = [alert_open(f"st_ong_{i + 1}", SignalType.ACC_DROP) for i in range(3)]
+    return _req([*ongoing, *fresh], alert_context=context)
 
 
 def all_scenarios() -> list[GoldenScenario]:
