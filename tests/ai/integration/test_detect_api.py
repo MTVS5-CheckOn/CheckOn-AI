@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
-from ai.api.routers.detect import _idempotency_store
+from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
 from ai.contracts.execution import VersionSet
 from ai.evaluation.fake_snapshot import fixture_composite_risk, to_payload
 
@@ -25,9 +25,11 @@ _HEADERS = {
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    _idempotency_store.clear()  # 테스트 간 멱등 저장소 격리
+    reset_idempotency_store()  # 테스트 간 저장소 격리
+    reset_detection_store()
     yield TestClient(create_app())
-    _idempotency_store.clear()
+    reset_idempotency_store()
+    reset_detection_store()
 
 
 def _payload() -> dict[str, Any]:

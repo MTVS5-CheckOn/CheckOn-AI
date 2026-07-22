@@ -57,3 +57,14 @@ class RedactionUncertain(DomainException):
 
     code = "INTERNAL"
     http_status = 500
+
+
+class LedgerWriteFailed(DomainException):
+    """원장(AI_RUN·SIGNAL·FEATURE_WEEK) 적재 실패 — 500 INTERNAL (fail-closed).
+
+    멱등 캐시(fail-open, IdempotencyConflict와 별개)와 달리 원장은 산출물의 근거·재현
+    기록이므로 저장 실패를 삼키지 않는다 — 요청을 실패시켜 백엔드가 재시도하게 한다
+    (D-② 확정). 사전에 없는 코드는 만들지 않고 INTERNAL로 매핑한다(error_codes §1)."""
+
+    code = "INTERNAL"
+    http_status = 500

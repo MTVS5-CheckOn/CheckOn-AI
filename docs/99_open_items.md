@@ -92,6 +92,8 @@
 | ⑥ Kafka consumer/producer 뼈대 (08 확정 후) | ☐ |
 | ⑦ capped_out '다음 날 재평가 대기열'(04 §3) — 순수 함수 범위 밖이라 v0는 집계만, API/저장 계층 도입 시 구현 | ☐ |
 | ⑧ **api/ 계층 신설** — HTTP 노출 계층(app·envelope=공통계약, 라우터=capability 오너) | ✅ B 확인 완료(7/22) — `api/app.py`·`api/envelope.py`를 §4 양자 승인 목록에 편입(총 9곳). 공통 wire 간극은 각 원본의 `[PART_B 크로스체킹 요청]`으로 별도 추적 |
-| ⑨ 멱등 저장소 DB 교체 — v0는 프로세스 내 인메모리(재시작 시 소실 · uvicorn 멀티워커 간 비공유 — 실배포 전 필수 교체). Idempotency-Key→snapshot_hash 매핑을 D-②(Alembic) 후 영속 저장소로 | ☐ |
+| ⑨ 멱등 저장소 DB 교체 — v0 인메모리(재시작 소실·멀티워커 비공유) → 영속화 | ✅ **구현 완료(D-② 커밋④)** — `IDEMPOTENCY_RECORD`(06_erd) + PG 저장소. 유니크 `(tenant_id, endpoint, idempotency_key)`, TTL 30일, 캐시 저장·조회 실패=fail-open. 인메모리 테스트용 유지(`store_backend` 선택). 실 PG 왕복은 ⑫ |
+| ⑫ CI에 PG 서비스 추가 — D-② 저장 계층은 fake+offline SQL로 검증(로컬 psql 부재). 실 PG 통합(docker) 테스트는 CI 여건 확인 후 `integration` 마커로 추가. 마이그레이션 실측은 실배포 전 로컬 PG에서 upgrade/downgrade 왕복 | ☐ **(7/22 등록)** |
+| **D-②b baseline read-path** — 판정 시 `FEATURE_WEEK` 축적분에서 baseline을 조립해 엔진에 **선택 입력으로 주입**(순수 함수 유지 — 시그니처는 추가 인자, 미주입 시 요청 구동 동일). 이게 붙어야 외부 계약의 **증분 전용(1주)**이 실동작한다(그전엔 요청이 최근 10주 동봉 — 09 §2 ① 정밀화). **원본 불필요**(주간 집계 `FEATURE_WEEK`로 충분, raw 이벤트 저장 안 함). | ☐ **(7/22 등록 · D-② 후속)** |
 | ⑩ 섀도 모드 표시 방식 — `error_codes.md` §2.3에 `shadow: true` 행이 있으나 09 §3 응답엔 없음. 섀도 구현 시점(D-② 후)에 09 응답 편입 vs 운영 설정 결정 + 두 문서 정합 | ☐ |
 | ⑪ 부재형 신호(R2·R3·R5)의 evidence 전무 한계 — 관련 실존 기록이 전무하면 신호를 생성하지 않는다(계약상 evidence ≥1). 집계/상태 record 참조를 evidence로 허용할지 D-②(저장 계층) 시점 결정. 09 §3 A 판정(7/22) | ☐ |

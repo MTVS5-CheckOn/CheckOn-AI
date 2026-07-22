@@ -44,6 +44,11 @@ src = ["src", "tests"]
 # E,F=pyflakes/pycodestyle · I=import 정렬 · UP=구식 문법 · B=버그유발 · ANN=타입힌트 누락
 select = ["E", "F", "I", "UP", "B", "ANN"]
 
+[tool.ruff.lint.per-file-ignores]
+# Alembic 마이그레이션은 metadata 에서 자동생성한다 — 긴 FK 제약명(E501)과
+# alembic 관례 import 순서(I001)는 손대지 않는다(생성물 원형 유지).
+"src/ai/db/migrations/versions/*" = ["E501", "I001"]
+
 [tool.mypy]
 python_version = "3.12"
 mypy_path = "src"
