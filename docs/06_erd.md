@@ -60,6 +60,15 @@ erDiagram
     varchar input_snapshot_hash "재현성 키"
     timestamptz created_at
   }
+  IDEMPOTENCY_RECORD {
+    uuid id PK
+    varchar tenant_id "RLS 키"
+    varchar endpoint "예: POST /v1/detect — 키 스코프"
+    varchar idempotency_key "= tenant + week_start 등 (요청 헤더)"
+    varchar snapshot_hash "바디 동일성 판정 — 04 부록 A canonical 해시"
+    jsonb response_body "저장된 응답 envelope (같은 키+같은 hash면 재반환)"
+    timestamptz created_at "TTL 30일 — alert_context 창과 정합(D-② 확정). 초과분 정리 배치"
+  }
   AGENT_RUN {
     uuid id PK
     uuid run_id FK
@@ -297,3 +306,5 @@ erDiagram
 ```
 
 **증분 반영 메모:** ① `DRAFT.agent_run_id` · `MAPPING_SPEC.probe_agent_run` 컬럼 추가(에이전트 산출 연결, 기존 경로는 null) ② `LLM_CALL.role`에 `classifier` 추가(ⓑⓒⓓ) ③ `SOURCE_PROFILE.sheets`에 양식 시그니처 포함(재수입 매칭 키) ④ 양자 승인 대상은 기존과 동일(EVIDENCE_ITEM 구조·LLM_CALL 지표 필드) + `TAG_SUGGESTION`의 area/type enum은 B의 약점 지도와 공용 어휘이므로 **[A+B]** ⑤ **(v2.1) `DRAFT_REVISION` 추가**(핑퐁 턴 이력) · 사용량 미터링은 **일일 턴제**로 확정 — `llm_usage`를 `(tenant_id, date)` 그레인으로 변경: `usage_daily(tenant_id, date PK, interactive_turns int, batch_jobs jsonb)`. 인터랙티브 턴만 일일 한도 대상, 일괄 작업(상담팩·리포트)은 월 단위 작업 카운트(게이팅 소유는 백엔드 Billing — AI는 미터링 리포트만).
+
+**(D-② 확정 통보 · 7/22)** `IDEMPOTENCY_RECORD` 신설 — 멱등 저장소의 프로세스 인메모리(재시작 소실·멀티워커 비공유, 99 ⑨)를 영속화한다. **유니크 제약 `(tenant_id, endpoint, idempotency_key)`** — 동시 삽입 경합은 이 제약으로 원자성 보장(B 크로스체킹 스코프 제안 수용). 같은 키 + 같은 `snapshot_hash` = 저장된 `response_body` 재반환 · 다른 hash = 409. **TTL 30일**(`alert_context` 창과 정합 — 새 숫자 발명 없이 기존 시간 창 재사용). 재현·감사는 `AI_RUN`이 담당하므로 응답 본문을 무기한 보관하지 않는다.

@@ -49,7 +49,8 @@
 
 ## 4. 공동 영역의 변경 절차 (겹침을 규칙으로 관리)
 
-1. **양자 승인 대상 — 9곳(v3에서 2곳 추가):** `contracts/execution.py·llm.py·gates.py·evaluation.py`, `contracts/taxonomy.py`, `evidence/models.py`(EvidenceRef 스키마), `runtime/metrics.py`의 이벤트 스키마, **`api/app.py`·`api/envelope.py`**. 이 9곳만 두 명 승인, 나머지는 전부 단독 오너.
+1. **양자 승인 대상 — 11곳(v4에서 2곳 추가, ⚠ B 확인 대기):** `contracts/execution.py·llm.py·gates.py·evaluation.py`, `contracts/taxonomy.py`, `evidence/models.py`(EvidenceRef 스키마), `runtime/metrics.py`의 이벤트 스키마, `api/app.py`·`api/envelope.py`, **`db/models.py`·`db/base.py`**(ERD 26테이블 스키마 — B의 문제·진단 테이블도 포함하므로 공용). 이 11곳만 두 명 승인, 나머지는 전부 단독 오너.
+   - **마이그레이션 파일은 양자 목록에 넣지 않는다** — `db/models.py`의 기계적 산출물이므로, 모델 diff가 포함된 PR에서 함께 리뷰되면 충분하다. 모델 무변경 마이그레이션(인덱스 조정 등)은 해당 테이블 오너 단독. 저장소(`db/repositories/`) 구현은 capability별 오너(detection 적재 = A).
 2. **경계를 넘는 입력:** B가 감지 산출을 더 원하면 A의 `contracts/detection.py`에 PR → A 승인. 반대 방향도 동일. **상대 capability 내부 파일 직접 수정은 금지**(지시서 2.2).
 3. **골든셋·평가:** `evaluation/detection_eval.py`·`draft_eval.py`·`import_eval.py` = A, `problem_eval.py` = B. golden/ 하위는 §5 트리의 코퍼스별 소유 — **(v2) `golden/tagging/`은 정답 라벨 확정이 [A+B]**(어휘집 §2 판정 기준 합의 후 각자 라벨링, 불일치가 경계 사례집 증보분). 엔진·프롬프트 버전업 시 골든셋 diff는 상호 리뷰(오너 아닌 쪽이 리뷰어).
 4. **tests/ai/:** 프로덕션 대칭 — 소유도 대응 파일을 따름. `tests/ai/fakes/`(FakeProvider 시나리오)는 llm/ 소유자인 B — **(v2) 단 refine 게이트 공격·에이전트 장애 시나리오는 A가 시나리오 명세를 제공**(B는 Fake 구현만).
@@ -109,6 +110,18 @@ ai/
 │   ├── envelope.py                     [공통 계약]  공통 응답 조립(data·error·meta envelope) — 〃
 │   └── routers/                                    ← 라우터는 해당 capability 오너를 따름
 │       └── detect.py                   [박진희]    감지 라우터 (POST /v1/detect)
+│
+├── db/                                 ★v4 — 저장 계층(D-②, ⚠ B 확인 대기)
+│   ├── base.py                         [공통 계약]  DeclarativeBase · naming convention — 양자
+│   ├── models.py                       [공통 계약]  ERD 26테이블 ORM(B 문제·진단 포함) — 양자
+│   ├── settings.py                     [박진희]    DATABASE_URL (pydantic-settings)
+│   ├── session.py                      [박진희]    async 엔진·세션 팩토리
+│   ├── migrations/                                 ← 모델 종속 산출물(양자 아님)
+│   │   ├── env.py · script.py.mako     [박진희]    alembic 환경
+│   │   └── versions/                   [테이블 오너]  마이그레이션(모델 diff PR에서 함께 리뷰)
+│   └── repositories/                               ← 적재 구현은 capability 오너
+│       ├── idempotency.py              [박진희]    멱등 영속 저장소(공용 유틸성 — A 소유)
+│       └── detection_store.py          [박진희]    감지 적재(AI_RUN·SIGNAL·FEATURE_WEEK)
 │
 │ ═══════════════ Capability (기능) ═══════════════
 │
