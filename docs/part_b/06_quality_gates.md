@@ -6,7 +6,7 @@
 > - v1.1 (2026-07-15): 파일 번호 이동(04→06) + 확정 반영 — ① **재시도 총 3회**(item_attempt 공통 예산, regen_max=2 — 최악 논리 콜 6·HTTP 12) ② 게이트 ②에 **약점 의미 정렬 판정** 포함 ③ **세트 조기 중단** 규칙(§6) ④ 검증 차단 문항 **수동 예외 승인 불허 확정** ⑤ 프론트 표시 라벨 매핑(§0) ⑥ v1 mcq만.
 > - v1 (2026-07-15): 입력 초안 `CODEXPROMPT/(염준영)_3중_검증_게이트_명세_v0.md` 정리 — 명칭 통일(RuleValidation→BlindCrossSolve→ReleaseDecision), fail-closed, '다른 모델 패밀리', 재시도 2층 분리, "완전 증명" 표현 삭제.
 >
-> **위치 확인:** 게이트 3단은 problem_generation workflow 노드로 **자체 실행**하되, 기록은 `contracts/gates.py`의 공용 `GateResult` 사용. A 소유 `gates/chain.py` 무변경. **공용 enum 확장:** `owner_kind`+=`problem_set` · `gate_name`+=`RuleValidation|BlindCrossSolve|ReleaseDecision` — ✅ **A+B 승인 완료 · `d5283d0` 구현 반영**([`09_integration_proposals.md`](09_integration_proposals.md) §2-3, 문서 동기화는 §2-10). 잔여: `EVIDENCE_ITEM.owner_kind`+=`problem_item`만 `evidence/models.py` 구현 시 양자 승인.
+> **위치 확인:** 게이트 3단은 problem_generation workflow 노드로 **자체 실행**하되, 기록은 `contracts/gates.py`의 공용 `GateResult` 사용. A 소유 `gates/chain.py` 무변경. **공용 enum 확장:** `owner_kind`+=`problem_set` · `gate_name`+=`RuleValidation|BlindCrossSolve|ReleaseDecision` — ✅ **A+B 승인·`d5283d0` 구현·공용 ERD 문서 동기화 완료**([`09_integration_proposals.md`](09_integration_proposals.md) §2-3·§2-10). 잔여: `EVIDENCE_ITEM.owner_kind`+=`problem_item`만 `evidence/models.py` 구현 시 양자 승인.
 >
 > **참조** — [`05_problem_generation.md`](05_problem_generation.md)(입출력 계약) · [`01_pipeline.md`](01_pipeline.md) §3 · [`07_refine_policy.md`](07_refine_policy.md)(수정 시 재실행) · [`08_evaluation_plan.md`](08_evaluation_plan.md)(골든셋)
 

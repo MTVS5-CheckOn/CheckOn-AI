@@ -33,6 +33,8 @@
 
 `ItemAction`은 Step 3에서 사용하는 문항 행동 어휘이며 리비전 3종만 `ItemRevisionRequest`로 표현된다 — enum이 고립된 것이 아니라 replace·delete가 리비전 경로 밖의 동작이라는 뜻이다. API 경로 확정은 [`09_integration_proposals.md`](09_integration_proposals.md) §2-1 제안(백엔드 합의 대상) 유지.
 
+`ItemRevisionRequest`는 HTTP body DTO가 아니라 공통 헤더와 body를 조립한 **워크플로 내부 command**다. 외부 refine body DTO는 `request_id`·`idempotency_key`를 중복 수신하지 않고 `X-Request-Id`·`Idempotency-Key`를 단일 원천으로 매핑한다(09 §2-1 B 확정).
+
 ## 2. 지시문 해석 규칙 — 허용/근거 검증/정책 차단 3분류
 
 | 분류 | 예시 지시 | 처리 |
@@ -45,7 +47,7 @@
 
 **수정 중 불변(위반 지시는 C 분류):** 대상 학생·약점 목표 · 문항의 area·type·skill_node(측정 대상) · 정답·해설의 근거 요구 · 금칙·저작권·사실성 정책 · 개인정보 마스킹 · 승인 전 노출 금지. **약점 목표 자체를 바꾸려면 수정이 아니라 Step 1~2로 돌아가 새 조건으로 생성**한다.
 
-## 3. `blocked_reason` enum (B 증분 코드 enum은 ✅ 승인·구현 완료 — 공용 error_codes 문서 편입은 09 §2-10 요청 대기)
+## 3. `blocked_reason` enum (B 증분 코드 enum은 ✅ 승인·구현 완료 — ✅ `error_codes.md` §2.2 편입 완료)
 
 | 코드 | 뜻 | 검출 시점 | 화면 문구 `[제안]` |
 | --- | --- | --- | --- |
@@ -56,13 +58,14 @@
 | `prompt_injection` | 지시 이탈 패턴(05 §8.2) | 사전 정적 검사 | "요청을 처리할 수 없어요" |
 | `out_of_scope` | 문항 수정과 무관(약점 목표 변경·타 학생) | 사전 정적 검사 | "이 문항의 수정 범위를 벗어나요 — 새 출제로 진행해 주세요" |
 
-`pii_exposure`·`out_of_scope`는 A의 refine enum을 재사용한다. 나머지 3종(`answer_integrity`·`banned_topic`·`prompt_injection`)은 코드 enum에 ✅ A+B 승인·구현 완료(`d5283d0`)됐고, `error_codes.md` 문서 편입만 [`09`](09_integration_proposals.md) §2-10 요청 대기다.
+`pii_exposure`·`out_of_scope`는 A의 refine enum을 재사용한다. 나머지 3종(`answer_integrity`·`banned_topic`·`prompt_injection`)은 코드 enum에 ✅ A+B 승인·구현 완료(`d5283d0`)됐고, ✅ `error_codes.md` §2.2 편입도 완료됐다.
 
 ## 4. 매 수정 턴의 처리 순서 — 부분 수정도 전체 재검증
 
 ```
 강사 지시 (instruction + base_revision_no)
- → 낙관적 잠금 검사 (§6 — 불일치 시 409, LLM 미호출)
+ → 멱등 검사 (§6 — 같은 키+같은 바디는 기존 상태·결과 200, 다른 바디는 409 IDEMPOTENCY_CONFLICT)
+ → 낙관적 잠금·진행 중 검사 (§6 — 충돌 시 409 REVISION_CONFLICT, LLM 미호출)
  → 지시문 redaction·정책 정적 검사 (C 분류 차단 — LLM 미호출)
  → 해당 문항 + 지시만 LLM 전달 (§7 컨텍스트 최소화)
  → 수정안 구조화 출력 (파싱 실패 = 턴 실패)
@@ -86,7 +89,7 @@
 ## 6. 리비전 저장·낙관적 잠금 (확정)
 
 - **저장 규칙:** 턴마다 `ITEM_REVISION` 1행 — `turn_no`(=revision_no) · `revision_kind(ai_refine|teacher_direct|rollback)` · redaction된 `instruction` · `result_snapshot`(전체 스냅숏 — 롤백 단순 복원) · `diff`(변경 전후) · `verifications_passed` · `blocked_reason` · `llm_call_id`. **차단 턴도 행을 남긴다**(감사·공격 코퍼스 재료).
-- **낙관적 잠금:** 요청에 `base_revision_no` 필수 — `PROBLEM_ITEM.current_revision_no`와 다르면 **409 반환**(멱등 재생 409와 구분되는 충돌 코드 — 09 §2-2 제안), 클라이언트는 최신본 재로드 후 재시도. **문항당 진행 중 refine 1건만** — 진행 중이면 후속 요청 즉시 거부.
+- **멱등·리비전 충돌 판정 순서:** ① 멱등키 조회를 먼저 수행한다. 같은 키+같은 바디는 기존 처리 상태·결과를 **200 재반환**하고 리비전·LLM 호출을 중복 생성하지 않는다. 같은 키+다른 바디는 **409 `IDEMPOTENCY_CONFLICT`**다. ② 새 키의 `base_revision_no`가 `PROBLEM_ITEM.current_revision_no`와 다르면 **409 `REVISION_CONFLICT`**(`detail.reason=stale_base_revision`, `base_revision_no`, `current_revision_no`)로 거부한다. ③ 문항당 진행 중 refine은 1건만 허용하며, 진행 중인 문항에 들어온 **새 키** 요청은 같은 409 `REVISION_CONFLICT`의 `detail.reason=revision_in_progress`(`current_revision_no`)로 거부한다. 두 리비전 충돌은 LLM을 호출하지 않는다.
 - **보존:** 리비전 무제한 보존 `[잠정]` — 감사·품질 평가 자료. 보존 기간·상한은 백엔드 데이터 보존 정책과 함께 `OPEN`(09 §3).
 - **품질 개선 반영:** 강사 수정 이력은 골든셋·프롬프트 개선 재료로만 — **자동 학습·자동 프롬프트 변경 금지**, 반영은 사람 리뷰+버전 절차(registry·골든 통과).
 
@@ -111,10 +114,11 @@
 4. 부분 수정(해설 한 문장)이 정답 유일성을 깨는 케이스 → ②가 검출, 문항은 이전 검증본 유지
 5. 직접 수정(teacher_direct)이 R-1 근거를 깨는 케이스 → 재검증 실패, 이전 검증본 유지 + 사유
 6. 10턴 후 `revert_to: 3` → 3턴 스냅숏+검증 결과 복원, LLM 호출 0
-7. 동시 refine 2건 → 후발 409(`base_revision_no` 불일치), 재로드 후 성공
-8. 동일 Idempotency-Key 턴 재전송 → 중복 리비전 0
-9. 복합 지시("짧게 + 정답 두 개") → 부분 반영 + 차단 사유 동시 반환
-10. `verification_unavailable` 문항 수정 턴 → 재검증 성공 시 발행 차단 해제 경로
+7. stale `base_revision_no`의 새 키 요청 → 409 `REVISION_CONFLICT`(`stale_base_revision`), 재로드 후 성공
+8. refine 진행 중 문항에 새 키 요청 → 409 `REVISION_CONFLICT`(`revision_in_progress`), LLM 호출 0
+9. 동일 Idempotency-Key+동일 바디 턴 재전송 → 기존 상태·결과 200, 중복 리비전·LLM 호출 0
+10. 복합 지시("짧게 + 정답 두 개") → 부분 반영 + 차단 사유 동시 반환
+11. `verification_unavailable` 문항 수정 턴 → 재검증 성공 시 발행 차단 해제 경로
 
 ## 10. OPEN 항목
 

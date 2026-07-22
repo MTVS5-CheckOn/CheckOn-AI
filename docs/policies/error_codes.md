@@ -18,6 +18,12 @@
 | 503 | `LLM_UPSTREAM_DOWN` | LLM 벤더 장애 | **폴백 규약**: 감지=전일 브리핑 유지+배지 · 초안="잠시 후 다시" |
 | 504 | `TIMEOUT` | 동기 10s / 비동기 총 5분 초과 | 비동기는 status=failed로 수렴 |
 
+> **[PART_B 편입 요청 · B 규약 확정/정본 미편입] HTTP 충돌 코드 1종 추가:** `409 REVISION_CONFLICT` — 문항 refine의 새 멱등키 요청에서 `base_revision_no`가 최신과 다르거나 같은 문항의 refine이 이미 진행 중인 경우다. 같은 키+다른 바디의 정본 코드 `409 IDEMPOTENCY_CONFLICT`와 의미가 다르므로 별도 코드가 필요하다. B 상세 사유는 `stale_base_revision`과 `revision_in_progress`이며, 멱등 조회를 먼저 수행해 같은 키+같은 바디는 기존 상태·결과를 200으로 재반환한다. **정본 표 편입과 detail 공개 범위를 A가 확인해 달라.** B 규칙 원본은 `part_b/07_refine_policy.md` §6이다.
+
+> **[PART_B 크로스체킹 요청 · 미확정] 동의 오류 경계:** 현재 404 `NOT_FOUND`의 “동의 없는 학생 참조”와 422 `CONSENT_ABSENT`의 적용 경계가 겹친다. **제안 해결안:** 존재 여부를 숨겨야 하는 조회·불투명 참조는 404, 존재가 이미 확인된 생성 명령의 동의 선조건 위반은 422로 구분한다. A·백엔드가 보안 의도와 맞는지 확인해 달라.
+
+> **[PART_B 크로스체킹 요청 · 미확정] 요청 계약 위반 범위:** `INVALID_SCHEMA` 설명은 요청 바디로 한정돼 있지만 현재 HTTP 경계는 필수 헤더 누락에도 같은 코드를 사용한다. **제안 해결안:** 헤더·JSON·body를 포함한 “요청 계약 위반”으로 정본 의미를 넓히거나 헤더용 코드를 분리하고, 선택한 범위를 공통 검증 핸들러 테스트로 고정한다. A·B가 확인해 달라.
+
 > **쿼터 소진(`QUOTA_EXCEEDED`류)은 백엔드 선차단이라 이 사전에 없다(7/15 · BE-4).** 할당 차단·카운트·잔여 표시는 전부 백엔드 Billing 소유라 AI 레이어에 도달하지 않는다 — `RATE_LIMITED`(순간 폭주)는 할당과 무관한 기술적 제한이라 유지한다.
 
 ## 2. 산출물 상태 코드 — 200 안의 `status` (에러 아님!)
@@ -69,6 +75,8 @@
 
 `running(progress "19/22") | paused(체크포인트 — resume 가능) | done | failed(완료분은 보존 — 학생 19명분 draft는 유효)`.
 
+> **[PART_B 편입 요청 · B 분류 확정/정본 미편입] 문항 생성 결과 어휘는 모두 같은 `status` 필드가 아니다.** B 계약 기준으로 `ProblemSetStatus.status`의 `partial_success`, `ProblemItemStatus.items[].status`의 `needs_review`·`verification_unavailable`, `ProblemFailureReason.items[].failure_reason` 및 `dropped_reasons[]`의 `generation_exhausted`·`source_unverified`로 분류된다. 모두 HTTP 에러가 아니라 성공 응답의 `data` 안에 있지만 필드별 enum이 다르므로, 정본 편입 시 이 세 범주를 나눠 기록해 달라.
+
 ## 3. LLM_CALL.outcome (내부 관측 — API 미노출)
 
 `ok | parse_fail | field_missing | bad_ref(근거 ID 실존 실패) | timeout | provider_error | redaction_blocked(전송 전 차단 — 마스킹 정의서 §3 fail-closed)`. 재시도 정책: parse_fail·field_missing은 블록 단위 ≤3회, bad_ref는 즉시 해당 문장 폐기(재시도 무의미 — 환각), redaction_blocked는 재시도 금지+알럿.
@@ -84,6 +92,8 @@ DomainException (base)
 ├─ LlmUnavailable         → 503 LLM_UPSTREAM_DOWN
 └─ RedactionUncertain     → 500 INTERNAL (원문 노출 위험 — 상세 사유 응답에 미포함)
 ```
+
+> **[PART_B 크로스체킹 요청 · 미확정 — 예외 트리]** 실제 공통 계약의 `LlmTimeout`과 runtime의 `IdempotencyConflict`가 위 트리에 없고, `contracts.llm.LlmUnavailable`과 runtime 예외도 서로 다른 계층이다. **제안 해결안:** canonical 예외→HTTP adapter 한 곳을 정한 뒤 §4 트리에 `IdempotencyConflict`·`LlmTimeout`을 포함하고 HTTP 통합 테스트로 409·503·504를 고정한다. A·B가 확인해 달라.
 
 > `QuotaExceeded`는 이 트리에 없다 — 쿼터 차단은 백엔드 Billing 선집행이라 AI 도메인 예외로 올라오지 않는다(7/15 · BE-4).
 

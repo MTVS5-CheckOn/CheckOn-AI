@@ -80,7 +80,7 @@ sequenceDiagram
 
 **원칙(`docs/06_erd.md`와 동일):** 산출물·실행 메타·캐시만. `…_ref`는 논리 참조. 전 테이블 `tenant_id`+RLS. 공용 테이블(AI_RUN·LLM_CALL·GATE_RESULT·EVIDENCE_ITEM)은 A의 24테이블 재사용. 공용 ERD 반영은 승인 요청으로 분리(09 §2-4).
 
-> **공용 enum 확장(09 §2-3):** `GATE_RESULT.owner_kind` += `problem_set` · `GATE_RESULT.gate_name` += `RuleValidation|BlindCrossSolve|ReleaseDecision` — ✅ **A+B 승인 완료 · `d5283d0` 구현 반영**(공용 ERD 문서 동기화는 09 §2-10 요청). 잔여: `EVIDENCE_ITEM.owner_kind` += `problem_item`만 `evidence/models.py` 구현 시 양자 승인.
+> **공용 enum 확장(09 §2-3):** `GATE_RESULT.owner_kind` += `problem_set` · `GATE_RESULT.gate_name` += `RuleValidation|BlindCrossSolve|ReleaseDecision` — ✅ **A+B 승인·`d5283d0` 구현·공용 ERD 문서 동기화 완료**. 잔여: `EVIDENCE_ITEM.owner_kind` += `problem_item`만 `evidence/models.py` 구현 시 양자 승인.
 
 ```mermaid
 erDiagram

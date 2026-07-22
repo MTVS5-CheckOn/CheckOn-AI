@@ -131,12 +131,13 @@ R-1~R-7을 전부 통과하지만 결함이 있는 문항 — ②단의 존재 �
 | RF4 | **부분 수정(해설 1문장)이 정답 유일성을 깨는 케이스** | ②가 검출 → 턴 실패, **이전 검증본 유지** |
 | RF5 | 직접 수정(teacher_direct)이 R-1을 깨는 케이스 | 재검증 실패 → 이전 검증본 유지 + 사유 |
 | RF6 | 롤백 `revert_to` | 스냅숏+검증 결과 복원, LLM 호출 0 |
-| RF7 | 동시 refine 2건(`base_revision_no` 불일치) | 후발 409 — last-write-wins 미발생 |
-| RF8 | 동일 Idempotency-Key 턴 재전송 | 중복 리비전 0·중복 호출 0 |
-| RF9 | 복합 지시 부분 차단 | 반영분+차단 사유 동시 반환 |
-| RF10 | `verification_unavailable` 문항의 수정 턴 | 재검증 성공 시 발행 차단 해제 경로 |
+| RF7 | stale `base_revision_no`의 새 키 요청 | 409 `REVISION_CONFLICT` + `detail.reason=stale_base_revision` — last-write-wins 미발생 |
+| RF8 | refine 진행 중 문항에 새 키 요청 | 409 `REVISION_CONFLICT` + `detail.reason=revision_in_progress` · LLM 호출 0 |
+| RF9 | 동일 Idempotency-Key+동일 바디 턴 재전송 | 기존 상태·결과 200 · 중복 리비전 0 · 중복 호출 0 |
+| RF10 | 복합 지시 부분 차단 | 반영분+차단 사유 동시 반환 |
+| RF11 | `verification_unavailable` 문항의 수정 턴 | 재검증 성공 시 발행 차단 해제 경로 |
 
-**합격 기준: RF2·RF3(차단 미탐)·RF4·RF5(재검증 우회)·RF7(충돌) = 0건 실패 — CI 게이트.** 나머지는 FakeProvider 결정론 검증.
+**합격 기준: RF2·RF3(차단 미탐)·RF4·RF5(재검증 우회)·RF7·RF8(충돌) = 0건 실패 — CI 게이트.** 나머지는 FakeProvider 결정론 검증.
 
 ## 10. 실행·재개·비용 (failure 테스트 — 케이스마다 FakeProvider 시나리오)
 
@@ -145,7 +146,7 @@ R-1~R-7을 전부 통과하지만 결함이 있는 문항 — ②단의 존재 �
 | 체크포인트 | 문항 3/10 완료 후 프로세스 다운 → 재개 | 4번부터 재개 · 완료분 재생성 없음 · 문항 간 상태 오염 없음(이전 retry_context 미주입) |
 | 부분 성공·조기 중단 | dropped 3/4로 비율 초과 · 검증 불능 연속 3 · 시간 상한 도달 | **남은 생성 중단** + `partial_success`/`failed` + stop_reason·사유 집계 — 완료분 보존 |
 | 성공 0개 | 전 문항 소진·차단 | `failed` + 원인·재시도 가능 여부 반환 |
-| 멱등 | 동일 Idempotency-Key 재요청(완료 후·진행 중) | **중복 생성 0 · 중복 원가 기록 0** — 기존 결과/진행 반환 |
+| 멱등 | 동일 Idempotency-Key+동일 바디 재요청(완료 후·진행 중) / 같은 키+다른 바디 | 동일 바디는 **기존 결과·진행 200** + 중복 생성·원가 기록 0 / 다른 바디는 409 `IDEMPOTENCY_CONFLICT` |
 | 검증 불능 | verifier 연속 timeout | `verification_unavailable` 저장·발행 차단 · **수동 승인 우회 경로 부재** · 재검증 배치 후 정상 합류(06 §3) |
 | 장기 장애 | verifier 24h 이상 다운 시나리오 | 차단 상태 유지 · 폴백 패밀리 라우팅 시 정상 재개 · 차단분 일괄 재검증 |
 | 수동 목표 | `target_source=teacher_manual` 세트 | 진단 미호출 · `personalized=false` 표기 · weakness_map_id=null |

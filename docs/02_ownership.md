@@ -1,6 +1,8 @@
-# [체크온] `ai/` 폴더 소유권 분장 v2 — R&R v1 + v2 증분(에이전트·보조 AI·데이터 파일) 반영
+# [체크온] `ai/` 폴더 소유권 분장 v3 — R&R v1 + v2 증분 + HTTP 계층 반영
 
 > **v1 → v2 변경:** ① 에이전트 2종(counsel_pack·mapping_probe)과 보조 4종(ⓐⓑⓒⓓ)의 파일 소유 명시 ② 데이터 파일 신설분(`tone_map.yaml` · `redaction_patterns.yaml`) 추가 ③ **수능 태그 enum을 공용 어휘로 승격** — `contracts/taxonomy.py` 신설, 양자 승인 대상 6곳 → **7곳** ④ `evaluation/golden/` 하위를 평가 계획서 v0 구성으로 세분 ⑤ F17(Phase 2) 분담 예고 각주.
+>
+> **v2 → v3 변경(7/22, B 확인 완료):** `api/` HTTP 노출 계층 신설 승인 — `app.py`·`envelope.py`는 공통 계약, capability 라우터는 해당 오너 소유. 양자 승인 대상 7곳 → **9곳**.
 >
 > **원칙(불변)** — 폴더 구조는 AI 아키텍처 지시서 그대로 유지한다(사람 기준 재편 금지). 모든 폴더·파일에 단독 오너를 지정한다. "공동 소유"는 소유가 아니므로, 공동 영역은 최소화하고 변경 절차(양자 승인)로만 남긴다.
 >
@@ -47,13 +49,13 @@
 
 ## 4. 공동 영역의 변경 절차 (겹침을 규칙으로 관리)
 
-1. **양자 승인 대상 — 7곳(v2에서 1곳 추가):** `contracts/execution.py·llm.py·gates.py·evaluation.py`, **`contracts/taxonomy.py`(신규)**, `evidence/models.py`(EvidenceRef 스키마), `runtime/metrics.py`의 이벤트 스키마. 이 7곳만 두 명 승인, 나머지는 전부 단독 오너.
+1. **양자 승인 대상 — 9곳(v3에서 2곳 추가):** `contracts/execution.py·llm.py·gates.py·evaluation.py`, `contracts/taxonomy.py`, `evidence/models.py`(EvidenceRef 스키마), `runtime/metrics.py`의 이벤트 스키마, **`api/app.py`·`api/envelope.py`**. 이 9곳만 두 명 승인, 나머지는 전부 단독 오너.
 2. **경계를 넘는 입력:** B가 감지 산출을 더 원하면 A의 `contracts/detection.py`에 PR → A 승인. 반대 방향도 동일. **상대 capability 내부 파일 직접 수정은 금지**(지시서 2.2).
 3. **골든셋·평가:** `evaluation/detection_eval.py`·`draft_eval.py`·`import_eval.py` = A, `problem_eval.py` = B. golden/ 하위는 §5 트리의 코퍼스별 소유 — **(v2) `golden/tagging/`은 정답 라벨 확정이 [A+B]**(어휘집 §2 판정 기준 합의 후 각자 라벨링, 불일치가 경계 사례집 증보분). 엔진·프롬프트 버전업 시 골든셋 diff는 상호 리뷰(오너 아닌 쪽이 리뷰어).
 4. **tests/ai/:** 프로덕션 대칭 — 소유도 대응 파일을 따름. `tests/ai/fakes/`(FakeProvider 시나리오)는 llm/ 소유자인 B — **(v2) 단 refine 게이트 공격·에이전트 장애 시나리오는 A가 시나리오 명세를 제공**(B는 Fake 구현만).
 5. **(v2 신설) 데이터 파일 규칙:** `tone_map.yaml`·`buffer_lexicon.yaml`·`redaction_patterns.yaml`은 코드와 동일하게 PR 리뷰 대상(오너 단독) — 단 **golden 코퍼스 통과가 머지 조건**(사전 갱신도 테스트를 거친다).
 
-## 5. 소유권 주석 트리 (v2 — 복붙용)
+## 5. 소유권 주석 트리 (v3 — 복붙용)
 
 ```mathematica
 ai/
@@ -102,7 +104,7 @@ ai/
 │   ├── redaction_patterns.yaml         [박진희]    ★v2 — 마스킹 정의서 P1~P8 (골든 코퍼스 통과가 머지 조건)
 │   └── errors.py                       [박진희]    에러·상태 코드 사전 §4 구현
 │
-├── api/                                ★(v3 신설) ⚠ B 확인 대기 — HTTP 노출 계층
+├── api/                                ★v3 — HTTP 노출 계층(B 확인 완료)
 │   ├── app.py                          [공통 계약]  FastAPI 앱 팩토리 · 예외 핸들러 — 여러 라우터 공용이라 양자
 │   ├── envelope.py                     [공통 계약]  공통 응답 조립(data·error·meta envelope) — 〃
 │   └── routers/                                    ← 라우터는 해당 capability 오너를 따름
@@ -145,6 +147,7 @@ ai/
 │ ═══════════════ 평가 (프로덕션 격리) ═══════════════
 │
 └── evaluation/
+    ├── fake_snapshot.py                [박진희]    감지 평가 픽스처 — 프로덕션 capability import 금지
     ├── detection_eval.py · draft_eval.py · import_eval.py   [박진희]
     ├── problem_eval.py                 [염준영]
     └── golden/                         # 평가 계획서 v0 §1 구성
@@ -162,7 +165,9 @@ tests/ai/                               # 대응 프로덕션 파일의 오너�
 └── fakes/                              [염준영]    FakeProvider (refine·에이전트 장애 시나리오 명세는 A 제공)
 ```
 
-## 6. 부하 요약 (v2)
+> **[PART_B 크로스체킹 요청 · 미확정 — 평가 격리]** FakeSnapshot 위치와 소유권은 승인했지만 현재 프로덕션 capability의 `ai.evaluation` 역방향 import 금지는 문서 규칙으로만 보장된다. **제안 해결안:** import 경계 회귀 테스트에 `detection/`·`composition/`·`diagnosis/`·`problem_generation/`·`import_mapping/`이 `ai.evaluation`을 import하지 않는 조건을 추가한다. A가 기존 격리 테스트 범위에 포함할지 확인해 달라.
+
+## 6. 부하 요약 (v3)
 
 | | **박진희** | 염준영 |
 | --- | --- | --- |
@@ -171,4 +176,4 @@ tests/ai/                               # 대응 프로덕션 파일의 오너�
 | 성격 | 폭이 넓음(결정론+생성+에이전트 2종) — 각 항목은 상대적으로 가벼우나 **v2에서 항목 수 증가** — 착수 순서가 중요(체크리스트 v2 §5) | 깊음(최고 난도 체인) — 한 체인에 집중. F17 조판은 P2라 당장 부담 없음 |
 | 시기 | Phase 0~1 초반 크리티컬(감지→초안→핑퐁). 에이전트 2종은 B-1 합의 후 | 파일럿 중반부터 크리티컬(검증 게이트). 초기엔 diagnosis 그래프·taxonomy 합의부터 |
 
-> **한 줄 요지** — 폴더는 capability 기준 그대로, 소유는 주석 트리로. 겹치는 곳은 '공동 소유'가 아니라 **'양자 승인이 필요한 7개 파일'**(v2: taxonomy.py 추가)로 좁혀서 관리한다. F17(P2)로 새 폴더는 생기지 않는다 — OCR 소유만 B-4 미팅에서 미정 항목으로 남음.
+> **한 줄 요지** — 폴더는 capability 기준 그대로, 소유는 주석 트리로. 겹치는 곳은 '공동 소유'가 아니라 **'양자 승인이 필요한 9개 파일'**(v3: `api/app.py`·`api/envelope.py` 추가)로 좁혀서 관리한다. F17(P2)로 새 폴더는 생기지 않는다 — OCR 소유만 B-4 미팅에서 미정 항목으로 남음.
