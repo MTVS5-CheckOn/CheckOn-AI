@@ -61,6 +61,26 @@ def test_missing_header_400(client: TestClient) -> None:
     assert "X-Tenant-Id" in body["error"]["detail"]["missing_headers"]
 
 
+def test_error_envelope_carries_versions(client: TestClient) -> None:
+    """실패 응답에도 meta.versions가 10키 집합으로 실린다 (04 §2.2 A판정 7/22)."""
+    headers = {k: v for k, v in _HEADERS.items() if k != "X-Tenant-Id"}
+    resp = client.post("/v1/detect", json=_payload(), headers=headers)
+    body = resp.json()
+    assert body["meta"] is not None, "실패에도 meta는 null이 아니어야 한다"
+    expected_keys = {name.removesuffix("_version") for name in VersionSet.model_fields}
+    assert set(body["meta"]["versions"]) == expected_keys
+    assert body["meta"]["execution_id"] is None  # 실행 전 오류 — execution_id 없음
+
+
+def test_x_request_id_echoed(client: TestClient) -> None:
+    """X-Request-Id를 응답 헤더로 echo (성공·실패 모두)."""
+    ok = client.post("/v1/detect", json=_payload(), headers=_HEADERS)
+    assert ok.headers.get("X-Request-Id") == _HEADERS["X-Request-Id"]
+    bad_headers = {k: v for k, v in _HEADERS.items() if k != "X-Tenant-Id"}
+    bad = client.post("/v1/detect", json=_payload(), headers=bad_headers)
+    assert bad.headers.get("X-Request-Id") == bad_headers["X-Request-Id"]
+
+
 def test_extra_field_400_with_path(client: TestClient) -> None:
     payload = _payload()
     payload["snapshot_meta"]["injected"] = "x"

@@ -32,10 +32,25 @@ def success_envelope(
     }
 
 
-def error_envelope(code: str, message: str, detail: object | None = None) -> dict[str, Any]:
-    """실패 응답 — error. detail은 필드 경로 등(내부 상세는 싣지 않는다)."""
+def error_envelope(
+    code: str,
+    message: str,
+    detail: object | None = None,
+    versions: VersionSet | None = None,
+) -> dict[str, Any]:
+    """실패 응답 — error + meta.versions.
+
+    04 §2.2 A판정(7/22): **실패에도 meta.versions는 항상 실린다**. 실행 전 오류(헤더
+    누락 등)라 execution_id가 없으면 null로 두되, versions는 엔드포인트의 정적 버전으로
+    채운다(호출자가 넘긴다). detail은 필드 경로 등 — 내부 상세는 싣지 않는다.
+    """
+    meta = (
+        {"execution_id": None, "versions": versions_dict(versions)}
+        if versions is not None
+        else None
+    )
     return {
         "data": None,
         "error": {"code": code, "message": message, "detail": detail},
-        "meta": None,
+        "meta": meta,
     }
