@@ -230,6 +230,8 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 }
 ```
 
+> **[PART_B 크로스체킹 요청 · 미확정 — §3 ongoing 상한 응답]** A 정본(04 §3·아래 §4, #14)은 `new`·`follow_up`에만 반별 상한을 적용하고 `ongoing`·R5를 상한 밖에서 합류시키므로 `signals_raised`와 최종 rank가 `cap_max`를 넘을 수 있다고 확정했다. 그러나 위 `signals[]`의 “반별 TOP 3~5 선별”, `signals_raised`의 “상한 적용 후”, `capped_out`의 “TOP 3~5 상한에 밀린 수” 설명은 모든 신호가 상한 대상인 것처럼 읽힌다. **제안 해결안:** `signals_raised`=상한 밖 합류를 포함한 최종 반환 수, `capped_out`=lifecycle 억제 후 `new`·`follow_up` 후보의 탈락 수, rank=`new`·`follow_up` 통과분 뒤 ongoing·R5가 이어지는 최종 표시 순번으로 설명을 동기화한다. `contracts/detection.py`·`detection/ranking.py` docstring도 같은 의미로 맞출지 A가 확인해 달라. 기존 응답 예시는 확인 전 변경하지 않는다.
+
 > **[PART_B 크로스체킹 요청 · 미확정 — §3 응답 계약]** 현재 v0는 템플릿 brief를 만들면서 `gate_passed=true`, `fallback_used=false`로 반환하므로 위 “LLM 문장화 후 게이트/템플릿 폴백” 의미와 다르게 읽힐 수 있다. **제안 해결안:** v0 템플릿 상태가 드러나도록 값을 맞추거나, A가 의도한 것이 템플릿 우선이라면 본문 의미를 그에 맞게 정리한다. 또한 R2 연속 미제출·R3 완전 공백·R5 복귀처럼 해당 주 `learning_event`가 없을 수 있는 신호는 임의 과거 이벤트를 evidence로 대체하지 말고, 집계/상태 record 참조를 허용하거나 별도 상태 근거 필드를 받는 안 중 하나를 A·백엔드가 확인해 달라.
 >
 > ✅ **A 판정(7/22):**
@@ -277,3 +279,5 @@ AI는 재원 2주 미만 학생을 판정에서 조용히 제외하고, **목록
 ---
 
 **실물 예시:** `examples/detect_demo_request.json`(학생 10명×10주) → `examples/detect_demo_response.json`(6규칙 발화·`ongoing` 포함). 재생성: `python -m ai.evaluation.demo_snapshot`
+
+> **[PART_B 크로스체킹 요청 · 미확정 — 데모 rank]** 새 엔진 정책에서는 `cl_b2`의 상한 대상 신호가 먼저 오고 ongoing인 `st_10`이 상한 밖에서 뒤에 합류해 저장된 응답의 rank가 달라진다(신호 수·구성·판정은 동일). **제안 해결안:** 04 §3의 병합 lifecycle·rank 결론이 확정되면 위 생성기로 request·response 예시를 함께 재생성하고, 생성 결과와 엔진 출력이 같은지 회귀로 고정한다. 이번 단계에서 예시만 수동 수정하지 말고 A가 갱신 시점을 확인해 달라.

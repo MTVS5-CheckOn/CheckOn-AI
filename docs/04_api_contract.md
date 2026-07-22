@@ -222,6 +222,8 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 
 **규약:** evidence 빈 신호는 스키마상 불가 · **`observed_only` 목록은 제거(7/16)** — AI는 `stats.excluded_under_2w` 숫자만 내고, "관찰 중"(재원 14일 미만) 표시는 백엔드가 `enrolled_at`으로 직접 계산(09 §3) · **lifecycle 판정은 AI 소유**(09 §4 · 쿨다운 2주) · **Alert 생성·상태 관리는 백엔드 소유** — AI는 신호 산출까지.
 
+> **[PART_B 크로스체킹 요청 · 미확정 — 감지 상한 응답]** A 정본(`part_a/04_threshold_config.md` §3·`09_detect_spec.md` §4, #14)은 상한을 `new`·`follow_up`에만 적용하고 `ongoing`·R5를 상한 밖에서 합류시키므로 전체 `signals[]` 수와 rank가 `cap_max`를 넘을 수 있다고 확정했다. 그러나 이 문서의 §3.0 “신호 TOP 3~5”, 위 `signals[]`·`rank` 주석과 `capped_out` 설명은 모든 응답 신호가 상한 대상인 것처럼 읽힌다. **제안 해결안:** 공용 계약을 “`new`·`follow_up` 통과분 뒤 ongoing·R5 합류”, “`capped_out`=`new`·`follow_up` 탈락 수”, “rank=최종 표시 순번이며 5 초과 가능”으로 동기화하고, 백엔드·프론트가 응답 길이≤5 또는 rank≤5를 검증하지 않는지 A·B·백엔드가 확인해 달라. 확정 전 기존 본문 값은 바꾸지 않는다.
+
 ---
 
 ### 3.2 `POST /v1/feedback` — 경보 평가 회신 `🕓 보류(7/16)`

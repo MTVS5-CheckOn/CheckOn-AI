@@ -39,6 +39,8 @@ golden/
 
 추가 검증(시나리오 횡단): 데이터 2주 미만 학생 → 어느 규칙도 미발화 + **`signals` 배열에 미포함 + `stats.excluded_under_2w`에 집계**(7/16 — 구 `observed_only` 목록 제거, 명세 09 §3) · TOP 3~5 상한 · evidence의 record_id가 입력 스냅숏에 전부 실존.
 
+> **[PART_B 크로스체킹 요청 · 미확정 — ongoing 상한 회귀]** 현재 추가 회귀는 `ongoing 3 + new 5 → 응답 8, capped_out=0`으로 ongoing이 슬롯을 소비하지 않는 점은 고정하지만, 실제 상한 초과와 rank 의미는 검증하지 않는다. **제안 해결안:** `ongoing 3 + new 6 → 응답 8, capped_out=1`, new·follow_up 혼합/단독 상한, 다중 반의 독립 상한·rank 재시작·`capped_out` 합산, `new·follow_up` 뒤 ongoing·R5가 이어지는 정확한 rank를 골든 기대값에 추가한다. 동점일 때 상한 대상은 현재 `student_ref` 내림차순, 상한 밖은 오름차순이므로 방향을 통일하거나 명문화한다. 또 복합 신호의 primary/secondary lifecycle 양방향 경계는 04 §3의 미확정 결론에 맞춰 테스트로 고정하도록 A가 확인해 달라.
+
 ## 3. 라벨 24조합 프롬프트 스냅숏 (`tone/`)
 
 - **방식:** 동일 입력(학생 1명·문의 1건 고정) × 24 라벨 조합 → 조립된 **프롬프트 자체를 스냅숏 저장**. LLM 호출 없이 결정론 검증: 조합별 tone_map 파라미터가 프롬프트에 반영됐는지 + 인접 조합끼리 diff가 존재하는지(매핑 미적용 버그 검출).
