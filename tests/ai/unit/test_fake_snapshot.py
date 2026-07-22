@@ -116,6 +116,27 @@ def test_no_consent_and_paused_have_no_events() -> None:
     assert req.learning_events == ()
 
 
+def test_events_despite_exclusion_generates_events() -> None:
+    """events_despite_exclusion=True면 무동의 학생에게도 이벤트가 붙는다.
+
+    백엔드가 못 거른 경우를 조립해 엔진의 제외 방어(09 §2 "와도 버린다")를 테스트하는 경로.
+    """
+    req = build_detect_request(
+        week_start="2026-07-13",
+        seed=1,
+        students=[
+            StudentPlan(
+                student_ref="st_leaked",
+                class_ref="cl_a1",
+                consent="revoked",
+                events_despite_exclusion=True,
+            ),
+        ],
+    )
+    leaked = [e for e in req.learning_events if e.student_ref == "st_leaked"]
+    assert leaked, "옵션이 켜지면 무동의 학생에게도 이벤트가 생성돼야 한다"
+
+
 def test_returned_status_preserved() -> None:
     """복귀(returned) 상태가 그대로 실린다 — R5 복귀 케어 재료."""
     req = build_detect_request(

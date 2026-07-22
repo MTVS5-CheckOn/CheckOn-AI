@@ -62,6 +62,7 @@
 | BE-7 | 체크온 표준 스키마 공동 확정 (3자 일치) | 표준 스키마 정의서 — 미작성 | ✅ **(7/15) 원칙 합의** — ☐ 초안 A 작성→백엔드 리뷰 잔여 |
 | BE-8 | suggested 확정 회신 경로 | 04 §3.3 | 🟠 **(7/15) A가 만들기로** — 규약은 계약 §3.3에 이미 있음, /confirmations 구현이 A 백로그로 확정 |
 | BE-9 | Import 결과 반영 경로 | 04 §3.8 | 🟠 **(7/15) A가 만들기로** — Open-3 확정(산출물 스토리지 URL → 백엔드 F1 경로 반영)대로 A가 출력 스펙 구현 |
+| BE-10 | R2 제출률 분모(주간 기대 과제 수) 제공 | 04 §1 R2 · 09 §2 · contracts/detection.py | ☐ **(7/21 등록)** — `submit_drop_pp` 경로 활성화에 필요. 현재 스냅숏엔 submit 이벤트 유무만 있어 제출률 분모가 없음 → v0는 `consecutive_missing`만 동작. 백엔드가 주간 기대 과제 수를 요청 필드로 제공하면 활성화. 계약 필드 추가라 협의 대상 |
 
 ## D. 남은 작성물 (A 자체)
 
@@ -84,3 +85,4 @@
 | ④ redaction_patterns.yaml + golden/redaction 코퍼스 30건 | ☐ |
 | ⑤ /confirmations 구현 (BE-8) · Import 산출물 출력 스펙 (BE-9) | ☐ |
 | ⑥ Kafka consumer/producer 뼈대 (08 확정 후) | ☐ |
+| ⑦ capped_out '다음 날 재평가 대기열'(04 §3) — 순수 함수 범위 밖이라 v0는 집계만, API/저장 계층 도입 시 구현 | ☐ |
