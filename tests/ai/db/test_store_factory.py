@@ -1,0 +1,42 @@
+"""저장소 팩토리 — settings.store_backend로 InMemory↔PG 선택 (D-② 커밋⑤).
+
+PG 저장소 생성은 엔진을 lazy로 만들 뿐 접속하지 않으므로 DB 없이 검증 가능하다.
+"""
+
+from __future__ import annotations
+
+from ai.db.repositories.detection_store import (
+    InMemoryDetectionStore,
+    PgDetectionStore,
+)
+from ai.db.repositories.idempotency import (
+    InMemoryIdempotencyStore,
+    PgIdempotencyStore,
+)
+from ai.db.settings import DbSettings
+from ai.db.store_factory import build_detection_store, build_idempotency_store
+
+
+def _settings(backend: str) -> DbSettings:
+    return DbSettings(store_backend=backend)
+
+
+def test_default_backend_is_memory() -> None:
+    """기본값 memory — CI·데모는 DB 없이 돈다."""
+    assert DbSettings().store_backend == "memory"
+
+
+def test_memory_backend_builds_inmemory_stores() -> None:
+    assert isinstance(build_idempotency_store(_settings("memory")), InMemoryIdempotencyStore)
+    assert isinstance(build_detection_store(_settings("memory")), InMemoryDetectionStore)
+
+
+def test_pg_backend_builds_pg_stores() -> None:
+    """pg 선택 시 PG 구현 — 생성 시 접속하지 않는다(lazy engine)."""
+    assert isinstance(build_idempotency_store(_settings("pg")), PgIdempotencyStore)
+    assert isinstance(build_detection_store(_settings("pg")), PgDetectionStore)
+
+
+def test_unknown_backend_falls_back_to_memory() -> None:
+    """알 수 없는 값은 안전하게 memory로 — 실 DB 오적재보다 낫다."""
+    assert isinstance(build_detection_store(_settings("bogus")), InMemoryDetectionStore)
