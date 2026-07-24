@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v1.5 (2026-07-23): A D-② 머지 반영 — 공용 문서 동기화 완료 회수.
 > - v1.4 (2026-07-22): PR #10·#11의 A 판정을 B 추적표에 회신 반영 — 기존 크로스체크의 완료·후속 백로그를 분리하고, `REVISION_CONFLICT`·B 결과 어휘 5종의 A 정본 편입 완료를 갱신. A가 새로 확정한 **ongoing·R5 상한 제외**는 B가 수용하되, 공용/API 요약 동기화·병합 lifecycle 경계·회귀/데모 보강은 해당 A 문서에 새 크로스체킹 요청으로 등록.
 > - v1.3 (2026-07-22): `develop`의 A PR 리뷰 요청 4건에 B 회신 — 승인 항목은 직접 반영하고, 그 과정에서 새로 발견한 간극만 해당 A·공용 원본에 **B 제안 해결안과 크로스체킹 요청**으로 등록. B 소유 충돌 규약·상태 필드 분류·HTTP DTO 경계와 §2-10 실제 완료 현황은 확정 반영.
 > - v1.2 (2026-07-15): **공용 계약 B 확장 14항목 A+B 승인 완료 반영** — §2-3·§2-9를 승인·구현 완료(커밋 `d5283d0`)로 전환(제안 이력 보존), §2-10(공용 문서 동기화 요청 일람) 신설, §3 B-2 갱신.
@@ -174,6 +175,8 @@ class BlockedReason(StrEnum):
 
 B 소유 7테이블(WEAKNESS_MAP·PASSAGE·PROBLEM_SET·PROBLEM_ITEM·VERIFICATION_RESULT·ITEM_REVISION·DIFFICULTY_CALIB)을 [`02_design.md`](02_design.md) §2 기준으로 24→31테이블 통합. 통합 전 정본은 "A 24테이블 + part_b 증분".
 
+D-② ERD-parity 안전망은 `tests/ai/db/test_erd_model_parity.py`의 ERD↔`db/models.py` 대조와 `tests/ai/db/test_migration_parity.py`의 모델↔마이그레이션 대조로 연결되므로, B 7테이블 추가 시 `06_erd.md`(정본)+`db/models.py`(양자 승인 11곳)+마이그레이션을 동시에 반영한다.
+
 ### 2-5. `docs/02_ownership.md` §5 트리 증보 제안
 
 `evaluation/golden/problems/` 하위 7종([`08`](08_evaluation_plan.md) §1)·`golden/diagnosis/` 신설 행(전부 [염준영]). `pg_banned_topics.yaml`을 B 데이터 파일 규칙(§4-5 — 골든 통과가 머지 조건)에 추가.
@@ -184,7 +187,7 @@ B 소유 7테이블(WEAKNESS_MAP·PASSAGE·PROBLEM_SET·PROBLEM_ITEM·VERIFICATI
 | --- | --- |
 | 문법 DAG 실제 YAML 25~40노드 (`curriculum_graph.yaml`) | B-3 잔여(경계 사례) |
 | `golden/problems/` 코퍼스 실파일(§2 18건·§3 11건·§4 10건·§7·§8·§9 RF1~11) | — |
-| `golden/diagnosis/` 회귀 실파일 | — |
+| `golden/diagnosis/` 회귀 실파일 | ✅ 완료 |
 | `t1_reference/` 케이스 | D-03 |
 | `pg_banned_topics.yaml` 실파일 | — |
 | B 기본값 시트 `verify_config` v1 실데이터 | — |

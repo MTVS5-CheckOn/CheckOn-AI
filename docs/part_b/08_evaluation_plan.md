@@ -25,7 +25,7 @@ golden/
 │  ├─ refine/            # §9 수정 턴 회귀 (07_refine_policy §9 시드)
 │  ├─ security/          # §8 사실성·injection·금칙 우회 (P0)
 │  └─ prompt_snapshots/  # §7 프롬프트 조립 스냅숏
-└─ diagnosis/            # §6 진단 그래프·결정론 회귀 (신설)
+└─ diagnosis/            # §6 진단 그래프·결정론 회귀 (✅ 완료)
 ```
 
 **실파일 산출물:** 아래 코퍼스는 계획이 아니라 실제 JSON/YAML 파일로 생성해야 하는 후속 산출물 — 등록은 09 §2-6. 전 코퍼스 v1 문항 형식은 **mcq**.
