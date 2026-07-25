@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -26,6 +27,8 @@ from fastapi import APIRouter, Request
 from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
+from ai.composition.briefing import make_brief
+from ai.composition.provider import build_brief_provider
 from ai.contracts.detection import (
     CONSENT_GRANTED,
     OBSERVED_ONLY_MIN_WEEKS,
@@ -34,6 +37,7 @@ from ai.contracts.detection import (
     StudentStatus,
 )
 from ai.contracts.execution import Capability, ExecutionContext, RunMetadata, VersionSet
+from ai.contracts.llm import LLMProvider
 from ai.db.repositories.detection_store import (
     DetectionStore,
     FeatureWeekRow,
@@ -72,6 +76,21 @@ _clock = system_utc_now
 #: 저장소 — settings.store_backend로 InMemory↔PG. 캐시=fail-open, 원장=fail-closed.
 _idempotency_store: IdempotencyStore = build_idempotency_store()
 _detection_store: DetectionStore = build_detection_store()
+
+#: 브리핑 문장화(ⓐ) — provider는 settings로 fake↔openai_compat(기본 fake). 총 예산 45s.
+_brief_provider: LLMProvider = build_brief_provider()
+_BRIEFING_BUDGET_S = 45.0
+
+
+def set_brief_provider(provider: LLMProvider) -> None:
+    """브리핑 provider 주입 — 테스트에서 실패·게이트 시나리오 mock을 꽂는다."""
+    global _brief_provider
+    _brief_provider = provider
+
+
+def reset_brief_provider() -> None:
+    """테스트 격리용 — 브리핑 provider를 재빌드한다(기본 fake)."""
+    set_brief_provider(build_brief_provider())
 
 
 def set_idempotency_store(store: IdempotencyStore) -> None:
@@ -190,6 +209,37 @@ def _build_ledger(
     )
 
 
+async def _apply_briefing(
+    response: DetectResponse,
+    execution_id: uuid.UUID,
+    tenant_id: str,
+    snapshot_hash: str,
+    config: ThresholdConfig,
+) -> DetectResponse:
+    """신호별 brief를 문장화(ⓐ)로 교체. 총 예산 45s 안에서, 실패는 템플릿 폴백.
+
+    detection 판정(신호·score·lifecycle·evidence)은 건드리지 않고 brief만 바꾼다.
+    LLM_CALL.outcome은 로그로만(DB 적재는 후속 — 99 15).
+    """
+    context = ExecutionContext(
+        execution_id=execution_id,
+        tenant_id=tenant_id,
+        capability=Capability.COMPOSITION,
+        input_snapshot_hash=snapshot_hash,
+        versions=detection_versions(config),
+    )
+    deadline = time.monotonic() + _BRIEFING_BUDGET_S
+    briefed = []
+    for signal in response.signals:
+        brief, outcome = await make_brief(
+            signal, _brief_provider, context=context, now=time.monotonic, deadline=deadline
+        )
+        if brief.fallback_used:
+            logger.info("brief 폴백 rule=%s outcome=%s", signal.rule_id.value, outcome)
+        briefed.append(signal.model_copy(update={"brief": brief}))
+    return response.model_copy(update={"signals": tuple(briefed)})
+
+
 @router.post("/v1/detect")
 async def post_detect(request: Request) -> dict[str, Any]:
     """감지 실행. 헤더·바디 검증 → 멱등(fail-open) → dedupe → 엔진 → 원장(fail-closed)."""
@@ -234,6 +284,10 @@ async def post_detect(request: Request) -> dict[str, Any]:
     config = default_threshold_config()
     response = detect(merged, config)
     execution_id = uuid.uuid4()
+
+    # 브리핑 문장화 (ⓐ) — 신호의 brief만 교체(detection 무변경·판정 무변, 분기표 #6).
+    response = await _apply_briefing(response, execution_id, tenant_id, snapshot_hash, config)
+
     envelope = success_envelope(
         data=response.model_dump(mode="json"),
         execution_id=str(execution_id),
