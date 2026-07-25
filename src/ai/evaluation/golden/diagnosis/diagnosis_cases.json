@@ -1,0 +1,304 @@
+{
+  "cases": [
+    {
+      "case_id": "identical_event_id_deduplicated",
+      "config": {
+        "cell_min_items": 10,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 6
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:golden-deduplicated",
+        "events": [
+          {"event_id": "dedupe-01", "area_tag": "language", "type_tag": "concept", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-01", "area_tag": "language", "type_tag": "concept", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-02", "area_tag": "language", "type_tag": "concept", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-03", "area_tag": "language", "type_tag": "concept", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-04", "area_tag": "language", "type_tag": "concept", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-05", "area_tag": "language", "type_tag": "concept", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-06", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-07", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-08", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-09", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "dedupe-10", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "generated",
+        "cells": {"language×concept": "ok"},
+        "nodes": {},
+        "propagated": {},
+        "overall_low": false,
+        "error": null
+      }
+    },
+    {
+      "case_id": "suspect_max_severity_reverse_propagation",
+      "config": {
+        "cell_min_items": 10,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 6
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:golden-max-severity",
+        "events": [
+          {"event_id": "max-concept-01", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-concept-02", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-concept-03", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-concept-04", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-concept-05", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-concept-06", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-concept-07", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-concept-08", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-concept-09", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-concept-10", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-01", "area_tag": "language", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-02", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-03", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-04", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-05", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-06", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-07", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-08", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-09", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-fact-10", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-01", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-02", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-03", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-04", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-05", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-06", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-07", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-08", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-09", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "max-high-10", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "generated",
+        "cells": {"language×concept": "weak", "language×fact": "weak", "reading×fact": "ok"},
+        "nodes": {"lang.leaf": "suspect", "lang.middle": "suspect", "lang.root": "suspect"},
+        "propagated": {"lang.root": {"score": 0.5242222222222221, "from": ["lang.leaf", "lang.middle"]}},
+        "overall_low": false,
+        "error": null
+      }
+    },
+    {
+      "case_id": "suspect_direct_weak_confirmed",
+      "config": {
+        "cell_min_items": 10,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 6
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:golden-direct-weak",
+        "events": [
+          {"event_id": "direct-weak-01", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-02", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-03", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-04", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-05", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-06", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-07", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-08", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-09", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-10", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-01", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-02", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-03", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-04", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-05", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-06", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-07", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-08", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-09", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-weak-high-10", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "generated",
+        "cells": {"language×fact": "weak", "reading×fact": "ok"},
+        "nodes": {"lang.leaf": "weak_confirmed", "lang.middle": "suspect"},
+        "propagated": {
+          "lang.middle": {"score": 0.5599999999999999, "from": ["lang.leaf"]},
+          "lang.root": {"score": 0.742, "from": ["lang.leaf", "lang.middle"]}
+        },
+        "overall_low": false,
+        "error": null
+      }
+    },
+    {
+      "case_id": "suspect_direct_ok_blocks_propagation",
+      "config": {
+        "cell_min_items": 10,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 6
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:golden-direct-ok",
+        "events": [
+          {"event_id": "direct-ok-weak-01", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-weak-02", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-weak-03", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-weak-04", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-weak-05", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-weak-06", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-weak-07", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-weak-08", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-weak-09", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-weak-10", "area_tag": "language", "type_tag": "fact", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-node-01", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.middle", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-node-02", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.middle", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-node-03", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.middle", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-node-04", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.middle", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-node-05", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.middle", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-node-06", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.middle", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-01", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-02", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-03", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-04", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-05", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-06", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-07", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-08", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-09", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-ok-high-10", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "generated",
+        "cells": {"language×concept": "unknown", "language×fact": "weak", "reading×fact": "ok"},
+        "nodes": {"lang.leaf": "suspect", "lang.middle": "ok"},
+        "propagated": {},
+        "overall_low": false,
+        "error": null
+      }
+    },
+    {
+      "case_id": "suspect_direct_sample_below_minimum",
+      "config": {
+        "cell_min_items": 10,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 6
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:golden-direct-insufficient",
+        "events": [
+          {"event_id": "direct-low-01", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.root", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-02", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.root", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-03", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.root", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-04", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.root", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-05", "area_tag": "language", "type_tag": "concept", "skill_node_id": "lang.root", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-06", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-07", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-08", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-09", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-10", "area_tag": "language", "type_tag": "concept", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-01", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-02", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-03", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-04", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-05", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-06", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-07", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-08", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-09", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-low-high-10", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "generated",
+        "cells": {"language×concept": "weak", "reading×fact": "ok"},
+        "nodes": {"lang.middle": "suspect", "lang.root": "suspect"},
+        "propagated": {},
+        "overall_low": false,
+        "error": null
+      }
+    },
+    {
+      "case_id": "direct_weak_without_indirect",
+      "config": {
+        "cell_min_items": 10,
+        "relative_cut_pp": -15,
+        "severity_saturation": 0.3,
+        "decay": 0.7,
+        "propagate_threshold": 0.5,
+        "suspect_damping": 0.5,
+        "node_min_items": 6
+      },
+      "input": {
+        "tenant_id": "tenant-1",
+        "student_ref": "student-alias-1",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": "2026-07-15T00:00:00Z",
+        "snapshot_hash": "sha256:golden-direct-only",
+        "events": [
+          {"event_id": "direct-only-01", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-02", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-03", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-04", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-05", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-06", "area_tag": "language", "type_tag": "fact", "skill_node_id": "lang.leaf", "correct": false, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-01", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-02", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-03", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-04", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-05", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-06", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-07", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-08", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-09", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true},
+          {"event_id": "direct-only-high-10", "area_tag": "reading", "type_tag": "fact", "correct": true, "occurred_at": "2026-07-15T00:00:00Z", "tag_confirmed": true}
+        ]
+      },
+      "expected": {
+        "status": "generated",
+        "cells": {"language×fact": "unknown", "reading×fact": "ok"},
+        "nodes": {"lang.leaf": "weak_confirmed"},
+        "propagated": {"lang.middle": {"score": 0.5599999999999999, "from": ["lang.leaf"]}},
+        "overall_low": false,
+        "error": null
+      }
+    }
+  ]
+}
