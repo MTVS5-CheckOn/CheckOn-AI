@@ -87,7 +87,7 @@
 | ① FakeSnapshot 픽스처 (05_request_json 기반) | ✅ 구현 완료 — `evaluation/fake_snapshot.py`(A 소유·프로덕션 격리), B 위치 검토 완료(7/22) |
 | ② Alembic 마이그레이션 (06_erd 24테이블 — 서술형 폐기로 rubric 관련 필드 없음 확인) | ☐ |
 | ③ tone_map.yaml · buffer_lexicon.yaml 실파일화 | ☐ |
-| ④ redaction_patterns.yaml + golden/redaction 코퍼스 30건 | ☐ |
+| ④ redaction_patterns.yaml + golden/redaction 코퍼스 30건 | ✅ **(7/23) 구현 완료** — `runtime/redaction.py`(순수 함수 `redact()`, 파이프라인 §2·토큰 규격 §1·단방향) + `redaction_patterns.yaml`(P1ⓑ~P8) + 코퍼스 30건 + CI 게이트(미탐 0·오탐 ≤2). **결정 로그:** P8=한글숫자 디코딩 후 P2(§2 개정) · 스코어링 밀도=미확정 인명후보 1개→토큰·≥2→문장 통째 · 명부(P1ⓐ) 없어 별명·영문명·성생략은 fail-closed ⟪확인필요⟫. 훅 배선(§3 5곳)·§4 도구 반환은 각 소비 기능 붙일 때(범위 밖) |
 | ⑤ /confirmations 구현 (BE-8) · Import 산출물 출력 스펙 (BE-9) | ☐ |
 | ⑥ Kafka consumer/producer 뼈대 (08 확정 후) | ☐ |
 | ⑦ capped_out '다음 날 재평가 대기열'(04 §3) — 순수 함수 범위 밖이라 v0는 집계만, API/저장 계층 도입 시 구현 | ☐ |
