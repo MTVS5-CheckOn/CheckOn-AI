@@ -436,3 +436,32 @@ def fixture_with_history(week_start: str = "2026-07-13", seed: int = 3) -> Detec
             alert_resolved("st_followup", SignalType.ACC_DROP, resolved_at=resolved_recent),
         ],
     )
+
+
+# ───────────── 멀티데이 증분 추출 (D-②b read-path 테스트용) ─────────────
+# 백엔드의 "day1=풀 스냅숏, day2부터=1주 증분" 전송을 재현한다 — 전체 플랜에서 특정
+# 주차만 페이로드로 뽑는다. 새 이벤트를 지어내지 않고 기존 요청을 자른다(결정론 유지).
+
+
+def _week_monday_of(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def take_week_range(
+    request: DetectRequest, *, week_start: str, weeks_back: int
+) -> DetectRequest:
+    """week_start 주부터 과거 weeks_back주까지의 learning_events만 남긴 스냅숏."""
+    end = _monday_of(week_start)
+    start = end - timedelta(weeks=weeks_back - 1)
+    events = tuple(
+        event
+        for event in request.learning_events
+        if start <= _week_monday_of(event.occurred_at.date()) <= end
+    )
+    meta = request.snapshot_meta.model_copy(update={"week_start": week_start})
+    return request.model_copy(update={"snapshot_meta": meta, "learning_events": events})
+
+
+def take_single_week(request: DetectRequest, *, week_start: str) -> DetectRequest:
+    """week_start 주 1주분 이벤트만 남긴 증분 요청(day2+ 재현)."""
+    return take_week_range(request, week_start=week_start, weeks_back=1)
