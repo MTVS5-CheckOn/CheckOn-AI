@@ -47,7 +47,11 @@ from ai.db.repositories.detection_store import (
 from ai.db.repositories.idempotency import IdempotencyStore, system_utc_now
 from ai.db.store_factory import build_detection_store, build_idempotency_store
 from ai.detection.engine import detect
-from ai.detection.features import WeekFeatures, extract_features
+from ai.detection.features import (
+    WeekFeatures,
+    extract_features,
+    week_features_from_metrics,
+)
 from ai.detection.lifecycle import has_return_care_history
 from ai.detection.segments import resolve_segment
 from ai.detection.thresholds import ThresholdConfig, default_threshold_config
@@ -209,6 +213,24 @@ def _build_ledger(
     )
 
 
+async def _load_stored_features(
+    tenant_id: str, request: DetectRequest
+) -> dict[str, list[WeekFeatures]]:
+    """축적 FEATURE_WEEK를 요청 students 전원분 조회 → 학생별 WeekFeatures로 되살린다.
+
+    조회 실패는 저장소가 fail-closed(500)로 올린다 — baseline이 반쪽이면 판정이 조용히
+    왜곡(미탐)되므로 폴백하지 않는다. memory 백엔드도 같은 경로(축적분이 있으면 병합).
+    """
+    student_refs = [student.student_ref for student in request.students]
+    rows = await _detection_store.load_feature_weeks(tenant_id, student_refs)
+    stored: dict[str, list[WeekFeatures]] = {}
+    for row in rows:
+        stored.setdefault(row.student_ref, []).append(
+            week_features_from_metrics(row.week_start, row.metrics)
+        )
+    return stored
+
+
 async def _apply_briefing(
     response: DetectResponse,
     execution_id: uuid.UUID,
@@ -282,7 +304,9 @@ async def post_detect(request: Request) -> dict[str, Any]:
     merged = detect_request.model_copy(update={"learning_events": deduped})
 
     config = default_threshold_config()
-    response = detect(merged, config)
+    # baseline read-path (D-②b) — 축적 FEATURE_WEEK 조회(fail-closed) → 엔진에 주입.
+    stored_features = await _load_stored_features(tenant_id, merged)
+    response = detect(merged, config, stored_features=stored_features)
     execution_id = uuid.uuid4()
 
     # 브리핑 문장화 (ⓐ) — 신호의 brief만 교체(detection 무변경·판정 무변, 분기표 #6).

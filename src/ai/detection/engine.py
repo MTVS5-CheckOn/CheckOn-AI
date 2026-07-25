@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import date, timedelta
 
 from ai.contracts.detection import (
@@ -36,7 +38,7 @@ from ai.contracts.detection import (
 )
 from ai.detection.baseline import compute_baseline
 from ai.detection.brief import build_brief
-from ai.detection.features import extract_features
+from ai.detection.features import WeekFeatures, extract_features, merge_weeks
 from ai.detection.lifecycle import has_return_care_history, resolve_lifecycle
 from ai.detection.ranking import RankedAlert, StudentAlert, merge_student, rank_class
 from ai.detection.rules import evaluate_student
@@ -50,8 +52,19 @@ _SIGNAL_NS = uuid.UUID("00000000-0000-5000-8000-0000000d0e70")
 _MAX_EVIDENCE = 3
 
 
-def detect(request: DetectRequest, config: ThresholdConfig | None = None) -> DetectResponse:
-    """감지 파이프라인 실행. 같은 입력·같은 config → 같은 출력(결정론)."""
+def detect(
+    request: DetectRequest,
+    config: ThresholdConfig | None = None,
+    *,
+    stored_features: Mapping[str, Sequence[WeekFeatures]] | None = None,
+) -> DetectResponse:
+    """감지 파이프라인 실행. 같은 입력·같은 config → 같은 출력(결정론).
+
+    stored_features(D-②b baseline read-path): 학생별 축적 주차 피처(FEATURE_WEEK 유래).
+    주입 시 요청 피처와 병합(같은 주 요청 승)해 baseline·판정 창을 구성한다 — 1주 증분
+    전송을 지원한다. **미주입(기본) 시 현재 동작과 바이트 동일**(판정식 무변경, 입력 조립만
+    확장). 판정 대상은 요청 students 전원이며, 조회는 라우터가 fail-closed로 수행한다.
+    """
     config = config or default_threshold_config()
     week_start = date.fromisoformat(request.snapshot_meta.week_start)
     term_context = request.snapshot_meta.term_context
@@ -73,6 +86,13 @@ def detect(request: DetectRequest, config: ThresholdConfig | None = None) -> Det
         evaluated += 1
 
         student_features = features[student.student_ref]
+        if stored_features:
+            stored = stored_features.get(student.student_ref)
+            if stored:
+                student_features = replace(
+                    student_features,
+                    weeks=merge_weeks(stored, student_features.weeks),
+                )
         baseline = compute_baseline(student_features, config.baseline_window_weeks)
         segment = resolve_segment(
             student.status,
