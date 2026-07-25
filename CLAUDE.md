@@ -30,7 +30,7 @@
 | --- | --- | --- |
 | 슈퍼바이저-워커 오케스트레이션 구현 | B-1 승인(7/15)으로 **에이전트 3종+슈퍼바이저 착수 가능**하나 슈퍼바이저 state 스키마 미작성 | 워커(counsel_pack·mapping_probe) 단독 구현 먼저(`docs/policies/langgraph_state.md`), 슈퍼바이저는 스키마 합의 후 |
 | `item_format`의 short·essay 분기 코드 | 7/15 확정: **v1은 mcq만 사용** | enum엔 예약값만 두고 처리 로직 만들지 말 것 (area 6영역은 확정 — TODO 제거 가능) |
-| LLM 벤더 SDK 설치·직접 호출 | 벤더 미정(**B-5**), 게이트웨이는 B 소유 | `contracts/llm.py` 인터페이스 + FakeProvider로 개발 |
+| ~~LLM 벤더 SDK 설치·직접 호출~~ **해제(7/23 B-5 확정)** | 팀 로컬 OpenAI 호환 서버(Gemma 계열)로 확정 | `openai` SDK는 **`llm/providers/` 안에서만** import 허용 — capability·contracts에서 직접 import 금지(벤더 독립 유지). provider 어댑터는 A 초안 + B 승인(llm/ 소유). 접속정보(URL·키·모델)는 env 주입 |
 | 백엔드 실연동 | 계약 리뷰는 완료(7/15) — **v1.0 승격 커밋 + Kafka 토픽 스키마 확정 전** | FakeSnapshot 픽스처 (`docs/05_request_json.md` 형태) + Kafka는 뼈대만 |
 | F17(지면 시험 OCR) 구현 | Phase 2 | 스키마 선반영만(`docs/policies/f17_paper_exam.md` §4) |
 
