@@ -236,7 +236,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 > **[PART_B 크로스체킹 요청 · 미확정 — §3 응답 계약]** 현재 v0는 템플릿 brief를 만들면서 `gate_passed=true`, `fallback_used=false`로 반환하므로 위 “LLM 문장화 후 게이트/템플릿 폴백” 의미와 다르게 읽힐 수 있다. **제안 해결안:** v0 템플릿 상태가 드러나도록 값을 맞추거나, A가 의도한 것이 템플릿 우선이라면 본문 의미를 그에 맞게 정리한다. 또한 R2 연속 미제출·R3 완전 공백·R5 복귀처럼 해당 주 `learning_event`가 없을 수 있는 신호는 임의 과거 이벤트를 evidence로 대체하지 말고, 집계/상태 record 참조를 허용하거나 별도 상태 근거 필드를 받는 안 중 하나를 A·백엔드가 확인해 달라.
 >
 > ✅ **A 판정(7/22):**
-> - **① brief는 템플릿 우선이 의도다.** v1(LLM 문장화 도입 전)은 결정론 템플릿이 **1차 산출물**이며 `gate_passed=true`·`fallback_used=false`가 정상이다. `fallback_used`의 "LLM 문장이 검사에 걸려 템플릿으로 대체됨" 의미는 LLM 문장화 도입 시 활성화된다 — 지금 `true`로 두면 폴백률 지표가 오염된다. (brief 모듈 docstring에 이미 명시.)
+> - **① brief 의미 갱신 [A 확정 7/23 — v1 LLM 문장화 활성].** (7/22 v0 주석 대체) 이제 브리핑 문장화(ⓐ)가 붙어 **LLM 한 줄 + 왜곡 게이트 + 템플릿 폴백**이 동작한다. 값 의미: `gate_passed` = 왜곡 게이트(숫자 EXACT 대조·금칙어·⟪⟫토큰·길이) 통과 여부 · `fallback_used=true` = **LLM 실패(재시도 없이 즉시)·게이트 재생성 ≤3 소진·마스킹 불확실(fail-closed)·시간 예산 소진** 중 하나로 결정론 템플릿(`detection/brief.py`)으로 대체됨. 구현: `composition/briefing.py`(A 단독) — detection 코드·판정은 무변경(02_design 불변, LLM 0 유지). provider는 settings로 fake↔openai_compat(CI·데모 기본 fake). **감지 판정(신호·score·lifecycle·evidence)은 문장화 실패와 무관하게 무변**.
 > - **② 부재형 신호 evidence 규칙(명문화):** R2·R3·R5처럼 판정 창에 관련 이벤트가 없을 수 있는 신호는 — 판정 창 내 관련 실존 기록이 있으면 그것을, 없으면 **가장 최근의 관련 실존 기록**을 맥락 근거로 인용하고 `summary`가 부재/복귀 상황을 서술한다. **임의 무관 기록으로 대체하지 않는다.** 관련 기록이 전무하면 신호를 생성하지 않는다(계약상 evidence ≥ 1). 이 "전무 시 미생성" 한계는 99 후속 안건으로 추적한다(집계/상태 record 참조 허용 여부는 D-② 시점 결정).
 
 ### Alert 테이블 저장 정리

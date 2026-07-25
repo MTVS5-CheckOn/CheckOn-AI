@@ -115,7 +115,8 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 
 | 방식 | 대상 | 규칙 |
 | --- | --- | --- |
-| 동기 (≤2s) | `/classify` `/tags/suggest` `/detect`(야간이라 지연 무관) `/confirmations` | 타임아웃 10s (`/feedback`은 7/16 보류 — §3.2) |
+| 동기 (≤2s) | `/classify` `/tags/suggest` `/confirmations` | 타임아웃 10s (`/feedback`은 7/16 보류 — §3.2) |
+| 동기 (`/detect`) | `/detect`(야간 배치라 지연 무관) | **타임아웃 60s [A 확정 7/23 · 백엔드 통보 필요]** — 브리핑 문장화(ⓐ) 포함으로 상향. 문장화 총 예산 45s(LLM 호출당 10s), 예산 소진 신호는 템플릿 폴백. **백엔드 클라이언트 read timeout ≥60s 필요.** 다른 동기 API는 10s 유지 |
 | 비동기 (202) | `/drafts` `/imports` `/agents/*` `/labels/suggest` | 202 + `job_id` → **완료 통지는 Kafka 이벤트 (7/15 확정)** · `GET`은 상태 보조 조회로 유지 · 작업 총 5분 초과 시 failed |
 
 ### 2.5 사용량 한도 — 기능별 할당 + 일일 상한 `[제안]`
