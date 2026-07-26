@@ -18,7 +18,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -26,14 +28,20 @@ from fastapi import APIRouter, Request
 from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
+from ai.composition.briefing import make_brief
+from ai.composition.briefing_context import build_contexts
+from ai.composition.provider import build_brief_provider
 from ai.contracts.detection import (
     CONSENT_GRANTED,
     OBSERVED_ONLY_MIN_WEEKS,
+    Brief,
     DetectRequest,
     DetectResponse,
+    Signal,
     StudentStatus,
 )
 from ai.contracts.execution import Capability, ExecutionContext, RunMetadata, VersionSet
+from ai.contracts.llm import LLMProvider
 from ai.db.repositories.detection_store import (
     DetectionStore,
     FeatureWeekRow,
@@ -43,7 +51,11 @@ from ai.db.repositories.detection_store import (
 from ai.db.repositories.idempotency import IdempotencyStore, system_utc_now
 from ai.db.store_factory import build_detection_store, build_idempotency_store
 from ai.detection.engine import detect
-from ai.detection.features import WeekFeatures, extract_features
+from ai.detection.features import (
+    WeekFeatures,
+    extract_features,
+    week_features_from_metrics,
+)
 from ai.detection.lifecycle import has_return_care_history
 from ai.detection.segments import resolve_segment
 from ai.detection.thresholds import ThresholdConfig, default_threshold_config
@@ -72,6 +84,23 @@ _clock = system_utc_now
 #: 저장소 — settings.store_backend로 InMemory↔PG. 캐시=fail-open, 원장=fail-closed.
 _idempotency_store: IdempotencyStore = build_idempotency_store()
 _detection_store: DetectionStore = build_detection_store()
+
+#: 브리핑 문장화(ⓐ) — provider는 settings로 fake↔openai_compat(기본 fake). 총 예산 45s.
+_brief_provider: LLMProvider = build_brief_provider()
+_BRIEFING_BUDGET_S = 45.0
+#: 신호별 브리핑 LLM 호출 동시 실행 상한 — 팀 로컬 서버 부하를 배려한 세마포어(v3 병렬화).
+_BRIEFING_CONCURRENCY = 3
+
+
+def set_brief_provider(provider: LLMProvider) -> None:
+    """브리핑 provider 주입 — 테스트에서 실패·게이트 시나리오 mock을 꽂는다."""
+    global _brief_provider
+    _brief_provider = provider
+
+
+def reset_brief_provider() -> None:
+    """테스트 격리용 — 브리핑 provider를 재빌드한다(기본 fake)."""
+    set_brief_provider(build_brief_provider())
 
 
 def set_idempotency_store(store: IdempotencyStore) -> None:
@@ -190,6 +219,74 @@ def _build_ledger(
     )
 
 
+async def _load_stored_features(
+    tenant_id: str, request: DetectRequest
+) -> dict[str, list[WeekFeatures]]:
+    """축적 FEATURE_WEEK를 요청 students 전원분 조회 → 학생별 WeekFeatures로 되살린다.
+
+    조회 실패는 저장소가 fail-closed(500)로 올린다 — baseline이 반쪽이면 판정이 조용히
+    왜곡(미탐)되므로 폴백하지 않는다. memory 백엔드도 같은 경로(축적분이 있으면 병합).
+    """
+    student_refs = [student.student_ref for student in request.students]
+    rows = await _detection_store.load_feature_weeks(tenant_id, student_refs)
+    stored: dict[str, list[WeekFeatures]] = {}
+    for row in rows:
+        stored.setdefault(row.student_ref, []).append(
+            week_features_from_metrics(row.week_start, row.metrics)
+        )
+    return stored
+
+
+async def _apply_briefing(
+    response: DetectResponse,
+    request: DetectRequest,
+    stored_features: dict[str, list[WeekFeatures]],
+    execution_id: uuid.UUID,
+    tenant_id: str,
+    snapshot_hash: str,
+    config: ThresholdConfig,
+) -> DetectResponse:
+    """신호별 brief를 문장화(ⓐ)로 교체. 총 예산 45s 안에서, 실패는 템플릿 폴백.
+
+    detection 판정(신호·score·lifecycle·evidence)은 건드리지 않고 brief만 바꾼다.
+    근거 패키지(v2)는 엔진과 같은 공개 피처 함수로 조립한다(판정식 미접근).
+    LLM_CALL.outcome은 로그로만(DB 적재는 후속 — 99 15).
+    """
+    context = ExecutionContext(
+        execution_id=execution_id,
+        tenant_id=tenant_id,
+        capability=Capability.COMPOSITION,
+        input_snapshot_hash=snapshot_hash,
+        versions=detection_versions(config),
+    )
+    contexts = build_contexts(
+        request, response.signals, stored_features=stored_features, config=config
+    )
+    # 병렬화(v3) — 신호별 문장화를 세마포어(동시 N)로 동시에 돌린다. 총 예산 45s는
+    # make_brief가 호출 시작 시 deadline을 검사해 지킨다(세마포어 대기 후 시작한 콜이
+    # deadline을 넘겼으면 호출 없이 폴백). 판정·순서는 무변(gather가 순서 보존).
+    deadline = time.monotonic() + _BRIEFING_BUDGET_S
+    semaphore = asyncio.Semaphore(_BRIEFING_CONCURRENCY)
+
+    async def _brief_one(signal: Signal) -> tuple[Brief, str]:
+        async with semaphore:
+            return await make_brief(
+                contexts[signal.signal_id],
+                _brief_provider,
+                context=context,
+                now=time.monotonic,
+                deadline=deadline,
+            )
+
+    outcomes = await asyncio.gather(*(_brief_one(s) for s in response.signals))
+    briefed = []
+    for signal, (brief, outcome) in zip(response.signals, outcomes, strict=True):
+        if brief.fallback_used:
+            logger.info("brief 폴백 rule=%s outcome=%s", signal.rule_id.value, outcome)
+        briefed.append(signal.model_copy(update={"brief": brief}))
+    return response.model_copy(update={"signals": tuple(briefed)})
+
+
 @router.post("/v1/detect")
 async def post_detect(request: Request) -> dict[str, Any]:
     """감지 실행. 헤더·바디 검증 → 멱등(fail-open) → dedupe → 엔진 → 원장(fail-closed)."""
@@ -232,8 +329,16 @@ async def post_detect(request: Request) -> dict[str, Any]:
     merged = detect_request.model_copy(update={"learning_events": deduped})
 
     config = default_threshold_config()
-    response = detect(merged, config)
+    # baseline read-path (D-②b) — 축적 FEATURE_WEEK 조회(fail-closed) → 엔진에 주입.
+    stored_features = await _load_stored_features(tenant_id, merged)
+    response = detect(merged, config, stored_features=stored_features)
     execution_id = uuid.uuid4()
+
+    # 브리핑 문장화 (ⓐ) — 신호의 brief만 교체(detection 무변경·판정 무변, 분기표 #6).
+    response = await _apply_briefing(
+        response, merged, stored_features, execution_id, tenant_id, snapshot_hash, config
+    )
+
     envelope = success_envelope(
         data=response.model_dump(mode="json"),
         execution_id=str(execution_id),

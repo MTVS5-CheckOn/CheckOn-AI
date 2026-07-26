@@ -27,6 +27,7 @@ from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Insert as PgInsert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -110,6 +111,12 @@ class DetectionStore(Protocol):
         """AI_RUN·SIGNAL·FEATURE_WEEK 적재. 실패 시 LedgerWriteFailed(500)를 올린다."""
         ...
 
+    async def load_feature_weeks(
+        self, tenant_id: str, student_refs: Sequence[str]
+    ) -> tuple[FeatureWeekRow, ...]:
+        """축적 FEATURE_WEEK 조회(baseline read-path). 조회 실패는 fail-closed(500)."""
+        ...
+
 
 class InMemoryDetectionStore:
     """프로세스 인메모리 구현 — 테스트·개발용(재시작 소실). memory 백엔드 기본값.
@@ -138,6 +145,17 @@ class InMemoryDetectionStore:
                     row.week_start.isoformat(),
                 )
             self.feature_weeks[key] = row  # 최신 승리
+
+    async def load_feature_weeks(
+        self, tenant_id: str, student_refs: Sequence[str]
+    ) -> tuple[FeatureWeekRow, ...]:
+        refs = set(student_refs)
+        rows = [
+            row
+            for (tenant, student, _week, _version), row in self.feature_weeks.items()
+            if tenant == tenant_id and student in refs
+        ]
+        return tuple(sorted(rows, key=lambda row: (row.student_ref, row.week_start)))
 
     def clear(self) -> None:
         self.runs.clear()
@@ -190,8 +208,43 @@ class PgDetectionStore:
                 "원장 적재 실패", {"execution_id": str(run.execution_id)}
             ) from exc
 
+    async def load_feature_weeks(
+        self, tenant_id: str, student_refs: Sequence[str]
+    ) -> tuple[FeatureWeekRow, ...]:
+        if not student_refs:
+            return ()
+        stmt = (
+            select(FeatureWeek)
+            .where(
+                FeatureWeek.tenant_id == tenant_id,
+                FeatureWeek.student_ref.in_(list(student_refs)),
+            )
+            .order_by(FeatureWeek.student_ref, FeatureWeek.week_start)
+        )
+        try:
+            async with self._sessionmaker() as session:
+                records = (await session.execute(stmt)).scalars().all()
+        except SQLAlchemyError as exc:
+            # 조회 실패도 fail-closed — baseline이 반쪽이면 판정이 조용히 왜곡(미탐)된다.
+            logger.error(
+                "baseline 조회 실패 — fail-closed(500) tenant=%s", tenant_id, exc_info=True
+            )
+            raise LedgerWriteFailed("baseline 조회 실패", {"tenant_id": tenant_id}) from exc
+        return tuple(_feature_week_row_from_orm(record) for record in records)
+
 
 # ───────────────────────── ORM 매핑 (PG 전용) ─────────────────────────
+
+
+def _feature_week_row_from_orm(orm: FeatureWeek) -> FeatureWeekRow:
+    """FEATURE_WEEK ORM → FeatureWeekRow(조회분). 라우터가 WeekFeatures로 되살린다."""
+    return FeatureWeekRow(
+        student_ref=orm.student_ref,
+        week_start=orm.week_start,
+        segment=orm.segment,
+        metrics=orm.metrics,
+        feature_version=orm.feature_version,
+    )
 
 
 def _ai_run_orm(run: RunMetadata) -> AiRun:

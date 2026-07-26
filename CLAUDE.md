@@ -37,7 +37,7 @@
 ## 4. 스택·명령어
 
 - Python 3.12 + uv. `uv sync` → `uv run pytest` / `uv run ruff check .` / `uv run mypy .`
-- 패키지 루트 = `src/ai/` (src 레이아웃). 서버: `uv run uvicorn ai.main:app --reload`
+- 패키지 루트 = `src/ai/` (src 레이아웃). 서버: `uv run uvicorn ai.api.app:app --reload`
 - FastAPI(async) · SQLAlchemy 2.x + asyncpg · Alembic · LangGraph(+postgres checkpointer) · pandas/numpy/openpyxl · **Kafka(7/15 확정 — 비동기 완료 통지·월별 리포트 벌크. 토픽 확정 전엔 consumer/producer 뼈대만, aiokafka)**
 - AI PG는 산출물·메타·캐시만(24테이블 — `docs/06_erd.md`). 도메인 원본 테이블을 만들지 마라.
 - 전 테이블 `tenant_id` 필수. 테넌트 격리 없는 쿼리는 반려.

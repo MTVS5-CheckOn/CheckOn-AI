@@ -28,24 +28,6 @@
 uv sync                          # uv.lock 기준 전체 설치
 # .env는 노션에서 받아 레포 루트에 둔다 (커밋 안 함 — .env.example은 두지 않는다)
 uv run alembic upgrade head      # AI PG 스키마 (예정)
-uv run uvicorn ai.main:app --reload   # 패키지 루트 = src/ai/
-uv run pytest                    # 테스트 (LLM 스모크는 integration 마커라 기본 제외)
-uv run ruff check . && uv run mypy .
-```
-
-**`.env` 키 (노션 공유 · 커밋 안 함):**
-
-| 키 | 용도 | 기본/비고 |
-| --- | --- | --- |
-| `DATABASE_URL` | AI PG 접속(asyncpg) | `store_backend=pg`일 때만 실접속 |
-| `STORE_BACKEND` | 저장소 선택 | `memory`(기본·CI) \| `pg` |
-| `LOCAL_LLM_BASE_URL` | 팀 로컬 OpenAI 호환 서버 | 예: `http://…/v1` |
-| `LOCAL_LLM_API_KEY` | 로컬 서버 키 | 서버가 요구하면 |
-| `LOCAL_LLM_MODEL` | 모델명(Gemma 계열) | 서버 등록명 |
-
-의존성: FastAPI · SQLAlchemy(+asyncpg) · Alembic · pandas/numpy/openpyxl · LangGraph(+postgres checkpointer) · **openai(로컬 OpenAI 호환 서버용 — `llm/providers/`에서만 사용)**.
-**LLM 벤더 확정(7/23):** 팀 로컬 OpenAI 호환 서버(Gemma 계열). `openai` SDK는 `llm/providers/` 안에서만 import하며, capability·contracts는 벤더 독립을 유지합니다(개발·CI 기본은 Fake/Stub).
-
 ## 폴더 구조 (AI 아키텍처 지시서 기준 — 소유권은 `docs/02_ownership.md`)
 
 패키지는 src 레이아웃: `src/ai/` 아래가 지시서 구조 그대로.

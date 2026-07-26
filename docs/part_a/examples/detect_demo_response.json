@@ -111,7 +111,7 @@
         "rank": 1,
         "lifecycle": "new",
         "brief": {
-          "text": "특정 영역·유형에 오답이 몰리고 있어요. (literature×infer 오답 8/12)",
+          "text": "특정 영역·유형에 오답이 몰리고 있어요.",
           "gate_passed": true,
           "fallback_used": false
         },
@@ -177,7 +177,7 @@
         "rank": 3,
         "lifecycle": "new",
         "brief": {
-          "text": "복귀 첫 주예요 — 적응을 한 번 살펴봐 주세요. (복귀 첫 주 — 점수 무관 케어 신호)",
+          "text": "복귀 첫 주예요 — 적응을 한 번 살펴봐 주세요.",
           "gate_passed": true,
           "fallback_used": false
         },
@@ -243,7 +243,7 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "6edda4a2-9c16-42db-a96a-83a4b8c226da",
+    "execution_id": "ed2a36c2-5145-4f0a-a954-79808993a416",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.1",

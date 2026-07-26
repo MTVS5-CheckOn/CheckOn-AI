@@ -10,6 +10,7 @@ DB·시계를 만지지 않는다 — 골든셋 테스트가 가능한 이유다
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -137,3 +138,56 @@ def extract_features(request: DetectRequest) -> dict[str, StudentFeatures]:
             weeks=weeks,
         )
     return result
+
+
+# ─────────────── baseline read-path (D-②b) — 축적분 재사용 ───────────────
+# FEATURE_WEEK(파생 메트릭)에서 WeekFeatures를 되살려 요청 피처와 병합한다.
+# **판정 로직·baseline 계산식은 무변경** — 이건 입력 조립의 확장이다(엔진 detect가 주입받음).
+
+
+def _opt_float(value: object) -> float | None:
+    return float(value) if isinstance(value, int | float) else None
+
+
+def _as_int(value: object) -> int:
+    if not isinstance(value, int):
+        raise TypeError(f"정수 메트릭 기대, {type(value).__name__} 수신")
+    return value
+
+
+def _as_float(value: object) -> float:
+    if not isinstance(value, int | float):
+        raise TypeError(f"실수 메트릭 기대, {type(value).__name__} 수신")
+    return float(value)
+
+
+def week_features_from_metrics(week_monday: date, metrics: Mapping[str, object]) -> WeekFeatures:
+    """FEATURE_WEEK.metrics(jsonb) → WeekFeatures. cells는 미저장이라 빈 튜플.
+
+    baseline은 accuracy·norm_time·event_count만 쓰고 cells를 안 쓰므로 무방하다
+    (R6 편중은 최근 주 판정이라 그 주 이벤트가 요청에 실려 온다).
+    """
+    return WeekFeatures(
+        week_monday=week_monday,
+        n_solves=_as_int(metrics["n_solves"]),
+        accuracy=_opt_float(metrics.get("accuracy")),
+        submitted=bool(metrics["submitted"]),
+        norm_time=_opt_float(metrics.get("norm_time")),
+        event_count=_as_int(metrics["event_count"]),
+        tagging_rate=_as_float(metrics["tagging_rate"]),
+        cells=(),
+    )
+
+
+def merge_weeks(
+    stored: Sequence[WeekFeatures], current: Sequence[WeekFeatures]
+) -> tuple[WeekFeatures, ...]:
+    """축적 주차 ∪ 요청 주차 — 같은 (주)는 요청(오늘 수신)이 최신 승리(09 §2, dedupe와 동일 원칙).
+
+    과거→최근으로 정렬해 반환한다. 판정 창(최근 2주)·baseline 창(직전 8주) 모두 이 병합
+    타임라인을 쓴다 — 그래야 1주 증분 전송에서도 판정 창의 옆 주를 축적분이 채운다.
+    """
+    by_week: dict[date, WeekFeatures] = {week.week_monday: week for week in stored}
+    for week in current:
+        by_week[week.week_monday] = week
+    return tuple(sorted(by_week.values(), key=lambda week: week.week_monday))
