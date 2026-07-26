@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from io import BytesIO
 
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 
 from ai.import_mapping.profiling import ProfilingError, profile_source, source_columns
 
