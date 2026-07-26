@@ -7,9 +7,18 @@
 **벤더 독립 경계:** `openai` import는 이 파일(과 llm/providers/)에만 둔다 —
 capability·contracts는 벤더를 모른다(grep 게이트가 강제).
 
-**재시도 없음:** 어댑터는 백오프·재호출을 자체 구현하지 않는다. 게이트웨이가
-tenacity로 재시도 대상 오류를 받아 처리한다(contracts/llm.py LLMProvider 규약).
-그래서 여기선 실패를 **계약 예외**(Llm*)로만 올리고, SDK 예외가 밖으로 새지 않게 한다.
+**재시도 없음(무재시도·즉시 폴백 확정):** 어댑터는 백오프·재호출을 자체 구현하지 않고,
+**SDK 내장 재시도도 끈다(max_retries=0)**. 게이트웨이가 tenacity로 재시도 대상 오류를
+받아 처리한다(contracts/llm.py LLMProvider 규약). 그래서 여기선 실패를 **계약 예외**(Llm*)로만
+올리고, SDK 예외가 밖으로 새지 않게 한다.
+
+**타임아웃 = 전체(총) 상한(브리핑 v2 프리뷰 실측에서 발견한 정책 불일치 수정):**
+openai SDK(2.48)에 float `timeout`을 주면 `httpx.Timeout(t)` = connect/read/write/pool가
+**각각** t초로 잡힐 뿐 **호출 전체의 벽시계 상한이 아니다**. 게다가 SDK 기본 `max_retries=2`가
+붙어, read-timeout이 나도 조용히 2회까지 재시도한다 — v2 프리뷰에서 "10s 타임아웃인데 평균
+14s가 통과"·"타임아웃 사례가 21~31s"였던 원인이 바로 이 재시도(≈timeout×시도횟수)였다.
+그래서 (1) `max_retries=0`으로 재시도를 끄고, (2) 호출을 `asyncio.timeout`으로 감싸
+**전체 기준 상한**을 강제한다(httpx 구간 타임아웃은 하한 방어로 함께 둔다).
 
 **PII:** 프롬프트·응답 본문은 로그에 남기지 않는다 — 비용·토큰·지연 메타만
 (마스킹은 redaction 층 소유, 이 계층은 무관).
@@ -17,6 +26,7 @@ tenacity로 재시도 대상 오류를 받아 처리한다(contracts/llm.py LLMP
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from functools import lru_cache
@@ -67,8 +77,22 @@ class LocalLlmSettings(BaseSettings):
     local_llm_model: str = "gemma"
     """서버에 등록된 모델명 — 실제 값은 .env로 주입."""
 
-    local_llm_timeout_s: float = 10.0
-    """동기 상한 10s(error_codes §1 · 504 TIMEOUT)."""
+    local_llm_timeout_s: float = 15.0
+    """호출 전체(총) 상한 15s(error_codes §1 · 504 TIMEOUT). asyncio.timeout으로 강제.
+
+    10s→15s: v2 프리뷰에서 근거 기반 문장(더 긴 생성)이 10s를 넘겨 폴백되는 사례가 있어
+    상향. httpx 구간 타임아웃도 이 값으로 두되, 실제 상한은 complete()의 asyncio.timeout.
+    """
+
+    local_llm_disable_thinking: bool = True
+    """추론(thinking) 비활성 — 벤더 특화(Qwen/vLLM chat_template_kwargs.enable_thinking).
+
+    팀 서버 모델(mtp 계열)은 추론모델이라 기본으로 영어 CoT를 message.content 앞에 길게
+    낸다(수백 토큰). 우리 작업(브리핑 등)은 결정론 엔진이 판정을 끝낸 뒤 근거를 자연어로
+    옮길 뿐이라 추론이 불필요하고, thinking이 max_tokens를 소진해 content가 빈 채로 잘리는
+    문제를 유발한다(v2 프리뷰 실측). 그래서 기본 True(추론 끔) — 지연 대폭 감소·빈 응답 방지.
+    추론이 필요한 다른 용도/서버는 env로 False. chat_template 미지원 서버도 env로 False.
+    """
 
 
 @lru_cache
@@ -94,6 +118,7 @@ class OpenAICompatProvider:
             base_url=self._settings.local_llm_base_url,
             api_key=self._settings.local_llm_api_key,
             timeout=self._settings.local_llm_timeout_s,
+            max_retries=0,  # 무재시도 확정 — SDK 기본 2회 재시도를 끈다(정책 불일치 수정)
         )
 
     @property
@@ -119,6 +144,10 @@ class OpenAICompatProvider:
                 kwargs["max_tokens"] = params.max_tokens
             if params.seed is not None:
                 kwargs["seed"] = params.seed
+        if self._settings.local_llm_disable_thinking:
+            # 벤더 특화(계약 밖) — 서버 chat_template의 thinking을 끈다. 이 옵션은 어댑터에만
+            # 존재하고 상위(composition)로 새지 않는다(벤더 독립 유지). enable_thinking=False.
+            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
         return kwargs
 
     async def complete(
@@ -127,11 +156,14 @@ class OpenAICompatProvider:
         """프롬프트 1회 호출. SDK 예외는 전부 계약 예외로 감싼다(밖으로 안 샌다)."""
         start = time.monotonic()
         try:
-            response = await self._client.chat.completions.create(
-                **self._build_kwargs(request)
-            )
-        except APITimeoutError as exc:
-            raise LlmTimeout("로컬 LLM 타임아웃") from exc
+            # 전체(총) 상한 강제 — SDK float timeout은 구간별(connect/read/…)이라 벽시계
+            # 총량을 보장하지 못한다. asyncio.timeout이 호출 전체를 하나로 감싼다.
+            async with asyncio.timeout(self._settings.local_llm_timeout_s):
+                response = await self._client.chat.completions.create(
+                    **self._build_kwargs(request)
+                )
+        except (APITimeoutError, TimeoutError) as exc:
+            raise LlmTimeout("로컬 LLM 타임아웃(전체 상한)") from exc
         except APIConnectionError as exc:
             raise LlmUnavailable("로컬 LLM 연결 실패") from exc
         except APIStatusError as exc:

@@ -194,6 +194,62 @@ def test_default_temperature_when_params_absent() -> None:
     assert "top_p" not in kwargs  # 미지정은 서버 기본값에 맡김
 
 
+def test_thinking_disabled_by_default_via_extra_body() -> None:
+    """기본은 추론 끔 — enable_thinking=False를 벤더 경로(extra_body)로 전달."""
+    provider = _provider(result=_ok_response("ok"))
+    _run(provider.complete(_request(), _context()))
+    kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
+    assert kwargs is not None
+    assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_thinking_toggle_off_omits_extra_body() -> None:
+    """env로 추론을 켜면(disable=False) extra_body를 보내지 않는다(추론 필요 용도 대비)."""
+    settings = LocalLlmSettings(
+        local_llm_base_url="http://local/v1",
+        local_llm_api_key="k",
+        local_llm_model="gemma-test",
+        local_llm_disable_thinking=False,
+    )
+    client = _FakeClient(result=_ok_response("ok"))
+    provider = OpenAICompatProvider(settings=settings, client=client)  # type: ignore[arg-type]
+    _run(provider.complete(_request(), _context()))
+    assert "extra_body" not in client.completions.last_kwargs  # type: ignore[operator]
+
+
+def test_default_timeout_is_total_15s() -> None:
+    """기본 상한은 15s(전체 기준) — v2 프리뷰 실측 반영으로 10s에서 상향."""
+    assert LocalLlmSettings().local_llm_timeout_s == 15.0
+
+
+def test_real_client_disables_sdk_retries() -> None:
+    """실 클라이언트는 SDK 내장 재시도를 끈다(무재시도 확정) — 네트워크 없이 생성만."""
+    provider = OpenAICompatProvider(settings=_settings())
+    assert provider._client.max_retries == 0
+
+
+class _SlowCompletions:
+    """create가 전체 상한보다 오래 걸리는 fake — asyncio.timeout 강제 검증용."""
+
+    async def create(self, **kwargs: object) -> object:
+        await asyncio.sleep(1.0)
+        return _ok_response("느린 응답")
+
+
+def test_total_timeout_maps_to_llm_timeout() -> None:
+    """호출이 전체 상한을 넘기면 asyncio.timeout이 끊어 LlmTimeout으로 매핑된다."""
+    settings = LocalLlmSettings(
+        local_llm_base_url="http://local/v1",
+        local_llm_api_key="k",
+        local_llm_model="gemma-test",
+        local_llm_timeout_s=0.05,
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_SlowCompletions()))
+    provider = OpenAICompatProvider(settings=settings, client=client)  # type: ignore[arg-type]
+    with pytest.raises(LlmTimeout):
+        _run(provider.complete(_request(), _context()))
+
+
 def test_settings_injection_overrides_model() -> None:
     settings = LocalLlmSettings(local_llm_model="other-model")
     provider = OpenAICompatProvider(
