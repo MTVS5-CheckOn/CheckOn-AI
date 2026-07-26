@@ -176,8 +176,7 @@ class OpenAICompatProvider:
         latency_ms = int((time.monotonic() - start) * 1000)
         content = response.choices[0].message.content if response.choices else None
         if content is None or not content.strip():
-            # 빈 응답(content 없음/공백) = 재시도 대상. 게이트웨이가 재호출한다.
-            # 계약의 재시도 대상 예외는 ParseFailed(≤3회) — 빈 응답을 여기에 매핑.
+            # 빈 응답은 ParseFailed — 상위 소비자의 재시도 예산(블록 ≤3·item_attempt)이 소진한다.
             raise ParseFailed("로컬 LLM 빈 응답(content 없음/공백)")
 
         usage = response.usage
