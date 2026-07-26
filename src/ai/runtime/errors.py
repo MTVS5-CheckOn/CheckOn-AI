@@ -35,6 +35,13 @@ class IdempotencyConflict(DomainException):
     http_status = 409
 
 
+class NotFound(DomainException):
+    """job_id 등 부재·불투명 참조(존재 은닉) — 404 NOT_FOUND (error_codes §1)."""
+
+    code = "NOT_FOUND"
+    http_status = 404
+
+
 class ConsentAbsent(DomainException):
     """대상 학생 동의 없음 — 422 CONSENT_ABSENT."""
 
