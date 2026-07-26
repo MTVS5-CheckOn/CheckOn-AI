@@ -49,7 +49,7 @@
 | B-2 | 공용 계약 4파일 초안 리뷰 순서 | contracts/ | ☐ |
 | B-3 | 수능 enum 확정(=Open-11) + 경계 사례 7건 판정 | policies/taxonomy · contracts/taxonomy.py | ✅ enum 확정(7/15) · ☐ 경계 사례 7건 판정은 잔여 |
 | B-4 | ~~서술형 채점 분담~~ | — | ❌ **폐기(7/15)** — v1은 mcq만이라 서술형 채점 자체가 없음. F17 OCR 소유만 P2 시점에 Open-12와 함께 재론 |
-| B-5 | LLM 게이트웨이 인터페이스·벤더 — **확정 전 벤더 SDK 설치 금지** | contracts/llm.py | ☐ |
+| B-5 | LLM 게이트웨이 인터페이스·벤더 | contracts/llm.py | ✅ **(7/23) 벤더 확정 — 팀 로컬 OpenAI 호환 서버(Gemma 계열).** SDK 설치 금지 해제. `openai` SDK는 `llm/providers/` 안에서만 import 허용(capability·contracts 직접 import 금지 — 벤더 독립 유지). provider 어댑터는 **A 초안 PR + B 승인**(llm/ 소유 §4). 게이트웨이 재시도·라우팅은 B |
 | B-6 | LangSmith 도입 | runtime/ | ✅ **(7/15) 공통 1개로 도입** — 프로젝트·키 공용. 마스킹 훅은 게이트웨이 앞단(트레이스에 마스킹 통과분만) |
 | B-7 | evidence resolver 주입 시그니처 | evidence/resolver.py | ☐ |
 | B-8 | **VersionSet capability별 validator [양자]** | contracts/execution.py | ☐ **(7/22 등록)** — A 실행에 B 버전 키 혼입 금지·B 실행에 B 키 필수를 `ExecutionContext` 조립 경계에서 강제할지. `execution.py`(양자 승인 파일) 변경이라 A·B 강제 수준 합의 필요. 04 §2.2 크로스체킹 회신 |
