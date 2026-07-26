@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from ai.api.envelope import error_envelope
 from ai.api.routers.detect import detection_versions
 from ai.api.routers.detect import router as detect_router
+from ai.api.routers.imports import router as imports_router
 from ai.runtime.errors import DomainException
 
 
@@ -21,6 +22,7 @@ def create_app() -> FastAPI:
     """앱을 조립한다 — 라우터 등록 + 예외 핸들러 + X-Request-Id echo."""
     app = FastAPI(title="체크온 AI 서비스", version="0.1.0")
     app.include_router(detect_router)
+    app.include_router(imports_router)  # ⚠ 양자 승인 파일 수정(라우터 등록) — detect 선례, B 리뷰
 
     @app.middleware("http")
     async def _echo_request_id(

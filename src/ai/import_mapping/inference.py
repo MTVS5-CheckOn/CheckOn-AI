@@ -24,6 +24,18 @@ REQUIRED_ROSTER: frozenset[str] = frozenset(
 )
 REQUIRED_LEARNING: frozenset[str] = frozenset({"occurred_at", "event_type"})
 
+#: 유효한 매핑 목적지 = 07 표준 필드명(§2 명부 + §3 learning_event). override 검증에 쓴다.
+#: 자유 필드명 금지(07 §4) — 이 집합 밖은 400 INVALID_SCHEMA.
+STANDARD_FIELDS: frozenset[str] = frozenset(
+    {
+        "student_name", "grade", "class_name", "enrolled_at", "status",
+        "guardian_name", "guardian_phone", "consent", "subject_track",
+        "occurred_at", "event_type", "assignment_title", "area_tag", "type_tag",
+        "item_format", "correct", "score", "max_score", "duration_sec",
+        "passage_word_count", "source",
+    }
+)
+
 
 def detect_kind(targets: frozenset[str]) -> str:
     """명부/학습 종류 판별 — 명부 식별 필드가 매핑됐으면 roster(§3.4 '명부 이전 시')."""
@@ -70,7 +82,8 @@ def _fallback_columns(profile: SourceProfile) -> tuple[MappingColumn, ...]:
     )
 
 
-def _mapped_targets(columns: tuple[MappingColumn, ...]) -> frozenset[str]:
+def mapped_targets(columns: tuple[MappingColumn, ...]) -> frozenset[str]:
+    """매핑된(target 있는) 표준 필드 집합 — 게이트·캐시가 쓴다."""
     return frozenset(c.target for c in columns if c.target is not None)
 
 
@@ -101,7 +114,7 @@ async def infer_mapping(
         return InferenceOutcome(preview, ImportStatus.PREVIEW_READY, needs_probing=False)
 
     columns = _apply_needs_review(raw, confidence_review)
-    targets = _mapped_targets(columns)
+    targets = mapped_targets(columns)
     needs_probing = any(
         c.target is not None and (c.confidence or 0.0) < confidence_review for c in columns
     )
