@@ -1,0 +1,36 @@
+name: CI
+
+# 최소 게이트 — ruff·mypy·pytest(fake 기본, integration 마커 제외).
+# 실 PostgreSQL 통합 잡(postgres:16 서비스 + `pytest -m integration`)은 feat/signal-brief-v1
+# 머지 후 별도 추가한다(99_open_items ⑫). 그 브랜치에 docker-compose·greenlet 의존성·
+# NullPool 스캐폴드 수정이 들어 있어, develop 단독으로는 PG 잡 green을 보장할 수 없다.
+# 소유: 박진희(A) — docs/02_ownership §2.
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+
+jobs:
+  lint-type-test:
+    name: ruff · mypy · pytest (fake)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install deps (uv.lock 고정)
+        run: uv sync --frozen
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Mypy
+        run: uv run mypy
+
+      - name: Pytest (fake 기본 · integration 제외)
+        run: uv run pytest

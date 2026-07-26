@@ -36,6 +36,7 @@
 | `registry/` | **박진희** | 감지 엔진(규칙→GRU) 교체 지점의 메타. A의 Phase 3 준비물 |
 | `runtime/` (metrics·redaction·errors) | 박진희 | redaction은 A의 개인정보 방어선. **(v2) `redaction_patterns.yaml`(마스킹 정의서 P1~P8)·`errors.py`(에러·상태 코드 사전 §4 구현) 포함.** 비용 지표 스키마 변경은 B 승인(§4) |
 | **(v2 신설) `agents/` 공통 유틸** (체크포인터 설정·AGENT_RUN 기록기) | **박진희** | 현재 에이전트 2종이 전부 A 소유 — B가 에이전트를 만들기 시작하면 재논의 각주. LangGraph 버전 고정은 B(llm/ 의존성)와 협의 |
+| **(신설) `.github/workflows/`** (CI) | **박진희** | 전 코드 ruff·mypy·pytest(fake) 게이트를 A가 신설·주도. `ai/` 폴더 밖이라 소유 명시가 없어 여기서 닫는다(단독 오너·공동 최소화 원칙). **B capability 전용 잡 추가 시 B 리뷰.** 실 PG 통합 잡은 signal-brief 머지 후(99 ⑫) |
 
 ## 3. `contracts/` — 파일 단위 소유
 
