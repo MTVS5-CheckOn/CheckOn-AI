@@ -26,30 +26,8 @@
 ```bash
 # Python 3.12 (uv)
 uv sync                          # uv.lock 기준 전체 설치
-# .env는 노션에서 받아 레포 루트에 둔다 (DATABASE_URL 등 — 커밋 안 함)
+# .env는 노션에서 받아 레포 루트에 둔다 (커밋 안 함 — .env.example은 두지 않는다)
 uv run alembic upgrade head      # AI PG 스키마 (예정)
-uv run uvicorn ai.api.app:app --reload   # ASGI 앱 = ai/api/app.py의 app
-uv run pytest                    # 테스트
-uv run ruff check . && uv run mypy .
-```
-
-**백엔드 시뮬레이션 리허설** (서버 기동 후, 다른 터미널에서 — day1 풀 스냅숏→증분 배치):
-
-```bash
-uv run python -m ai.evaluation.backend_sim   # 기본 3일치, 신호·lifecycle 표 출력
-```
-
-**실 PostgreSQL 로컬 검증** (선택 — `.env`에 `POSTGRES_*`·`DATABASE_URL`·`STORE_BACKEND=pg`):
-
-```bash
-docker compose up -d                         # postgres 컨테이너 (docker-compose.yml)
-uv run alembic upgrade head                  # 스키마 (DATABASE_URL이 이 DB를 가리킴)
-uv run pytest -m integration                 # PG 왕복·재시작 생존 통합 테스트
-```
-
-의존성: FastAPI · SQLAlchemy(+asyncpg) · Alembic · pandas/numpy/openpyxl · LangGraph(+postgres checkpointer).
-**LLM 벤더 SDK는 아직 설치하지 않습니다** — 벤더 선정은 미확정(B-5), 개발은 FakeProvider로.
-
 ## 폴더 구조 (AI 아키텍처 지시서 기준 — 소유권은 `docs/02_ownership.md`)
 
 패키지는 src 레이아웃: `src/ai/` 아래가 지시서 구조 그대로.

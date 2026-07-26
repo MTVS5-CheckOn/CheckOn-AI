@@ -42,7 +42,7 @@
 2. 무게 — 기능 하나 쓰자고 무거운 프레임워크 금지(트랜지티브 의존 확인). 10줄이면 되는 걸 라이브러리로 대체하지도 않는다 — 반대 방향의 과잉도 금지
 3. 라이선스 — MIT/BSD/Apache 계열. GPL 계열은 팀 논의
 
-**추가 절차:** `uv add`(dev는 `--dev`) → `uv.lock` 커밋 포함 → PR 본문에 선정 사유. **예외 경로:** 개인정보를 다루는 코드(masking·redaction)에 데이터를 외부로 보내는 라이브러리·SaaS SDK 금지 — 로컬 연산만. LLM 벤더 SDK는 B-5 확정 전 설치 금지(CLAUDE.md §3).
+**추가 절차:** `uv add`(dev는 `--dev`) → `uv.lock` 커밋 포함 → PR 본문에 선정 사유. **예외 경로:** 개인정보를 다루는 코드(masking·redaction)에 데이터를 외부로 보내는 라이브러리·SaaS SDK 금지 — 로컬 연산만. LLM 벤더 SDK는 **B-5 확정(7/23)으로 설치 해제** — 단 `openai` SDK는 **`llm/providers/` 안에서만** import 허용(capability·contracts에서 직접 import 0건 = grep 게이트, 벤더 독립 유지).
 
 ## 2. 모듈화 — 스파게티 방지의 구조 규칙
 

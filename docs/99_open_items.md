@@ -54,7 +54,7 @@
 | B-2 | 공용 계약 4파일 초안 리뷰 순서 | contracts/ | ☐ |
 | B-3 | 수능 enum 확정(=Open-11) + 경계 사례 7건 판정 | policies/taxonomy · contracts/taxonomy.py | ✅ enum 확정(7/15) · ☐ 경계 사례 7건 판정은 잔여 |
 | B-4 | ~~서술형 채점 분담~~ | — | ❌ **폐기(7/15)** — v1은 mcq만이라 서술형 채점 자체가 없음. F17 OCR 소유만 P2 시점에 Open-12와 함께 재론 |
-| B-5 | LLM 게이트웨이 인터페이스·벤더 — **확정 전 벤더 SDK 설치 금지** | contracts/llm.py | ☐ |
+| B-5 | LLM 게이트웨이 인터페이스·벤더 | contracts/llm.py | ✅ **(7/23) 벤더 확정 — 팀 로컬 OpenAI 호환 서버(Gemma 계열).** SDK 설치 금지 해제. `openai` SDK는 `llm/providers/` 안에서만 import 허용(capability·contracts 직접 import 금지 — 벤더 독립 유지). provider 어댑터는 **A 초안 PR + B 승인**(llm/ 소유 §4). 게이트웨이 재시도·라우팅은 B |
 | B-6 | LangSmith 도입 | runtime/ | ✅ **(7/15) 공통 1개로 도입** — 프로젝트·키 공용. 마스킹 훅은 게이트웨이 앞단(트레이스에 마스킹 통과분만) |
 | B-7 | evidence resolver 주입 시그니처 | evidence/resolver.py | ☐ |
 | B-8 | **VersionSet capability별 validator [양자]** | contracts/execution.py | ☐ **(7/22 등록)** — A 실행에 B 버전 키 혼입 금지·B 실행에 B 키 필수를 `ExecutionContext` 조립 경계에서 강제할지. `execution.py`(양자 승인 파일) 변경이라 A·B 강제 수준 합의 필요. 04 §2.2 크로스체킹 회신 |
@@ -102,3 +102,4 @@
 | **D-②b baseline read-path** — 판정 시 `FEATURE_WEEK` 축적분에서 baseline을 조립해 엔진에 **선택 입력으로 주입**(순수 함수 유지 — 시그니처는 추가 인자, 미주입 시 요청 구동 동일). | ✅ **구현 완료(7/23)** — `engine.detect(stored_features=…)` + `detection_store.load_feature_weeks`(fail-closed) + `features.week_features_from_metrics/merge_weeks`(같은 주 요청 승·판정 창까지 병합). 라우터가 요청 students 전원분 조회 주입. 멀티데이(day1 10주 → day2 1주 증분) e2e + 대조군(증분 == 통짜 판정 일치) 테스트. 골든·데모 무변경(미주입 바이트 동일). **증분 전용 전환은 백엔드 일정 합의 후 별도 통보**(그 전 10주 동봉 유지, 10주 와도 동작 동일 — 09 §2 ① 정밀화). |
 | ⑩ 섀도 모드 표시 방식 — `error_codes.md` §2.3에 `shadow: true` 행이 있으나 09 §3 응답엔 없음. 섀도 구현 시점(D-② 후)에 09 응답 편입 vs 운영 설정 결정 + 두 문서 정합 | ☐ |
 | ⑪ 부재형 신호(R2·R3·R5)의 evidence 전무 한계 — 관련 실존 기록이 전무하면 신호를 생성하지 않는다(계약상 evidence ≥1). 집계/상태 record 참조를 evidence로 허용할지 D-②(저장 계층) 시점 결정. 09 §3 A 판정(7/22) | ☐ |
+| ⑬ **pgvector 도입 후보** — 7/25 docker-compose에서 `postgres:16` 유지 확정(현 06_erd에 벡터 컬럼 없음). 향후 유사 학생·유사 오답 패턴 검색 등 임베딩 수요가 생기면 pgvector 확장 도입을 검토(이미지·ERD 함께 개정). | ☐ **아이디어(수요 발생 시 · P2 후보)** |
