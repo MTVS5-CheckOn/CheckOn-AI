@@ -13,39 +13,29 @@ from uuid import UUID
 import pytest
 
 from ai.composition.briefing import make_brief
+from ai.composition.briefing_context import BriefingContext, EvidenceFact
 from ai.composition.provider import BriefingSettings, build_brief_provider
-from ai.contracts.detection import (
-    DISPLAY_LABELS,
-    Brief,
-    EvidenceItem,
-    Lifecycle,
-    RuleId,
-    Signal,
-    SignalType,
-)
+from ai.contracts.detection import DISPLAY_LABELS, Lifecycle, SignalType
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LlmError
+from ai.detection.segments import Segment
 
 pytestmark = pytest.mark.integration
 
 
-def _signal() -> Signal:
-    return Signal(
-        signal_id="s1",
-        student_ref="st_1",
-        class_ref="cl_a",
-        rule_id=RuleId.R4,
+def _ctx() -> BriefingContext:
+    """R4 숨은 위기 근거 패키지 — 실 LLM이 근거로 한 문장을 구성한다(v2)."""
+    return BriefingContext(
         signal_type=SignalType.HIDDEN_RISK,
         display_label=DISPLAY_LABELS[SignalType.HIDDEN_RISK],
-        score=0.6,
-        rank=1,
         lifecycle=Lifecycle.NEW,
-        brief=Brief(
-            text="점수는 버티고 있지만 문제를 붙잡는 시간이 늘고 있어요.",
-            gate_passed=True,
-            fallback_used=False,
+        segment=Segment.NORMAL,
+        facts=(
+            EvidenceFact("정답률 변동(평소 대비)", "3%p 이내로 유지"),
+            EvidenceFact("문제 풀이 시간(평소 대비)", "180%"),
         ),
-        evidence=(EvidenceItem(source_table="learning_event", record_id="le_1", summary="근거"),),
+        evidence_summaries=("hidden_risk 근거 기록",),
+        fallback_text="점수는 버티고 있지만 문제를 붙잡는 시간이 늘고 있어요.",
     )
 
 
@@ -72,11 +62,10 @@ def test_real_provider_single_brief() -> None:
     except NotImplementedError:
         pytest.skip("openai_compat 어댑터 미배선(별도 PR) — 스모크 skip")
 
-    signal = _signal()
     try:
         brief, _outcome = asyncio.run(
             make_brief(
-                signal,
+                _ctx(),
                 provider,
                 context=_context(),
                 now=lambda: 0.0,

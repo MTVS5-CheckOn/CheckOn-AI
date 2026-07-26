@@ -17,14 +17,14 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 
+from ai.composition.briefing_context import BriefingContext, render_evidence_block
 from ai.composition.briefing_gate import MAX_BRIEF_LENGTH, check_brief_gate
-from ai.contracts.detection import Brief, Signal
-from ai.contracts.execution import ExecutionContext
+from ai.contracts.detection import Brief
+from ai.contracts.execution import ExecutionContext, GenerationParams
 from ai.contracts.llm import (
     LLMProvider,
     LLMRequest,
@@ -47,9 +47,12 @@ _PROMPT_PATH = (
 #: 왜곡 게이트 실패 시 재생성 상한(error_codes §3 — 블록 단위 ≤3). CLAUDE.md 불변식 6.
 MAX_REGEN = 3
 PROMPT_ID = "composition/briefing"
-PROMPT_VERSION = "0.1"
+PROMPT_VERSION = "0.2"
 
-_NUMBER_RE = re.compile(r"\d+")
+#: 브리핑은 한 문장(≤MAX_BRIEF_LENGTH자)이라 생성 토큰 상한을 좁게 준다 — 서버 기본값의
+#: 과생성·지연을 막는다(v2 프리뷰 지연 개선). 게이트 길이 상한과 별개의 성능 제어.
+_BRIEF_MAX_TOKENS = 128
+_GEN_PARAMS = GenerationParams(max_tokens=_BRIEF_MAX_TOKENS)
 
 
 @lru_cache
@@ -57,75 +60,66 @@ def _template() -> str:
     return _PROMPT_PATH.read_text(encoding="utf-8")
 
 
-def _assemble_prompt(signal: Signal) -> str:
-    """프롬프트 조립 — signal_type·lifecycle·초안(엔진 brief.text). 학생 식별자·과제명 없음.
+def _assemble_prompt(ctx: BriefingContext) -> str:
+    """프롬프트 조립 — 구조화 근거 블록(v2). 엔진 초안 문장은 넣지 않는다(모사 방지).
 
-    초안 = 엔진이 만든 결정론 brief(무주어·무실명·rule detail·핵심 수치 포함). detection
-    무변경으로 얻는 유일한 grounding 소스이며, 여기 담긴 숫자만 문장에 허용된다.
+    근거 블록은 briefing_context가 소유·렌더한다(무주어·무실명·수치·enum 태그만).
+    이 블록이 제공한 수치만 게이트에서 허용된다(ctx.allowed_numbers).
     """
     return _template().format(
-        signal_type=signal.signal_type.value,
-        lifecycle=signal.lifecycle.value,
-        draft=signal.brief.text,
+        evidence_block=render_evidence_block(ctx),
         max_length=MAX_BRIEF_LENGTH,
     )
 
 
-def _allowed_numbers(signal: Signal) -> frozenset[str]:
-    """초안(엔진 brief)에 실존하는 숫자만 허용 — LLM의 숫자 fabrication 차단(EXACT 대조)."""
-    return frozenset(_NUMBER_RE.findall(signal.brief.text))
+def _fallback(ctx: BriefingContext) -> Brief:
+    """템플릿 폴백 — 엔진 결정론 brief(ctx.fallback_text)를 재사용한다(중복 구현 금지).
 
-
-def _fallback(signal: Signal, *, gate_passed: bool) -> Brief:
-    """템플릿 폴백 — 엔진이 이미 만든 결정론 brief(detection/brief 산출)를 재사용한다.
-
-    signal.brief.text가 그 템플릿(중복 구현 금지). fallback_used만 True로 바꿔 실의미 부여.
+    LLM 실패·게이트 소진·마스킹 불확실·예산 소진 때 되돌아간다. fallback_used=True로 실의미.
     """
-    return Brief(
-        text=signal.brief.text,
-        gate_passed=gate_passed,
-        fallback_used=True,
-    )
+    return Brief(text=ctx.fallback_text, gate_passed=False, fallback_used=True)
 
 
 async def make_brief(
-    signal: Signal,
+    ctx: BriefingContext,
     provider: LLMProvider,
     *,
     context: ExecutionContext,
     now: Callable[[], float],
     deadline: float,
 ) -> tuple[Brief, str]:
-    """신호 하나를 문장화한다. (brief, outcome 라벨[로그용]) 반환.
+    """근거 패키지 하나를 문장화한다. (brief, outcome 라벨[로그용]) 반환.
 
     now/deadline은 시간 예산(호출당·총)을 호출자(라우터)가 관리하도록 주입한다
     (datetime.now() 직접 호출 금지 — 03_coding_rules §3).
     """
     if now() >= deadline:
-        return _fallback(signal, gate_passed=False), "budget_exhausted"
+        return _fallback(ctx), "budget_exhausted"
 
-    redacted = redact(_assemble_prompt(signal))
+    redacted = redact(_assemble_prompt(ctx))
     if redacted.uncertain:  # fail-closed — 마스킹 불확실이면 LLM에 안 보낸다
-        return _fallback(signal, gate_passed=False), "redaction_blocked"
+        return _fallback(ctx), "redaction_blocked"
 
     request = LLMRequest(
         role=ModelRole.GENERATOR,
         prompt=redacted.masked_text,
         prompt_id=PROMPT_ID,
         prompt_version=PROMPT_VERSION,
+        generation_params=_GEN_PARAMS,
     )
+    allowed = ctx.allowed_numbers()
     last_reason = ""
     for _ in range(MAX_REGEN):
         try:
             result = await provider.complete(request, context)
         except (LlmUnavailable, LlmTimeout, ParseFailed):
-            return _fallback(signal, gate_passed=False), "llm_failed"  # 재시도 없이 즉시
+            return _fallback(ctx), "llm_failed"  # 재시도 없이 즉시
         text = (result.text or "").strip()
-        gate = check_brief_gate(text, _allowed_numbers(signal))
+        gate = check_brief_gate(text, allowed)
         if gate.passed:
             return (
                 Brief(text=text, gate_passed=True, fallback_used=False),
                 result.outcome.value,
             )
         last_reason = gate.reason
-    return _fallback(signal, gate_passed=False), f"gate_exhausted:{last_reason}"
+    return _fallback(ctx), f"gate_exhausted:{last_reason}"

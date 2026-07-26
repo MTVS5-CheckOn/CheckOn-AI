@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -28,12 +29,15 @@ from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
 from ai.composition.briefing import make_brief
+from ai.composition.briefing_context import build_contexts
 from ai.composition.provider import build_brief_provider
 from ai.contracts.detection import (
     CONSENT_GRANTED,
     OBSERVED_ONLY_MIN_WEEKS,
+    Brief,
     DetectRequest,
     DetectResponse,
+    Signal,
     StudentStatus,
 )
 from ai.contracts.execution import Capability, ExecutionContext, RunMetadata, VersionSet
@@ -84,6 +88,8 @@ _detection_store: DetectionStore = build_detection_store()
 #: 브리핑 문장화(ⓐ) — provider는 settings로 fake↔openai_compat(기본 fake). 총 예산 45s.
 _brief_provider: LLMProvider = build_brief_provider()
 _BRIEFING_BUDGET_S = 45.0
+#: 신호별 브리핑 LLM 호출 동시 실행 상한 — 팀 로컬 서버 부하를 배려한 세마포어(v3 병렬화).
+_BRIEFING_CONCURRENCY = 3
 
 
 def set_brief_provider(provider: LLMProvider) -> None:
@@ -233,6 +239,8 @@ async def _load_stored_features(
 
 async def _apply_briefing(
     response: DetectResponse,
+    request: DetectRequest,
+    stored_features: dict[str, list[WeekFeatures]],
     execution_id: uuid.UUID,
     tenant_id: str,
     snapshot_hash: str,
@@ -241,6 +249,7 @@ async def _apply_briefing(
     """신호별 brief를 문장화(ⓐ)로 교체. 총 예산 45s 안에서, 실패는 템플릿 폴백.
 
     detection 판정(신호·score·lifecycle·evidence)은 건드리지 않고 brief만 바꾼다.
+    근거 패키지(v2)는 엔진과 같은 공개 피처 함수로 조립한다(판정식 미접근).
     LLM_CALL.outcome은 로그로만(DB 적재는 후속 — 99 15).
     """
     context = ExecutionContext(
@@ -250,12 +259,28 @@ async def _apply_briefing(
         input_snapshot_hash=snapshot_hash,
         versions=detection_versions(config),
     )
+    contexts = build_contexts(
+        request, response.signals, stored_features=stored_features, config=config
+    )
+    # 병렬화(v3) — 신호별 문장화를 세마포어(동시 N)로 동시에 돌린다. 총 예산 45s는
+    # make_brief가 호출 시작 시 deadline을 검사해 지킨다(세마포어 대기 후 시작한 콜이
+    # deadline을 넘겼으면 호출 없이 폴백). 판정·순서는 무변(gather가 순서 보존).
     deadline = time.monotonic() + _BRIEFING_BUDGET_S
+    semaphore = asyncio.Semaphore(_BRIEFING_CONCURRENCY)
+
+    async def _brief_one(signal: Signal) -> tuple[Brief, str]:
+        async with semaphore:
+            return await make_brief(
+                contexts[signal.signal_id],
+                _brief_provider,
+                context=context,
+                now=time.monotonic,
+                deadline=deadline,
+            )
+
+    outcomes = await asyncio.gather(*(_brief_one(s) for s in response.signals))
     briefed = []
-    for signal in response.signals:
-        brief, outcome = await make_brief(
-            signal, _brief_provider, context=context, now=time.monotonic, deadline=deadline
-        )
+    for signal, (brief, outcome) in zip(response.signals, outcomes, strict=True):
         if brief.fallback_used:
             logger.info("brief 폴백 rule=%s outcome=%s", signal.rule_id.value, outcome)
         briefed.append(signal.model_copy(update={"brief": brief}))
@@ -310,7 +335,9 @@ async def post_detect(request: Request) -> dict[str, Any]:
     execution_id = uuid.uuid4()
 
     # 브리핑 문장화 (ⓐ) — 신호의 brief만 교체(detection 무변경·판정 무변, 분기표 #6).
-    response = await _apply_briefing(response, execution_id, tenant_id, snapshot_hash, config)
+    response = await _apply_briefing(
+        response, merged, stored_features, execution_id, tenant_id, snapshot_hash, config
+    )
 
     envelope = success_envelope(
         data=response.model_dump(mode="json"),
