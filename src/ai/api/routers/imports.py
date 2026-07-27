@@ -46,7 +46,7 @@ from ai.import_mapping.job_store import (
     SourceLoader,
     StubSourceLoader,
 )
-from ai.import_mapping.profiling import ProfilingError, profile_source
+from ai.import_mapping.profiling import ProfilingError, Redactor, profile_source
 from ai.import_mapping.provider import FakeMappingProvider, MappingProvider
 from ai.import_mapping.settings import get_import_settings
 from ai.import_mapping.signature import (
@@ -57,6 +57,7 @@ from ai.import_mapping.signature import (
 )
 from ai.import_mapping.state import assert_transition
 from ai.runtime.errors import IdempotencyConflict, NotFound, SnapshotInvalid
+from ai.runtime.redaction import redact
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,9 @@ _job_store: ImportJobStore = InMemoryImportJobStore()
 _spec_cache: SpecCache = InMemorySpecCache()
 _mapping_provider: MappingProvider = FakeMappingProvider()
 _source_loader: SourceLoader = StubSourceLoader()
+#: 프로덕션 조립부 기본 = 실 redaction 엔진(runtime/redaction.redact) 주입 — 샘플 보관 활성.
+#: profiling 모듈은 redaction을 import하지 않는다(벤더/보안 층은 조립부에서 주입, §3.1·§5.2).
+_redactor: Redactor | None = redact
 
 
 def set_import_stores(
@@ -89,9 +93,11 @@ def set_import_stores(
     spec_cache: SpecCache | None = None,
     provider: MappingProvider | None = None,
     source_loader: SourceLoader | None = None,
+    redactor: Redactor | None = None,
 ) -> None:
-    """협력자 주입(합성 루트·테스트)."""
+    """협력자 주입(합성 루트·테스트). redactor 미지정(None)은 무시 — None 강제는 reset이 한다."""
     global _idempotency_store, _job_store, _spec_cache, _mapping_provider, _source_loader
+    global _redactor
     if job_store is not None:
         _job_store = job_store
     if idempotency_store is not None:
@@ -102,10 +108,13 @@ def set_import_stores(
         _mapping_provider = provider
     if source_loader is not None:
         _source_loader = source_loader
+    if redactor is not None:
+        _redactor = redactor
 
 
 def reset_import_stores() -> None:
-    """테스트 격리 — 기본 구현으로 재빌드(source_loader는 스텁이라 실제 fetch 안 함)."""
+    """테스트 격리 — 기본 구현 재빌드. 테스트 기본은 redactor **미주입**(샘플 0, §5.2 무변)."""
+    global _redactor
     set_import_stores(
         job_store=InMemoryImportJobStore(),
         idempotency_store=build_idempotency_store(),
@@ -113,6 +122,7 @@ def reset_import_stores() -> None:
         provider=FakeMappingProvider(),
         source_loader=StubSourceLoader(),
     )
+    _redactor = None
 
 
 def import_versions() -> VersionSet:
@@ -190,7 +200,9 @@ async def post_import(request: Request) -> dict[str, Any]:
 
     try:
         data = _source_loader.load(req.source_url)
-        profile = profile_source(data, req.filename, max_rows=settings.import_sample_max_rows)
+        profile = profile_source(
+            data, req.filename, max_rows=settings.import_sample_max_rows, redactor=_redactor
+        )
     except (ProfilingError, NotImplementedError) as exc:
         assert_transition(ImportStatus.PROFILING, ImportStatus.FAILED)
         job.status = ImportStatus.FAILED

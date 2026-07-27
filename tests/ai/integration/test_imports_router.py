@@ -40,6 +40,19 @@ _ROSTER = _xlsx(
 )
 _LEARNING_INCOMPLETE = _xlsx({"점수": [88, 91]})
 
+# 실 redactor 가드레일용 — 비의심 컬럼(비고)에 실명·전화가 섞인 손 작성 픽스처.
+_ROSTER_PII = _xlsx(
+    {
+        "원생명": ["김철수", "이영희"],  # 의심 컬럼 → 샘플에서 값 제외(통계만)
+        "반": ["A1", "A1"],
+        "등원일": ["2026-03-02", "2026-03-02"],
+        "상태": ["재원", "재원"],
+        "동의": ["동의", "동의"],
+        # 비의심 컬럼 — 마스킹 후 샘플에 들어감
+        "비고": ["김철수 어머니 010-1234-5678", "이영희 학생 010-2222-3333"],
+    }
+)
+
 
 class FakeSourceLoader:
     """url → 고정 바이트. 스토리지 fetch 스텁 대체(테스트 결정론)."""
@@ -163,3 +176,42 @@ def test_meta_versions_always_present(client: TestClient) -> None:
     resp = _post(client, "s3://roster.xlsx", "roster.xlsx")
     versions = resp.json()["meta"]["versions"]
     assert {"pipeline", "engine", "schema", "contract"} <= set(versions)
+
+
+def test_real_redactor_masks_profile_samples_zero_realname() -> None:
+    """실 redactor 주입 → profile 샘플 보관 활성 · 원문 잔존 0 · ⟪토큰⟫ 존재(§5.2).
+
+    가드레일은 **profile 직렬화** 기준(§3.1) — 샘플은 서버측 profile에 보관되고(LLM 1-shot 입력용),
+    preview 응답 노출은 별개(로직 신설 금지 — 후속). 기대값은 손 작성(엔진 산출 아님).
+    """
+    import ai.api.routers.imports as imports_router
+    from ai.runtime.redaction import redact
+
+    reset_import_stores()
+    set_import_stores(
+        source_loader=FakeSourceLoader({"s3://pii.xlsx": _ROSTER_PII}),
+        redactor=redact,  # 실 redaction 엔진을 라우터 조립부에서 주입
+    )
+    try:
+        resp = TestClient(create_app()).post(
+            "/v1/imports",
+            json={"source_url": "s3://pii.xlsx", "filename": "pii.xlsx"},
+            headers={**_HEADERS, "Idempotency-Key": "t1:pii"},
+        )
+        assert resp.status_code == 202
+        job_id = resp.json()["data"]["job_id"]
+        job = imports_router._job_store.get(job_id)
+        assert job is not None and job.profile is not None
+        samples = job.profile.sheets[0].sample_rows
+        blob = repr(job.profile)  # profile 직렬화
+        # 샘플 보관 활성 — redactor 주입 시 profile 샘플이 채워진다(미주입이면 () 였다)
+        assert samples, "실 redactor 주입 시 profile 샘플이 채워져야 한다"
+        # 원문 실명·전화 잔존 0 (손 작성 기대값)
+        for leaked in ("김철수", "이영희", "010-1234-5678", "010-2222-3333"):
+            assert leaked not in blob, f"원문 잔존: {leaked}"
+        # 마스킹 토큰 ⟪…⟫ 존재(비고 컬럼이 마스킹돼 샘플에 들어감)
+        assert "⟪" in blob and "⟫" in blob
+        # 의심 컬럼(원생명)은 샘플 키에 없다(값 미노출 — 통계만)
+        assert all("원생명" not in row for row in samples)
+    finally:
+        reset_import_stores()
