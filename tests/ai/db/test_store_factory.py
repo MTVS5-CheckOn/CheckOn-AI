@@ -15,11 +15,24 @@ from ai.db.repositories.idempotency import (
     InMemoryIdempotencyStore,
     PgIdempotencyStore,
 )
+from ai.db.repositories.probe_stores import (
+    PgAgentStepSink,
+    PgProfileStore,
+    PgSpecResultStore,
+)
 from ai.db.settings import DbSettings
 from ai.db.store_factory import (
     build_agent_job_store,
+    build_agent_step_sink,
     build_detection_store,
     build_idempotency_store,
+    build_profile_store,
+    build_spec_result_store,
+)
+from ai.import_mapping.probe.stores import (
+    InMemoryAgentStepSink,
+    InMemoryProfileStore,
+    InMemorySpecResultStore,
 )
 
 
@@ -38,11 +51,25 @@ def test_memory_backend_builds_inmemory_stores() -> None:
     assert isinstance(build_detection_store(_settings("memory")), InMemoryDetectionStore)
 
 
+def test_memory_backend_builds_inmemory_probe_stores() -> None:
+    """mapping_probe 저장소 3종도 기본 memory — 워커 골격은 DB 없이 돈다(99 ⑮)."""
+    assert isinstance(build_profile_store(_settings("memory")), InMemoryProfileStore)
+    assert isinstance(build_spec_result_store(_settings("memory")), InMemorySpecResultStore)
+    assert isinstance(build_agent_step_sink(_settings("memory")), InMemoryAgentStepSink)
+
+
 def test_pg_backend_builds_pg_stores() -> None:
     """pg 선택 시 PG 구현 — 생성 시 접속하지 않는다(lazy engine)."""
     assert isinstance(build_agent_job_store(_settings("pg")), PgJobStore)
     assert isinstance(build_idempotency_store(_settings("pg")), PgIdempotencyStore)
     assert isinstance(build_detection_store(_settings("pg")), PgDetectionStore)
+
+
+def test_pg_backend_builds_pg_probe_stores() -> None:
+    """pg 선택 시 mapping_probe 저장소도 PG 구현(lazy engine — 접속 없음)."""
+    assert isinstance(build_profile_store(_settings("pg")), PgProfileStore)
+    assert isinstance(build_spec_result_store(_settings("pg")), PgSpecResultStore)
+    assert isinstance(build_agent_step_sink(_settings("pg")), PgAgentStepSink)
 
 
 def test_unknown_backend_falls_back_to_memory() -> None:
