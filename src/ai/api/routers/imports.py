@@ -46,6 +46,7 @@ from ai.import_mapping.job_store import (
     SourceLoader,
     StubSourceLoader,
 )
+from ai.import_mapping.probe.enqueue import ProbeEnqueuer
 from ai.import_mapping.profiling import ProfilingError, Redactor, profile_source
 from ai.import_mapping.provider import FakeMappingProvider, MappingProvider
 from ai.import_mapping.settings import get_import_settings
@@ -84,6 +85,8 @@ _source_loader: SourceLoader = StubSourceLoader()
 #: 프로덕션 조립부 기본 = 실 redaction 엔진(runtime/redaction.redact) 주입 — 샘플 보관 활성.
 #: profiling 모듈은 redaction을 import하지 않는다(벤더/보안 층은 조립부에서 주입, §3.1·§5.2).
 _redactor: Redactor | None = redact
+#: probing 기동 시 WorkerJob enqueue(§6). 미배선(None)이면 preview_ready 유지(기존 동작 무변).
+_probe_enqueuer: ProbeEnqueuer | None = None
 
 
 def set_import_stores(
@@ -94,10 +97,11 @@ def set_import_stores(
     provider: MappingProvider | None = None,
     source_loader: SourceLoader | None = None,
     redactor: Redactor | None = None,
+    probe_enqueuer: ProbeEnqueuer | None = None,
 ) -> None:
-    """협력자 주입(합성 루트·테스트). redactor 미지정(None)은 무시 — None 강제는 reset이 한다."""
+    """협력자 주입(합성 루트·테스트). 미지정(None) 인자는 무시 — None 강제는 reset이 한다."""
     global _idempotency_store, _job_store, _spec_cache, _mapping_provider, _source_loader
-    global _redactor
+    global _redactor, _probe_enqueuer
     if job_store is not None:
         _job_store = job_store
     if idempotency_store is not None:
@@ -110,11 +114,13 @@ def set_import_stores(
         _source_loader = source_loader
     if redactor is not None:
         _redactor = redactor
+    if probe_enqueuer is not None:
+        _probe_enqueuer = probe_enqueuer
 
 
 def reset_import_stores() -> None:
-    """테스트 격리 — 기본 구현 재빌드. 테스트 기본은 redactor **미주입**(샘플 0, §5.2 무변)."""
-    global _redactor
+    """테스트 격리 — 기본 구현 재빌드. 테스트 기본은 redactor·probe_enqueuer **미배선**(무변)."""
+    global _redactor, _probe_enqueuer
     set_import_stores(
         job_store=InMemoryImportJobStore(),
         idempotency_store=build_idempotency_store(),
@@ -123,6 +129,7 @@ def reset_import_stores() -> None:
         source_loader=StubSourceLoader(),
     )
     _redactor = None
+    _probe_enqueuer = None
 
 
 def import_versions() -> VersionSet:
@@ -220,9 +227,20 @@ async def post_import(request: Request) -> dict[str, Any]:
         )
         job.preview = outcome.preview
         job.status = outcome.status  # PREVIEW_READY | BLOCKED
-        if outcome.needs_probing:
-            # 조사 에이전트 기동 조건 충족 — 실행은 후속(LangGraph B 리뷰 대기, §3.3).
-            logger.info("import probing 기동 대상(실행 보류) job=%s", job.job_id)
+        if (
+            outcome.needs_probing
+            and job.status is ImportStatus.PREVIEW_READY
+            and _probe_enqueuer is not None
+        ):
+            # 필수 충족 + 저신뢰 → 조사 에이전트 enqueue(§6). blocked이면 조사 안 함(필수 우선).
+            assert_transition(ImportStatus.INFERRING, ImportStatus.PROBING)  # state.py 규칙
+            probe_job = await _probe_enqueuer.enqueue(
+                tenant_id=tenant_id, profile=profile, file_hash=body_hash
+            )
+            job.status = ImportStatus.PROBING
+            logger.info("import probing enqueue job=%s probe=%s", job.job_id, probe_job.job_id)
+        elif outcome.needs_probing:
+            logger.info("import probing 대상(enqueuer 미배선 — preview 유지) job=%s", job.job_id)
         _job_store.update(job)
 
     body_out = _view_body(job)
