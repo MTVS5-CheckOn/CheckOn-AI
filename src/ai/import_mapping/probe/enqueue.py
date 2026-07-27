@@ -53,7 +53,7 @@ class ProbeEnqueuer:
         self, *, tenant_id: str, profile: SourceProfile, file_hash: str
     ) -> WorkerJob:
         sheets = serialize_profile(profile)
-        profile_ref = self._profiles.put(
+        profile_ref = await self._profiles.put(
             ProfileRecord(
                 id=self._new_id(),
                 tenant_id=tenant_id,
