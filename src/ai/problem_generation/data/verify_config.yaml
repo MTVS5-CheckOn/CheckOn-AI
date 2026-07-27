@@ -1,0 +1,44 @@
+# M2 T1 파일럿 기본값. 잠정값 변경 시 golden/problems/를 함께 개정한다.
+version: verify-config.v1
+regen_max: 2
+transport_retry: 1
+dup_similarity_max: 0.8
+cross_confidence_high: 0.8
+alignment_confidence_min: 0.7
+set_drop_ratio_max: 0.3
+verify_outage_streak_max: 3
+t1_light_mode: false
+difficulty_regen_enabled: false
+difficulty_regen_max: 1
+difficulty_band_tolerance: 1
+difficulty_band_map:
+  T1:
+    low:
+      min: 1.0
+      max: 1.5
+    medium:
+      min: 2.0
+      max: 2.5
+    high:
+      min: 3.0
+      max: 3.5
+diag_relative_cut_pp: -15
+diag_decay: 0.7
+diag_propagate_threshold: 0.5
+diag_severity_saturation: 0.30
+diag_suspect_damping: 0.5
+node_min_items: 6
+difficulty_weights:
+  base: 1.0
+  passage_word_count:
+    over_700: 0.5
+    over_1000: 1.0
+  sentence_complexity:
+    advanced: 0.5
+  type_tag:
+    fact: 0.0
+    concept: 0.0
+    infer: 0.5
+    critic: 1.0
+  low_cross_solve_confidence: 0.5
+  multiple_evidence: 0.5

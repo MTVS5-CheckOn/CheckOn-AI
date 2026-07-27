@@ -1,0 +1,370 @@
+# 수능 대비 고등 국어 문법 단일 DAG 초안.
+# 교육과정 용어·선수 관계·가중치는 전부 전문가 검수 대기이며 확정 교과 정본이 아니다.
+meta:
+  graph_version: curriculum-grammar-v1
+  taxonomy_version: v1
+  updated: 2026-07-27
+nodes:
+  - id: language.grammar.phoneme.system
+    label: 음운 체계
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 1
+    desc: 수능 문법의 자음·모음·음운 개념 기초 초안 — 전문가 검수 대기
+  - id: language.grammar.syllable.structure
+    label: 음절 구조
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 1
+    desc: 음절의 구성과 음운 배열 제약 초안 — 전문가 검수 대기
+  - id: language.grammar.morpheme.concept
+    label: 형태소
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 1
+    desc: 형태소의 개념과 분류 기준 초안 — 전문가 검수 대기
+  - id: language.grammar.word.formation
+    label: 단어 형성
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 2
+    desc: 파생어·합성어 형성 원리 초안 — 전문가 검수 대기
+  - id: language.grammar.parts_of_speech
+    label: 품사 체계
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 1
+    desc: 형태·기능·의미에 따른 품사 분류 초안 — 전문가 검수 대기
+  - id: language.grammar.noun
+    label: 명사
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 2
+    desc: 명사의 기능과 하위 유형 초안 — 전문가 검수 대기
+  - id: language.grammar.pronoun
+    label: 대명사
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 2
+    desc: 대명사의 지시·대용 기능 초안 — 전문가 검수 대기
+  - id: language.grammar.numeral
+    label: 수사
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 2
+    desc: 수사의 수량·순서 표현 기능 초안 — 전문가 검수 대기
+  - id: language.grammar.predicate
+    label: 동사와 형용사
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 2
+    desc: 용언의 활용과 동사·형용사 판별 초안 — 전문가 검수 대기
+  - id: language.grammar.modifier
+    label: 관형사
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 2
+    desc: 관형사의 형태와 문장 기능 초안 — 전문가 검수 대기
+  - id: language.grammar.adverb
+    label: 부사
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 2
+    desc: 부사의 수식 범위와 기능 초안 — 전문가 검수 대기
+  - id: language.grammar.interjection
+    label: 감탄사
+    area_tag: language
+    type_affinity: [concept, fact]
+    level: 2
+    desc: 감탄사의 독립성과 담화 기능 초안 — 전문가 검수 대기
+  - id: language.grammar.particle
+    label: 조사
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 2
+    desc: 격조사·보조사·접속조사의 기능 초안 — 전문가 검수 대기
+  - id: language.grammar.ending
+    label: 어미
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 2
+    desc: 선어말·어말 어미의 기능과 활용 초안 — 전문가 검수 대기
+  - id: language.grammar.phonological_change
+    label: 음운 변동
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 2
+    desc: 교체·탈락·첨가·축약의 상위 개념 초안 — 전문가 검수 대기
+  - id: language.grammar.alternation
+    label: 음운 교체
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 3
+    desc: 환경에 따른 음운 교체 판별 초안 — 전문가 검수 대기
+  - id: language.grammar.deletion
+    label: 음운 탈락
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 3
+    desc: 음운 탈락 유형과 적용 환경 초안 — 전문가 검수 대기
+  - id: language.grammar.addition
+    label: 음운 첨가
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 3
+    desc: 음운 첨가 유형과 적용 환경 초안 — 전문가 검수 대기
+  - id: language.grammar.contraction
+    label: 음운 축약
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 3
+    desc: 음운 축약 유형과 적용 환경 초안 — 전문가 검수 대기
+  - id: language.grammar.fortition
+    label: 된소리되기
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 3
+    desc: 된소리되기 조건 판별 초안 — 전문가 검수 대기
+  - id: language.grammar.palatalization
+    label: 구개음화
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 3
+    desc: 구개음화 환경과 표면형 분석 초안 — 전문가 검수 대기
+  - id: language.grammar.nasalization
+    label: 비음화
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 3
+    desc: 비음화 환경과 연쇄 변동 분석 초안 — 전문가 검수 대기
+  - id: language.grammar.liquidization
+    label: 유음화
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 3
+    desc: 유음화 환경과 예외 판별 초안 — 전문가 검수 대기
+  - id: language.grammar.sentence.constituent
+    label: 문장 성분
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 2
+    desc: 주성분·부속성분·독립성분 판별 초안 — 전문가 검수 대기
+  - id: language.grammar.sentence.structure
+    label: 문장 구조
+    area_tag: language
+    type_affinity: [concept, infer]
+    level: 3
+    desc: 홑문장과 겹문장의 구조 분석 초안 — 전문가 검수 대기
+  - id: language.grammar.sentence.embedded
+    label: 안은문장
+    area_tag: language
+    type_affinity: [concept, infer, critic]
+    level: 4
+    desc: 명사절·관형절·부사절·서술절·인용절 분석 초안 — 전문가 검수 대기
+  - id: language.grammar.sentence.connected
+    label: 이어진문장
+    area_tag: language
+    type_affinity: [concept, infer, critic]
+    level: 4
+    desc: 대등·종속 연결 관계 분석 초안 — 전문가 검수 대기
+  - id: language.grammar.honorific
+    label: 높임 표현
+    area_tag: language
+    type_affinity: [concept, infer, critic]
+    level: 3
+    desc: 주체·객체·상대 높임의 실현 분석 초안 — 전문가 검수 대기
+  - id: language.grammar.tense_aspect
+    label: 시간 표현
+    area_tag: language
+    type_affinity: [concept, infer, critic]
+    level: 3
+    desc: 시제·동작상·시간 부사어의 관계 초안 — 전문가 검수 대기
+  - id: language.grammar.quotation
+    label: 인용 표현
+    area_tag: language
+    type_affinity: [concept, infer, critic]
+    level: 3
+    desc: 직접·간접 인용 전환과 문장 성분 분석 초안 — 전문가 검수 대기
+  - id: language.grammar.negation
+    label: 부정 표현
+    area_tag: language
+    type_affinity: [concept, infer, critic]
+    level: 3
+    desc: 짧은·긴 부정과 의미 중의성 분석 초안 — 전문가 검수 대기
+  - id: language.grammar.causative_passive
+    label: 사동과 피동
+    area_tag: language
+    type_affinity: [concept, infer, critic]
+    level: 3
+    desc: 사동·피동 표현의 형식과 의미 분석 초안 — 전문가 검수 대기
+  - id: language.grammar.speech_level
+    label: 종결 표현
+    area_tag: language
+    type_affinity: [concept, infer, critic]
+    level: 3
+    desc: 종결 어미와 상대 높임 등급 분석 초안 — 전문가 검수 대기
+edges:
+  - from: language.grammar.phoneme.system
+    to: language.grammar.syllable.structure
+    kind: requires
+    weight: 0.8
+  - from: language.grammar.phoneme.system
+    to: language.grammar.phonological_change
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.syllable.structure
+    to: language.grammar.phonological_change
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.phonological_change
+    to: language.grammar.alternation
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.phonological_change
+    to: language.grammar.deletion
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.phonological_change
+    to: language.grammar.addition
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.phonological_change
+    to: language.grammar.contraction
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.alternation
+    to: language.grammar.fortition
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.alternation
+    to: language.grammar.palatalization
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.alternation
+    to: language.grammar.nasalization
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.alternation
+    to: language.grammar.liquidization
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.morpheme.concept
+    to: language.grammar.word.formation
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.morpheme.concept
+    to: language.grammar.parts_of_speech
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.parts_of_speech
+    to: language.grammar.noun
+    kind: requires
+    weight: 0.8
+  - from: language.grammar.parts_of_speech
+    to: language.grammar.pronoun
+    kind: requires
+    weight: 0.8
+  - from: language.grammar.parts_of_speech
+    to: language.grammar.numeral
+    kind: requires
+    weight: 0.8
+  - from: language.grammar.parts_of_speech
+    to: language.grammar.predicate
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.parts_of_speech
+    to: language.grammar.modifier
+    kind: requires
+    weight: 0.8
+  - from: language.grammar.parts_of_speech
+    to: language.grammar.adverb
+    kind: requires
+    weight: 0.8
+  - from: language.grammar.parts_of_speech
+    to: language.grammar.interjection
+    kind: requires
+    weight: 0.8
+  - from: language.grammar.morpheme.concept
+    to: language.grammar.particle
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.morpheme.concept
+    to: language.grammar.ending
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.parts_of_speech
+    to: language.grammar.sentence.constituent
+    kind: requires
+    weight: 0.8
+  - from: language.grammar.particle
+    to: language.grammar.sentence.constituent
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.predicate
+    to: language.grammar.sentence.constituent
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.sentence.constituent
+    to: language.grammar.sentence.structure
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.ending
+    to: language.grammar.sentence.structure
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.sentence.structure
+    to: language.grammar.sentence.embedded
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.sentence.structure
+    to: language.grammar.sentence.connected
+    kind: requires
+    weight: 1.0
+  - from: language.grammar.predicate
+    to: language.grammar.honorific
+    kind: builds_on
+    weight: 0.7
+  - from: language.grammar.ending
+    to: language.grammar.honorific
+    kind: requires
+    weight: 0.9
+  - from: language.grammar.predicate
+    to: language.grammar.tense_aspect
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.ending
+    to: language.grammar.tense_aspect
+    kind: requires
+    weight: 0.9
+  - from: language.grammar.sentence.structure
+    to: language.grammar.quotation
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.ending
+    to: language.grammar.quotation
+    kind: builds_on
+    weight: 0.7
+  - from: language.grammar.predicate
+    to: language.grammar.negation
+    kind: builds_on
+    weight: 0.8
+  - from: language.grammar.predicate
+    to: language.grammar.causative_passive
+    kind: builds_on
+    weight: 0.9
+  - from: language.grammar.ending
+    to: language.grammar.speech_level
+    kind: requires
+    weight: 0.9
+  - from: language.grammar.honorific
+    to: language.grammar.speech_level
+    kind: builds_on
+    weight: 0.7
+  - from: language.grammar.word.formation
+    to: language.grammar.causative_passive
+    kind: related
+    weight: 0.5
+  - from: language.grammar.quotation
+    to: language.grammar.sentence.embedded
+    kind: related
+    weight: 0.5
