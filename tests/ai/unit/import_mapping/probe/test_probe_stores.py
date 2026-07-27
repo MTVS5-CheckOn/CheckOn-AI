@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Coroutine
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -27,6 +29,11 @@ from ai.import_mapping.profiling import SourceProfile as ProfileData
 
 _ID = UUID("00000000-0000-4000-8000-000000000001")
 _NOW = datetime(2026, 7, 27, tzinfo=UTC)
+
+
+def _run[T](coro: Coroutine[object, object, T]) -> T:
+    """저장소가 async(레포 표준)라 동기 테스트에서 왕복만 구동한다 — 결정론 무변."""
+    return asyncio.run(coro)
 
 
 def _orm_columns(model: type) -> set[str]:
@@ -75,9 +82,9 @@ def test_profile_store_put_get() -> None:
         id=_ID, tenant_id="t1", file_hash="h", filename="r.xlsx",
         sheets=serialize_profile(_profile()), created_at=_NOW,
     )
-    ref = store.put(rec)
-    assert store.get(ref) == rec
-    assert store.get(make_ref("profile", UUID(int=2))) is None
+    ref = _run(store.put(rec))
+    assert _run(store.get(ref)) == rec
+    assert _run(store.get(make_ref("profile", UUID(int=2)))) is None
 
 
 def test_spec_store_put_get() -> None:
@@ -86,21 +93,23 @@ def test_spec_store_put_get() -> None:
         id=_ID, tenant_id="t1", source_profile_id=UUID(int=9), version=1,
         spec={"resolved": []}, status="succeeded", probe_agent_run=UUID(int=3),
     )
-    ref = store.put(rec)
-    assert ref == f"spec://{_ID}" and store.get(ref) == rec
+    ref = _run(store.put(rec))
+    assert ref == f"spec://{_ID}" and _run(store.get(ref)) == rec
 
 
 def test_agent_step_sink_records_in_order() -> None:
     sink = InMemoryAgentStepSink()
     run = UUID(int=7)
     for seq in range(3):
-        sink.record(
-            AgentStepRecord(
-                id=UUID(int=100 + seq), agent_run_id=run, seq=seq, node_name="tool_call",
-                tool_called="get_unique_values", tool_args_masked={"column": "점수A"},
-                llm_call_id=None, outcome="ok",
+        _run(
+            sink.record(
+                AgentStepRecord(
+                    id=UUID(int=100 + seq), agent_run_id=run, seq=seq, node_name="tool_call",
+                    tool_called="get_unique_values", tool_args_masked={"column": "점수A"},
+                    llm_call_id=None, outcome="ok",
+                )
             )
         )
-    steps = sink.steps(run)
+    steps = _run(sink.steps(run))
     assert [s.seq for s in steps] == [0, 1, 2]
-    assert sink.steps(UUID(int=999)) == ()
+    assert _run(sink.steps(UUID(int=999))) == ()

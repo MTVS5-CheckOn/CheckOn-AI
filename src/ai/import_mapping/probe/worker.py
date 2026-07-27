@@ -75,7 +75,7 @@ class MappingProbeRunner:
         return await self._execute(job)
 
     async def _execute(self, job: WorkerJob) -> WorkerJob:
-        profile_rec = self._profiles.get(job.payload_ref)
+        profile_rec = await self._profiles.get(job.payload_ref)
         if profile_rec is None:
             raise ValueError(f"source_profile 참조 해소 실패: {job.payload_ref}")
         profile = deserialize_profile(profile_rec.sheets)
@@ -103,15 +103,20 @@ class MappingProbeRunner:
             source_profile_id=profile_rec.id,
             sheets_meta={"columns": columns},
         )
-        final = graph.invoke(init, config={"configurable": {"thread_id": thread_id}})
+        # ainvoke — async 체크포인터(AsyncPostgresSaver)를 구동한다. InMemorySaver도 호환.
+        final = await graph.ainvoke(
+            init, config={"configurable": {"thread_id": thread_id}}
+        )
         draft: MappingSpecDraft = final["spec_draft"]
 
         # ④ agent_step 영속 — 도구 호출 로그(AGENT_STEP 컬럼과 1:1, 마스킹 통과분만).
+        # agent_run_id = job_id — AGENT_STEP.agent_run_id → AGENT_RUN.id 이고 §5에서
+        # WorkerJob은 AGENT_RUN(id=job_id)에 1:1 투영된다(execution_id는 run_id=ai_run 연결용).
         for step in final["steps"]:
-            self._steps.record(
+            await self._steps.record(
                 AgentStepRecord(
                     id=self._new_id(),
-                    agent_run_id=job.execution_id,
+                    agent_run_id=job.job_id,
                     seq=step.seq,
                     node_name="tool_call",
                     tool_called=step.tool,
@@ -122,7 +127,7 @@ class MappingProbeRunner:
             )
 
         # ⑤ spec 저장 → result_ref(본문 복제 없음 — 슈퍼바이저엔 참조만).
-        result_ref = self._specs.put(
+        result_ref = await self._specs.put(
             SpecRecord(
                 id=self._new_id(),
                 tenant_id=job.tenant_id,
@@ -130,7 +135,7 @@ class MappingProbeRunner:
                 version=_SPEC_VERSION,
                 spec=draft.model_dump(mode="json"),
                 status="succeeded",
-                probe_agent_run=job.execution_id,
+                probe_agent_run=job.job_id,  # MAPPING_SPEC.probe_agent_run → AGENT_RUN.id(=job_id)
             )
         )
 

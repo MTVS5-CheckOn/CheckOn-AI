@@ -13,6 +13,7 @@ agent_step ORM 소비)는 같은 인터페이스로 후속(99_open_items ⑨ spe
 from __future__ import annotations
 
 import dataclasses
+import json
 from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
@@ -21,8 +22,9 @@ from pydantic import BaseModel, ConfigDict
 
 from ai.import_mapping.profiling import ColumnProfile, SheetProfile, SourceProfile
 
-_PROFILE_SCHEME = "profile"
-_SPEC_SCHEME = "spec"
+#: ref URI 스킴 — InMemory·PG 구현이 동일 형식을 쓰도록 공개(§5 계약 불변).
+PROFILE_SCHEME = "profile"
+SPEC_SCHEME = "spec"
 
 
 def make_ref(scheme: str, key: UUID) -> str:
@@ -89,8 +91,14 @@ class AgentStepRecord(BaseModel):
 
 
 def serialize_profile(profile: SourceProfile) -> dict[str, Any]:
-    """SourceProfile → source_profile.sheets(JSONB용 dict). 원본 값 없음(통계·마스킹 샘플만)."""
-    return dataclasses.asdict(profile)
+    """SourceProfile → source_profile.sheets(JSONB용 dict). 원본 값 없음(통계·마스킹 샘플만).
+
+    JSON 정규형(tuple→list)으로 내보내 InMemory와 PG(JSONB)가 **동일 표현**을 저장한다 —
+    asdict는 tuple을 유지하지만 JSONB 왕복은 list로 정규화하므로, 미리 맞추지 않으면
+    백엔드에 따라 레코드가 달라진다(§5 계약 불변 위반). json 왕복으로 tuple을 없앤다.
+    """
+    canonical: dict[str, Any] = json.loads(json.dumps(dataclasses.asdict(profile)))
+    return canonical
 
 
 def deserialize_profile(sheets: dict[str, Any]) -> SourceProfile:
@@ -112,54 +120,58 @@ def deserialize_profile(sheets: dict[str, Any]) -> SourceProfile:
 # ───────────────────────── 저장소 인터페이스 + InMemory ─────────────────────────
 
 
-class ProfileStore(Protocol):
-    def put(self, record: ProfileRecord) -> str: ...
+# 저장소는 async — 레포 표준(DetectionStore·JobStore·IdempotencyStore 전부 asyncpg).
+# InMemory는 await할 I/O가 없지만 PG 구현과 같은 시그니처를 갖도록 async로 맞춘다.
 
-    def get(self, ref: str) -> ProfileRecord | None: ...
+
+class ProfileStore(Protocol):
+    async def put(self, record: ProfileRecord) -> str: ...
+
+    async def get(self, ref: str) -> ProfileRecord | None: ...
 
 
 class SpecResultStore(Protocol):
-    def put(self, record: SpecRecord) -> str: ...
+    async def put(self, record: SpecRecord) -> str: ...
 
-    def get(self, ref: str) -> SpecRecord | None: ...
+    async def get(self, ref: str) -> SpecRecord | None: ...
 
 
 class AgentStepSink(Protocol):
-    def record(self, step: AgentStepRecord) -> None: ...
+    async def record(self, step: AgentStepRecord) -> None: ...
 
-    def steps(self, agent_run_id: UUID) -> tuple[AgentStepRecord, ...]: ...
+    async def steps(self, agent_run_id: UUID) -> tuple[AgentStepRecord, ...]: ...
 
 
 class InMemoryProfileStore:
     def __init__(self) -> None:
         self._rows: dict[UUID, ProfileRecord] = {}
 
-    def put(self, record: ProfileRecord) -> str:
+    async def put(self, record: ProfileRecord) -> str:
         self._rows[record.id] = record
-        return make_ref(_PROFILE_SCHEME, record.id)
+        return make_ref(PROFILE_SCHEME, record.id)
 
-    def get(self, ref: str) -> ProfileRecord | None:
-        return self._rows.get(parse_ref(ref, _PROFILE_SCHEME))
+    async def get(self, ref: str) -> ProfileRecord | None:
+        return self._rows.get(parse_ref(ref, PROFILE_SCHEME))
 
 
 class InMemorySpecResultStore:
     def __init__(self) -> None:
         self._rows: dict[UUID, SpecRecord] = {}
 
-    def put(self, record: SpecRecord) -> str:
+    async def put(self, record: SpecRecord) -> str:
         self._rows[record.id] = record
-        return make_ref(_SPEC_SCHEME, record.id)
+        return make_ref(SPEC_SCHEME, record.id)
 
-    def get(self, ref: str) -> SpecRecord | None:
-        return self._rows.get(parse_ref(ref, _SPEC_SCHEME))
+    async def get(self, ref: str) -> SpecRecord | None:
+        return self._rows.get(parse_ref(ref, SPEC_SCHEME))
 
 
 class InMemoryAgentStepSink:
     def __init__(self) -> None:
         self._rows: dict[UUID, list[AgentStepRecord]] = {}
 
-    def record(self, step: AgentStepRecord) -> None:
+    async def record(self, step: AgentStepRecord) -> None:
         self._rows.setdefault(step.agent_run_id, []).append(step)
 
-    def steps(self, agent_run_id: UUID) -> tuple[AgentStepRecord, ...]:
+    async def steps(self, agent_run_id: UUID) -> tuple[AgentStepRecord, ...]:
         return tuple(self._rows.get(agent_run_id, ()))
