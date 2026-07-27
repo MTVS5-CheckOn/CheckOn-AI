@@ -1,8 +1,10 @@
-# [체크온] AI member-B 파이프라인 v1.1 — 결정론 진단 1 + 출제 워크플로 1 + 플랫폼 llm/
+# [체크온] AI member-B 파이프라인 v1.2 — 결정론 진단 1 + 출제 워크플로 1 + 플랫폼 llm/
 
-> **지위:** member-B(염준영) 공식 파이프라인 v1. part_a/01_pipeline과 대칭인 B의 전체 구조 문서 — 상세 시퀀스·ERD는 [`02_design.md`](02_design.md), 도메인 규격은 04~07.
+> **지위:** member-B(염준영) 공식 파이프라인 v1.2. part_a/01_pipeline과 대칭인 B의 전체 구조 문서 — 상세 시퀀스·ERD는 [`02_design.md`](02_design.md), 도메인 규격은 04~07.
 >
 > **변경 이력**
+> - v1.2 (2026-07-27): **GraphRAG 지식 계층 채택**([`11`](11_graphrag_knowledge_layer.md)) — §0 판정표에 플랫폼 계층으로 추가(에이전트 아님·LLM 금지·판정 권한 없음), §3 출제 흐름에 `ResolveGenerationContext` 선행 단계 삽입, §7 Phase 배치에 GraphRAG P0-1~P1-5 반영. 계약(`ContextPack`·`EvidencePack`·`GraphContextService`)은 문제 생성 LangGraph보다 **앞선다**. 공용 계약을 건드리는 2건(`VersionSet` 3필드·evidence resolver)은 [`09`](09_integration_proposals.md) §2-12 제안으로 분리했다.
+> - v1.2 (2026-07-27): B-M2-02 확정 반영 — 난이도 추정을 게이트 ③ 앞으로 이동하고, 난이도 사유 재생성도 문항당 총 3회 공통 예산 안에서 1회만 허용.
 > - v1.1 (2026-07-27): 슈퍼바이저 실행 계약 확정 — 영속 WorkerJob 정본, `problem_set.generate`·`problem_item.refine`·`problem_item.reverify` operation 분리, 강제 선점 금지·문항 경계 협력적 양보, 실행 phase와 문제생성 결과 status 분리.
 > - v1 (2026-07-15): 구 `01_design.md` §1을 분리·증보. 7/15 결정 반영 — ① B-1 승인: **슈퍼바이저 1 + 워커 3**(문제 생성 = B 워커) ② v1 문항 형식 **mcq만** ③ 완료 통지 **Kafka** ④ AI는 쿼터 무관(meta.quota 폐기) ⑤ B-4(서술형 분담) 폐기 ⑥ 수능 고등 타겟. 대화 결정 반영 — 재시도 총 3회 · 약점 의미 정렬 판정 · 수동 목표 출제 허용 · 핑퐁 수정 MVP 승격.
 >
@@ -18,6 +20,7 @@
 | problem_generation(출제) | **LangGraph 워크플로 — B-1 승인 워커 ③** | 문항 루프·재시도·체크포인트가 실제로 필요한 곳 |
 | 3단계 품질 게이트 | 워크플로 내부 노드(자체 실행) | 순서·재시도 의미가 A 게이트 체인과 달라 `gates/chain.py` 미사용 — `GateResult` 공용 타입만 사용 |
 | llm/ 게이트웨이 | 플랫폼(B 소유, A·B 공용 소비) | 모든 LLM 호출의 단일 경유지 |
+| **GraphRAG 지식 계층** | **플랫폼 — 에이전트 아님, LLM 금지** | query plan은 결정론 코드가 만든다. 근거를 찾아 `ContextPack`을 조립할 뿐 **판정·승인·발행 권한이 없다**([`11`](11_graphrag_knowledge_layer.md) §3·§6) |
 
 **7/15 B-1 확정 · 7/27 실행 계약 확정:** 에이전트 구조는 **슈퍼바이저 1 + 워커 3** — counsel_pack(A) · mapping_probe(A) · **problem_generation(B)**. 슈퍼바이저는 영속 Job의 lease·결정론 라우팅·실행 phase·terminal 이벤트만 관리한다(LLM 0회, 워커 산출물 불변) — `docs/policies/langgraph_state.md` §5. B 워커의 Job 단위는 operation별로 **문항 세트 1건** 또는 **문항 리비전·재검증 1건**이다(§6).
 
@@ -57,12 +60,14 @@ flowchart LR
 
 ## 3. problem_generation — 출제 워크플로 (LangGraph 워커 ③)
 
-진단 조회→생성→**3단계 품질 게이트**→난이도 추정이 한 그래프에서 닫힌다. LLM 접점은 생성·교차 풀이 2곳. v1 문항 형식은 **mcq만**(7/15 — short·essay는 enum 예약).
+진단 조회→생성→게이트 ①②→난이도 추정→게이트 ③이 한 그래프에서 닫힌다. LLM 접점은 생성·교차 풀이 2곳. v1 문항 형식은 **mcq만**(7/15 — short·essay는 enum 예약).
 
 ```mermaid
 flowchart TB
   req["요청 수신 (코드)<br/>target_source: weakness_auto | teacher_manual"] --> wm["약점 목표 확정 (코드)<br/>auto: 약점 지도 동결 · manual: 강사 선택 노드"]
-  wm --> br{"지문 필요? (코드)"}
+  wm --> ctx["ResolveGenerationContext (코드)<br/>GraphRAG — ContextPack·EvidencePack 조립<br/>권리·tenant 필터는 검색 후보 단계에서"]
+  ctx -->|"검색 0건·권리 만료·장애"| unavail["verification_unavailable<br/>fail-closed — LLM 미호출"]
+  ctx --> br{"지문 필요? (코드)"}
   br -->|"T1 어휘·문법"| gen
   br -->|"T2 비문학"| ps["지문 생성 (LLM)"]
   br -->|"T3 문학"| pool["공유 저작물 풀 선택 (코드)"]
@@ -75,14 +80,15 @@ flowchart TB
   v1 -->|"통과"| v2["게이트 ② BlindCrossSolve (LLM)<br/>다른 모델 패밀리 · blind 풀이<br/>+ 약점 의미 정렬 판정"]
   v2 -->|"불일치·정렬 실패"| retry
   v2 -->|"검증 불능(소진)"| blocked["verification_unavailable<br/>저장 가능 · 발행 차단 · 재검증 필수"]
-  v2 -->|"일치"| v3["게이트 ③ ReleaseDecision (코드)<br/>pass | needs_review | reject"]
-  v3 --> diff["난이도 추정 (코드)"]
-  diff --> save["세트 결과 저장<br/>result_ref 반환"]
+  v2 -->|"일치"| diff["난이도 추정 (코드)<br/>difficulty_est 계산 · difficulty_fit=v1 null"]
+  diff --> v3["게이트 ③ ReleaseDecision (코드)<br/>pass | needs_review | reject"]
+  v3 -->|"난이도 사유 재생성<br/>(스위치 on · 남은 예산 · 최대 1회)"| retry
+  v3 -->|"판정 확정"| save["세트 결과 저장<br/>result_ref 반환"]
   save --> terminal["슈퍼바이저 succeeded 수렴<br/>Kafka terminal 이벤트"]
   terminal --> hitl["강사 검수 ✋<br/>(백엔드 HITL)"]
 ```
 
-**불변식:** ① 문항 1개 실패가 세트를 멈추지 않는다(부분 성공) — 단 dropped 비율·검증 장애 연속이 임계를 넘으면 **조기 중단** 후 `partial_success`([`06_quality_gates.md`](06_quality_gates.md) §6) ② 모든 rationale은 EvidenceRef 근거 동반 ③ 교차 풀이는 blind(정답·해설·근거 비공개 — 목표 메타는 제공) ④ LLM 산출물은 suggested — 게이트+강사 승인 전 자동 적용·학생 노출 금지 ⑤ **문항당 시도 예산은 하나** — 생성·정렬 실패·규칙 실패·교차 불일치가 전부 같은 `item_attempt`(총 3회)를 소모, 검사별 중첩 루프 금지.
+**불변식:** ① 문항 1개 실패가 세트를 멈추지 않는다(부분 성공) — 단 dropped 비율·검증 장애 연속이 임계를 넘으면 **조기 중단** 후 `partial_success`([`06_quality_gates.md`](06_quality_gates.md) §6) ② 모든 rationale은 EvidenceRef 근거 동반 ③ 교차 풀이는 blind(정답·해설·근거 비공개 — 목표 메타는 제공) ④ LLM 산출물은 suggested — 게이트+강사 승인 전 자동 적용·학생 노출 금지 ⑤ **문항당 시도 예산은 하나** — 생성·정렬 실패·규칙 실패·교차 불일치·난이도 불일치가 전부 같은 `item_attempt`(총 3회)를 소모, 검사별 중첩 루프와 네 번째 호출 금지.
 
 **약점 정렬 3층 확인(확정):** ⑴ 코드 R-7 — 요청 태그·`skill_node_id`와 산출 메타 정합 ⑵ 게이트 ② — verifier가 "이 문항이 목표 약점을 측정하는가"를 구조화 판정(`aligned`·`alignment_confidence`) ⑶ 강사 — Step 3에서 약점·문항·근거를 함께 확인. 같은 검사를 반복하는 게 아니라 **책임자가 다른 3층**이다.
 
@@ -127,7 +133,8 @@ flowchart LR
 
 | Phase | 내용 |
 | --- | --- |
-| **P1 (MVP)** | T1 어휘·문법 mcq 생성 + 3단계 게이트 + 약점 정렬 + **문항 핑퐁 수정·교체·삭제·롤백·직접 수정**(확정 — Step 3가 협업형 편집 단계이므로) + Kafka 완료 통지 |
+| **P0 (선결)** | **GraphRAG 계약** — Graph 도메인·버전(P0-1) · 권리 확인 콘텐츠 파이프라인(P0-2) · `ContextPack`/`EvidencePack`(P0-3) · `GraphContextService` 인터페이스(P0-4). **문제 생성 LangGraph보다 앞선다** — 계약 없이 워크플로를 짜면 전량 재작성([`11`](11_graphrag_knowledge_layer.md) §10) |
+| **P1 (MVP)** | T1 어휘·문법 mcq 생성 + 3단계 게이트 + 약점 정렬 + **문항 핑퐁 수정·교체·삭제·롤백·직접 수정**(확정 — Step 3가 협업형 편집 단계이므로) + Kafka 완료 통지. **T1은 사전·규칙 ID 직접 조회라 벡터 검색 백엔드 없이 완주 가능** — 계약은 선행, 검색 백엔드는 후행 |
 | P1 후반 | T2 비문학(지문 생성 — 사실성 fail-closed 선결: D-04) |
 | P1.5~2 | T3 문학(공유 저작물 풀 — 풀 등재 선결) |
 | P2 | F17 시험지 PDF 조판(`print_layout.py`) · OCR 소유는 Open-12와 재론 |

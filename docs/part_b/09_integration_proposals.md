@@ -3,7 +3,10 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
-> - v1.5 (2026-07-23): A D-② 머지 반영 — 공용 문서 동기화 완료 회수.
+> - v1.9 (2026-07-27): **§1-10 「A 게이트웨이 협의 3건 — B 회신」 신설** — ① role별 전송 재시도 `0..1` 파라미터를 **B가 게이트웨이에 신설**(생성자 주입·기본 1로 문제생성 무변경·A의 "어댑터 직결" 차선책은 `01` §5 위반이라 수용 불가) ② recorder가 `ExecutionContext`를 함께 받는 ②안 동의 + `LlmCallRecord`가 양자가 아닌 **B 단독 소유**임을 정정 ③ 마스킹 훅을 **전송 redaction(fail-closed·no-op 불가)과 트레이스 마스킹(no-op 허용) 2개로 분리**.
+> - v1.8 (2026-07-27): B-M2-01 확정 반영 — `PROBLEM_ITEM.difficulty_fit` 제안의 확정 대기 표기를 해소.
+> - v1.7 (2026-07-27): **§1-9 「A 작업 지시 일람」 신설** — A 승인·작업 9건(P0 5건)을 한 표로 집약. **§2-12 GraphRAG 공용 계약 확장 제안** 신설(`VersionSet` 3필드 · evidence resolver 병합 · `graph_version` 재사용 금지). §3 OPEN 총괄에 B-8~B-10과 와이어프레임 충돌 W1~W7 등록.
+> - v1.6 (2026-07-27): §2-4 증보 — B 7테이블 편입의 승인 형태(PR 리뷰 = 승인)·원자 PR 파일 목록·컬럼 스펙 반영분·저장소 ORM 규약을 확정 수준으로 기술. 독립 크로스체크에서 새로 발견한 3건 등록: `WEAKNESS_MAP.overall_low` 컬럼 부재(계약 존재), `PROBLEM_SET.request`의 난이도 표기와 `ProblemRequest` 필드 부재 불일치, **RLS 구현 부재**(문서 원칙과 현행 구현 불일치 — §2-4.5).
 > - v1.4 (2026-07-22): PR #10·#11의 A 판정을 B 추적표에 회신 반영 — 기존 크로스체크의 완료·후속 백로그를 분리하고, `REVISION_CONFLICT`·B 결과 어휘 5종의 A 정본 편입 완료를 갱신. A가 새로 확정한 **ongoing·R5 상한 제외**는 B가 수용하되, 공용/API 요약 동기화·병합 lifecycle 경계·회귀/데모 보강은 해당 A 문서에 새 크로스체킹 요청으로 등록.
 > - v1.3 (2026-07-22): `develop`의 A PR 리뷰 요청 4건에 B 회신 — 승인 항목은 직접 반영하고, 그 과정에서 새로 발견한 간극만 해당 A·공용 원본에 **B 제안 해결안과 크로스체킹 요청**으로 등록. B 소유 충돌 규약·상태 필드 분류·HTTP DTO 경계와 §2-10 실제 완료 현황은 확정 반영.
 > - v1.2 (2026-07-15): **공용 계약 B 확장 14항목 A+B 승인 완료 반영** — §2-3·§2-9를 승인·구현 완료(커밋 `d5283d0`)로 전환(제안 이력 보존), §2-10(공용 문서 동기화 요청 일람) 신설, §3 B-2 갱신.
@@ -97,6 +100,107 @@ A PR 요청을 반영·검토한 뒤 B가 추가로 발견한 간극만 해당 �
 | 회귀 보강 | **확인된 커버리지:** `tests/ai/unit/detection/test_engine.py`에는 `cap_max`·`capped_out`·rank 조합 회귀가 0건이다. golden에는 new 6→5·억제 선탈락·`ongoing 3 + new 5 → 8, capped_out=0`만 있다. `ongoing 3 + new 6 → 8, capped_out=1`, new+follow_up 공동 상한, R5 상한 밖 조합, 다중 반 독립 rank/합산, 상한 밖 `student_ref` 정렬·정확한 rank, 병합 lifecycle 양방향을 추가 고정 | ☐ A |
 | 데모 rank | **확인된 stale:** `demo_snapshot.py`는 `st_10`에 `alert_open(acc_drop)`을 넣어 ongoing을 만들지만 저장 응답은 `st_10=1, st_07=2, st_09=3, st_08(R5)=4`다. 현재 정책 순서는 `st_07=1, st_09=2, st_08(R5)=3, st_10(ongoing)=4`이므로 병합/rank 결정 후 생성기로 request·response 쌍을 재생성하고 엔진 출력과 고정 | ☐ A |
 
+### 1-10. A 게이트웨이 협의 3건 — B 회신 `[2026-07-27]`
+
+A가 브리핑·mapping_probe 배선 전에 요청한 게이트웨이(`llm/` — **B 단독 소유**) 협의 3건에 대한 B 확정 회신이다.
+
+| 안건 | B 회신 | 작업 주체 |
+| --- | --- | --- |
+| **① role별 전송 재시도 0회 허용** | ✅ **승인 — B가 파라미터를 연다.** A가 제시한 차선책 "어댑터 직결 유지"는 [`01`](01_pipeline.md) §5 "모든 LLM 호출은 gateway 경유 — 예외 없음" **위반이므로 수용 불가**. 직결 시 role 라우팅·원가 기록·redaction 훅이 소비자마다 갈라진다 | **B**(구현) → A(값 주입) |
+| **② `LlmCallRecord.execution_id`** | ✅ **②안 동의**(recorder가 `ExecutionContext`를 함께 수신). 게이트웨이가 이미 `complete(request, context)`로 context를 받고 있어 추가 배선 0. `LlmCallRecord`의 정의가 "호출 1회분 비민감 관측 메타"이므로 실행 문맥을 record에 복제하지 않는다 | A(적재) · B(시그니처 리뷰·머지) |
+| **③ LangSmith 마스킹 훅** | ◐ **조건부 승인 — 훅을 2개로 분리**. "기본 no-op 단일 훅"은 `CLAUDE.md` 불변식 3과 충돌 | B(훅 신설) · A(마스킹 함수 주입) |
+
+#### ① 전송 재시도 파라미터 — B 확정 사양
+
+```python
+LlmGateway(providers, *, recorder=..., transport_retry: Mapping[ModelRole, int] | None = None)
+```
+
+| 규약 | 내용 | 근거 |
+| --- | --- | --- |
+| 주입 지점 | **생성자**(호출별 금지) — 같은 role이 호출마다 다른 재시도를 가지면 재현성이 깨지고 `LLM_CALL` 원가 회계 해석이 갈린다 | 불변식 8 · [`06`](06_quality_gates.md) §4 |
+| 값 범위 | `0..1`, 벗어나면 **기동 실패** | 불변식 6(모든 루프에 상한) |
+| 기본값 | 미지정 role은 `1`(총 2회 — 현행 보존) → **문제생성 무변경** | [`06`](06_quality_gates.md) §4 최악 논리 6콜·전송 12요청 유지 |
+| 단일 원천 | `generator`·`verifier`는 `verify_config.transport_retry`를 조립 시점에 주입. 게이트웨이는 시트를 모른다(계산·I/O 분리) | `CLAUDE.md` §6 · `03_coding_rules` |
+| 회계 | 재시도 0회여도 **시도별 `LlmCallRecord` 기록 유지** | [`06`](06_quality_gates.md) §4 재생성/전송 회계 분리 |
+| 예외 | `RedactionBlocked`는 재시도 대상 아님(정책 차단 ≠ 일시 오류) — 현행 `retry_if_exception_type` 유지 | 불변식 3 |
+
+A 소비자 근거(수용): 브리핑은 결정론 템플릿 폴백이 있어 "LLM 실패 = 무재시도 즉시 폴백"이 확립 원칙이고, `04_api_contract` §2.4 [A 확정]의 detect 60s·브리핑 45s·호출당 15s 예산에서 게이트웨이 재시도가 얹히면 호출당 최악 30s가 되어 병렬 예산이 깨진다. mapping_probe도 `part_a/10_import_spec` §3.2 폴백 보유로 동일.
+
+> **B-5 연결:** role 키 설정 구조가 생기므로 `gateway.py`의 `TODO(B-5)`(provider 1개일 때 verifier 패밀리 강제가 우회되는 현재 동작) 제거를 같은 구조에 얹는다. 단 **별도 PR**로 분리해 A 배선을 대기시키지 않는다.
+
+#### ② recorder 시그니처 — 소유권 정정
+
+`LlmCallRecord`는 **양자 계약이 아니라 B 단독 소유**다(`src/ai/llm/gateway.py`, `02_ownership.md` §2에서 `llm/` 전체가 B). 양자는 `contracts/llm.py`이며, 이 record가 **`runtime/metrics.py` 이벤트로 발행되는 시점의 스키마**만 양자다.
+
+- 시그니처: `LlmCallRecorder = Callable[[LlmCallRecord, ExecutionContext], None]`
+- **적재 실패가 LLM 호출을 실패시키지 않는다** — gateway의 원가 기록은 **관측**이지 게이트가 아니다([`01`](01_pipeline.md) §5). 실패는 경고+메트릭으로 처리하고 호출은 성공시킨다.
+- 단 **조용한 누락도 금지** — 실패 카운터를 둔다.
+
+#### ③ 마스킹 훅 — 2개 분리 + 순서 고정
+
+`CLAUDE.md` 불변식 3과 [`05`](05_problem_generation.md) §5가 요구하는 것이 둘인데 A 제안은 하나로 묶여 있었다.
+
+| 훅 | 대상 | 기본 no-op |
+| --- | --- | --- |
+| **(a) 전송 redaction** | provider로 나가는 페이로드 | ❌ **불가** — fail-closed. 미주입 시 **기동 실패** |
+| **(b) 트레이스 마스킹** | LangSmith로 나가는 트레이스 | ✅ 허용 (B-6 — 트레이스 미사용 시) |
+
+```text
+조립(verification.py) → (a) redaction 훅 → (b) trace 훅 → provider 호출
+```
+
+- (b)가 (a) **뒤**에 있어야 B-6의 "트레이스엔 마스킹 통과분만"이 성립한다.
+- (a) 위반은 `RedactionBlocked` → `CallOutcome.REDACTION_BLOCKED`로 매핑(계약 기존재). **전송 재시도 대상 제외.**
+- 마스킹 함수는 `runtime/redaction`(A 소유) 주입, 훅 포인트 신설은 `llm/gateway.py`(B).
+
+#### A 재회신에 대한 B 리코멘트 — 확인 2건 `[2026-07-27]`
+
+A가 조건 포함 3건 전부 수용하며 확인 2건과 제안 1건을 추가했다. B 회신은 아래와 같다.
+
+**확인 1 — `ModelRole` 신설: ✅ O (이름 범위 기준 1건 부기)**
+
+- ERD 영향 축소 확인: `llm_call.role`은 PG enum이 아니라 `String`(`db/models.py`, D-② varchar 확정)이므로 **마이그레이션 불필요**. `contracts/llm.py`(양자) + `docs/06_erd.md` 값 집합 + 인라인 주석이면 충분하다.
+- **확인된 구조적 부채:** `ModelRole.GENERATOR`의 docstring이 **"초안·지문 등 생성"** 이다 — **A의 초안과 B의 지문·문항이 현재 같은 role을 공유**한다. ① 로 role이 *정책 경계*가 되면서 드러난 문제이며, 브리핑 하나를 분리해도 초안(reply)·리포트·refine은 여전히 `generator`를 B와 공유한다.
+- 당장은 안전하다 — 미지정 role 기본값이 `1`이라 `generator`는 현행 유지되고 B는 무변경이다.
+- **이름 결정 기준(A 판단 사항):** 이 role을 초안·리포트·refine이 함께 쓸 것인가. ⑴ 함께 쓴다면 `composer`가 적절하나 그 셋의 전송 재시도가 **브리핑과 동일하게 0회로 강제**된다(refine은 폴백 구조가 달라 사전 확인 권장). ⑵ 브리핑 전용이라면, 기존 4종이 전부 **작업 성격**(생성·검증·매핑추론·분류)이므로 그 관례에 맞는 좁은 이름이 양자 계약 재개봉을 막는다.
+
+**확인 2 — redaction 훅 멱등성: ✅ O (3건 추가)**
+
+1. **토큰 번호 안정성** — 텍스트 동일성뿐 아니라 **매핑 자체의 동일성**까지. `⟪이름1⟫`이 2회 통과 후에도 같은 번호여야 감사 추적·근거 참조가 어긋나지 않는다.
+2. **멱등 ≠ 검사 생략** — "이미 토큰이 있으니 통과"로 단축하면 불변식 3("불확실하면 전송 중단")이 깨진다. 훅은 매번 실제 검사하고 `⟪확인필요⟫` 판정도 매번 내린다.
+3. **토큰 위조 케이스 `[신규 발견]`** — refine `instruction`·`topic_hint`는 **강사 자유 입력**이므로 강사가 `⟪이름1⟫`을 직접 타이핑할 수 있다. "`⟪⟫` 토큰은 건드리지 않는다"를 그대로 적용하면 **위조 토큰이 마스킹을 우회**한다. 진짜 토큰과 사용자 입력 토큰을 구분할 근거(예: 해당 호출 registry에 실재하는 토큰만 보존)가 필요하다. 성격이 [`05`](05_problem_generation.md) §8.2 injection 방어와 같다.
+4. **테스트 위치:** ③ PR 단발이 아니라 **`golden/redaction/` 코퍼스**(미탐 0건 CI 게이트)에 편입해야 이후 패턴 개정에서도 유지된다.
+
+**제안 — "모든 LLM 호출은 gateway 경유" 공용 승격: ✅ O**
+
+규칙의 문서 위치가 곧 적용 범위인데 현재 [`01`](01_pipeline.md) §5에 있어 B 규율로 읽힌다. `docs/03_coding_rules.md` 승격이 적절하다("capability 간 직접 import 금지"와 같은 층). **A 소유 문서이므로 §1-9 A 작업 지시 일람에 등록한다.** 과도기(브리핑 #22 어댑터 직결)도 수용하되 조건 2건: **종료 시점을 ①+② 머지로 고정** · **그때까지 신규 어댑터 직결 추가 금지**.
+
+#### PR 순서 (합의)
+
+**①(B 구현) + ②(A 적재·B 리뷰, +`ModelRole` 신설) 선행 → 머지 후 B가 B-5 정리 → ③ 별도 PR.** `transport_retry` 파라미터는 B가 ① PR 이전에 선행 제공한다.
+
+### 1-9. **A 작업 지시 일람** `[2026-07-27 신설 — A가 여기만 보면 됨]`
+
+M2 문제생성 착수에 필요한 A 승인·작업을 한 표로 모았다. 각 행의 상세는 링크된 절에 있다. **B는 승인 대기 중에도 구현을 진행하며, 멈추는 지점은 머지뿐이다**(§2-4.1).
+
+| # | A가 해야 하는 일 | 상세 | 유형 | 승인되면 풀리는 것 | 상태 |
+| --- | --- | --- | --- | --- | --- |
+| **A-1** | **B 7테이블의 `docs/06_erd.md` 편입 승인** + 이 PR 한정 `06_erd.md` 편집 go-ahead | §2-4 · §2-4.2 | 문서(A 소유) | B 저장 계층 전체. 미승인 시 `problem_generation` 영속화 불가 | ☐ **P0** |
+| **A-2** | `EVIDENCE_ITEM.owner_kind` += `problem_item` 양자 승인 | §2-3 마지막 행 | 공용 계약 | `PROBLEM_ITEM.rationale` 근거 저장. 공용 확장 14항목 중 **유일한 미승인 잔여** | ☐ **P0** |
+| **A-3** | `tests/ai/db/test_erd_model_parity.py`의 `== 26` → `== 33` 상수 변경 동의 | §2-4.2 | 테스트(양자 성격) | A-1과 같은 PR. 미변경 시 CI 적색 | ☐ P0 |
+| **A-4** | **`VersionSet` GraphRAG 3필드 확장** 양자 승인 | §2-12 | 공용 계약 | GraphRAG 실행 재현 키. **`graph_version` 재사용 금지가 핵심** | ☐ **P0** |
+| **A-5** | **evidence resolver 주입 시그니처 확정** (기존 B-7 + GraphRAG 경유 해소 병합) | §2-12 · §3 B-7 | `evidence/`(A 소유) | 게이트 ① R-1·R-4의 Graph path·quote·license 검증 | ☐ **P0** |
+| **A-6** | RLS 구현 부재 판정 — 문서 표현 정정 vs 실제 도입 | §2-4.5 | 공용 정책 | B 7테이블의 격리 방식 확정. **B는 기존 26테이블과 동일 패턴으로 진행 중** | ☐ 확인 |
+| **A-7** | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** 판정 | [`10`](10_m2_problem_generation_architecture.md) §4.1 C3 | B 초안 → A+B | 슬롯 후보 보존이 필요하면 `langgraph_state.md` §2.4 영향. **확정 전까지 B가 해당 플래그를 off로 유지** | ☐ 확인 |
+| **A-8** | §2-10 문서 동기화 **잔여 4건** — `99_open_items`(B-2 완료 표기) · `part_a/08 §1`(`golden/diagnosis/` 행) · `02_ownership §5`(`golden/diagnosis/` 소유 행) · `00_INDEX`(part_b 링크 절) | §2-10 | 문서(A·공용) | 승인·구현이 끝난 항목의 문서 지연분 | ☐ 잔여 |
+| **A-9** | 7/22 감지·API 리뷰 잔여 회신 — ongoing 상한 제외 후 요약 동기화 · 병합 lifecycle 경계 · 회귀/데모 · 공용 실패 meta · 민감 detail 제거 `[P0]` | §1-7 · §1-8 · §2-11 | A(+BE) | B 무관하나 공용 wire 확정에 필요 | ◐ 진행 |
+| **A-10** | **"모든 LLM 호출은 gateway 경유 — 예외 없음" 규칙을 `docs/03_coding_rules.md`로 승격** (A 제안·B 동의). 현재 이 규칙은 [`01`](01_pipeline.md) §5에만 있어 B 규율로 읽힌다. **확인된 사실:** `03_coding_rules.md`에 gateway·LLM 호출 관련 조항이 **0건**이라 승격할 자리가 비어 있다. 과도기(브리핑 #22 어댑터 직결) 조건 2건 — **종료 시점 = ①+② 머지** · **그때까지 신규 직결 추가 금지** | §1-10 | 문서(A 소유) | 규칙의 적용 범위가 A·B 공용으로 확정됨. 승격 전에는 A 소비자의 직결이 규율 위반인지 해석이 갈린다 | ☐ 신규 |
+
+**P0 5건(A-1~A-5)이 M2 착수의 실질 관문이다.** 나머지는 병렬로 진행 가능하다.
+
+> **B가 A에게 요청하지 않는 것(참고):** `t1_light_mode` 시트 변경·`golden/problems/` 코퍼스·`curriculum_graph.yaml`·`verify_config`·`ProblemRequest.requested_difficulty` 신설·GraphRAG 규격 문서는 전부 **B 단독**이므로 A 승인 대상이 아니다.
+
 ## §2. 공용 문서·계약 변경 제안 (승인 주체: 02_ownership 절차)
 
 ### 2-1. API·Kafka 계약 증분 `[제안]` — D-10·BE-1 `(C-05)`
@@ -179,6 +283,58 @@ class BlockedReason(StrEnum):
 B 소유 7테이블(WEAKNESS_MAP·PASSAGE·PROBLEM_SET·PROBLEM_ITEM·VERIFICATION_RESULT·ITEM_REVISION·DIFFICULTY_CALIB)을 [`02_design.md`](02_design.md) §2 기준으로 현재 애플리케이션 26→33테이블로 통합하는 제안이다. 통합 전 정본은 "`docs/06_erd.md`의 26테이블 + part_b 증분 7종"이다.
 
 D-② ERD-parity 안전망은 `tests/ai/db/test_erd_model_parity.py`의 ERD↔`db/models.py` 대조와 `tests/ai/db/test_migration_parity.py`의 모델↔마이그레이션 대조로 연결되므로, B 7테이블 추가 시 `06_erd.md`(정본)+`db/models.py`(양자 승인 12곳)+마이그레이션을 동시에 반영한다.
+
+#### 2-4.1 승인 형태 — 별도 결정 문서 왕복 없음 `[7/27 명확화]`
+
+`02_ownership.md` §4가 "상대방도 코드는 자유롭게 읽고 PR을 보낼 수 있다 — **머지 승인만 오너가 한다**"로 정의하므로, 본 항목의 승인 절차는 **PR 리뷰 자체**다. B가 제안 문서를 내고 A의 결정 문서를 회신받은 뒤 구현에 착수하는 2왕복 절차가 아니다. 구현·문서 diff·테스트를 갖춘 PR이 곧 승인 요청서이며, 멈추는 지점은 **머지 한 곳**이다.
+
+이 PR에서 A 승인이 필요한 항목은 **2건**이다.
+
+| 항목 | 근거 |
+| --- | --- |
+| B 7테이블의 공용 ERD·ORM 편입 | 본 §2-4 |
+| `EVIDENCE_ITEM.owner_kind` += `problem_item` | §2-3 마지막 행 — 공용 계약 B 확장 14항목 중 **유일한 미승인 잔여**. `PROBLEM_ITEM.rationale`의 근거 저장에 선결 |
+
+#### 2-4.2 원자 PR 조건 — 쪼개면 CI가 깨진다
+
+`test_erd_model_parity.py`의 대조는 **양방향**(`orm == erd` — 누락도 초과도 실패)이고, 테이블 수가 상수로 고정돼 있다. 따라서 아래 파일은 **한 PR에 함께** 들어가야 한다.
+
+| 파일 | 변경 | 소유 |
+| --- | --- | --- |
+| `docs/06_erd.md` | 26 → 33테이블 | A — **본 제안의 승인 대상** |
+| `src/ai/db/models.py` | ORM 7클래스 추가 | 공통 계약(양자) |
+| `src/ai/db/migrations/versions/0003_*.py` | 신규 마이그레이션 | 테이블 오너(B) — 모델 diff PR에서 함께 리뷰(§4-1) |
+| `tests/ai/db/test_erd_model_parity.py` | `== 26` → `== 33`, `EXPECTED_UNIQUES`에 `weakness_map` 행 추가 | 프로덕션 대칭(양자 성격) |
+| `docs/part_b/09_integration_proposals.md` | 본 절 상태 갱신 | B |
+
+`tests/ai/db/test_migration_parity.py`·`test_no_realname_columns.py`는 신규 테이블을 자동으로 검사 대상에 편입하므로 별도 수정이 없어야 정상이다.
+
+#### 2-4.3 7테이블 컬럼 스펙
+
+정본은 [`02_design.md`](02_design.md) §2의 ERD 블록이며, 아래는 그 위에 얹히는 **B 결정 반영분과 확인된 간극**만 적는다.
+
+| 테이블 | 반영분 | 근거 |
+| --- | --- | --- |
+| `WEAKNESS_MAP` | **`overall_low` boolean 컬럼 추가** — `contracts/diagnosis.py`의 `WeaknessMap.overall_low`가 산출물에 존재하나 §2 ERD 블록에는 컬럼이 없다(확인된 간극) | [`04`](04_curriculum_graph.md) §4 |
+| `WEAKNESS_MAP` | `UNIQUE(tenant_id, student_ref, graph_version, 주차)` — 주차 컬럼 표현을 `computed_at` 파생이 아니라 명시 컬럼으로 둘지 확정 필요 | §2 주석 |
+| `PROBLEM_SET` | `request` jsonb가 이미 **"난이도"를 포함**한다고 적혀 있으나 `contracts/problem_generation.py`의 `ProblemRequest`에는 난이도 필드가 없다(확인된 간극). 요청 난이도 필드 신설과 함께 정합 | §2 · [`05`](05_problem_generation.md) §4.1 |
+| `PROBLEM_ITEM` | **`difficulty_fit` numeric nullable 추가** — 절대 난이도(`difficulty_est`)와 학생 적합도를 분리한다. **v1은 값을 산출하지 않고 항상 null이며 처리 분기 코드를 만들지 않는다** | B-M2-01 = A `[2026-07-27 B 확정]` · 공용 ERD·ORM 편입은 A+B 승인 대상 · [`04`](04_curriculum_graph.md) §1(문항 단위 실측은 B 출제분 제출부터 축적) |
+
+#### 2-4.4 저장소 ORM 규약 (편입 시 준수 — `db/models.py`·`db/base.py`에서 확인)
+
+1. **enum성 컬럼은 PG enum이 아니라 `varchar` + 앱 계층 검증**(D-② 확정). `status`·`verdict`·`stage`·`revision_kind`·`drop_reason`·`stop_reason` 전부 `String`이며 값 검증은 `contracts/`의 `StrEnum`이 담당한다.
+2. **`…_ref`는 varchar 논리 참조이고 물리 FK가 아니다.** `test_foreign_keys_match_erd`가 ERD의 FK 마커와 ORM 물리 FK를 대조한다.
+3. **실명·연락처 컬럼 없음**(불변식 3) — `DIFFICULTY_CALIB.approved_by_ref`도 alias다. `test_no_realname_columns.py`가 강제한다.
+4. 타입 매핑 고정: `uuid=Uuid · varchar=String · text=Text · jsonb=JSONB · int=Integer · numeric=Numeric · timestamptz=DateTime(timezone=True) · boolean=Boolean`.
+5. 제약·인덱스 이름은 `db/base.py`의 `NAMING_CONVENTION`을 따른다(alembic autogenerate diff 안정화). `UniqueConstraint`는 `uq_<table>_<의미>` 형태로 이름을 명시한다.
+
+#### 2-4.5 `[PART_B 크로스체킹 요청 · 미확정]` — RLS 구현 부재
+
+[`02_design.md`](02_design.md) §2와 `docs/06_erd.md`의 원칙은 "전 테이블 `tenant_id`+**RLS**"로 적혀 있으나, **현재 저장소에는 RLS가 구현돼 있지 않다** — `src/ai/` 전체에서 `ROW LEVEL SECURITY`·`CREATE POLICY` 검색 결과 0건이며, 기존 26테이블은 `tenant_id` varchar 컬럼만 두고 격리를 앱 계층에서 수행한다.
+
+**B 제안 해결안:** B 7테이블은 **기존 26테이블과 동일한 패턴**(`tenant_id` 컬럼 + 앱 계층 격리)으로 편입한다. B 테이블에만 RLS를 도입하면 같은 DB 안에서 격리 방식이 갈리고, 정책 적용은 `db/session.py`·`db/store_factory.py`(A 소유)의 연결·역할 설계와 묶이므로 B 단독 결정 대상이 아니다.
+
+**확인 요청:** ① 문서의 "RLS" 표현을 현행 구현(앱 계층 격리)에 맞게 정정할지 ② RLS를 실제로 도입할지, 도입한다면 26테이블과 함께 일괄 적용할지 — A·백엔드 확인이 필요하다. 기존 정본 값은 바꾸지 않았다.
 
 ### 2-5. `docs/02_ownership.md` §5 트리 증보 제안
 
@@ -274,6 +430,39 @@ class VersionSet(BaseModel):
 | B HTTP DTO | §2-1 | ✅ 외부 body DTO와 내부 command 분리 확정 |
 | 동의 오류 경계(404/422) | `policies/error_codes.md` §1 | ◐ A 구분안 채택·정본 반영, 백엔드 보안 의도 확인 대기 |
 
+### 2-12. GraphRAG 지식 계층 — 공용 계약 확장 `[제안 · 2026-07-27]` `(A-4·A-5)`
+
+GraphRAG 채택은 확정이다([`10`](10_m2_problem_generation_architecture.md) §1·§4.2). 규격은 **[`11_graphrag_knowledge_layer.md`](11_graphrag_knowledge_layer.md)로 정본 편입 완료**(B 단독)이며, **아래 2건만 양자 승인 파일을 건드리므로 B 단독으로 확정하지 않는다.** A는 `11` 문서를 함께 보면 된다 — §0에 소유·승인 경계표가 있다.
+
+#### 2-12-①. `contracts/execution.py` `VersionSet` — GraphRAG 3필드 `[A-4]`
+
+| 필드 | 의미 | null 조건 |
+| --- | --- | --- |
+| `content_graph_version` | 콘텐츠·근거 그래프(Document·Chunk·Claim·Rule·License)의 스키마 버전 | GraphRAG를 경유하지 않는 실행 |
+| `graph_index_version` | 색인 스냅숏 버전 — 같은 그래프라도 색인이 갱신되면 검색 결과가 달라진다 | 〃 |
+| `retrieval_config_version` | 검색 파라미터(top-k·필터·재랭킹) 시트 버전 | 〃 |
+
+- **근거:** 불변식 8(재현성). 이 셋이 없으면 "그때 그 ContextPack이 왜 그 근거를 골랐는가"를 재현할 수 없다. `threshold_version`·B 버전 4종(§2-9)과 **동일한 선례**다 — 스키마는 합집합, 실행별 차이는 nullable로 흡수.
+- **⚠️ 이름 재사용 금지(핵심):** 기존 `VersionSet.graph_version`은 **교육과정 DAG 버전**이며 이미 A+B 승인·구현 완료(`d5283d0`, §2-9)다. 콘텐츠 GraphRAG 버전으로 **재사용하지 않는다.** GraphRAG 설계서도 이 충돌을 직접 경고한다.
+- **동시 개정 대상:** `04_api_contract §2.2`(meta.versions 키 수) · `06_erd AI_RUN` 컬럼 — §2-9과 같은 절차.
+- **확장 부결 시 대안:** 산출물 행에만 저장하고 `meta.versions`는 유지 — 단 API 응답만으로 재현 키를 못 얻는 비대칭이 §2-9과 동일하게 발생한다.
+
+#### 2-12-②. `evidence/` resolver 주입 시그니처 — B-7 안건과 병합 `[A-5]`
+
+`evidence/`는 A 소유다. GraphRAG 도입으로 근거 해소 경로가 "앵커 → 원문 직접 조회"에서 "앵커 → `EvidencePack`(path·quote·license·hash) 대조"로 확장되므로, **기존 B-7(evidence resolver 주입 시그니처, A 초안 리뷰)과 하나로 묶어 확정**할 것을 제안한다.
+
+resolver가 만족해야 하는 조건(B 요구):
+
+1. **fail-closed** — 해소 실패·검색 0건에 대해 빈 결과를 반환하지 않고 실패를 신호한다. 상위에서 `verification_unavailable`로 수렴시킨다([`06`](06_quality_gates.md) §3).
+2. **권리 게이트** — `rights_status != approved` 자료는 해소 대상에서 제외한다.
+3. **결정론** — 같은 `(EvidencePack, anchor)` 입력에 같은 결과. 시계·난수 주입 금지.
+4. **예산 불변** — resolver 내부에 별도 재시도 루프를 두지 않는다. 문항당 `item_attempt` 총 3회를 그대로 소모한다(FIX-06).
+5. **blind 무오염** — resolver 반환값이 verifier 페이로드로 흘러들지 않는다([`05`](05_problem_generation.md) §4.3).
+
+#### 2-12-③. B 단독으로 진행하는 부분 (A 승인 불요 — 참고)
+
+`docs/part_b/` GraphRAG 규격 문서 신설, [`05`](05_problem_generation.md) §4.2의 `EvidenceAnchor`↔`EvidencePack` 대응, [`06`](06_quality_gates.md) §1의 R-1·R-4 확장, [`07`](07_refine_policy.md) §4의 `ResolveRevisionContext` 선행, 자료 권리 매니페스트 스키마, 검색 모드(`reuse_only`·`delta_retrieve`) 규약.
+
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
 | 번호 | 항목 | B 권고안 | 담당 | 관련 part_b |
@@ -282,7 +471,17 @@ class VersionSet(BaseModel):
 | Open-12 | F17 OCR 실명→alias·OCR 소유 (P2) | 스캔·매칭·마스킹=BE 유지, 판독 소유는 벤더 선정과 함께 | BE(+A·B) | 02 §1-C |
 | B-2 | 공용 계약 리뷰·구현·14항목 승인 완료 — **문서 동기화 3/7 완료, 4건 잔여(§2-10)** | 잔여 4건 소유자 반영 요청 | A+B | 02 §5 |
 | B-5 / D-06 | ✅ PR #15로 로컬 OpenAI 호환·Gemma 계열 공급자와 어댑터 확정 — verifier 폴백 패밀리만 잔여 | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제 | A+B | 06 §2·§3 |
-| B-7 | evidence resolver 주입 시그니처 | A 초안 리뷰 | A+B | — |
+| B-7 | evidence resolver 주입 시그니처 — **GraphRAG 경유 근거 해소와 병합**(§2-12-②) | fail-closed·권리 게이트·결정론·예산 불변·blind 무오염 5조건 | A+B | §2-12 · `10` §4.2 |
+| **B-8** `[신규]` | **GraphRAG `VersionSet` 3필드 확장** — `content_graph_version`·`graph_index_version`·`retrieval_config_version`. **`graph_version` 재사용 금지** | §2-9 선례(nullable 흡수) 준용 | A+B | §2-12-① · `10` §4.2 |
+| **B-9** `[신규]` | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** — 검증 통과 문항이 미검증 문항으로 대체될 수 있는 미정의 동작 | `07` §4의 "마지막 검증본 유지"를 생성 경로에 대칭 적용 제안. 확정 전 `difficulty_regen_enabled=false` 유지 | B 초안 → A+B | `10` §4.1 C3 |
+| **B-10** `[신규]` | **RLS 구현 부재** — 문서는 "전 테이블 tenant_id+RLS", 구현은 tenant_id 컬럼만 | 문서 표현 정정 또는 26테이블 일괄 도입 중 택일. B 7테이블은 기존 패턴 준수 | A+BE | §2-4.5 |
+| **W1** `[신규]` | **다중 목표·다중 measured area 세트** — M2 와이어프레임 Step 1은 셀 여러 개를 담고 개수를 각각 지정하나, `05` §4.1은 **v1 단일 영역 제한** | 요청 분할 vs 요청 형식 확장 중 택일. 협업설명서도 "회의 결정 필요"로 등재 | A+B+제품 | `05` §4.1 · `10` §6 |
+| **W2** `[신규]` | 화면이 **셀에 `suspect`를 표시**하나 `04` §4의 셀 verdict는 `unknown\|weak\|ok` 3종이고 `suspect`는 **노드** verdict | 셀 verdict 확장 vs 화면이 노드 verdict를 셀에 투영 중 택일 | B(+FE) | `04` §4·§5.1 |
+| **W3** `[신규]` | 완료 알림 payload — 화면 문서는 수량(통과·검토·폐기)을 알림에 싣고, §2-1은 `result_ref` 조회로 얻는다 | §2-1 유지 권고(알림 경량화) | BE+B | §2-1 |
+| **W4** `[신규]` | 문항 상세 응답에 **`available_actions`·`current_revision_no`** 포함 요구(협업설명서) | B 단독 신설 가능 — 계약 확정 후 FE 통보 | B(+FE) | `07` §1 |
+| **W5** `[신규]` | `needs_review` 문항의 **"강사 확인 완료로 표시"** 액션이 `ItemAction` 5종에 없음 | 확인 기록 소유가 BE일 가능성 — AI는 발행 플래그 미반환 원칙 유지(U14) | BE+제품+B | `03` U14 · `07` §1 |
+| **W6** `[신규]` | **반 단위 출제** — 화면에 반 카드가 있으나 `DiagnosisInput.student_ref`는 단수, 반 집계 진단 규격 없음 | 구성원 기준시점·집계·alias 입력 규격 선결 | BE+제품+B | `04` §3.1 · `10` §6 |
+| **W7** `[신규]` | **교육과정 개정판** — 2026년에 고2·고3 동시 지원 시 2022 개정·2015 개정 정본 2벌 필요 | 지원 학년 확정 선결. `curriculum_graph.yaml` 작성 범위가 갈림 | 기획+B | `04` §2 · `10` §7 |
 | D-03 | T1 기준 자료(공급처·버전·라이선스) | 버전·라이선스 명확한 자료만, 장애 시 발행 차단 | B+기획 | 05 §1.1 |
 | D-04 / C-14 `[P0]` | T2 사실성 보장 수단 | 승인 자료 기반+source_ref, 수단 없으면 `source_unverified` 차단 | B+기획 | 05 §2.1 |
 | C-15 `[P0]` | 외부 표절·유사도 + injection 코퍼스 | 05 §8.2·§8.3, 08 §8 예약 | B+기획 | 05·08 |

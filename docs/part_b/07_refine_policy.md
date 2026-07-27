@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 정책 v1. part_a/06_refine_policy(초안 refine)의 B 대응 문서 — 골격(지시 3분류·blocked_reason·리비전 저장·테스트 시드)은 차용하되 대상이 문항이라 규칙이 다르다. **한 줄 원칙: 강사는 자유롭게 다듬을 수 있지만, 강사 지시가 게이트를 이기지 못한다.**
 >
 > **변경 이력**
+> - v1.1 (2026-07-27): **GraphRAG 편입** — §4 처리 순서에 `ResolveRevisionContext` 단계를 정적 검사와 LLM 호출 사이에 삽입([`11`](11_graphrag_knowledge_layer.md) §3·§8). 검색 모드 3종(`reuse_only`·`delta_retrieve`·`full_retrieve`)을 명시하고, `reuse_only`도 기존 `EvidencePack`의 유효성·라이선스·버전을 매 턴 재확인하도록 규정했다(지난 턴 이후 라이선스가 만료될 수 있으므로 — "기존 검증 결과 재사용 금지"와 같은 논리). `full_retrieve`가 필요한 지시는 §3 `out_of_scope`로 차단한다.
 > - v1 (2026-07-15): 신규 작성. 입력: `CODEXPROMPT/(염준영)_출제스튜디오_Step3_검증라벨_핑퐁수정_요구사항_v0.md` §4~§8 + 확정 결정 — 핑퐁 MVP 승격 · 직접 수정 허용+전체 재검증 · 낙관적 잠금 · 리비전 무제한 보존 `[잠정]` · 수동 예외 승인 불허.
 >
 > **참조** — [`06_quality_gates.md`](06_quality_gates.md)(재실행되는 게이트) · [`03_usecases.md`](03_usecases.md) U9~U13 · `docs/policies/masking_redaction.md` §3(지시문 redaction) · part_a/06_refine_policy(형식 원본)
@@ -67,6 +68,11 @@
  → 멱등 검사 (§6 — 같은 키+같은 바디는 기존 상태·결과 200, 다른 바디는 409 IDEMPOTENCY_CONFLICT)
  → 낙관적 잠금·진행 중 검사 (§6 — 충돌 시 409 REVISION_CONFLICT, LLM 미호출)
  → 지시문 redaction·정책 정적 검사 (C 분류 차단 — LLM 미호출)
+ → ResolveRevisionContext (GraphRAG — 11 §3·§8)
+      · retrieval_mode 판정: reuse_only | delta_retrieve | full_retrieve
+      · reuse_only도 기존 EvidencePack의 유효성·라이선스·버전을 재확인
+      · full_retrieve 필요 지시는 out_of_scope 차단 → 교체·재출제 안내
+      · 검색 0건·권리 만료·GraphRAG 장애 = fail-closed (LLM 미호출)
  → 해당 문항 + 지시만 LLM 전달 (§7 컨텍스트 최소화)
  → 수정안 구조화 출력 (파싱 실패 = 턴 실패)
  → 게이트 ① RuleValidation 전체 재실행

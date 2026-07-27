@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 명세 v1. `src/ai/problem_generation/verification.py`·`cross_solver.py`의 사양 원본. A의 threshold 시트에 대응하는 B의 판정 파라미터 문서 — `[잠정]` 값은 부록 'B 기본값 시트'와 `golden/problems/` 버전 연동으로 관리.
 >
 > **변경 이력**
+> - v1.2 (2026-07-27): **B-M2-02·04·05 확정 반영 + GraphRAG 편입** — ① 난이도 불일치의 1회 재생성·소진 시 검토 필요(§5·부록 `difficulty_regen_enabled`·`difficulty_regen_max`·`difficulty_band_tolerance`) ② 파일럿 첫 2주 T1 전체 교차 검증(`t1_light_mode` **true → false**, §1 T1 특칙) ③ 수동 목표 세트의 "첫 성공 문항" 정의 명문화(§5) ④ **R-1·R-4 검사 재료를 GraphRAG `EvidencePack` 기준으로 확장**([`11`](11_graphrag_knowledge_layer.md) §5 — `source_content_hash`·`quote_hash`·`license_ref`·`rights_status`·`coverage`). 결정 근거는 [`10`](10_m2_problem_generation_architecture.md) §4·§4.1.
 > - v1.1 (2026-07-15): 파일 번호 이동(04→06) + 확정 반영 — ① **재시도 총 3회**(item_attempt 공통 예산, regen_max=2 — 최악 논리 콜 6·HTTP 12) ② 게이트 ②에 **약점 의미 정렬 판정** 포함 ③ **세트 조기 중단** 규칙(§6) ④ 검증 차단 문항 **수동 예외 승인 불허 확정** ⑤ 프론트 표시 라벨 매핑(§0) ⑥ v1 mcq만.
 > - v1 (2026-07-15): 입력 초안 `CODEXPROMPT/(염준영)_3중_검증_게이트_명세_v0.md` 정리 — 명칭 통일(RuleValidation→BlindCrossSolve→ReleaseDecision), fail-closed, '다른 모델 패밀리', 재시도 2층 분리, "완전 증명" 표현 삭제.
 >
@@ -41,15 +42,15 @@
 
 | ID | 이름 | 검사 | 실패 시 |
 | --- | --- | --- | --- |
-| **R-1** | 근거 실존 | `evidence`의 모든 anchor 해소 가능: `passage_span` 좌표 실존 + `quote` 원문 일치(정규화 후 완전 일치) · `dict_entry`/`grammar_rule` ID가 T1 기준 자료(05 §1.1)에 실존 · `work_span` 오프셋이 발췌 범위 내 | 재생성 |
+| **R-1** | 근거 실존 | `evidence`의 모든 anchor 해소 가능: `passage_span` 좌표 실존 + `quote` 원문 일치(정규화 후 완전 일치) · `dict_entry`/`grammar_rule` ID가 T1 기준 자료(05 §1.1)에 실존 · `work_span` 오프셋이 발췌 범위 내 **+ GraphRAG 확장([`11`](11_graphrag_knowledge_layer.md) §5): `source_content_hash` 대조 · `quote_hash` 일치 · `license_ref` 유효 · `rights_status=approved` · `graph_path_edge_ids` 실존** | 재생성 |
 | **R-2** | 정답 정합 | 정답 번호 1개, 선지 5개 상호 배타(정규화 문자열 비교까지 — 의미 중복은 ②가 커버) | 재생성 |
 | **R-3** | 발문 형식 | stem에 정답 유출 어구 없음 · 부정 발문 강조 표기 · type_tag별 발문 형식 규칙 | 재생성 |
-| **R-4** | 외부 지식 차단 | rationale·정답 성립이 지문/예문/발췌 **내부에서 완결** — anchor 없는 핵심 주장, 지문 밖 고유명사·수치가 근거로 등장 시 실패(05 §2.1의 집행부) | 재생성 |
+| **R-4** | 외부 지식 차단 | rationale·정답 성립이 지문/예문/발췌 **내부에서 완결** — anchor 없는 핵심 주장, 지문 밖 고유명사·수치가 근거로 등장 시 실패(05 §2.1의 집행부) **+ GraphRAG 확장: `EvidencePack.coverage`가 정답·해설 핵심 주장·오답 사유를 전부 덮는지 검사, `missing_requirements`가 비어 있지 않으면 실패**([`11`](11_graphrag_knowledge_layer.md) §5) | 재생성 |
 | **R-5** | 금칙 대조 | stem·choices·rationale·지문 전체를 `pg_banned_topics.yaml` 대조 | **즉시 폐기(reject)** — 재생성 우회 금지, 지문 오염이면 세트 중단 |
 | **R-6** | 중복 억제 | stem 정규화 해시 + n-gram 유사도가 동일 세트/동일 학생 최근 출제분과 `dup_similarity_max` 초과 (**내부 중복만** — 외부 표절은 P0 OPEN, 05 §8.3) | 재생성 |
 | **R-7** | taxonomy·목표 정합(코드) | area·type·item_format·skill_node_id가 요청과 일치 + enum 유효 + 노드 area와 문항 area 일치 — **정렬 3층 중 1층(메타)** | 재생성 |
 
-**T1 특칙:** R-1의 사전·문법 대조가 사실상 정답 검증을 겸한다 — T1은 ②를 경량 모드(1회 풀이·불일치 시 needs_review)로 운용 가능 `[잠정 — 파일럿 오류율 확인 후]`. 단 **기준 자료 장애 시 T1도 발행 차단**(05 §1.1).
+**T1 특칙:** 파일럿 첫 2주는 `t1_light_mode=false`로 두고 T1 전 문항에 게이트 ② 전체 검증과 표준 재생성 규칙을 적용한다(B-M2-04). T1 기준 자료와 골든셋이 갖춰지고 파일럿 오류율이 기준을 충족한 뒤에만 경량 모드(1회 풀이·불일치 시 `needs_review`)를 별도 버전으로 열 수 있다. 단 **기준 자료 장애 시 T1도 발행 차단**한다(05 §1.1).
 
 ## 2. 게이트 ② BlindCrossSolve — 교차 풀이 + 약점 의미 정렬 (확정)
 
@@ -110,9 +111,10 @@ verifier 장애·기준 자료 장애·사실검증 수단 부재(`source_unveri
 | --- | --- |
 | ② low_confidence 마크(풀이 또는 정렬 confidence 경계) | 맞혔지만 확신 낮음 = 경계 문항 |
 | 경계 판정의 낮은 confidence 또는 source/passage와 measured area 불일치 | taxonomy §2의 확정 원칙에 따라 자동 확정하지 않고 강사 확인 |
+| `difficulty_regen_enabled=true`에서 요청 난이도 불일치가 난이도 사유 재생성 1회 뒤에도 지속되거나, 첫 불일치 시 이미 `item_attempt=3`이라 재생성 예산이 없음 | 별도 4번째 호출 없이 `needs_review` — 난이도 사유 재생성도 문항당 총 3회 공통 예산 안에서만 1회 허용 |
 | T3(문학) 전체 `[잠정 — 파일럿 초기]` | 작품 해석 개입 리스크 — 승인율 축적 후 완화 논의 |
 | 탐색 출제(suspect·unknown 타겟) | [`04_curriculum_graph.md`](04_curriculum_graph.md) §7 — 진단 목적 플래그 |
-| 수동 목표 세트(`teacher_manual`) 첫 문항 `[잠정]` | 비개인화 출제 — 목표 적합성을 사람이 확인 |
+| 수동 목표 세트(`teacher_manual`)에서 처리 순서상 게이트 ①②를 처음 통과해 ③에 도달한 문항 `[잠정]` | 첫 슬롯이 폐기·검증 불능이어도 첫 **성공 후보**의 목표 적합성을 사람이 확인 |
 
 배지는 강사 검수 UI의 우선 표시용이며 워크플로를 막지 않는다. 배지 문항 승인율은 분리 집계(KPI 오염 방지). ※ `essay` 무조건 배지 규칙은 v1 서술형 폐기(7/15)로 예약 이관.
 
@@ -153,7 +155,10 @@ A threshold 시트 방식 준용: `verify_config` 버전 행(이전 버전 보�
 | `alignment_confidence_min` | 0.7 | ② 정렬 판정(경계 미만 = 배지) |
 | `set_drop_ratio_max` | 0.3 | §6 조기 중단 |
 | `verify_outage_streak_max` | 3 | §6 조기 중단 |
-| `t1_light_mode` | true | §1 T1 특칙 |
+| `t1_light_mode` | **false** | §1 T1 특칙 — 파일럿 첫 2주 전 문항 전체 검증 |
+| `difficulty_regen_enabled` | **false** | §5 — 파일럿 첫 2주 난이도 사유 재생성 비활성 |
+| `difficulty_regen_max` | **1** (확정) | §5 — `regen_max`와 별도 예산이 아니라 총 3회 안의 난이도 사유 상한 |
+| `difficulty_band_tolerance` | null | 하·중·상 band 경계 B+제품·FE 확정 전 활성화 금지 |
 | `diag_relative_cut_pp` | −15 | 진단 weak 판정(04 §4) |
 | `diag_decay` | 0.7 | 역전파 감쇠(04 §5.4) |
 | `diag_propagate_threshold` | 0.5 | root_candidate 임계(04 §5.4) |
@@ -164,7 +169,7 @@ A threshold 시트 방식 준용: `verify_config` 버전 행(이전 버전 보�
 
 ※ `cell_min_items`는 이 시트가 아니라 **A threshold 시트 R6 값 참조**(04 §4 — 어휘 통일, 이중 관리 금지).
 
-**섀도 모드 절차(파일럿 첫 2주 — A threshold 시트 §5 준용):** `verify_config` v1 값은 첫 2주 개정 금지 — 게이트 판정·confidence 분포·R-4 오탐률·정렬 오판률을 관측만 하고, 개정은 관측치+골든셋 동시 개정으로만. 난이도 추정도 같은 기간 섀도 대조만.
+**섀도 모드 절차(파일럿 첫 2주 — A threshold 시트 §5 준용):** `t1_light_mode=false`, `difficulty_regen_enabled=false`로 고정한다. 게이트 판정·confidence 분포·R-4 오탐률·정렬 오판률과 요청 난이도 대비 `difficulty_est` 괴리를 관측만 한다. 첫 2주가 지났다는 이유만으로 자동 활성화하지 않으며, 개정은 관측치와 `golden/problems/` 기대값을 함께 리뷰한 새 `verify_config` 버전으로만 한다.
 
 ## 8. OPEN 항목
 
