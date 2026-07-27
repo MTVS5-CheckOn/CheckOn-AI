@@ -20,10 +20,17 @@ import pandas as pd  # type: ignore[import-untyped]
 
 
 class _Redacted(Protocol):
-    """redaction 결과의 구조적 계약 — runtime/redaction.RedactionResult와 호환."""
+    """redaction 결과의 구조적 계약 — runtime/redaction.RedactionResult와 호환.
 
-    masked_text: str
-    uncertain: bool
+    읽기 전용 속성으로 선언한다(property) — frozen 모델(RedactionResult)도 만족하도록.
+    소비자는 masked_text·uncertain을 읽기만 한다.
+    """
+
+    @property
+    def masked_text(self) -> str: ...
+
+    @property
+    def uncertain(self) -> bool: ...
 
 
 #: 샘플 셀을 마스킹하는 주입점 — 실 엔진(runtime/redaction.redact)이 이 시그니처를 만족한다.
