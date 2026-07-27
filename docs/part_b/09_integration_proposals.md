@@ -56,6 +56,9 @@ A가 요청한 B 검토 2건에 대한 회신:
 | --- | --- |
 | `execution.py` 신규 필드 2개(`threshold_version` nullable · `contract_version` non-null) — 양자 승인 | **승인** — 독자 설계가 아니라 §2.2/ERD 두 문서의 합집합 정합. **교집합 대안도 검토했으나 기각**: 교집합이면 `{pipeline, engine}` 2종만 남아 threshold(감지 판정 기준)·prompt(LLM 실행 기준)를 잃고 과거 실행 재현 불가(불변식 8). 두 문서는 별개 시스템이 아니라 같은 대상(실행 1건의 재현 키)의 불완전한 명세였으므로 합집합이 정답이고, 실행 유형별 차이(개별로 돌아가는 부분)는 필드 삭제가 아니라 **nullable로 흡수**(detection: prompt=null / LLM 실행: threshold=null). VersionSet은 워커 통합 스키마가 아니라 실행 1건마다 찍히는 재현 도장이라 슈퍼바이저 통합 여부와 무관. 같은 선례(용도별 nullable)에 따라 **B 버전 확장을 §2-9로 예고** — 승인 시점에 함께 논의 희망 |
 | `llm.py`의 `LLMProvider` Protocol을 B의 FakeProvider가 구현 가능한지 | **구현 가능 — 이견 없음.** `name` + `async complete(request, context) → LLMResult` 시그니처로 결정론 응답·장애 시나리오(timeout·parse_fail·연속 실패)를 `outcome`/`LlmError` 계열로 전부 재현 가능. 재시도·백오프를 어댑터가 아닌 게이트웨이(tenacity) 소유로 둔 규약도 B의 전송 재시도 설계([`06`](06_quality_gates.md) §4 `transport_retry`)와 정합. blind 계약은 `LLMRequest.prompt`가 조립 완료본이므로 조립 단계(verification.py) 책임으로 유지 — 계약 충돌 없음 |
+| OpenAI 호환 어댑터의 빈 응답 매핑 | **B 확정:** `ParseFailed`를 유지한다. 게이트웨이 전송 재시도 대상이 아니며 상위 소비자의 블록 재생성·`item_attempt` 예산이 소진한다. |
+
+> **[PART_B 크로스체킹 요청 · 미확정 — 타임아웃 상한]** 어댑터의 호출 전체 상한 15초와 `error_codes.md` §1의 동기 10초가 다르다. 동기 경로에 별도 10초 상한이 있는지 A·백엔드 확인이 필요하다.
 
 ### 1-6. 7/22 A PR 리뷰 요청 4건 — B 회신
 
@@ -278,7 +281,7 @@ class VersionSet(BaseModel):
 | B-3 잔여 | taxonomy 경계 사례 7건 판정 | 태깅 골든셋 시드와 동시 확정 | A+B | 04·06 §5 |
 | Open-12 | F17 OCR 실명→alias·OCR 소유 (P2) | 스캔·매칭·마스킹=BE 유지, 판독 소유는 벤더 선정과 함께 | BE(+A·B) | 02 §1-C |
 | B-2 | 공용 계약 리뷰·구현·14항목 승인 완료 — **문서 동기화 3/7 완료, 4건 잔여(§2-10)** | 잔여 4건 소유자 반영 요청 | A+B | 02 §5 |
-| B-5 / D-06 | LLM 공급자·모델 패밀리 조합 + verifier 폴백 | generator/verifier 패밀리 분리, 폴백 패밀리 지정 | A+B | 06 §2·§3 |
+| B-5 / D-06 | ✅ PR #15로 로컬 OpenAI 호환·Gemma 계열 공급자와 어댑터 확정 — verifier 폴백 패밀리만 잔여 | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제 | A+B | 06 §2·§3 |
 | B-7 | evidence resolver 주입 시그니처 | A 초안 리뷰 | A+B | — |
 | D-03 | T1 기준 자료(공급처·버전·라이선스) | 버전·라이선스 명확한 자료만, 장애 시 발행 차단 | B+기획 | 05 §1.1 |
 | D-04 / C-14 `[P0]` | T2 사실성 보장 수단 | 승인 자료 기반+source_ref, 수단 없으면 `source_unverified` 차단 | B+기획 | 05 §2.1 |
