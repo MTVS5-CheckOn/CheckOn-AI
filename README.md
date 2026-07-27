@@ -41,9 +41,13 @@ uv run python -m ai.evaluation.backend_sim   # 기본 3일치, 신호·lifecycle
 
 **실 PostgreSQL 로컬 검증** (선택 — PostgreSQL 서버를 별도로 준비하고 `.env`에 `POSTGRES_*`·`DATABASE_URL`·`STORE_BACKEND=pg` 설정):
 
+> **고정 접속값(로컬 `docker-compose.yml`·CI `integration-pg` 잡 공통):** `postgres:16` · `checkon`/`checkon`/`checkon_ai` · `5432`.
+> `docker-compose.yml`은 로컬 전용(`.gitignore`)이며, **레포 안 정본은 CI 워크플로(`.github/workflows/ci.yml`)의 `services` 값**이다 — 로컬 compose가 이 값을 따라간다. 어긋나면 여기서 눈에 띄게 한다.
+> `DATABASE_URL` 예: `postgresql+asyncpg://checkon:checkon@localhost:5432/checkon_ai`
+
 ```bash
-uv run alembic upgrade head                  # 스키마 (DATABASE_URL이 이 DB를 가리킴)
-uv run pytest -m integration                 # PG 왕복·재시작 생존 통합 테스트
+docker compose up -d                         # 로컬 postgres:16 (docker-compose.yml)
+uv run pytest -m integration                 # PG 왕복·재시작 생존 통합 테스트(스키마는 create_all)
 ```
 
 **`.env` 키 (노션 공유 · 커밋 안 함):**
