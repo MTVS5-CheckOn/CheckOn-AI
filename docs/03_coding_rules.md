@@ -47,6 +47,7 @@
 ## 2. 모듈화 — 스파게티 방지의 구조 규칙
 
 - **의존 방향은 한쪽으로만:** `capability → contracts ← capability`. capability끼리 직접 import가 보이면 즉시 반려. 플랫폼 모듈(evidence·gates·llm·runtime)은 contracts에만 의존.
+- **모든 LLM 호출은 `llm/gateway` 경유 — 예외 없음.** provider(벤더 어댑터) 직접 호출 금지(`llm/` 내부 제외). 직결하면 role 라우팅·원가 기록·redaction 훅이 소비자마다 갈라진다. **과도기:** 기존 브리핑 어댑터 직결(#22)은 gateway 이관 PR(`09_integration_proposals.md §1-10`의 ①+② 머지)로 종료 — 그때까지 **신규 직결 추가 금지**. 근거: `part_b/01_pipeline.md §5`(원 규칙 — B 소유, 참조만) · `part_b/09_integration_proposals.md §1-10`(A·B 공용 승격 합의).
 - **1 파일 = 1 책임.** `features.py`가 베이스라인 계산까지 하기 시작하면 분리. 기준: 파일 설명을 "~와 ~를 한다"로 써야 하면 이미 두 개다.
 - **함수는 한 화면(≤40줄) 안에.** 넘으면 단계별 함수로 추출 — 파이프라인 단계(수집→계산→판정→저장)가 함수 이름으로 읽혀야 한다.
 - **순환 import는 설계 오류의 증상** — import 트릭으로 우회하지 말고 공용 타입을 contracts로 올려서 해소.
