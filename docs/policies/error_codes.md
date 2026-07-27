@@ -17,7 +17,7 @@
 | 429 | `RATE_LIMITED` | 순간 요청 폭주(할당과 무관한 기술적 제한) | 백엔드 재시도(backoff) |
 | 500 | `INTERNAL` | 미분류 서버 오류 | 재시도 1회 후 폴백 |
 | 503 | `LLM_UPSTREAM_DOWN` | LLM 벤더 장애 | **폴백 규약**: 감지=전일 브리핑 유지+배지 · 초안="잠시 후 다시" |
-| 504 | `TIMEOUT` | 동기 10s / 비동기 총 5분 초과 | 비동기는 status=failed로 수렴 |
+| 504 | `TIMEOUT` | 동기 10s / 비동기 총 5분 초과 | 비동기는 복구 불가 시 `WorkerJob.phase=failed`로 수렴 |
 
 > **[PART_B 편입 요청 · B 규약 확정/정본 미편입] HTTP 충돌 코드 1종 추가:** `409 REVISION_CONFLICT` — 문항 refine의 새 멱등키 요청에서 `base_revision_no`가 최신과 다르거나 같은 문항의 refine이 이미 진행 중인 경우다. 같은 키+다른 바디의 정본 코드 `409 IDEMPOTENCY_CONFLICT`와 의미가 다르므로 별도 코드가 필요하다. B 상세 사유는 `stale_base_revision`과 `revision_in_progress`이며, 멱등 조회를 먼저 수행해 같은 키+같은 바디는 기존 상태·결과를 200으로 재반환한다. **정본 표 편입과 detail 공개 범위를 A가 확인해 달라.** B 규칙 원본은 `part_b/07_refine_policy.md` §6이다.
 >
@@ -80,21 +80,45 @@
 
 ### 2.5 에이전트 (`GET /v1/agents/{run_id}`)
 
-`running(progress "19/22") | paused(체크포인트 — resume 가능) | done | failed(완료분은 보존 — 학생 19명분 draft는 유효)`.
+공통 실행 상태 필드는 `phase`이며 정본은 `WorkerJob` 계약을 투영한 영속 `AGENT_RUN`이다. `done`은 사용하지 않고 성공 종료를 `succeeded`로 통일한다.
 
-> **[PART_B 편입 요청 · B 분류 확정/정본 미편입] 문항 생성 결과 어휘는 모두 같은 `status` 필드가 아니다.** B 계약 기준으로 `ProblemSetStatus.status`의 `partial_success`, `ProblemItemStatus.items[].status`의 `needs_review`·`verification_unavailable`, `ProblemFailureReason.items[].failure_reason` 및 `dropped_reasons[]`의 `generation_exhausted`·`source_unverified`로 분류된다. 모두 HTTP 에러가 아니라 성공 응답의 `data` 안에 있지만 필드별 enum이 다르므로, 정본 편입 시 이 세 범주를 나눠 기록해 달라.
+| phase | 의미 |
+| --- | --- |
+| `queued` | 영속 큐에서 실행 대기 |
+| `leased` | 실행자가 제한 시간 소유권을 획득한 내부 상태 |
+| `running` | 워커 실행 중 — `progress`·`checkpoint_ref` 조회 가능 |
+| `paused` | 체크포인트에서 안전하게 중단되어 resume 가능 |
+| `succeeded` | 계약에 맞는 도메인 결과와 `result_ref` 저장 완료 |
+| `failed` | 복구 불가능한 실행 장애로 유효 결과를 확정하지 못함 |
+| `cancelled` | 취소 요청이 안전한 체크포인트 경계에서 반영됨 |
+
+`succeeded`·`failed`·`cancelled`는 terminal이다. `paused`는 실패가 아니다. 부분 수렴과 실행 실패를 다음처럼 구분한다.
+
+- 상담팩에서 일부 학생이 `skipped_insufficient`·도메인 `failed`여도 완료 draft와 요약을 저장했다면 Job은 `succeeded`.
+- 매핑 조사에서 상한 5회 뒤 일부 컬럼이 `unresolved`·`needs_review`여도 명시적 결과를 저장했다면 Job은 `succeeded`.
+- 문제생성의 `rejected_insufficient`, 세트 `partial_success`·도메인 `failed`, 문항 `verification_unavailable`·`dropped`도 유효한 결과 계약이면 Job은 `succeeded`.
+- 워커 장애·체크포인트 손상·결과 저장 실패처럼 결과 계약 자체를 확정할 수 없을 때만 Job은 `failed`. 완료된 하위 산출물은 보존한다.
+
+lease 만료 때만 `recovery_count`를 증가시키며, 설정된 `max_recovery_attempts`(기본 3)에 도달하면 `phase=failed`, 내부 `error_code=worker_recovery_exhausted`로 수렴한다. 정상 수동 pause/resume은 이 장애 복구 예산을 소모하지 않는다. 내부 코드는 사용자 화면에 직접 노출하지 않는다.
 
 ### 2.6 문항 생성·refine 결과 (B — `POST /v1/problems` 등, 성공 200 안의 필드)
 
-B 계약 기준. 모두 HTTP 에러가 아니라 성공 응답 `data` 안의 값이며, **필드별로 enum이 다르다**(A 판정 7/22 — 세 범주를 나눠 기록).
+B 계약 기준. 모두 HTTP 에러나 `WorkerJob.phase`가 아니라 성공 응답 `data` 안의 도메인 값이며, **필드별로 enum이 다르다**(A 판정 7/22 — 범주를 나눠 기록).
 
 | 범주 | 필드 | 값 | 뜻 |
 | --- | --- | --- | --- |
-| 세트 | `ProblemSetStatus.status` | `partial_success` | 일부 문항만 검증 통과 — 세트는 유효, 미통과 문항은 아래 분류 |
+| 생성 결과 | `RejectedInsufficientOutcome.status` | `rejected_insufficient` | 자동 개인화 데이터 부족으로 생성 전 정상 종료 |
+| 세트 | `ProblemSetStatus.status` | `queued` · `generating` | 문제생성 도메인의 진행 투영 — 실행 phase 정본이 아님 |
+| 세트 | `ProblemSetStatus.status` | `generated` | 요청 문항을 모두 검증 완료 |
+| 세트 | `ProblemSetStatus.status` | `partial_success` | 일부 문항만 검증 통과 — 세트는 유효, 실패·미처리 수량 명시 |
+| 세트 | `ProblemSetStatus.status` | `failed` | 성공 문항이 없는 도메인 결과 — 결과가 저장되었으면 Job `succeeded` |
+| 문항 | `items[].status` | `verified` | 검증 통과 |
 | 문항 | `items[].status` | `needs_review` | 검증 신뢰 낮음 — 강사 확인 필요(숨기지 않고 노출) |
 | 문항 | `items[].status` | `verification_unavailable` | 검증기(교차 풀이 등) 일시 불가 — 재시도 대기 |
+| 문항 | `items[].status` | `dropped` | 문항 처리 실패를 사유와 함께 명시 |
 | 실패 사유 | `items[].failure_reason` · `dropped_reasons[]` | `generation_exhausted` | 문항당 생성 시도 소진(≤3회) |
 | 실패 사유 | 〃 | `source_unverified` | 근거 원천 대조 실패 — 발행 차단 |
+| 실패 사유 | 〃 | `banned_topic` | 금지 소재 판정으로 문항 폐기 |
 
 > B 규칙 원본은 `part_b/06_quality_gates.md` · `07_refine_policy.md`. 이 표는 정본 편입만이며 값 정의는 B 소유.
 

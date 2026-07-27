@@ -1,6 +1,6 @@
 """ERD 26테이블 ORM — 06_erd.md 정본을 그대로 옮긴다.
 
-소유: 공통 계약 (⚠ B 확인 대기 — 양자 11곳, 02_ownership §4). ERD가 정본이므로
+소유: 공통 계약 (A+B 확인 완료 — 양자 12곳, 02_ownership §4). ERD가 정본이므로
 ERD에 없는 테이블은 만들지 않는다(B 전용 문항·진단 테이블은 B가 자기 DB를 나중에
 직접 추가 — 7/22 확정). 대조는 tests/ai/db/test_erd_model_parity.py 가 강제한다.
 
@@ -22,9 +22,11 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -327,12 +329,138 @@ class TagSuggestion(Base):
 
 class AgentRun(Base):
     __tablename__ = "agent_run"
+    __table_args__ = (
+        CheckConstraint(
+            "agent_kind IN ('counsel_pack', 'mapping_probe', 'problem_generation')",
+            name="worker_kind",
+        ),
+        CheckConstraint(
+            "status IN "
+            "('queued', 'leased', 'running', 'paused', 'succeeded', 'failed', 'cancelled')",
+            name="phase",
+        ),
+        CheckConstraint(
+            "priority_class IN ('batch', 'standard', 'interactive')",
+            name="priority",
+        ),
+        CheckConstraint(
+            "(agent_kind = 'counsel_pack' AND operation = 'counsel_pack.generate') OR "
+            "(agent_kind = 'mapping_probe' AND operation = 'mapping_probe.resolve') OR "
+            "(agent_kind = 'problem_generation' AND operation IN "
+            "('problem_set.generate', 'problem_item.refine', 'problem_item.reverify'))",
+            name="operation_route",
+        ),
+        CheckConstraint(
+            "payload_hash ~ '^sha256:[0-9a-f]{64}$'",
+            name="payload_hash",
+        ),
+        CheckConstraint(
+            "dispatch_attempt >= 0 "
+            "AND dispatch_attempt = lease_generation "
+            "AND recovery_count >= 0 "
+            "AND max_recovery_attempts >= 1 "
+            "AND recovery_count <= max_recovery_attempts",
+            name="attempts",
+        ),
+        CheckConstraint(
+            "(status IN ('leased', 'running') "
+            "AND lease_owner IS NOT NULL "
+            "AND lease_acquired_at IS NOT NULL "
+            "AND lease_expires_at IS NOT NULL "
+            "AND lease_expires_at > lease_acquired_at) "
+            "OR (status NOT IN ('leased', 'running') "
+            "AND lease_owner IS NULL "
+            "AND lease_acquired_at IS NULL "
+            "AND lease_expires_at IS NULL)",
+            name="lease",
+        ),
+        CheckConstraint(
+            "(status IN ('succeeded', 'failed', 'cancelled') AND finished_at IS NOT NULL) "
+            "OR (status NOT IN ('succeeded', 'failed', 'cancelled') AND finished_at IS NULL)",
+            name="finished",
+        ),
+        CheckConstraint(
+            "(status = 'succeeded' AND result_ref IS NOT NULL) OR status <> 'succeeded'",
+            name="success_result",
+        ),
+        CheckConstraint(
+            "status IN ('succeeded', 'failed', 'cancelled') OR result_ref IS NULL",
+            name="result_phase",
+        ),
+        CheckConstraint(
+            "(status = 'failed' AND error_code IS NOT NULL) OR status <> 'failed'",
+            name="failure_error",
+        ),
+        CheckConstraint(
+            "status IN ('failed', 'cancelled') OR error_code IS NULL",
+            name="error_phase",
+        ),
+        CheckConstraint(
+            "(status IN ('running', 'paused') "
+            "AND started_at IS NOT NULL "
+            "AND checkpoint_ref IS NOT NULL) "
+            "OR status NOT IN ('running', 'paused')",
+            name="resume_fields",
+        ),
+        CheckConstraint(
+            "(status <> 'succeeded' OR started_at IS NOT NULL) "
+            "AND (status <> 'queued' OR dispatch_attempt <> 0 "
+            "OR (started_at IS NULL AND checkpoint_ref IS NULL))",
+            name="start_fields",
+        ),
+        CheckConstraint(
+            "(started_at IS NULL OR started_at >= queued_at) "
+            "AND (finished_at IS NULL OR finished_at >= queued_at) "
+            "AND (started_at IS NULL OR finished_at IS NULL OR finished_at >= started_at) "
+            "AND (lease_acquired_at IS NULL OR lease_acquired_at >= queued_at)",
+            name="time_order",
+        ),
+        Index(
+            "ix_agent_run_dispatch_queue",
+            "tenant_id",
+            "agent_kind",
+            "status",
+            "priority_class",
+            "queued_at",
+            "id",
+        ),
+        Index(
+            "ix_agent_run_lease_expiry",
+            "tenant_id",
+            "agent_kind",
+            "status",
+            "lease_expires_at",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     run_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("ai_run.execution_id"))
     tenant_id: Mapped[str] = mapped_column(String)
-    agent_kind: Mapped[str] = mapped_column(String)  # counsel_pack|mapping_probe
-    state_checkpoint: Mapped[dict[str, Any]] = mapped_column(JSONB)  # LangGraph 체크포인터
+    agent_kind: Mapped[str] = mapped_column(String)  # counsel_pack|mapping_probe|problem_generation
+    operation: Mapped[str] = mapped_column(String)
+    payload_ref: Mapped[str] = mapped_column(String)
+    payload_hash: Mapped[str] = mapped_column(String)
+    priority_class: Mapped[str] = mapped_column(String)
+    dispatch_attempt: Mapped[int] = mapped_column(Integer)
+    lease_generation: Mapped[int] = mapped_column(Integer)
+    recovery_count: Mapped[int] = mapped_column(Integer)
+    max_recovery_attempts: Mapped[int] = mapped_column(Integer)
+    lease_owner: Mapped[str | None] = mapped_column(String, nullable=True)
+    lease_acquired_at: Mapped[datetime | None] = mapped_column(_TZ, nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(_TZ, nullable=True)
+    checkpoint_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    result_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    queued_at: Mapped[datetime] = mapped_column(_TZ)
+    started_at: Mapped[datetime | None] = mapped_column(_TZ, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ, nullable=True)
+    state_checkpoint: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        comment=(
+            "마스킹된 관측 캐시. LangGraph state 정본은 별도 PostgresSaver 테이블이며 "
+            "이 컬럼으로 재개하지 않는다."
+        ),
+    )
     progress: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String)
     updated_at: Mapped[datetime] = mapped_column(_TZ)

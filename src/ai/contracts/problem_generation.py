@@ -9,7 +9,7 @@ v1은 객관식 5지선다만 처리한다. ItemFormat.SHORT·ESSAY는 공용 en
 """
 
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Annotated, Final, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -250,6 +250,9 @@ class SetStopReason(StrEnum):
     BANNED_TOPIC_PASSAGE = "banned_topic_passage"
 
 
+PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT: Final = 3
+
+
 class ItemResult(BaseModel):
     """문항 1개의 최종 처리 결과."""
 
@@ -257,7 +260,7 @@ class ItemResult(BaseModel):
 
     item_id: UUID | None = None
     status: ProblemItemStatus
-    attempt_no: int = Field(ge=1)
+    attempt_no: int = Field(ge=1, le=PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT)
     failure_reason: ProblemFailureReason | None = None
     failure_detail: str | None = Field(default=None, min_length=1)
 
@@ -278,16 +281,33 @@ class ItemResult(BaseModel):
         return self
 
 
+class RejectedInsufficientOutcome(BaseModel):
+    """자동 개인화에 필요한 데이터가 부족해 생성 전 정상 종료된 결과."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    outcome: Literal["rejected_insufficient"] = "rejected_insufficient"
+    status: Literal["rejected_insufficient"] = "rejected_insufficient"
+    target_source: Literal[TargetSource.WEAKNESS_AUTO] = TargetSource.WEAKNESS_AUTO
+    personalized: Literal[False] = False
+    weakness_map_id: None = None
+    status_reason: str = Field(min_length=1)
+
+
 class ProblemSetResult(BaseModel):
     """비동기 문항 세트의 진행 또는 최종 결과."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    outcome: Literal["problem_set"] = "problem_set"
     set_id: UUID
     status: ProblemSetStatus
     stop_reason: SetStopReason | None = None
     target_source: TargetSource
     personalized: bool
+    requested_count: int = Field(ge=1, le=20)
+    processed_count: int = Field(ge=0)
+    unstarted_count: int = Field(ge=0)
     items: tuple[ItemResult, ...] = ()
     summary: str | None = Field(default=None, min_length=1)
     dropped_reasons: tuple[ProblemFailureReason, ...] = ()
@@ -298,18 +318,224 @@ class ProblemSetResult(BaseModel):
         if self.personalized is not expected_personalized:
             raise ValueError("target_source와 personalized 값이 일치하지 않는다")
 
+        if self.processed_count != len(self.items):
+            raise ValueError("processed_count는 items 길이와 일치해야 한다")
+        if self.requested_count != self.processed_count + self.unstarted_count:
+            raise ValueError("requested_count는 processed_count와 unstarted_count의 합이어야 한다")
+
         succeeded = sum(
             item.status in {ProblemItemStatus.VERIFIED, ProblemItemStatus.NEEDS_REVIEW}
             for item in self.items
         )
-        failed = len(self.items) - succeeded
-        if self.status is ProblemSetStatus.GENERATED and (not self.items or failed):
-            raise ValueError("generated 세트는 모든 문항이 검증 완료 상태여야 한다")
-        if self.status is ProblemSetStatus.PARTIAL_SUCCESS and not (succeeded and failed):
-            raise ValueError("partial_success는 성공과 실패 문항을 모두 포함해야 한다")
-        if self.status is ProblemSetStatus.FAILED and succeeded:
+        unsuccessful = self.processed_count - succeeded
+
+        if self.status is ProblemSetStatus.QUEUED:
+            if self.processed_count or self.stop_reason is not None:
+                raise ValueError("queued 세트는 처리 문항이나 stop_reason을 가질 수 없다")
+            return self
+
+        if self.status is ProblemSetStatus.GENERATING:
+            if self.unstarted_count == 0:
+                raise ValueError("모든 문항을 처리한 세트는 generating 상태일 수 없다")
+            if self.stop_reason is not None:
+                raise ValueError("generating 세트에는 stop_reason을 기록할 수 없다")
+            return self
+
+        if self.unstarted_count and self.stop_reason is None:
+            raise ValueError("미처리 문항이 남은 최종 세트에는 stop_reason이 필요하다")
+
+        if self.status is ProblemSetStatus.GENERATED:
+            if self.unstarted_count or unsuccessful:
+                raise ValueError("generated 세트는 요청 문항을 모두 검증 완료해야 한다")
+            if self.stop_reason is not None:
+                raise ValueError("generated 세트에는 stop_reason을 기록할 수 없다")
+        elif self.status is ProblemSetStatus.PARTIAL_SUCCESS:
+            if not succeeded or not (unsuccessful or self.unstarted_count):
+                raise ValueError(
+                    "partial_success는 성공 문항과 실패 또는 미처리 문항을 포함해야 한다"
+                )
+        elif self.status is ProblemSetStatus.FAILED and succeeded:
             raise ValueError("failed 세트에는 성공 문항이 있을 수 없다")
         return self
+
+
+type ProblemGenerationOutcome = Annotated[
+    RejectedInsufficientOutcome | ProblemSetResult,
+    Field(discriminator="outcome"),
+]
+
+
+class ProblemGenerationState(BaseModel):
+    """문항 슬롯 경계에서 재개하는 문제생성 워커 체크포인트."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    state_schema_version: Literal["problem_generation.v1"] = "problem_generation.v1"
+    request_ref: str = Field(min_length=1)
+    request_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    set_id: UUID
+    target_source: TargetSource
+    requested_count: int = Field(ge=1, le=20)
+    cursor: int = Field(default=0, ge=0)
+    items: tuple[ItemResult, ...] = ()
+    item_attempt: int = Field(
+        default=0,
+        ge=0,
+        le=PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT,
+    )
+    stop_reason: SetStopReason | None = None
+
+    @model_validator(mode="after")
+    def validate_checkpoint(self) -> Self:
+        if self.cursor > self.requested_count:
+            raise ValueError("cursor는 requested_count를 초과할 수 없다")
+        if self.cursor != len(self.items):
+            raise ValueError("cursor는 완료된 items 길이와 일치해야 한다")
+        if self.is_terminal and self.item_attempt:
+            raise ValueError("종료 state에는 현재 문항 item_attempt를 남길 수 없다")
+
+        succeeded = sum(
+            item.status in {ProblemItemStatus.VERIFIED, ProblemItemStatus.NEEDS_REVIEW}
+            for item in self.items
+        )
+        if (
+            self.stop_reason is not None
+            and self.cursor == self.requested_count
+            and succeeded == self.requested_count
+        ):
+            raise ValueError("모든 문항을 성공한 state에는 stop_reason을 기록할 수 없다")
+        return self
+
+    @property
+    def is_terminal(self) -> bool:
+        """모든 슬롯을 처리했거나 조기중단 사유가 확정됐는지 반환한다."""
+
+        return self.stop_reason is not None or self.cursor == self.requested_count
+
+    @property
+    def unstarted_count(self) -> int:
+        """현재 처리 중인 슬롯을 제외하고 아직 시작하지 않은 슬롯 수."""
+
+        active_slot_count = int(self.item_attempt > 0)
+        return self.requested_count - self.cursor - active_slot_count
+
+    @property
+    def current_slot_key(self) -> str | None:
+        """현재 슬롯의 멱등 저장 키. 종료 state에는 슬롯이 없다."""
+
+        if self.is_terminal:
+            return None
+        return f"problem-set:{self.set_id}:slot:{self.cursor}"
+
+    def to_result(self, *, summary: str | None = None) -> ProblemSetResult:
+        """종료 체크포인트를 최종 세트 결과로 변환한다."""
+
+        if not self.is_terminal:
+            raise ValueError("종료되지 않은 state는 최종 ProblemSetResult로 변환할 수 없다")
+
+        succeeded = sum(
+            item.status in {ProblemItemStatus.VERIFIED, ProblemItemStatus.NEEDS_REVIEW}
+            for item in self.items
+        )
+        if self.cursor == self.requested_count and succeeded == self.requested_count:
+            status = ProblemSetStatus.GENERATED
+        elif succeeded:
+            status = ProblemSetStatus.PARTIAL_SUCCESS
+        else:
+            status = ProblemSetStatus.FAILED
+
+        dropped_reasons = tuple(
+            item.failure_reason
+            for item in self.items
+            if item.status is ProblemItemStatus.DROPPED and item.failure_reason is not None
+        )
+        return ProblemSetResult(
+            set_id=self.set_id,
+            status=status,
+            stop_reason=self.stop_reason,
+            target_source=self.target_source,
+            personalized=self.target_source is TargetSource.WEAKNESS_AUTO,
+            requested_count=self.requested_count,
+            processed_count=self.cursor,
+            unstarted_count=self.unstarted_count,
+            items=self.items,
+            summary=summary,
+            dropped_reasons=dropped_reasons,
+        )
+
+
+class InvalidProblemGenerationStateTransition(ValueError):
+    """문제생성 체크포인트의 단조 전이가 깨진 경우."""
+
+
+def assert_problem_generation_state_transition(
+    previous: ProblemGenerationState,
+    current: ProblemGenerationState,
+) -> None:
+    """순차 슬롯 처리와 현재 문항 재시도 예산의 단조 전이를 검증한다."""
+
+    if previous == current:
+        return
+    if _problem_state_identity(previous) != _problem_state_identity(current):
+        raise InvalidProblemGenerationStateTransition(
+            "state 전이 중 불변 문제생성 입력을 변경할 수 없다"
+        )
+    if previous.is_terminal:
+        raise InvalidProblemGenerationStateTransition("종료 state는 더 전이할 수 없다")
+
+    cursor_delta = current.cursor - previous.cursor
+    if cursor_delta not in {0, 1}:
+        raise InvalidProblemGenerationStateTransition(
+            "cursor는 한 전이에서 완료 문항 하나만큼만 증가할 수 있다"
+        )
+
+    if cursor_delta == 0:
+        if current.items != previous.items:
+            raise InvalidProblemGenerationStateTransition(
+                "cursor 증가 없이 완료 items를 변경할 수 없다"
+            )
+        if current.stop_reason is not None:
+            if previous.item_attempt:
+                raise InvalidProblemGenerationStateTransition(
+                    "현재 문항 처리 중에는 조기중단 state로 전이할 수 없다"
+                )
+            return
+        if current.item_attempt not in {
+            previous.item_attempt,
+            previous.item_attempt + 1,
+        }:
+            raise InvalidProblemGenerationStateTransition(
+                "현재 문항 item_attempt는 한 번에 1만 증가할 수 있다"
+            )
+        return
+
+    if current.items[:-1] != previous.items:
+        raise InvalidProblemGenerationStateTransition(
+            "완료 문항 추가 시 기존 items 순서를 보존해야 한다"
+        )
+    if current.item_attempt:
+        raise InvalidProblemGenerationStateTransition(
+            "문항 완료 후 다음 슬롯의 item_attempt는 0으로 초기화해야 한다"
+        )
+    if previous.item_attempt == 0:
+        raise InvalidProblemGenerationStateTransition(
+            "외부 호출 전 item_attempt를 증가·체크포인트해야 한다"
+        )
+    if current.items[-1].attempt_no != previous.item_attempt:
+        raise InvalidProblemGenerationStateTransition(
+            "완료 문항 attempt_no가 현재 슬롯의 item_attempt와 일치하지 않는다"
+        )
+
+
+def _problem_state_identity(state: ProblemGenerationState) -> tuple[object, ...]:
+    return (
+        state.state_schema_version,
+        state.request_ref,
+        state.request_hash,
+        state.set_id,
+        state.target_source,
+        state.requested_count,
+    )
 
 
 class ItemAction(StrEnum):

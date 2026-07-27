@@ -4,7 +4,7 @@
 
 ## 0. 이 저장소가 하는 일 (3줄)
 
-**수능 대비 고등 국어 학원 강사**용 SaaS의 AI 서비스(중등·내신은 고도화 — v1 코드에 중등 분기 만들지 말 것). 백엔드(Java/MySQL — 도메인 원본)가 alias 처리된 학습 스냅숏을 REST로 보내면, 위험신호(결정론)·상담 초안(LLM+게이트)·엑셀 매핑·태깅을 생성해 돌려준다. 승인·발송은 전부 백엔드(HITL) — 이 저장소에 발송 코드는 없다.
+**수능 대비 고등 국어 학원 강사**용 SaaS의 AI 서비스(중등·내신은 고도화 — v1 코드에 중등 분기 만들지 말 것). 백엔드(Java/MySQL — 도메인 원본)가 alias 처리된 학습 스냅숏을 REST로 보내면, 위험신호(결정론)·상담 초안(LLM+게이트)·엑셀 매핑·태깅·문제 생성/검증 결과를 돌려준다. 승인·발송·학생 노출은 전부 백엔드(HITL) — 이 저장소에 발송 코드는 없다.
 
 ## 1. 절대 불변식 — 위반하는 코드는 작성하지 마라
 
@@ -21,14 +21,14 @@
 
 - 폴더 구조는 지시서 고정 — **구조 재편 금지.** 소유권: `docs/02_ownership.md`.
 - capability 간 참조는 `contracts/`의 타입으로만. 상대 capability 내부 직접 import 금지.
-- **양자 승인 7파일**(`contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py`, `evidence/models.py`의 EvidenceRef, `runtime/metrics.py` 이벤트 스키마)은 에이전트가 임의 수정하지 말 것 — 변경이 필요하면 PR 설명에 사유를 쓰고 사람 승인을 기다린다.
+- **양자 승인 12파일**(`contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py·agents.py`, `evidence/models.py`의 EvidenceRef, `runtime/metrics.py` 이벤트 스키마, `api/app.py·api/envelope.py`, `db/models.py·db/base.py`)은 에이전트가 임의 수정하지 말 것 — 변경이 필요하면 PR 설명에 사유를 쓰고 사람 승인을 기다린다.
 - 데이터 파일(`tone_map.yaml`·`buffer_lexicon.yaml`·`redaction_patterns.yaml`)은 대응 골든셋 통과가 머지 조건. 규칙을 프롬프트에 하드코딩하지 말고 데이터 파일로.
 
 ## 3. 지금 하지 말 것 (미확정 — `docs/99_open_items.md` 추적)
 
 | 항목 | 이유 | 대신 |
 | --- | --- | --- |
-| 슈퍼바이저-워커 오케스트레이션 구현 | B-1 승인(7/15)으로 **에이전트 3종+슈퍼바이저 착수 가능**하나 슈퍼바이저 state 스키마 미작성 | 워커(counsel_pack·mapping_probe) 단독 구현 먼저(`docs/policies/langgraph_state.md`), 슈퍼바이저는 스키마 합의 후 |
+| Kafka terminal outbox·실연동 | 슈퍼바이저 실행 계약과 영속 Job은 확정·구현됐으나 토픽 운영값·백엔드 `result_ref` 조회 방식은 공동 확정 전 | `docs/08_kafka_events.md` 인터페이스와 `(job_id, terminal phase)` 멱등 규약까지만 준수 |
 | `item_format`의 short·essay 분기 코드 | 7/15 확정: **v1은 mcq만 사용** | enum엔 예약값만 두고 처리 로직 만들지 말 것 (area 6영역은 확정 — TODO 제거 가능) |
 | ~~LLM 벤더 SDK 설치·직접 호출~~ **해제(7/23 B-5 확정)** | 팀 로컬 OpenAI 호환 서버(Gemma 계열)로 확정 | `openai` SDK는 **`llm/providers/` 안에서만** import 허용 — capability·contracts에서 직접 import 금지(벤더 독립 유지). provider 어댑터는 A 초안 + B 승인(llm/ 소유). 접속정보(URL·키·모델)는 env 주입 |
 | 백엔드 실연동 | 계약 리뷰는 완료(7/15) — **v1.0 승격 커밋 + Kafka 토픽 스키마 확정 전** | FakeSnapshot 픽스처 (`docs/05_request_json.md` 형태) + Kafka는 뼈대만 |
@@ -39,7 +39,7 @@
 - Python 3.12 + uv. `uv sync` → `uv run pytest` / `uv run ruff check .` / `uv run mypy .`
 - 패키지 루트 = `src/ai/` (src 레이아웃). 서버: `uv run uvicorn ai.api.app:app --reload`
 - FastAPI(async) · SQLAlchemy 2.x + asyncpg · Alembic · LangGraph(+postgres checkpointer) · pandas/numpy/openpyxl · **Kafka(7/15 확정 — 비동기 완료 통지·월별 리포트 벌크. 토픽 확정 전엔 consumer/producer 뼈대만, aiokafka)**
-- AI PG는 산출물·메타·캐시만(24테이블 — `docs/06_erd.md`). 도메인 원본 테이블을 만들지 마라.
+- AI PG는 산출물·메타·캐시만(애플리케이션 소유 26테이블 — `docs/06_erd.md`; LangGraph PostgresSaver 내부 테이블은 별도 관리). 도메인 원본 테이블을 만들지 마라.
 - 전 테이블 `tenant_id` 필수. 테넌트 격리 없는 쿼리는 반려.
 
 ## 5. 테스트 규칙
@@ -64,8 +64,10 @@
 | 상담 초안·톤 | `docs/part_a/05_tone_mapping.md` + 유스케이스 C1~C3 |
 | refine(핑퐁) | `docs/part_a/06_refine_policy.md` + 유스케이스 C8 |
 | 리포트 | `docs/part_a/07_report_spec.md` + 유스케이스 C9 |
-| 태깅·수능 enum | `docs/policies/taxonomy.md` (잠정) + 유스케이스 I4 |
+| 태깅·수능 enum | `docs/policies/taxonomy.md` (B-3 경계 7건 확정) + 유스케이스 I4 |
 | Import·에이전트② | `docs/part_a/01_pipeline.md` + 유스케이스 I1~I3 |
+| 슈퍼바이저·워커 Job | `docs/policies/langgraph_state.md` §3·§5 + `docs/02_ownership.md` |
+| 문제 생성·검증 | `docs/part_b/01_pipeline.md` + `05_problem_generation.md` + `06_quality_gates.md` |
 | API 형태 | `docs/04_api_contract.md` + `docs/05_request_json.md` |
 | DB | `docs/06_erd.md` |
 | 표준 스키마(템플릿·Import 목적지) | `docs/07_standard_schema.md` |

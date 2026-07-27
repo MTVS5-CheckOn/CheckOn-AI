@@ -1,6 +1,6 @@
 """SQLAlchemy DeclarativeBase + naming convention.
 
-소유: 공통 계약 (⚠ B 확인 대기 — 02_ownership §4 양자 11곳). 제약·인덱스 이름 규칙을
+소유: 공통 계약 (A+B 확인 완료 — 02_ownership §4 양자 12곳). 제약·인덱스 이름 규칙을
 고정해 alembic autogenerate를 안정화한다(이름이 결정론적이어야 diff가 깨끗하다).
 """
 

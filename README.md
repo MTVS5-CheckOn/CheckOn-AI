@@ -2,10 +2,10 @@
 
 **수능 대비 국어 학원의 개인 강사(고등)**를 위한 AI SaaS의 AI 서비스 저장소입니다.
 (7/15 확정: 타겟을 수능 국어로 좁혀 시작 — 중등·내신 대비는 고도화 로드맵.)
-감지(위험신호) → 우선순위 → 소통(상담 초안) 분석 레이어를 담당합니다.
+감지(위험신호) → 우선순위 → 소통(상담 초안)과 약점 기반 문제 생성·검증 레이어를 담당합니다.
 
 > 프로젝트는 3개 저장소로 구성됩니다: `ai`(이 저장소, Python) · `backend`(Java 21 / Spring Boot 4, MySQL — 도메인 원본 소유) · `frontend`.
-> AI 서비스는 백엔드로부터 **alias 처리된 스냅숏**을 REST로 받아 산출물(신호·초안·매핑·태그)만 돌려줍니다. 도메인 원본을 복제하지 않습니다.
+> AI 서비스는 백엔드로부터 **alias 처리된 스냅숏**을 REST로 받아 산출물(신호·초안·매핑·태그·문제 세트)만 돌려줍니다. 도메인 원본을 복제하지 않습니다.
 
 ## 핵심 3축
 
@@ -66,7 +66,7 @@ uv run pytest -m integration                 # PG 왕복·재시작 생존 통�
 ```
 src/ai/
 ├── api/app.py          # FastAPI ASGI 엔트리포인트
-├── contracts/          # capability 간 유일한 연결점 (양자 승인 7파일 포함)
+├── contracts/          # capability 간 유일한 연결점 (양자 승인 정본은 docs/02 §4)
 ├── evidence/ gates/ agents/ llm/ registry/ runtime/   # 플랫폼
 ├── detection/          # 감지 (결정론 · LLM 금지)
 ├── composition/        # 상담 초안 + 핑퐁 + 리포트 + 보조 ⓐⓑⓓ + 에이전트①
@@ -87,4 +87,4 @@ src/ai/
 | 박진희 (member-A) | 탐지·소통·Import | detection · composition · import_mapping + 플랫폼 대부분 |
 | 염준영 (member-B) | 진단·출제 | diagnosis · problem_generation · llm/ |
 
-경계 규칙: 상대 capability 내부 파일 직접 수정 금지 — `contracts/`에 PR로. 양자 승인 7파일은 두 명 승인 필수.
+경계 규칙: 상대 capability 내부 파일 직접 수정 금지 — `contracts/`에 PR로. `docs/02_ownership.md` §4의 양자 승인 12곳은 두 명 승인 필수.

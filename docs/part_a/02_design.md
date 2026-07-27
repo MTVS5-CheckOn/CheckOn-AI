@@ -314,7 +314,9 @@ sequenceDiagram
 
 ---
 
-## 3. ERD — AI PostgreSQL v2.1 (24테이블 전체)
+## 3. ERD — AI PostgreSQL v2.1 역사 스냅숏 (당시 24테이블)
+
+> 현재 애플리케이션 정본은 `docs/06_erd.md` v3의 26테이블이다. 아래 다이어그램은 A 파트 v2.1 설계 맥락을 보존한 것이며, 구현·마이그레이션 대조에는 사용하지 않는다.
 
 **원칙(불변):** AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본은 백엔드 MySQL 소유 — `…_ref`는 논리 참조(물리 FK 아님). 전 테이블 `tenant_id` + RLS. (v2.1: `DRAFT_REVISION` 추가 · 사용량 미터링은 `usage_daily(tenant_id, date)` 그레인 — ERD 전체 v2 문서와 동일)
 
@@ -623,9 +625,9 @@ erDiagram
 
 1. ~~REST 계약서~~ → **✅ 작성 완료: 체크온_AI_API·데이터계약_v0.1.md** (refine·쿼터·benchmarks 포함, Open 안건 12개) — 백엔드 리뷰 미팅으로 v1.0 확정이 다음 단계
 2. `threshold_config` 기본값 시트 — R1~R6 파라미터(섀도 모드 절차 포함)
-3. AI PG 마이그레이션 초안(Alembic) — **v2.1 24테이블** 기준(DRAFT_REVISION·usage_daily 포함)
-4. **LangGraph 체크포인터 설정** — PostgresSaver 연결·state 스키마(Pydantic)·재개 시나리오 통합 테스트(유스케이스 C5·I2 대응)
-5. **지시서 개정안 정리 → member-B 합의** — 기존 4건(파이프라인 v2 §0) + **영역 enum 수능 개정(Open-11)** + **오프라인 시험 루프 A·B 분담(F17)**. 합의 전 에이전트 2종 착수 보류, 보조 ⓐⓑⓒ는 선행 가능
+3. ✅ AI PG 마이그레이션 — 현재 정본 26테이블 `0001_initial_schema` + 슈퍼바이저 원장 `0002_agent_run_job_ledger`
+4. 🟠 **LangGraph 체크포인터 설정** — PostgresSaver 연결·문제생성 state/재개 계약 완료, counsel_pack·mapping_probe 실제 그래프 통합 테스트는 capability 구현 시
+5. ✅ **지시서 개정·member-B 합의** — B-1 슈퍼바이저 실행 계약과 Open-11/B-3 영역 경계까지 확정. F17 소유만 P2 Open-12로 유지
 6. 체크온 표준 스키마 정의서 — Import(F1b)의 변환 목적지(백엔드 리뷰 미팅의 Open-3b와 함께 확정)
 
 > 본 문서가 AI 아키텍처 지시서·소유권 v1과 충돌하면 **지시서가 우선**한다.
