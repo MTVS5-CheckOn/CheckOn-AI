@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 사양 v1. `src/ai/diagnosis/`(skill_graph.py · diagnoser.py)와 `diagnosis/data/curriculum_graph.yaml`의 사양 원본. 영역 어휘는 `contracts/taxonomy.py` 준수 — **6영역 enum과 측정 대상 기준 경계 사례 7건은 7/27 확정**.
 >
 > **변경 이력**
+> - v1.3 (2026-07-27): §8 OPEN에 2건 추가 — **W7 적용 교육과정 개정판 확정**(2022/2015 성취기준 정본, 지원 학년 미확정 시 25~40노드 작성 범위가 안 정해짐), GraphRAG projection 관계와 **`graph_version` 재사용 금지** 명시([`11`](11_graphrag_knowledge_layer.md) §2.1·§7).
 > - v1.2 (2026-07-15): 구현 착수 전 규칙 3건 확정 — ① 중복 이벤트: 완전 동일 재수신만 dedupe, 필드 상이 시 진단 중단(§3.2) ② 노드 severity 정의: suspect=연결 weak 셀 최댓값·weak_confirmed=직접 재계산+직접 weak 기준 명시(§5.1~§5.2) ③ overall_low 분모=판정 가능 셀(§4).
 > - v1.1 (2026-07-15): 파일 번호 이동(02→04) + 7/15 반영 — 6영역 확정 표기, 중등은 v1 범위 아님(타겟 협소화), 데이터 부족 시 수동 목표 출제 분기 연결. 상호 링크 재편.
 > - v1 (2026-07-15): 입력 초안 `CODEXPROMPT/(염준영)_curriculum_graph_사양서_v0.md` 정리 — 진단 입력 계약·중복/재처리 규칙·severity 공식·suspect 제한·병합 예제·버전 필드 추가.
@@ -213,5 +214,7 @@ problem_generation의 약점 목표 확정이 받는 우선순위(`target_source
 | 번호 | 항목 | 담당 |
 | --- | --- | --- |
 | B-3 잔여 | 경계 사례 7건 판정(enum은 확정) → taxonomy_version 갱신 | A+B |
+| **W7** `[신규 2026-07-27]` | **적용 교육과정 개정판 확정** — 2026년에 고2·고3을 함께 지원하면 **2022 개정·2015 개정 성취기준 정본 2벌**이 필요하다. 노드가 성취기준에 연결되므로 지원 학년이 정해지기 전에는 25~40노드 실작성 범위가 확정되지 않는다. §2의 "수능 고등 기준 단일"은 학교급 협소화이지 개정판 선택이 아니다 | 기획+B ([`09`](09_integration_proposals.md) §3 W7) |
+| — | GraphRAG projection — 본 그래프는 **YAML이 정본**이고 검색용 그래프는 파생물이다. `graph_version`은 이 그래프의 버전이며 콘텐츠 GraphRAG 버전으로 **재사용하지 않는다** | B ([`11`](11_graphrag_knowledge_layer.md) §2.1·§7) |
 | — (09 §2-6) | `[잠정]` 파라미터(−15%p·decay 0.7·임계 0.5·node_min_items 6·severity 포화 0.30·간접 감쇠 0.5)는 06 부록 'B 기본값 시트'로 관리 | B |
 | — (09 §2-6) | 문법 DAG 25~40노드 실제 YAML 제작 | B |

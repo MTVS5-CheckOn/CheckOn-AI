@@ -3,6 +3,7 @@
 > **지위:** member-B 공식 유스케이스 v1. part_a/03_usecases의 형식(상황→흐름→**검증하는 것**→테스트 매핑)만 차용 — 내용은 B의 진단·출제·수정 흐름. 각 시나리오는 [`08_evaluation_plan.md`](08_evaluation_plan.md)의 골든셋·failure 테스트와 1:1 매핑된다.
 >
 > **변경 이력**
+> - v1.2 (2026-07-27): **U15(GraphRAG 근거 확보 실패 — fail-closed) 신설** — 검색 0건·미승인 권리·라이선스 만료·서비스 장애 4경로를 하나의 시나리오로 묶고, 별도 재시도 루프 없이 `item_attempt` 공통 예산만 소모함을 명시([`11`](11_graphrag_knowledge_layer.md) §6). 테스트 매핑에 `golden/problems/graphrag/` 행 추가.
 > - v1.1 (2026-07-15): U1에 충돌 event_id 입력 실패 사례 추가(04 §3.2 확정 규칙 대응).
 > - v1 (2026-07-15): 신규 작성. 입력: `CODEXPROMPT/(염준영)_출제스튜디오_Step3_검증라벨_핑퐁수정_요구사항_v0.md` + 7/15·대화 확정 결정(재시도 총 3회 · 정렬 판정 · 수동 목표 허용 · 직접 수정 재검증 · 수동 예외 불허 · 낙관적 잠금 · 조기 중단 · refine MVP).
 
@@ -161,6 +162,19 @@
 
 ---
 
+### 시나리오 U15 — GraphRAG 근거 확보 실패 (fail-closed)
+
+**상황.** 생성 직전 `ResolveGenerationContext`에서 ① 검색 결과 0건 ② 후보에 `rights_status != approved` 자료 포함 ③ 라이선스가 지난 턴 이후 만료 ④ GraphRAG 서비스 timeout 중 하나가 발생.
+
+1. **어느 경우에도 "근거 없이 일단 생성"으로 넘어가지 않는다** — LLM 호출 0([`11_graphrag_knowledge_layer.md`](11_graphrag_knowledge_layer.md) §6-2).
+2. ②는 `EvidencePack` 생성 자체가 실패한다. 미승인 자료는 색인·임베딩·LLM 전송 어느 경로에도 오르지 않는다.
+3. 해당 문항은 `verification_unavailable`로 저장하고 발행을 차단한다. **강사 지시·일반 승인으로 우회 불가**(U14와 동일 원칙).
+4. 검색 실패를 위한 **별도 재시도 루프를 만들지 않는다** — 문항당 `item_attempt` 총 3회 공통 예산만 소모한다(FIX-06).
+5. 연속 발생이 임계를 넘으면 세트 조기 중단(`verifier_outage` 계열)으로 수렴한다.
+6. 수정 턴(`reuse_only`)에서 ③이 검출되면 턴을 차단하고 **이전 검증본을 현재본으로 유지**한다([`07_refine_policy.md`](07_refine_policy.md) §4).
+
+**검증하는 것:** 근거 확보 실패가 "그럴듯한 문항"으로 메워지지 않음. 미승인·만료 자료의 LLM 전송 0건. 검색 실패가 별도 루프가 아니라 공통 예산을 소모. 만료 자료로 만든 **파생 문항이 역추적 가능**(`GENERATED_FROM`).
+
 ## 시나리오 ↔ 테스트 매핑 (tests/ai/ · golden/ 대응)
 
 | 시나리오 | 테스트 |
@@ -179,5 +193,6 @@
 | U12 | failure/직접 수정 재검증 실패 → 이전 검증본 유지 |
 | U13 | integration/409 충돌 · contract/base_revision_no 필수 |
 | U14 | contract/발행 차단 우회 부재 · contract/노출 필드 부재 |
+| U15 | golden/problems/graphrag(GR1~GR3·GR6·GR10 — [`08`](08_evaluation_plan.md) §9.1) · failure/GraphRAG 장애 → 예산 공유·조기 중단 |
 
 > **참조** — [`01_pipeline.md`](01_pipeline.md) · [`06_quality_gates.md`](06_quality_gates.md)(판정·조기 중단) · [`07_refine_policy.md`](07_refine_policy.md)(U9~U13 상세) · [`08_evaluation_plan.md`](08_evaluation_plan.md)(테스트 정의). 충돌 시 공용 계약 > 본 문서.

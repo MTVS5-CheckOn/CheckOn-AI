@@ -3,6 +3,8 @@
 > **지위:** member-B(염준영) 공식 평가 계획 v1. A의 `part_a/08_evaluation_plan.md` 증보 — 운영 규율(CI 3단·버전 연동·PR 규칙)은 A 문서 §8 준용, part_b 병렬 문서로 유지. A 문서 §1 트리 증보 요청은 [`09_integration_proposals.md`](09_integration_proposals.md) §1-4.
 >
 > **변경 이력**
+> - v1.3 (2026-07-27): **§9.1 GraphRAG 회귀(GR1~GR11) 신설** — 검색 0건·미승인 권리·라이선스 만료·hash 변조·coverage 결손·테넌트 교차·blind 누출·장애·정렬 재현성·수정 턴 재확인([`11`](11_graphrag_knowledge_layer.md) §10 P1-5). GR1~GR3·GR6·GR7은 **미탐 0건 CI 게이트**. §1 트리에 `golden/problems/graphrag/` 추가. B-M2-02·04 확정에 따라 §10 난이도 회귀에 요청 band 불일치 케이스, `t1_light_mode=false` 기준 전체 검증 회귀 편입.
+> - v1.3 (2026-07-27): B-M2-02·04·05 확정 대응 회귀 추가 — 난이도 재생성 스위치·공통 예산 경계·재차 불일치, T1 전체 검증, 수동 목표 첫 성공 문항을 고정.
 > - v1.2 (2026-07-15): 진단 규칙 3건 확정(04 v1.2) 대응 회귀 추가 — 충돌 event_id 진단 중단·정렬 결정론·노드 severity(최댓값/직접 재계산)·overall_low 분모 3분기(§6).
 > - v1.1 (2026-07-15): 파일 번호 이동(05→08) + 확정 반영 — ① 재시도 총 3회 기준으로 기대값 정렬 ② v1 mcq만(코퍼스에서 short 제외) ③ **약점 정렬 회귀**(§3) ④ **refine 회귀**(§9) 신규 ⑤ 조기 중단·수동 목표·장기 장애 failure 추가(§10) ⑥ 최악 비용 논리 6콜·HTTP 12.
 > - v1 (2026-07-15): 입력 초안 `CODEXPROMPT/(염준영)_평가_계획서_증보_v0.md` 정리 — 게이트/진단 장 분리, 결정론·체크포인트·멱등·gateway·보안 테스트.
@@ -25,6 +27,7 @@ golden/
 │  ├─ refine/            # §9 수정 턴 회귀 (07_refine_policy §9 시드)
 │  ├─ security/          # §8 사실성·injection·금칙 우회 (P0)
 │  └─ prompt_snapshots/  # §7 프롬프트 조립 스냅숏
+│  └─ graphrag/          # §9.1 GraphRAG 근거·권리·격리 회귀 (11 §10 P1-5)
 └─ diagnosis/            # §6 진단 그래프·결정론 회귀 (✅ 완료)
 ```
 
@@ -139,6 +142,26 @@ R-1~R-7을 전부 통과하지만 결함이 있는 문항 — ②단의 존재 �
 
 **합격 기준: RF2·RF3(차단 미탐)·RF4·RF5(재검증 우회)·RF7·RF8(충돌) = 0건 실패 — CI 게이트.** 나머지는 FakeProvider 결정론 검증.
 
+## 9.1 GraphRAG 회귀 (`graphrag/` — 신규, [`11_graphrag_knowledge_layer.md`](11_graphrag_knowledge_layer.md) §10 P1-5)
+
+`ContextPack`·`EvidencePack` 조립과 근거 검증이 **판정 권한을 갖지 않으면서 fail-closed로 동작하는가**를 고정한다. 검색 백엔드가 없어도 FakeGraphContextService로 전 케이스 결정론 실행이 가능하다.
+
+| # | 케이스 | 기대 |
+| --- | --- | --- |
+| GR1 | 검색 결과 **0건** | 근거 없이 LLM 호출 0 → `verification_unavailable` · 발행 차단 (11 §6-2) |
+| GR2 | `rights_status != approved` 자료가 후보에 포함 | **Pack 생성 자체 실패** — 색인·임베딩·LLM 전송 경로 전부 차단 (11 §4.2·§6-5) |
+| GR3 | 라이선스 **만료**(`expires_at` 경과) 자료로 만든 기존 문항 | 신규 생성 차단 · 검색 제외 · `GENERATED_FROM` 역추적으로 파생 문항 식별 (11 §9) |
+| GR4 | `source_content_hash`·`quote_hash` **변조** | R-1 실패 — 정규화 후 일치 검사가 hash 대조까지 수행 (06 §1) |
+| GR5 | `EvidencePack.coverage`가 정답 또는 오답 사유를 **덮지 못함** | R-4 실패 · `missing_requirements` 비어 있지 않으면 생성 단계 미진입 (06 §1 · 11 §4.2) |
+| GR6 | **테넌트 교차** 후보가 검색 결과에 유입 | 검색 **후보 단계**에서 차단 — 검색 후 필터링이 아님 (11 §3-4) |
+| GR7 | **blind 누출** — `ContextPack`이 verifier 페이로드로 유입 | `answer`·`rationale`·`evidence` 부재 유지 · 목표 메타만 존재 (§7 스냅숏과 동일 지위) |
+| GR8 | GraphRAG **timeout·장애** | 별도 재시도 루프 없음 · `item_attempt` 총 3회 예산만 소모 · fail-closed (11 §6-3) |
+| GR9 | 동점 score 다수 후보 | **canonical ID 정렬**로 바이트 동일 결과 — 2회 실행 재현성 (11 §3-6) |
+| GR10 | `reuse_only` 수정 턴에서 라이선스가 **지난 턴 이후 만료** | 재확인 단계가 검출 → 턴 차단, 이전 검증본 유지 (07 §4 · 11 §8) |
+| GR11 | `full_retrieve`가 필요한 수정 지시 | `out_of_scope` 차단 · **LLM 호출 0** · 교체·재출제 안내 (07 §3 · 11 §8) |
+
+**합격 기준: GR1~GR3·GR6·GR7 = 0건 실패 — CI 게이트(머지 차단).** 권리·격리·blind는 §8 보안 코퍼스와 동일 지위다. 나머지는 FakeGraphContextService 결정론 검증.
+
 ## 10. 실행·재개·비용 (failure 테스트 — 케이스마다 FakeProvider 시나리오)
 
 | 그룹 | 케이스 | 기대 |
@@ -153,6 +176,12 @@ R-1~R-7을 전부 통과하지만 결함이 있는 문항 — ②단의 존재 �
 | gateway | timeout → 전송 재시도 1회 상한 · verifier ≠ generator 패밀리 강제 · 연속 실패 서킷 | 상한 준수 · 라우팅 우회 불가 · `LLM_CALL.outcome` 분류 정확 |
 | 비용 집계 | 문항당 최악 시나리오(생성 3×전송 2 + 검증 3×전송 2) | **논리 6콜·전송 12요청**으로 집계(06 §4) · role별 분리 · 재생성/전송 회계 미혼입 |
 | 난이도 회귀 | 고정 문항 셋 × difficulty_calib v1 | 추정값 스냅숏 일치 · calib 버전업 시 diff 리뷰 |
+| 난이도 스위치 off | 요청 band와 추정 band 불일치 + `difficulty_regen_enabled=false` | 난이도 사유 추가 생성 0회 · 기존 게이트 결과 유지 |
+| 난이도 재생성 성공 | 첫 검증본 불일치 + 남은 공통 예산 + 1회 재생성본 일치 | 난이도 사유 생성 정확히 1회 · 새 검증본으로 정상 ③ 판정 |
+| 난이도 재차 불일치 | 첫 검증본 불일치 + 1회 재생성본도 불일치 | 추가 생성 없이 `needs_review` · 난이도 배지 사유 기록 |
+| 난이도 예산 경계 | `item_attempt=3`에서 처음 검증 통과했으나 난이도 불일치 | 네 번째 생성 호출 0회 · 즉시 `needs_review` |
+| T1 파일럿 전체 검증 | `t1_light_mode=false`인 T1 정상·불일치 문항 | 모든 문항이 전체 게이트 ②를 실행 · 경량 단축 경로 0회 |
+| 수동 목표 첫 성공 | `teacher_manual`의 첫 슬롯 dropped, 둘째 슬롯 ①② 통과 | 둘째 슬롯만 첫 성공 사유 `needs_review` · 이후 성공 문항에는 같은 사유 없음 |
 
 ## 11. `golden/tagging/` — B 몫 (A 문서 §4의 공동 부분)
 

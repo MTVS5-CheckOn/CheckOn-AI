@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 규격 v1. `src/ai/llm/prompts/templates/problem_generation/`(passage · items · cross_solve)의 사양 원본이며 `contracts/problem_generation.py` 타입 정의 근거. **v1 생성 범위: `mcq`만(7/15 확정)** — `short`·`essay`는 enum 예약(§9).
 >
 > **변경 이력**
+> - v1.2 (2026-07-27): B-M2-01·02 확정 반영 — `difficulty_est`와 `difficulty_fit` 책임을 분리하고, 난이도 추정을 ReleaseDecision 앞으로 이동해 요청 난이도 불일치 분기를 결정론 코드가 판정하도록 명문화. **C6**: B 내부 `ProblemRequest.requested_difficulty` 뼈대 신설(§4.1 — band 값·경계는 B 단독 확정 불가, 공개 응답 노출은 BE+B 합의). **GraphRAG 편입**: `EvidenceAnchor` ↔ `EvidencePack` 대응표 추가(§4.2 — 기존 계약 무변경, [`11`](11_graphrag_knowledge_layer.md) §4.3).
 > - v1.1 (2026-07-15): 파일 번호 이동(03→05) + 7/15·대화 결정 반영 — ① mcq만(short 정규화 규칙은 예약으로 강등) ② `target_source`(수동 목표 출제) ③ SolveResult에 약점 정렬 판정 필드 ④ meta.quota 폐기 ⑤ 재시도 총 3회(item_attempt) ⑥ 서술형(구 B-4) 폐기. 상호 링크 재편.
 > - v1 (2026-07-15): 입력 초안 `CODEXPROMPT/(염준영)_문항_생성_규격서_v0.md` 정리 — 공용 enum 강제·전체 스키마·멱등/버전 필드·injection 방어·T1 자료 요건·사실성 fail-closed.
 >
@@ -82,6 +83,8 @@ class ProblemRequest(BaseModel):
     type_tags: list[TypeTag]
     item_format: ItemFormat              # SUPPORTED_ITEM_FORMATS(={MCQ}) 검증 — taxonomy.py의 v1 예약값 규약
     count: int = Field(ge=1, le=20)
+    requested_difficulty: DifficultyBand | None        # 내부 band 값 — None=무지정(현행 동작 보존)
+                                         # C6 — 값·경계는 B+제품·FE 확정 전 비활성(10 §6)
     target: Literal["cell", "node", "auto"] = "auto"   # 04 문서 §7
     passage: PassageRequest | None       # T2만
     topic_hint: str | None               # §8.2 통과 필수
@@ -90,6 +93,8 @@ class ProblemRequest(BaseModel):
 `ProblemRequest`는 HTTP body DTO가 아니라 공통 헤더와 body를 조립한 **내부 command**다. 외부 `POST /problem-sets` body DTO에는 `request_id`·`idempotency_key`·`tenant_id`를 두지 않고, `X-Request-Id`·`Idempotency-Key`·`X-Tenant-Id`를 단일 원천으로 읽어 이 command에 매핑한다([`09`](09_integration_proposals.md) §2-1 B 확정).
 
 **결과 메타:** `target_source=teacher_manual` 세트는 응답과 저장에 `personalized=false`를 명시 — 화면 "약점 데이터 기반 개인화 아님" 표기의 근거 필드.
+
+**요청 난이도 계약 `[C6 · B-M2-01·02 확정]`:** `requested_difficulty`는 **생성 프롬프트 파라미터**이며 게이트 판정의 1차 근거가 아니다. `DifficultyBand` 타입은 B 내부 계약에 두되 **허용 값과 경계값(1~5 → 하·중·상 매핑)은 B 단독 확정 대상이 아니다**([`10`](10_m2_problem_generation_architecture.md) §6 — B+제품·FE). 공동 확정 전에는 `None`만 허용하는 비활성 계약으로 취급한다. B 내부 결과는 `difficulty_est` 원값을 항상 보존하고, 파생 `band`·`band_config_version` 및 화면 문구의 공개 REST 노출은 [`09`](09_integration_proposals.md)의 BE+B·제품/FE 합의로 분리한다. 종전 계약에는 난이도 필드가 없었으나 [`02_design`](02_design.md) §2의 `PROBLEM_SET.request` jsonb는 이미 "난이도"를 포함한다고 기술해 왔다 — 본 필드 뼈대로 그 불일치를 해소한다.
 
 **v1 단일 영역 제한:** `ProblemRequest.area_tag`는 세트 전체의 measured area 하나다. 모든 `GeneratedItem.area_tag`는 요청값을 에코해야 하며, 서로 다른 measured area를 한 세트에서 생성하지 않는다. source/passage 소재 영역은 이 필드와 별도다. 혼합 지문의 문항별 태깅은 가능하지만, 화법+작문 등 혼합영역 자동 세트 생성은 후속 다중 목표 계약 전까지 지원하지 않는다([`taxonomy`](../policies/taxonomy.md) §2.1).
 
@@ -128,6 +133,19 @@ class Answer(BaseModel):
     correct_no: int                      # mcq 정답 번호 1개 (v1)
     # short용 canonical·accepted_variants·정규화 규칙은 §9 예약 — v1 미구현
 ```
+
+**`EvidenceAnchor` ↔ `EvidencePack` 대응 `[GraphRAG 편입 — 11 §4.3]`:** 위 `EvidenceAnchor` 계약은 **무변경**이다. GraphRAG 도입 후에도 문항이 담는 것은 최소 앵커뿐이며, 출처 버전·해시·라이선스·검색 경로는 [`11`](11_graphrag_knowledge_layer.md) §4.2의 `EvidencePack.anchors[]`가 보관한다.
+
+| `EvidenceAnchor` | `EvidencePack.anchors[]` | 비고 |
+| --- | --- | --- |
+| `kind` | `kind` | 동일 어휘. Pack은 T2용 `source_claim`을 추가로 가진다 |
+| `ref` | `anchor_id` → `ref` | 문항은 `anchor_id`로 가리킨다 |
+| `quote` | `quote` + `quote_hash` | R-1의 원문 일치 검사는 `quote_hash`로 수행([`06`](06_quality_gates.md) §1) |
+| — | `source_id`·`source_version`·`source_content_hash` | 문항 계약에 없고 Pack에만 존재 |
+| — | `license_ref`·`rights_status` | 〃 — `approved`가 아니면 Pack 생성 자체가 실패 |
+| — | `graph_path_edge_ids` | 근거 선택 경로 재현용 |
+
+공용 `EvidenceRef`가 구현되기 전에 이 계약을 임의 변경하지 않는다.
 
 ### 4.3 교차 풀이 출력 — SolveResult (+ 약점 정렬 판정, 확정)
 
@@ -214,7 +232,11 @@ type ProblemGenerationOutcome = Annotated[
 | 선지 변별 | 교차 풀이 확신도가 낮았던 문항 +0.5 | +0~0.5 |
 | 복수 근거 | evidence 2개 이상 통합 요구 +0.5 | +0~0.5 |
 
-교차 풀이 확신도를 난이도 신호로 재활용(추가 비용 0). 실측 보정 전 `difficulty_est`는 표시·정렬용 — 강사에게 "추정" 라벨 명시.
+교차 풀이 확신도를 난이도 신호로 재활용(추가 비용 0). `difficulty_est`는 게이트 ①②를 통과한 뒤 **게이트 ③ ReleaseDecision 전에** 결정론 코드가 계산한다. 그래야 요청 난이도와의 불일치를 게이트 ③이 판정할 수 있다. 실측 보정 전 `difficulty_est`는 추정값이며 강사 화면에는 "추정" 라벨을 명시한다.
+
+`difficulty_fit`은 학생에게 이 문항이 얼마나 적합한지를 나타내는 별도 값이다. v1에서는 실제 익명 풀이 데이터가 없으므로 **항상 null**이며, 값을 계산하거나 분기에 사용하는 코드를 만들지 않는다(B-M2-01).
+
+요청 난이도의 내부 필드와 하·중·상 band 경계는 B+제품·FE 합의 전까지 활성 계약이 아니다. 따라서 해당 값이 확정되기 전과 파일럿 첫 2주에는 `difficulty_regen_enabled=false`를 유지한다. 활성화 후의 재생성·검토 판정은 [`06_quality_gates.md`](06_quality_gates.md) §5를 따른다. 외부 API 응답에 band를 노출하는 변경은 [`09_integration_proposals.md`](09_integration_proposals.md)의 BE+B 합의 대상으로 분리한다.
 
 ## 7. 재생성 지시 규약 — 게이트 실패 피드백 루프
 

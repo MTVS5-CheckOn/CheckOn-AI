@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 설계 v1. 전체 파이프라인은 [`01_pipeline.md`](01_pipeline.md), 본 문서는 시퀀스·ERD·데이터 경계. 우선순위: 공용 계약 > 02_ownership > 99_open_items > part_a > 본 문서.
 >
 > **변경 이력**
+> - v1.1 (2026-07-27): B-M2-01 확정 반영 — `PROBLEM_ITEM`의 문항 자체 난이도(`difficulty_est`)와 학생 적합도(`difficulty_fit`)를 분리하고, v1의 `difficulty_fit`은 항상 null로 고정. **계약↔ERD 간극 2건 해소**: `WEAKNESS_MAP.overall_low` 컬럼 신설(`contracts/diagnosis.py`의 `WeaknessMap.overall_low`가 산출물에 존재하나 ERD에 컬럼이 없던 문제), `PROBLEM_SET.request`의 "난이도" 표기를 신설 필드 `requested_difficulty`([`05`](05_problem_generation.md) §4.1 C6)에 정합. 공용 ERD 편입 스펙은 [`09`](09_integration_proposals.md) §2-4.3.
 > - v1 (2026-07-15): 구 `01_design.md`에서 파이프라인 절을 [`01_pipeline.md`](01_pipeline.md)로 분리하고 본 문서로 개편. 7/15·대화 결정 반영 — Kafka 완료 통지, meta.quota 폐기, v1 mcq만, B-4 폐기(서술형 v1 제외), 핑퐁 수정 MVP 승격, 수동 목표 출제(`target_source`), 낙관적 잠금. 입력 초안: `CODEXPROMPT/(염준영)_파트_설계_v0.md` · `CODEXPROMPT/(염준영)_출제스튜디오_Step3_검증라벨_핑퐁수정_요구사항_v0.md`.
 
 ---
@@ -40,9 +41,10 @@ sequenceDiagram
     PRB->>PRB: 게이트 ① RuleValidation (R-1~R-7)
     PRB->>GW: 게이트 ② BlindCrossSolve (verifier · 다른 모델 패밀리 · blind)
     GW-->>PRB: SolveResult (+정렬 판정) → 코드 대조
+    PRB->>PRB: 난이도 추정 (difficulty_est 계산 · difficulty_fit=v1 null)
+    PRB->>PRB: 게이트 ③ ReleaseDecision (난이도 불일치 포함)
     PRB->>PG: item + VERIFICATION_RESULT 저장 (체크포인트)
   end
-  PRB->>PRB: 게이트 ③ ReleaseDecision · 난이도 추정 (코드)
   PRB->>PG: PROBLEM_SET 저장 — generated | partial_success | failed
   PRB->>SUP: result_ref + lease_generation
   SUP->>K: worker_job.succeeded { job_id, operation, result_ref }
@@ -111,6 +113,7 @@ erDiagram
     jsonb cells "area×type: acc·n·verdict·severity"
     jsonb nodes "노드 verdict — 04 §5.4"
     jsonb propagated "역전파 — root_candidate"
+    boolean overall_low "전면 부진 플래그 — 04 §4 (계약 WeaknessMap.overall_low 대응)"
     timestamptz computed_at "UNIQUE(tenant·student·graph_ver·주차)"
   }
   PASSAGE {
@@ -154,6 +157,7 @@ erDiagram
     jsonb answer
     text rationale "근거 인용 필수"
     numeric difficulty_est
+    numeric difficulty_fit "null 가능 · v1 항상 null(산출·분기 코드 없음)"
     varchar difficulty_calib_ver
     boolean review_badge
     int current_revision_no "낙관적 잠금 기준 (07 §6)"
