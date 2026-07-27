@@ -1,9 +1,10 @@
 name: CI
 
-# 최소 게이트 — ruff·mypy·pytest(fake 기본, integration 마커 제외).
-# 실 PostgreSQL 통합 잡(postgres:16 서비스 + `pytest -m integration`)은 feat/signal-brief-v1
-# 머지 후 별도 추가한다(99_open_items ⑫). 그 브랜치에 docker-compose·greenlet 의존성·
-# NullPool 스캐폴드 수정이 들어 있어, develop 단독으로는 PG 잡 green을 보장할 수 없다.
+# 두 잡:
+#  1) lint-type-test — ruff·mypy·pytest(fake 기본, integration 마커 제외).
+#  2) integration-pg — postgres:16 서비스 + `pytest -m integration`(99_open_items ⑫).
+#     PG 통합 3건(직접 접속·create_all·미가용 시 skip)이 실 PG로 돈다. LLM 스모크 2건은
+#     LOCAL_LLM env·서버가 없어 자동 skip.
 # 소유: 박진희(A) — docs/02_ownership §2.
 
 on:
@@ -34,3 +35,40 @@ jobs:
 
       - name: Pytest (fake 기본 · integration 제외)
         run: uv run pytest
+
+  integration-pg:
+    name: pytest -m integration (postgres:16)
+    runs-on: ubuntu-latest
+    services:
+      # ⚠ 이 값들은 로컬 docker-compose.yml과 일치해야 한다(레포 안 정본 = 이 워크플로).
+      #   docker-compose.yml은 로컬 전용(.gitignore) — postgres:16 · checkon/checkon/checkon_ai · 5432.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: checkon
+          POSTGRES_PASSWORD: checkon
+          POSTGRES_DB: checkon_ai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U checkon -d checkon_ai"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install deps (uv.lock 고정)
+        run: uv sync --frozen
+
+      - name: Pytest -m integration (실 PG)
+        # PG 통합 테스트는 database_url로 직접 접속(create_all로 스키마 생성 — alembic 불필요).
+        # LLM 스모크 2건은 LOCAL_LLM_* 미설정이라 skip.
+        env:
+          DATABASE_URL: postgresql+asyncpg://checkon:checkon@localhost:5432/checkon_ai
+        run: uv run pytest -m integration
