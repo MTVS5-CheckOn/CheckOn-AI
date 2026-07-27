@@ -120,10 +120,11 @@ def test_default_provider_is_fake() -> None:
     assert isinstance(build_brief_provider(), FakeBriefProvider)
 
 
-def test_openai_compat_not_wired_yet() -> None:
-    """어댑터 미머지 — openai_compat 선택 시 NotImplementedError(기본 fake)."""
-    with pytest.raises(NotImplementedError):
-        build_brief_provider(BriefingSettings(llm_provider="openai_compat"))
+def test_openai_compat_wired() -> None:
+    """openai_compat 선택 시 실 어댑터를 반환한다(#15 develop 머지). 생성만 — 접속 없음(lazy)."""
+    provider = build_brief_provider(BriefingSettings(llm_provider="openai_compat"))
+    assert isinstance(provider, LLMProvider)
+    assert provider.name == "local-openai-compat"
 
 
 # ── 분기표 #8 fake = 신호 유형 기본 템플릿, fallback_used=False ──

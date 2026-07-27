@@ -82,13 +82,15 @@ class FakeBriefProvider:
 
 
 def build_brief_provider(settings: BriefingSettings | None = None) -> LLMProvider:
-    """settings로 provider 선택. 기본 fake — openai_compat은 어댑터 PR 머지 후 활성."""
+    """settings로 provider 선택. 기본 fake(CI·데모) — "openai_compat"이면 실 로컬 LLM.
+
+    벤더 독립 유지: openai import는 어댑터(llm/providers/openai_compat) 안에만 있고,
+    여기선 그 구현을 선택만 한다(지연 import — fake 경로는 openai를 건드리지 않는다).
+    어댑터 PR(#15) develop 머지로 배선 활성(99 15).
+    """
     settings = settings or get_briefing_settings()
     if settings.llm_provider == _OPENAI_COMPAT:
-        # 어댑터 PR(llm/providers/openai_compat) 머지 후 아래 두 줄로 배선:
-        #   from ai.llm.providers.openai_compat import OpenAICompatProvider
-        #   return OpenAICompatProvider()
-        raise NotImplementedError(
-            "openai_compat provider는 어댑터 PR 미머지 — 99 15 후속(현재 기본 fake)"
-        )
+        from ai.llm.providers.openai_compat import OpenAICompatProvider
+
+        return OpenAICompatProvider()
     return FakeBriefProvider()
