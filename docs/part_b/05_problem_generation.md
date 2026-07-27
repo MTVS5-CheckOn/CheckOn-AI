@@ -203,7 +203,8 @@ type ProblemGenerationOutcome = Annotated[
 ```
 
 - `rejected_insufficient`는 자동 개인화 데이터가 부족해 세트를 만들기 전에 정상 종료한 결과다. 예외나 워커 실패가 아니며 HTTP 200으로 반환한다. 세트가 생성되지 않았으므로 `set_id`와 수량 필드는 없다.
-- `processed_count == len(items)`와 `requested_count == processed_count + unstarted_count`를 항상 만족한다. 진행 결과는 문항 체크포인트 경계에서만 기록해 처리 중 슬롯이 별도로 남지 않게 한다.
+- `processed_count == len(items)`와 `requested_count == processed_count + unstarted_count`를 항상 만족한다.
+- **`ItemResult.review_reason` 신설 `[결정안 BAND-5·KEEP-9]`** — 현재 validator가 `needs_review`에 `failure_reason` 기록을 금지하므로([`06`](06_quality_gates.md) §5의) **배지 사유를 담을 필드가 없다.** `failure_reason`(폐기 사유)과 분리된 별도 enum을 둔다: `low_confidence` · `area_mismatch` · `t3_literature` · `diagnostic_purpose` · `manual_target_first` · **`difficulty_band_mismatch`**. 함께 `difficulty_est`·`difficulty_band`도 `ItemResult`에 싣는다. 진행 결과는 문항 체크포인트 경계에서만 기록해 처리 중 슬롯이 별도로 남지 않게 한다.
 - `generated`는 요청 문항을 모두 처리하고 모두 `verified|needs_review`인 경우만 허용한다. `partial_success`는 성공 문항이 하나 이상이고 실패 문항 또는 미처리 문항이 있을 때, `failed`는 성공 문항이 없을 때만 허용한다.
 - 최종 결과에 `unstarted_count > 0`이면 조기 중단 원인을 `stop_reason`에 반드시 기록한다. `verification_unavailable`과 `partial_success`는 결과를 정상 확정한 워크플로의 도메인 상태이며, 그 자체를 워커 실행 실패로 승격하지 않는다.
 
@@ -222,7 +223,11 @@ type ProblemGenerationOutcome = Annotated[
 
 ## 6. 난이도 추정 초기값 — DIFFICULTY_CALIB v1 default
 
-`difficulty_est ∈ [1,5]` = 기본 1 + Σ가중치, 전부 결정론. `[전 항목 잠정 — 파일럿 실측 보정]` 값 관리는 [`06_quality_gates.md`](06_quality_gates.md) 부록.
+`difficulty_est` = 기본 1 + Σ가중치, 전부 결정론.
+
+> **⚠️ 실제 범위 정정 `[2026-07-27]`** — 종전 표기 `∈ [1,5]`는 **가중치 합계와 맞지 않는다.** 아래 5요인을 전부 더해도 상한은 **4.5**이고, **T1은 지문이 없어 길이 가중치가 항상 0이므로 `1.0~3.5`**(가능값 6개: 1.0·1.5·2.0·2.5·3.0·3.5)다. M2 v1은 T1만 다루므로 **`[1,5]` 기준으로 하·중·상을 3등분하면 T1에는 "상"이 존재하지 않는다.**
+>
+> 그래서 밴드 경계는 **트랙별 시트 행**으로 관리한다 — `verify_config.difficulty_band_map.T1`([`06`](06_quality_gates.md) 부록 · `[결정안 BAND-1]`). 산식 자체는 `[잠정]`이므로 파일럿 실측 전에 재설계하지 않는다. `[전 항목 잠정 — 파일럿 실측 보정]` 값 관리는 [`06_quality_gates.md`](06_quality_gates.md) 부록.
 
 | 요인 | 규칙 | 가중 |
 | --- | --- | --- |

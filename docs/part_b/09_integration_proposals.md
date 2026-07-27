@@ -186,13 +186,13 @@ M2 문제생성 착수에 필요한 A 승인·작업을 한 표로 모았다. �
 
 | # | A가 해야 하는 일 | 상세 | 유형 | 승인되면 풀리는 것 | 상태 |
 | --- | --- | --- | --- | --- | --- |
-| **A-1** | **B 7테이블의 `docs/06_erd.md` 편입 승인** + 이 PR 한정 `06_erd.md` 편집 go-ahead | §2-4 · §2-4.2 | 문서(A 소유) | B 저장 계층 전체. 미승인 시 `problem_generation` 영속화 불가 | ☐ **P0** |
+| **A-1** | **B 8테이블의 `docs/06_erd.md` 편입 승인** + 이 PR 한정 `06_erd.md` 편집 go-ahead `[7/27 정정: 7 → 8테이블 — KEEP-4로 ITEM_CANDIDATE 추가]` | §2-4 · §2-4.2 · §2-4.6 | 문서(A 소유) | B 저장 계층 전체. 미승인 시 `problem_generation` 영속화 불가 | ☐ **P0** |
 | **A-2** | `EVIDENCE_ITEM.owner_kind` += `problem_item` 양자 승인 | §2-3 마지막 행 | 공용 계약 | `PROBLEM_ITEM.rationale` 근거 저장. 공용 확장 14항목 중 **유일한 미승인 잔여** | ☐ **P0** |
-| **A-3** | `tests/ai/db/test_erd_model_parity.py`의 `== 26` → `== 33` 상수 변경 동의 | §2-4.2 | 테스트(양자 성격) | A-1과 같은 PR. 미변경 시 CI 적색 | ☐ P0 |
+| **A-3** | `tests/ai/db/test_erd_model_parity.py`의 `== 26` → **`== 34`** 상수 변경 동의 `[7/27 정정: 33 → 34]` | §2-4.2 · §2-4.6 | 테스트(양자 성격) | A-1과 같은 PR. 미변경 시 CI 적색 | ☐ P0 |
 | **A-4** | **`VersionSet` GraphRAG 3필드 확장** 양자 승인 | §2-12 | 공용 계약 | GraphRAG 실행 재현 키. **`graph_version` 재사용 금지가 핵심** | ☐ **P0** |
 | **A-5** | **evidence resolver 주입 시그니처 확정** (기존 B-7 + GraphRAG 경유 해소 병합) | §2-12 · §3 B-7 | `evidence/`(A 소유) | 게이트 ① R-1·R-4의 Graph path·quote·license 검증 | ☐ **P0** |
 | **A-6** | RLS 구현 부재 판정 — 문서 표현 정정 vs 실제 도입 | §2-4.5 | 공용 정책 | B 7테이블의 격리 방식 확정. **B는 기존 26테이블과 동일 패턴으로 진행 중** | ☐ 확인 |
-| **A-7** | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** 판정 | [`10`](10_m2_problem_generation_architecture.md) §4.1 C3 | B 초안 → A+B | 슬롯 후보 보존이 필요하면 `langgraph_state.md` §2.4 영향. **확정 전까지 B가 해당 플래그를 off로 유지** | ☐ 확인 |
+| **A-7** | **`[7/27 범위 축소]`** `docs/policies/langgraph_state.md` §2.4의 `ProblemGenerationState` 코드블록에 **필드 2줄 추가 리뷰** — `fallback_ref: str \| None` · `difficulty_regen_used: bool`. `state_schema_version`은 **`v1` 유지**(기본값 보유로 기존 체크포인트 그대로 재개 · 올리면 §3.2에 따라 진행 중 세트 전량 재기동) | §2-4.6 · [`10`](10_m2_problem_generation_architecture.md) §4.1 C3 | 공용 정책(A 리뷰) | 종전 "보존 규칙을 정해달라"에서 축소됨 — **B가 KEEP-1~9로 설계를 닫았고**, 본문은 `ITEM_CANDIDATE`에 두고 state엔 포인터만 둬 §2.4의 "본문 미복제" 원칙을 지킨다 | ☐ 확인 |
 | **A-8** | §2-10 문서 동기화 **잔여 4건** — `99_open_items`(B-2 완료 표기) · `part_a/08 §1`(`golden/diagnosis/` 행) · `02_ownership §5`(`golden/diagnosis/` 소유 행) · `00_INDEX`(part_b 링크 절) | §2-10 | 문서(A·공용) | 승인·구현이 끝난 항목의 문서 지연분 | ☐ 잔여 |
 | **A-9** | 7/22 감지·API 리뷰 잔여 회신 — ongoing 상한 제외 후 요약 동기화 · 병합 lifecycle 경계 · 회귀/데모 · 공용 실패 meta · 민감 detail 제거 `[P0]` | §1-7 · §1-8 · §2-11 | A(+BE) | B 무관하나 공용 wire 확정에 필요 | ◐ 진행 |
 | **A-10** | **"모든 LLM 호출은 gateway 경유 — 예외 없음" 규칙을 `docs/03_coding_rules.md`로 승격** (A 제안·B 동의). 현재 이 규칙은 [`01`](01_pipeline.md) §5에만 있어 B 규율로 읽힌다. **확인된 사실:** `03_coding_rules.md`에 gateway·LLM 호출 관련 조항이 **0건**이라 승격할 자리가 비어 있다. 과도기(브리핑 #22 어댑터 직결) 조건 2건 — **종료 시점 = ①+② 머지** · **그때까지 신규 직결 추가 금지** | §1-10 | 문서(A 소유) | 규칙의 적용 범위가 A·B 공용으로 확정됨. 승격 전에는 A 소비자의 직결이 규율 위반인지 해석이 갈린다 | ☐ 신규 |
@@ -319,6 +319,29 @@ D-② ERD-parity 안전망은 `tests/ai/db/test_erd_model_parity.py`의 ERD↔`d
 | `WEAKNESS_MAP` | `UNIQUE(tenant_id, student_ref, graph_version, 주차)` — 주차 컬럼 표현을 `computed_at` 파생이 아니라 명시 컬럼으로 둘지 확정 필요 | §2 주석 |
 | `PROBLEM_SET` | `request` jsonb가 이미 **"난이도"를 포함**한다고 적혀 있으나 `contracts/problem_generation.py`의 `ProblemRequest`에는 난이도 필드가 없다(확인된 간극). 요청 난이도 필드 신설과 함께 정합 | §2 · [`05`](05_problem_generation.md) §4.1 |
 | `PROBLEM_ITEM` | **`difficulty_fit` numeric nullable 추가** — 절대 난이도(`difficulty_est`)와 학생 적합도를 분리한다. **v1은 값을 산출하지 않고 항상 null이며 처리 분기 코드를 만들지 않는다** | B-M2-01 = A `[2026-07-27 B 확정]` · 공용 ERD·ORM 편입은 A+B 승인 대상 · [`04`](04_curriculum_graph.md) §1(문항 단위 실측은 B 출제분 제출부터 축적) |
+
+#### 2-4.6 `ITEM_CANDIDATE` — 8번째 테이블 `[KEEP-4 확정 2026-07-27]`
+
+난이도 사유 재생성 시 **첫 검증본 보존**이 확정되면서(KEEP-1) 슬롯 후보 스냅숏 저장소가 필요해졌다. **`PROBLEM_ITEM`에 넣을 수 없는 구조적 이유**가 있다 — `PROBLEM_ITEM`은 슬롯당 1행이고 후보는 `attempt_no`별로 여러 행이라 **키 차수가 다르다.**
+
+| 컬럼 | 타입 | 비고 |
+| --- | --- | --- |
+| `id` | uuid PK | |
+| `set_id` | uuid FK → `PROBLEM_SET` | |
+| `tenant_id` | varchar | 전 테이블 공통 |
+| `slot_index` | int | `ProblemGenerationState.cursor` 대응 |
+| `attempt_no` | int | 1..3 — `item_attempt` 회차 |
+| `snapshot` | jsonb | `GeneratedItem` 전문(불변) |
+| `gate_summary` | jsonb | ①② 판정 결과·confidence·정렬 판정 |
+| `difficulty_est` | numeric | 후보 시점 추정값 |
+| `created_at` | timestamptz | |
+
+- **UNIQUE `(tenant_id, set_id, slot_index, attempt_no)`** — `langgraph_state.md` §2.4의 "슬롯 저장 키는 결정론적이며 저장소에서 unique/upsert로 강제"를 후보 축까지 확장한 것.
+- **불변 스냅숏**이다. 생성 후 갱신하지 않는다.
+- 슬롯 확정 시 승자를 `PROBLEM_ITEM`으로 승격하고, **state의 `fallback_ref`는 clear하되 이 행은 보존**한다(KEEP-8 — 난이도 회귀·골든셋 증보 재료).
+- 기각한 대안: `ITEM_REVISION`(강사 수정 이력이라 화면에 오노출) · `VERIFICATION_RESULT.detail`(관측 상세지 본문 저장소 아님) · state 인라인(§2.4 위반) · `PROBLEM_ITEM` 후보 행(수량 불변식 오염).
+
+**연쇄 영향:** B 테이블 **7 → 8**, 공용 ERD **26 → 34**, `test_erd_model_parity.py` 상수 **`== 34`**. A-1·A-3에 반영했다.
 
 #### 2-4.4 저장소 ORM 규약 (편입 시 준수 — `db/models.py`·`db/base.py`에서 확인)
 

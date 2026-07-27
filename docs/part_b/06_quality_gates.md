@@ -158,7 +158,9 @@ A threshold 시트 방식 준용: `verify_config` 버전 행(이전 버전 보�
 | `t1_light_mode` | **false** | §1 T1 특칙 — 파일럿 첫 2주 전 문항 전체 검증 |
 | `difficulty_regen_enabled` | **false** | §5 — 파일럿 첫 2주 난이도 사유 재생성 비활성 |
 | `difficulty_regen_max` | **1** (확정) | §5 — `regen_max`와 별도 예산이 아니라 총 3회 안의 난이도 사유 상한 |
-| `difficulty_band_tolerance` | null | 하·중·상 band 경계 B+제품·FE 확정 전 활성화 금지 |
+| `difficulty_band_tolerance` | **1** `[결정안 BAND-3]` | 인접 밴드는 허용, **상↔하(2단계)만** 재생성 트리거. 산식이 `[잠정]`이라 경계 오차로 예산을 태우지 않는다 |
+| `difficulty_band_map.T1` | `low: 1.0~1.5` · `medium: 2.0~2.5` · `high: 3.0~3.5` `[결정안 BAND-1]` | **트랙별** 밴드 경계. T1은 지문이 없어 길이 가중치가 항상 0이므로 실제 범위가 `1.0~3.5`다(05 §6) |
+| `difficulty_band_map.T2`·`.T3` | 미정 | 트랙 개방 시 행 추가. 기존 T1 경계는 건드리지 않는다 |
 | `diag_relative_cut_pp` | −15 | 진단 weak 판정(04 §4) |
 | `diag_decay` | 0.7 | 역전파 감쇠(04 §5.4) |
 | `diag_propagate_threshold` | 0.5 | root_candidate 임계(04 §5.4) |
