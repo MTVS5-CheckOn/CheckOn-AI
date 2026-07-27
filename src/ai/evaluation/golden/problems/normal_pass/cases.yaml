@@ -1,0 +1,144 @@
+schema_version: problem-golden.v1
+suite: normal_pass
+cases:
+  - case_id: N1
+    title: T1 fact 정상 문항
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: &draft
+      stem: 다음 문법 자료에 대한 설명으로 가장 적절한 것은?
+      choices:
+        - 첫 번째 설명 초안
+        - 두 번째 설명 초안
+        - 세 번째 설명 초안
+        - 네 번째 설명 초안
+        - 다섯 번째 설명 초안
+      answer_draft: 1
+      rationale_draft: 정상 통과 대조군 해설 초안 — 전문가 검수 대기
+      evidence_draft: [grammar.draft.normal.001]
+      difficulty_draft: null
+    mutation:
+      code: normal_t1_fact
+      detail: T1 fact 대표 정상 조건을 유지한다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 1
+      notes: 게이트 ①②③을 모두 통과한다.
+  - case_id: N2
+    title: T1 concept 정상 문항
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normal_t1_concept
+      detail: T1 concept 대표 정상 조건을 유지한다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 1
+      notes: 전체 blind 검증을 생략하지 않는다.
+  - case_id: N3
+    title: T1 infer 정상 문항
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normal_t1_infer
+      detail: T1 infer 대표 정상 조건을 유지한다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 1
+      notes: t1_light_mode false에서 전체 검증을 통과한다.
+  - case_id: N4
+    title: T1 critic 정상 문항
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normal_t1_critic
+      detail: T1 critic 대표 정상 조건을 유지한다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 1
+      notes: 정상 고난도 초안을 오탐하지 않는다.
+  - case_id: N5
+    title: T2 fact 정상 문항
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normal_t2_fact
+      detail: 승인 지문 안에서 fact 문항이 완결된다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 1
+      notes: T2 fact 정상 대조군이다.
+  - case_id: N6
+    title: T2 infer 정상 문항
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normal_t2_infer
+      detail: 승인 지문 안에서 infer 문항이 완결된다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 1
+      notes: T2 infer 정상 대조군이다.
+  - case_id: N7
+    title: T2 critic 정상 문항
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normal_t2_critic
+      detail: 승인 지문 안에서 critic 문항이 완결된다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 1
+      notes: T2 critic 정상 대조군이다.
+  - case_id: N8
+    title: T2 concept 정상 문항
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normal_t2_concept
+      detail: 승인 지문 안에서 concept 문항이 완결된다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 1
+      notes: T2 concept 정상 대조군이다.
+  - case_id: N9
+    title: T3 문학 검토 배지 정상 문항
+    track: T3
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normal_t3_review_badge
+      detail: 공유 저작물 범위 안에서 문항을 만들고 T3 검토 배지를 적용한다.
+    expected:
+      decision: needs_review
+      rule_ids: []
+      llm_calls: 1
+      notes: t3_literature 검토 사유가 정상 기대값이다.
+  - case_id: N10
+    title: T3 탐색 출제 검토 배지 정상 문항
+    track: T3
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normal_t3_diagnostic_review_badge
+      detail: suspect 목표의 탐색 출제로 diagnostic_purpose 배지를 적용한다.
+    expected:
+      decision: needs_review
+      rule_ids: []
+      llm_calls: 1
+      notes: 탐색 목적 검토 사유가 정상 기대값이다.

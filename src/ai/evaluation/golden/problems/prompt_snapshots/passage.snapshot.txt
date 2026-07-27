@@ -1,0 +1,9 @@
+PROMPT_ID=pg.passage.v1
+PROMPT_VERSION=v1
+REVIEW_STATUS=expert_review_pending
+
+context_pack={"context_pack_id":"00000000-0000-4000-8000-000000000301","operation":"generate","target_skill_node_ids":["language.grammar.morpheme.concept"],"evidence_pack_id":"00000000-0000-4000-8000-000000000302"}
+passage_request={"domain":"science","word_count":700,"paragraph_count":3,"topic_hint":"형태소 분석을 돕는 중립적 언어 자료","topic_hint_boundary":"structured_data_only"}
+banned_topics={"version":"pg-banned-v1"}
+
+기대: PassageDraft 구조화 출력. 교육 내용은 전문가 검수 대기.
