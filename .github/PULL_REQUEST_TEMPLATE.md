@@ -1,6 +1,6 @@
 <!--
-⚠ 양자 승인 7파일(contracts/execution·llm·gates·evaluation·taxonomy ·
-   evidence/models.py의 EvidenceRef · runtime/metrics.py 이벤트 스키마) 또는
+⚠ 양자 승인 12곳(`docs/02_ownership.md` §4 정본: 공통 contracts 6 ·
+   evidence/models · runtime/metrics · api/app·envelope · db/models·base) 또는
    상대 capability 파일을 건드렸다면, 아래 첫 줄에 이렇게 적어주세요 —
    03_coding_rules §8
 

@@ -19,6 +19,7 @@ sequenceDiagram
   participant T as 강사 (백엔드 화면)
   participant BE as 백엔드
   participant API as AI 앱 계층
+  participant SUP as 결정론 슈퍼바이저
   participant PRB as 워커③ problem_generation
   participant DIA as ai/diagnosis
   participant GW as ai/llm 게이트웨이
@@ -26,12 +27,13 @@ sequenceDiagram
   participant K as Kafka (job-events)
   T->>BE: 출제 요청 (Step 2 조건)
   BE->>API: POST /problem-sets [제안] + Idempotency-Key
+  API->>SUP: problem_set.generate Job enqueue
   API-->>BE: 202 { job_id } — queued
   API->>PG: AI_RUN 기록 — 공통 VersionSet 6종 + B nullable 4종 + snapshot_hash<br/>(B 버전은 WEAKNESS_MAP·PROBLEM_ITEM에도 저장 · 09 §2-9 승인 완료)
   API->>DIA: 약점 지도 산출/조회 (target_source=weakness_auto)
   Note over DIA: 데이터 부족 → rejected_insufficient(정상 상태)<br/>수동 목표(teacher_manual) 요청은 진단 생략
   DIA->>PG: WEAKNESS_MAP upsert
-  API->>PRB: 워커 기동 (request + 약점 목표 동결) — generating
+  SUP->>PRB: lease + request_ref + checkpoint_ref — generating
   loop 문항별 (item_attempt ≤ 3 · 조기 중단 판정 포함)
     PRB->>GW: 생성 (generator · 구조화 출력)
     GW-->>PRB: GeneratedItem (rationale+근거)
@@ -42,7 +44,8 @@ sequenceDiagram
   end
   PRB->>PRB: 게이트 ③ ReleaseDecision · 난이도 추정 (코드)
   PRB->>PG: PROBLEM_SET 저장 — generated | partial_success | failed
-  PRB->>K: problem_set.completed [제안] { job_id, status, 성공/실패 수 }
+  PRB->>SUP: result_ref + lease_generation
+  SUP->>K: worker_job.succeeded { job_id, operation, result_ref }
   K->>BE: consume → Step 3 화면 갱신 (검증 라벨 표시)
   T->>T: 선별·수정·승인 ✋ (백엔드 HITL — 승인 전 학생 미노출)
 ```
@@ -78,7 +81,7 @@ sequenceDiagram
 
 ## 2. ERD 증보 — AI PostgreSQL (B 소유 테이블 **7종**)
 
-**원칙(`docs/06_erd.md`와 동일):** 산출물·실행 메타·캐시만. `…_ref`는 논리 참조. 전 테이블 `tenant_id`+RLS. 공용 테이블(AI_RUN·LLM_CALL·GATE_RESULT·EVIDENCE_ITEM)은 A의 24테이블 재사용. 공용 ERD 반영은 승인 요청으로 분리(09 §2-4).
+**원칙(`docs/06_erd.md`와 동일):** 산출물·실행 메타·캐시만. `…_ref`는 논리 참조. 전 테이블 `tenant_id`+RLS. 공용 테이블(AI_RUN·LLM_CALL·GATE_RESULT·EVIDENCE_ITEM)은 현재 애플리케이션 정본 26테이블을 재사용한다. 아래 B 전용 7테이블의 공용 ERD 편입은 별도 승인 요청(09 §2-4)이다.
 
 > **공용 enum 확장(09 §2-3):** `GATE_RESULT.owner_kind` += `problem_set` · `GATE_RESULT.gate_name` += `RuleValidation|BlindCrossSolve|ReleaseDecision` — ✅ **A+B 승인·`d5283d0` 구현·공용 ERD 문서 동기화 완료**. 잔여: `EVIDENCE_ITEM.owner_kind` += `problem_item`만 `evidence/models.py` 구현 시 양자 승인.
 
@@ -220,6 +223,6 @@ erDiagram
 1. **문법 DAG `curriculum_graph.yaml` 25~40노드 실작성**
 2. `golden/problems/`·`golden/diagnosis/` 실파일화(08 §1) — CI 게이트가 구현보다 먼저
 3. `pg_banned_topics.yaml` + B 기본값 시트(`verify_config` v1) 실파일화
-4. 슈퍼바이저 state 스키마(langgraph_state §5) B 리뷰 회신 — [`01_pipeline.md`](01_pipeline.md) §6 초안
-5. B API 증분 + `problem_set.*` Kafka 이벤트 BE 리뷰(D-10) — 09 §2-1
+4. ✅ 슈퍼바이저 실행 계약(langgraph_state §5) B 리뷰 완료 — [`01_pipeline.md`](01_pipeline.md) §6
+5. B API 증분 + 공통 `worker_job.*`의 `result_ref` 조회 방식 BE 리뷰(D-10) — 09 §2-1
 6. T1 기준 자료 후보 조사(D-03) — 데이터 자산 검증 우선

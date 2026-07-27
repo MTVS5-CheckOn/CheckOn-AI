@@ -1,6 +1,6 @@
 # [체크온] curriculum_graph 사양서 v1 — 진단 입력 계약 · 그래프 3종 · 약점 판정 · 결정론 규격
 
-> **지위:** member-B(염준영) 공식 사양 v1. `src/ai/diagnosis/`(skill_graph.py · diagnoser.py)와 `diagnosis/data/curriculum_graph.yaml`의 사양 원본. 영역 어휘는 `contracts/taxonomy.py` 준수 — **6영역 enum은 7/15 확정**, 경계 사례 7건 판정(B-3 잔여)만 남음.
+> **지위:** member-B(염준영) 공식 사양 v1. `src/ai/diagnosis/`(skill_graph.py · diagnoser.py)와 `diagnosis/data/curriculum_graph.yaml`의 사양 원본. 영역 어휘는 `contracts/taxonomy.py` 준수 — **6영역 enum과 측정 대상 기준 경계 사례 7건은 7/27 확정**.
 >
 > **변경 이력**
 > - v1.2 (2026-07-15): 구현 착수 전 규칙 3건 확정 — ① 중복 이벤트: 완전 동일 재수신만 dedupe, 필드 상이 시 진단 중단(§3.2) ② 노드 severity 정의: suspect=연결 weak 셀 최댓값·weak_confirmed=직접 재계산+직접 weak 기준 명시(§5.1~§5.2) ③ overall_low 분모=판정 가능 셀(§4).

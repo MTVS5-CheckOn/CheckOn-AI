@@ -82,6 +82,7 @@ verifier 장애·기준 자료 장애·사실검증 수단 부재(`source_unveri
 - **발행은 차단** — 성공적 재검증 전까지 학생 노출 불가, 강사 승인 대상 목록에도 미등재. **강사 지시·일반 승인·"직접 검토 완료" 확인 어떤 경로로도 우회 불가**(확정 — 수동 예외 승인 불허). 완화 수단은 게이트웨이의 verifier 폴백 패밀리.
 - 재검증: 장애 해소 후 저장본에 ②를 재실행(배치·수동 트리거) — ① 재실행 불요(입력 불변), 성공 시 ③으로 진행.
 - 장애가 세트에 걸치면 조기 중단 판정(§6)과 연동 — "잠시 후 재검증" 문구는 백엔드 폴백 규약(error_codes §6).
+- **결과 계약:** `verification_unavailable`은 검증을 통과했다는 뜻이 아니지만, 문항 상태를 정직하게 저장한 정상 도메인 결과다. 세트는 성공 문항 수에 따라 `partial_success|failed`로 확정하며, 결과 레코드를 확정한 워크플로를 이 상태만으로 실행 실패 처리하지 않는다.
 
 ## 4. 재시도 예산 — item_attempt 공통 예산 (확정: 총 3회)
 
@@ -108,7 +109,7 @@ verifier 장애·기준 자료 장애·사실검증 수단 부재(`source_unveri
 | 조건 | 근거 |
 | --- | --- |
 | ② low_confidence 마크(풀이 또는 정렬 confidence 경계) | 맞혔지만 확신 낮음 = 경계 문항 |
-| 경계 태그 | taxonomy §2 경계 사례 패턴(B-3 잔여 판정과 연동) |
+| 경계 판정의 낮은 confidence 또는 source/passage와 measured area 불일치 | taxonomy §2의 확정 원칙에 따라 자동 확정하지 않고 강사 확인 |
 | T3(문학) 전체 `[잠정 — 파일럿 초기]` | 작품 해석 개입 리스크 — 승인율 축적 후 완화 논의 |
 | 탐색 출제(suspect·unknown 타겟) | [`04_curriculum_graph.md`](04_curriculum_graph.md) §7 — 진단 목적 플래그 |
 | 수동 목표 세트(`teacher_manual`) 첫 문항 `[잠정]` | 비개인화 출제 — 목표 적합성을 사람이 확인 |
@@ -127,7 +128,9 @@ verifier 장애·기준 자료 장애·사실검증 수단 부재(`source_unveri
 | 시간 상한 | 비동기 총 상한(계약 §2.4, 5분) 도달 전 자체 데드라인 초과 | `time_budget_exceeded` |
 | R-5 지문 오염 | 금칙이 지문 단위 | `banned_topic_passage` |
 
-- 세트 최종 상태: 전부 성공 `generated` · 일부 성공 `partial_success`(성공·실패 수와 사유 반환) · **성공 0개 `failed`**(원인 + 재시도 가능 여부 반환). **조용한 수량 미달 금지** — 실패 문항을 숨기지 않는다.
+- 수량 불변식: `processed_count == len(items)` · `requested_count == processed_count + unstarted_count`. 최종 결과에 미처리 문항이 남으면 `unstarted_count > 0`과 `stop_reason`을 함께 기록한다.
+- 세트 최종 상태: 전부 처리하고 전부 성공 `generated` · 성공이 하나 이상이고 실패 또는 미처리 문항이 있으면 `partial_success` · **성공 0개 `failed`**. `verification_unavailable`은 세트 성공 문항으로 세지 않지만 누락하지 않고 `items`에 포함한다. **조용한 수량 미달 금지** — 실패·미처리 문항을 숨기지 않는다.
+- `partial_success|failed`는 결과를 확정한 정상 워크플로의 도메인 상태다. 체크포인트나 결과 자체를 기록하지 못한 실행 장애와 구분한다.
 - 재생성 소진(`generation_exhausted`)과 R-5 폐기는 사유 분리 표기 — 금칙 오염은 품질이 아니라 안전 문제.
 - 중단돼도 완료분은 보존(체크포인트) — 강사는 성공분으로 선별을 시작할 수 있다.
 
@@ -170,4 +173,4 @@ A threshold 시트 방식 준용: `verify_config` 버전 행(이전 버전 보�
 | D-03 | T1 기준 자료 확정 — R-1 대조 선결 | B+기획 |
 | D-06 / B-5 | verifier 모델 패밀리 벤치마크·공급자 조합·폴백 패밀리 | A+B |
 | — | R-4 휴리스틱·정렬 판정 오탐률 — 파일럿 측정 후 보강 | B |
-| B-3 잔여 | 경계 태그 배지 기준(경계 사례 7건 판정) | A+B |
+| B-3 완료 | 경계 사례 7건 측정 대상 기준 확정(`taxonomy` §2) | A+B |

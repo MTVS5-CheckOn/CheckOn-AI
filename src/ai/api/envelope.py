@@ -1,6 +1,6 @@
 """공통 응답 envelope 조립 — 04_api_contract.md §2.2.
 
-소유: 공통 계약 (여러 라우터 공용 — ⚠ B 확인 대기, 02_ownership §5 v3).
+소유: 공통 계약 (여러 라우터 공용 — A+B 확인 완료, 02_ownership §5 v3).
 
 응답 형태(§2.2): {data, error, meta:{execution_id, versions}}.
 versions 키는 VersionSet 필드에서 `_version` 접미사를 뗀 이름이다(pipeline·engine·…).

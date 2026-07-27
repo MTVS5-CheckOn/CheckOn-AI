@@ -17,7 +17,7 @@
 1. 백엔드가 alias 스냅숏과 함께 `POST /problem-sets`(202, 멱등키).
 2. 진단이 약점 지도 산출 — `weak` 셀·`root_candidate` 노드에 근거 셀 참조 동반, 목표 동결(`weakness_map_id`).
 3. 문항별 생성→게이트 ①②③→체크포인트 커밋. 전 문항 통과 시 세트 `generated`.
-4. Kafka `problem_set.completed` → Step 3 화면에 검증 라벨 표시.
+4. Kafka `worker_job.succeeded`의 `result_ref`로 세트를 조회 → Step 3 화면에 검증 라벨 표시.
 5. 강사 선별·승인 ✋ 전까지 학생 노출 0.
 
 **검증하는 것:** 동일 스냅숏·버전 재실행 시 바이트 동일(재현성 — 이벤트 입력 순서를 섞어도 동일, event_id 정렬 집계). 근거 없는 verdict 저장 실패. 같은 멱등키+같은 바디 재요청은 기존 상태·결과 200·중복 생성 0, 같은 키+다른 바디는 409 `IDEMPOTENCY_CONFLICT`.
@@ -28,7 +28,7 @@
 
 **상황.** 등원 1주차 신규 학생 — 표본이 `cell_min_items` 미달.
 
-1. 자동 개인화 요청은 `rejected_insufficient`(200 + 정상 상태 — 에러 아님)로 종료. "데이터를 모으는 중" 안내.
+1. 자동 개인화 요청은 `RejectedInsufficientOutcome(outcome="rejected_insufficient", status="rejected_insufficient")`(200 + 정상 결과 — 에러 아님)로 종료. "데이터를 모으는 중" 안내. 이 결과에는 생성되지 않은 `set_id`를 만들지 않는다.
 2. 강사가 영역·노드를 직접 선택하면 `target_source=teacher_manual`로 재요청 — 진단 생략, 일반 출제 진행.
 3. 결과 메타·화면에 **"약점 데이터 기반 개인화 아님" 필수 표기**(`weakness_map_id=null`).
 
@@ -39,7 +39,7 @@
 **상황.** T1 문항 생성 중 기준 자료(D-03) 다운 또는 버전 불일치 — R-1 대조 불가.
 
 1. 해당 문항은 추측 생성으로 통과시키지 않는다 — `verification_unavailable`로 저장·발행 차단.
-2. 연속 3문항 `[잠정]` 검증 불능이면 세트 조기 중단 → `partial_success`/`failed` + 사유.
+2. 연속 3문항 `[잠정]` 검증 불능이면 세트 조기 중단 → `partial_success`/`failed` + 사유. 두 상태와 `verification_unavailable`은 결과를 확정한 정상 워크플로의 도메인 결과이며 실행 예외가 아니다.
 3. 자료 복구 후 재검증 배치로 합류.
 
 **검증하는 것:** 자료 장애 시 "그럴듯한 정답" 미발행(fail-closed). stop_reason 정직 기록.
@@ -83,7 +83,7 @@
 1. gateway 전송 재시도 1회 → 소진 시 해당 문항 `verification_unavailable` — 저장은 하되 발행 차단.
 2. **강사 일반 승인·지시로 우회 불가(수동 예외 승인 불허 — 확정).** 완화 수단은 verifier 폴백 패밀리(gateway 라우팅).
 3. 벤더 복구 후 재검증 배치가 ②부터 재실행 — 성공 시 ③으로 합류.
-4. generator 장애면 item_attempt 내 재시도 → 세트 `partial_success`/`failed` + 재시도 가능 여부 반환.
+4. generator 장애면 item_attempt 내 재시도 → 세트 `partial_success`/`failed` + 재시도 가능 여부 반환. 결과가 확정됐다면 세트 상태를 워커 실행 실패로 승격하지 않는다.
 
 **검증하는 것:** 검증 불능 ≠ 통과(fail-closed). 장애 중 생성분이 승인 대상 목록에 안 오름.
 
@@ -91,12 +91,12 @@
 
 **상황.** 지문이 해당 유형 출제에 부적합해 10문항 중 4번째까지 dropped 3건 — 비율 30% `[잠정]` 초과.
 
-1. 남은 생성 중단(`stop_reason=drop_ratio_exceeded`) → `partial_success` + 성공·실패 수와 사유 집계.
-2. 성공 0건이면 `failed` + 원인·재시도 가능 여부.
+1. 남은 생성 중단(`stop_reason=drop_ratio_exceeded`) → `partial_success` + `requested_count=10`, 실제 `processed_count`, 남은 `unstarted_count`와 성공·실패 사유 집계.
+2. 성공 0건이면 `failed` + 원인·재시도 가능 여부. `failed`도 결과 레코드를 정상 확정했다면 워커 실행 실패와 구분한다.
 3. 세트 실행이 비동기 총 상한에 접근하면 시간 사유로 동일 처리.
 4. 프론트는 실패 문항을 숨기지 않고 성공·실패 수를 함께 표시.
 
-**검증하는 것:** 조용한 수량 미달 금지. 조기 중단 후 완료분 보존·체크포인트 재개 가능.
+**검증하는 것:** 조용한 수량 미달 금지. `processed_count == len(items)`와 `requested_count == processed_count + unstarted_count` 강제. 조기 중단 후 완료분 보존·체크포인트 재개 가능.
 
 ## C. Step 3 — 수정·선별 (refine MVP)
 

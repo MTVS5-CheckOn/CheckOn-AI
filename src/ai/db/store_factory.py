@@ -7,6 +7,8 @@ PG 저장소 생성은 엔진을 lazy로 만들 뿐 접속하지 않는다(sessi
 
 from __future__ import annotations
 
+from ai.agents.job_store import InMemoryJobStore, JobStore
+from ai.db.repositories.agent_job import PgJobStore
 from ai.db.repositories.detection_store import (
     DetectionStore,
     InMemoryDetectionStore,
@@ -21,6 +23,14 @@ from ai.db.session import get_sessionmaker
 from ai.db.settings import DbSettings, get_db_settings
 
 _PG = "pg"
+
+
+def build_agent_job_store(settings: DbSettings | None = None) -> JobStore:
+    """슈퍼바이저 실행 원장 — PG 선택 시 재시작·멀티워커 안전 저장소."""
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgJobStore(sessionmaker=get_sessionmaker())
+    return InMemoryJobStore()
 
 
 def build_idempotency_store(settings: DbSettings | None = None) -> IdempotencyStore:

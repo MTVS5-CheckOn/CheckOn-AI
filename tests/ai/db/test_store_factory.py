@@ -5,6 +5,8 @@ PG 저장소 생성은 엔진을 lazy로 만들 뿐 접속하지 않으므로 DB
 
 from __future__ import annotations
 
+from ai.agents.job_store import InMemoryJobStore
+from ai.db.repositories.agent_job import PgJobStore
 from ai.db.repositories.detection_store import (
     InMemoryDetectionStore,
     PgDetectionStore,
@@ -14,7 +16,11 @@ from ai.db.repositories.idempotency import (
     PgIdempotencyStore,
 )
 from ai.db.settings import DbSettings
-from ai.db.store_factory import build_detection_store, build_idempotency_store
+from ai.db.store_factory import (
+    build_agent_job_store,
+    build_detection_store,
+    build_idempotency_store,
+)
 
 
 def _settings(backend: str) -> DbSettings:
@@ -27,12 +33,14 @@ def test_default_backend_is_memory() -> None:
 
 
 def test_memory_backend_builds_inmemory_stores() -> None:
+    assert isinstance(build_agent_job_store(_settings("memory")), InMemoryJobStore)
     assert isinstance(build_idempotency_store(_settings("memory")), InMemoryIdempotencyStore)
     assert isinstance(build_detection_store(_settings("memory")), InMemoryDetectionStore)
 
 
 def test_pg_backend_builds_pg_stores() -> None:
     """pg 선택 시 PG 구현 — 생성 시 접속하지 않는다(lazy engine)."""
+    assert isinstance(build_agent_job_store(_settings("pg")), PgJobStore)
     assert isinstance(build_idempotency_store(_settings("pg")), PgIdempotencyStore)
     assert isinstance(build_detection_store(_settings("pg")), PgDetectionStore)
 

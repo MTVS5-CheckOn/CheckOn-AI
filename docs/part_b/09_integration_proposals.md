@@ -16,8 +16,8 @@
 
 | 안건 | 결과 | part_b 반영 |
 | --- | --- | --- |
-| Open-11 / B-3 / D-01 | ✅ 6영역 채택 · **v1 item_format = mcq만**(short·essay 예약) | 05 §4·§9, 08 코퍼스 — 경계 사례 7건 판정만 잔여(§3) |
-| B-1 | ✅ 슈퍼바이저 1 + 워커 3(문제 생성 = B 워커) — checkpointer·recorder 재사용 승인 | 01 §0·§6 — 반영 PR·슈퍼바이저 state 리뷰 잔여(§1-2) |
+| Open-11 / B-3 / D-01 | ✅ 6영역 채택 · **v1 item_format = mcq만**(short·essay 예약) · 측정 대상 기준 경계 사례 7건 확정 | 05 §4·§9, taxonomy §2·08 코퍼스 |
+| B-1 | ✅ 슈퍼바이저 1 + 워커 3(문제 생성 = B 워커) — 영속 Job·lease·부분 수렴 실행 계약 확정 | 01 §0·§6 · langgraph_state §5 |
 | B-4 / D-08 | ❌ **폐기** — v1 서술형 없음. F17 OCR 소유만 Open-12와 P2 재론 | 05 §9 예약 |
 | BE-4 / D-05 | ✅ 쿼터 전부 백엔드 — **AI는 쿼터 무관, meta.quota 폐기** | 01 §5, 05 §4.4, 07 §5 |
 | Open-2 | ✅ 비동기 완료 통지 = **Kafka** | 02 §1-A — 이벤트 증분 제안(§2-1) |
@@ -35,9 +35,9 @@
 - 근거: `docs/policies/f17_paper_exam.md` §5·`99_open_items` Open-12는 OCR 판독 소유를 **미정**으로 둔다(B-4 폐기 후 Open-12로 흡수). 공용 정책 우선 — "미정(Open-12·P2)"으로 정정 요청.
 - 확정 분담(유지): 스캔 수신·실명 매칭·이미지 마스킹=백엔드.
 
-### 1-2. `agents/` 반영 PR + 슈퍼바이저 확인 — B-1 후속
+### 1-2. `agents/` 반영 + 슈퍼바이저 확인 — B-1 완료
 
-- B-1 승인(7/15)에 따른 실행 항목: ① `AGENT_RUN.agent_kind`에 `problem_gen` 추가 PR(A 승인) ② 슈퍼바이저 state 초안(`policies/langgraph_state.md` §5) **B 리뷰 회신 완료** — [`01_pipeline.md`](01_pipeline.md) §6(잡 단위=세트 1건 · 인터랙티브 선점 `[제안]` · 슈퍼바이저 `agents/`(A) 소유 동의+라우팅 테이블 양자).
+- `AGENT_RUN.agent_kind=problem_generation`과 공통 Job 실행 필드를 반영한다. 슈퍼바이저 실행 계약(`policies/langgraph_state.md` §5)은 **B 리뷰 완료** — Job 단위는 세트·문항 리비전·재검증 operation 각각 1건이며, 인터랙티브 작업은 실행 중 강제 선점하지 않고 워커 체크포인트 경계에서만 협력적으로 양보한다. `agents/` 구현은 A, 공통 Job·라우팅 계약은 양자 승인이다.
 - LangGraph 버전은 llm/ 의존성과 함께 B가 고정하고 A 리뷰.
 
 ### 1-3. `gates/chain.py` — 변경 불요 확인 요청 `(C-07)`
@@ -108,7 +108,7 @@ A PR 요청을 반영·검토한 뒤 B가 추가로 발견한 간극만 해당 �
 | `POST /problem-sets` `[가칭]` | 최초 요청 202 + job_id. 내부 command = `ProblemRequest`([`05`](05_problem_generation.md) §4.1 — `target_source` 포함). 같은 Idempotency-Key+같은 바디 재전송은 기존 job 상태·결과 200 |
 | `GET /problem-sets/{job_id}` `[가칭]` | **디버그·복구 보조**(폴링 아님) — 상태·진행률·`ProblemSetResult` |
 | `POST /problem-sets/{set}/items/{item}/refine` `[가칭 · MVP]` | `instruction`+`base_revision_no` — [`07_refine_policy.md`](07_refine_policy.md). 멱등 조회 → revision/진행 중 검사 순서. 롤백 `revert_to` |
-| **Kafka 이벤트 증분** | `docs/08_kafka_events.md` §4에 `problem_set.completed` / `problem_set.failed` `{ job_id, status, verified/review/dropped 수, stop_reason }` 추가 — 문항 본문 미포함(ID 참조만, 기존 규약 동일) |
+| **Kafka 이벤트** | 공통 `worker_job.succeeded|failed` 사용. 이벤트에는 `job_id`·`operation`·`result_ref|error_code`만 싣고, 문제 세트 status와 성공·실패·미처리 수량은 `result_ref` 조회로 얻는다 |
 | 약점 지도 조회 API | **상세 제안 보류** — 세트 응답 동봉 vs 별도 조회 vs 백엔드 사본 동기화는 `OPEN`(D-10, BE+B) |
 
 **B HTTP 경계 확정:** `ProblemRequest`·`ItemRevisionRequest`는 워크플로 내부 command로 유지한다. 외부 HTTP body는 별도 DTO로 만들고 `X-Request-Id`·`Idempotency-Key`·`X-Tenant-Id`를 포함하지 않는다. 공통 헤더를 단일 원천으로 읽어 내부 command에 매핑한다. `api/` 소유권 승인은 완료됐으며, 실제 라우터 편입은 `04_api_contract.md`의 공통 wire 크로스체킹과 백엔드 D-10 합의가 닫힌 뒤 진행한다.
@@ -176,9 +176,9 @@ class BlockedReason(StrEnum):
 
 ### 2-4. 공용 ERD 반영 요청 — `docs/06_erd.md` `(C-06)`
 
-B 소유 7테이블(WEAKNESS_MAP·PASSAGE·PROBLEM_SET·PROBLEM_ITEM·VERIFICATION_RESULT·ITEM_REVISION·DIFFICULTY_CALIB)을 [`02_design.md`](02_design.md) §2 기준으로 24→31테이블 통합. 통합 전 정본은 "A 24테이블 + part_b 증분".
+B 소유 7테이블(WEAKNESS_MAP·PASSAGE·PROBLEM_SET·PROBLEM_ITEM·VERIFICATION_RESULT·ITEM_REVISION·DIFFICULTY_CALIB)을 [`02_design.md`](02_design.md) §2 기준으로 현재 애플리케이션 26→33테이블로 통합하는 제안이다. 통합 전 정본은 "`docs/06_erd.md`의 26테이블 + part_b 증분 7종"이다.
 
-D-② ERD-parity 안전망은 `tests/ai/db/test_erd_model_parity.py`의 ERD↔`db/models.py` 대조와 `tests/ai/db/test_migration_parity.py`의 모델↔마이그레이션 대조로 연결되므로, B 7테이블 추가 시 `06_erd.md`(정본)+`db/models.py`(양자 승인 11곳)+마이그레이션을 동시에 반영한다.
+D-② ERD-parity 안전망은 `tests/ai/db/test_erd_model_parity.py`의 ERD↔`db/models.py` 대조와 `tests/ai/db/test_migration_parity.py`의 모델↔마이그레이션 대조로 연결되므로, B 7테이블 추가 시 `06_erd.md`(정본)+`db/models.py`(양자 승인 12곳)+마이그레이션을 동시에 반영한다.
 
 ### 2-5. `docs/02_ownership.md` §5 트리 증보 제안
 
@@ -256,7 +256,7 @@ class VersionSet(BaseModel):
 | `docs/02_ownership.md` §5 | 공용 | `golden/diagnosis/` [염준영] 소유 행 추가 | ☐ 잔여 — `api/`·FakeSnapshot 소유 반영과는 별개 |
 | `docs/00_INDEX.md` | 공용 | part_b 문서 9종 링크 절 신설 | ☐ 잔여 |
 
-※ Kafka `problem_set.completed`·`problem_set.failed` 이벤트와 B API 경로(§2-1)는 **백엔드 합의(D-10) 전 — 제안 유지, 이번 승인 범위가 아니다.**
+※ Kafka 완료 이벤트는 공통 `worker_job.*` 계약으로 확정됐다. B API 경로와 `result_ref` 조회 방식은 **백엔드 합의(D-10) 전 — 제안 유지**다.
 
 ### 2-11. `api/` 공통 계층 B 리뷰 — 구조 승인 완료·wire 크로스체크 잔여 `(99 ⑧·⑨)`
 

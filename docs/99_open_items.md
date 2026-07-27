@@ -27,6 +27,11 @@
 15. **브리핑 문장화(ⓐ) 구현 ✅(7/23)** — 신호 자연어화(LLM 한 줄 + 왜곡 게이트 + 템플릿 폴백). `composition/briefing.py`(A 단독). **분기표 8종:** ① LLM 실패(LlmUnavailable·LlmTimeout·ParseFailed) → **재시도 없이** 즉시 템플릿 폴백(재시도는 게이트웨이 후속) ② redaction uncertain → 미전송(fail-closed)·템플릿 ③ 왜곡 게이트 실패 → 재생성 ≤3(error_codes §3) → 소진 시 템플릿, gate_passed=false ④ ⟪⟫ 토큰 잔존 → 게이트 실패(#3) ⑤ 시간 예산 45s(호출당 10s) 소진 → 잔여 신호 템플릿 ⑥ 어떤 실패든 **감지 판정 무변** ⑦ provider settings로 fake↔openai_compat(기본 fake) ⑧ `fallback_used=true`가 실의미 획득. 게이트 = 결정론(숫자 EXACT 대조[report numbers_used 선례]·금칙어[05 §4 A군 복사]·⟪⟫토큰·길이). 반영: 04 §2.4(detect 60s) · 09 §3 brief 주석
     - **후속 안건:** ⓐ **LLM_CALL DB 적재** — ERD 테이블 존재하나 이번 범위 밖(outcome은 로그만). ⓑ **게이트웨이 도입 시 재시도 이관** — 현재 재시도 없음(즉시 폴백), tenacity 재시도는 gateway 소유. ⓒ **금칙어 단일화** — `composition/briefing_forbidden.yaml`은 05 §4 원본 복사본, **D-③(buffer_lexicon 실파일화) 때 단일 파일 참조로 전환**(두 곳 분기 방지). ⓓ **브리핑 프롬프트 레지스트리 이관** — 현재 briefing이 템플릿 직접 로드, B의 `llm/prompts` 레지스트리 도입 시 등록 이관.
 
+## ★ 7/27 슈퍼바이저 실행 계약 확정
+
+16. **B-1 슈퍼바이저 리뷰 완료 ✅(7/27)** — 중앙 `jobs: list` LangGraph state를 폐기하고 AI PostgreSQL의 영속 `WorkerJob`을 큐·lease·실행 phase 정본으로 확정. 슈퍼바이저는 LLM 없는 결정론 디스패처이며 요청 1건은 워커 1종에만 라우팅한다. 공통 phase는 `queued|leased|running|paused|succeeded|failed|cancelled`, 워커 도메인 결과와 분리한다. 워커 내부 v1 처리는 상담팩=학생·매핑조사=도구 호출·문제생성=문항 순차이며 안전한 체크포인트 경계에서만 협력적으로 양보한다. 문제생성 operation은 `problem_set.generate`·`problem_item.refine`·`problem_item.reverify`, terminal 이벤트는 DB phase 전이와 outbox를 원자 기록해 멱등 발행한다. 반영: `policies/langgraph_state.md` §5 · `part_b/01_pipeline.md` §6 · `policies/error_codes.md` §2.5~2.6 · `08_kafka_events.md` §3~5.
+17. **B-3 경계 사례 7건 판정 완료 ✅(7/27)** — 소재·자료 형식이 아니라 문항의 measured area를 기준으로 판정하고 source/passage 메타와 분리한다. 혼합 지문은 문항별 태깅하되 v1 자동 문제생성 세트는 단일 `area_tag`로 제한한다. 어휘는 문맥 의존 시 지문 측정 영역, 독립 지식 측정 시 `language`로 확정. 반영: `policies/taxonomy.md` §2~2.1 · `part_b/05_problem_generation.md` §4.1 · `part_b/06_quality_gates.md` §5.
+
 > 규칙: 안건이 닫히면 ① 이 표의 상태를 ✅로 ② 관련 문서의 `[제안]`/`TODO(Open-n)` 제거 ③ 계약 문서는 버전 승격. **닫히기 전에는 잠정값으로 개발하되 코드에 `# TODO(Open-n)` 주석 필수.**
 
 ## A. 계약 Open 안건 (백엔드 리뷰 미팅에서 일괄 — `04_api_contract.md` §1)
@@ -50,9 +55,9 @@
 
 | # | 안건 | 결과 반영처 | 상태 |
 | --- | --- | --- | --- |
-| B-1 | 지시서 개정 4건 + 에이전트 구조 | part_a/01_pipeline · policies/langgraph_state | ✅ **(7/15) 승인 — 슈퍼바이저 1 + 워커 3**(상담팩[A]·매핑조사[A]·문제생성[B]). 착수 가능, 슈퍼바이저 state 스키마가 선행 작업 |
+| B-1 | 지시서 개정 4건 + 에이전트 구조 | part_a/01_pipeline · policies/langgraph_state | ✅ **(7/15 구조 승인 · 7/27 실행 계약 확정)** — 슈퍼바이저 1 + 워커 3(상담팩[A]·매핑조사[A]·문제생성[B]). 영속 WorkerJob·결정론 라우팅·부분 수렴·재개·멱등 terminal 이벤트까지 확정되어 구현 착수 가능 |
 | B-2 | 공용 계약 4파일 초안 리뷰 순서 | contracts/ | ☐ |
-| B-3 | 수능 enum 확정(=Open-11) + 경계 사례 7건 판정 | policies/taxonomy · contracts/taxonomy.py | ✅ enum 확정(7/15) · ☐ 경계 사례 7건 판정은 잔여 |
+| B-3 | 수능 enum 확정(=Open-11) + 경계 사례 7건 판정 | policies/taxonomy · contracts/taxonomy.py | ✅ **완료** — enum 확정(7/15), 경계 사례 7건·measured area 원칙·v1 단일 영역 세트 제한 확정(7/27) |
 | B-4 | ~~서술형 채점 분담~~ | — | ❌ **폐기(7/15)** — v1은 mcq만이라 서술형 채점 자체가 없음. F17 OCR 소유만 P2 시점에 Open-12와 함께 재론 |
 | B-5 | LLM 게이트웨이 인터페이스·벤더 | contracts/llm.py | ✅ **(7/23) 벤더 확정 — 팀 로컬 OpenAI 호환 서버(Gemma 계열).** SDK 설치 금지 해제. `openai` SDK는 `llm/providers/` 안에서만 import 허용(capability·contracts 직접 import 금지 — 벤더 독립 유지). provider 어댑터는 **A 초안 PR + B 승인**(llm/ 소유 §4). 게이트웨이 재시도·라우팅은 B |
 | B-6 | LangSmith 도입 | runtime/ | ✅ **(7/15) 공통 1개로 도입** — 프로젝트·키 공용. 마스킹 훅은 게이트웨이 앞단(트레이스에 마스킹 통과분만) |
@@ -82,7 +87,7 @@
 | --- | --- |
 | 체크온 표준 스키마 정의서 (BE-7 자료) | ✅ **작성 완료 — `07_standard_schema.md`** (백엔드 리뷰 대기) |
 | Kafka 토픽·이벤트 스키마 초안 (Open-2·BE-5 후속) | ✅ **초안 완료 — `08_kafka_events.md`** (백엔드 공동 확정 대기) |
-| 슈퍼바이저 에이전트 state 스키마 (B-1 확장) | ✅ **초안 완료 — `policies/langgraph_state.md` §5** (B 리뷰 대기) |
+| 슈퍼바이저 실행 계약 (B-1 확장) | ✅ **A+B 확정(7/27) — `policies/langgraph_state.md` §5** (중앙 SupervisorState 폐기 · 영속 WorkerJob 정본) |
 | AI 장애 폴백 문구 초안 (BE-6) | ✅ **작성 완료 — `policies/error_codes.md` §6** (프론트 검수 대기) |
 
 **코드 (첫 스프린트 백로그 — 순서 제안)**
@@ -90,7 +95,7 @@
 | 항목 | 상태 |
 | --- | --- |
 | ① FakeSnapshot 픽스처 (05_request_json 기반) | ✅ 구현 완료 — `evaluation/fake_snapshot.py`(A 소유·프로덕션 격리), B 위치 검토 완료(7/22) |
-| ② Alembic 마이그레이션 (06_erd 24테이블 — 서술형 폐기로 rubric 관련 필드 없음 확인) | ☐ |
+| ② Alembic 마이그레이션 (06_erd 애플리케이션 26테이블 + AGENT_RUN Job 원장 확장) | ✅ **구현 완료** — `0001_initial_schema` + `0002_agent_run_job_ledger`, 오프라인 upgrade/downgrade SQL 검증 |
 | ③ tone_map.yaml · buffer_lexicon.yaml 실파일화 | ☐ |
 | ④ redaction_patterns.yaml + golden/redaction 코퍼스 30건 | ✅ **(7/23) 구현 완료** — `runtime/redaction.py`(순수 함수 `redact()`, 파이프라인 §2·토큰 규격 §1·단방향) + `redaction_patterns.yaml`(P1ⓑ~P8) + 코퍼스 30건 + CI 게이트(미탐 0·오탐 ≤2). **결정 로그:** P8=한글숫자 디코딩 후 P2(§2 개정) · 스코어링 밀도=미확정 인명후보 1개→토큰·≥2→문장 통째 · 명부(P1ⓐ) 없어 별명·영문명·성생략은 fail-closed ⟪확인필요⟫. 훅 배선(§3 5곳)·§4 도구 반환은 각 소비 기능 붙일 때(범위 밖) |
 | ⑤ /confirmations 구현 (BE-8) · Import 산출물 출력 스펙 (BE-9) | ☐ |
@@ -103,3 +108,4 @@
 | ⑩ 섀도 모드 표시 방식 — `error_codes.md` §2.3에 `shadow: true` 행이 있으나 09 §3 응답엔 없음. 섀도 구현 시점(D-② 후)에 09 응답 편입 vs 운영 설정 결정 + 두 문서 정합 | ☐ |
 | ⑪ 부재형 신호(R2·R3·R5)의 evidence 전무 한계 — 관련 실존 기록이 전무하면 신호를 생성하지 않는다(계약상 evidence ≥1). 집계/상태 record 참조를 evidence로 허용할지 D-②(저장 계층) 시점 결정. 09 §3 A 판정(7/22) | ☐ |
 | ⑬ **pgvector 도입 후보** — 7/25 docker-compose에서 `postgres:16` 유지 확정(현 06_erd에 벡터 컬럼 없음). 향후 유사 학생·유사 오답 패턴 검색 등 임베딩 수요가 생기면 pgvector 확장 도입을 검토(이미지·ERD 함께 개정). | ☐ **아이디어(수요 발생 시 · P2 후보)** |
+| ⑭ **슈퍼바이저 영속 디스패처** — `contracts/agents.py` 공통 계약, WorkerJob 저장소·lease/fencing·priority aging·`recover_expired`, operation adapter, terminal outbox·Kafka 멱등 발행, 워커별 장애·재개·부분 수렴 통합 테스트 | 🟠 **기반 구현 완료(7/27)** — 공통 계약·결정론 Supervisor·인메모리/PG JobStore·PostgresSaver 연결·문제생성 state/부분 수렴 테스트 완료. 실제 워커 그래프 adapter는 capability별 구현, terminal outbox·Kafka 발행은 ⑥의 백엔드 이벤트 확정 후 같은 트랜잭션으로 연결 |

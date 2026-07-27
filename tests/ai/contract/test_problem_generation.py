@@ -3,6 +3,7 @@
 from uuid import UUID
 
 import pytest
+from pydantic import TypeAdapter
 
 from ai.contracts.gates import BlockedReason
 from ai.contracts.problem_generation import (
@@ -11,6 +12,7 @@ from ai.contracts.problem_generation import (
     EvidenceAnchor,
     EvidenceKind,
     GeneratedItem,
+    InvalidProblemGenerationStateTransition,
     ItemAction,
     ItemFieldChange,
     ItemResult,
@@ -19,10 +21,13 @@ from ai.contracts.problem_generation import (
     PassageDomain,
     PassageRequest,
     ProblemFailureReason,
+    ProblemGenerationOutcome,
+    ProblemGenerationState,
     ProblemItemStatus,
     ProblemRequest,
     ProblemSetResult,
     ProblemSetStatus,
+    RejectedInsufficientOutcome,
     RevisionKind,
     SentenceComplexity,
     SetStopReason,
@@ -30,11 +35,13 @@ from ai.contracts.problem_generation import (
     TargetKind,
     TargetSelection,
     TargetSource,
+    assert_problem_generation_state_transition,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 
 SET_ID = UUID("00000000-0000-4000-8000-000000000010")
 ITEM_ID = UUID("00000000-0000-4000-8000-000000000011")
+SECOND_ITEM_ID = UUID("00000000-0000-4000-8000-000000000014")
 WEAKNESS_MAP_ID = UUID("00000000-0000-4000-8000-000000000012")
 
 
@@ -79,6 +86,22 @@ def _item() -> GeneratedItem:
         rationale="규칙 ID를 적용하면 2번만 성립한다.",
         evidence=(EvidenceAnchor(kind=EvidenceKind.GRAMMAR_RULE, ref="grammar.rule.001"),),
     )
+
+
+def _state(**changes: object) -> ProblemGenerationState:
+    data: dict[str, object] = {
+        "request_ref": "problem-request:request-1",
+        "request_hash": f"sha256:{'a' * 64}",
+        "set_id": SET_ID,
+        "target_source": TargetSource.WEAKNESS_AUTO,
+        "requested_count": 3,
+        "cursor": 0,
+        "items": (),
+        "item_attempt": 0,
+        "stop_reason": None,
+    }
+    data.update(changes)
+    return ProblemGenerationState.model_validate(data)
 
 
 def test_problem_request_roundtrip() -> None:
@@ -135,6 +158,11 @@ def test_request_rejects_reserved_formats(item_format: ItemFormat) -> None:
 def test_request_rejects_duplicate_type_tags() -> None:
     with pytest.raises(ValueError, match="중복"):
         _request(type_tags=(TypeTag.CONCEPT, TypeTag.CONCEPT))
+
+
+def test_problem_request_rejects_multiple_areas() -> None:
+    with pytest.raises(ValueError, match="area_tag"):
+        _request(area_tag=(AreaTag.SPEECH, AreaTag.WRITING))
 
 
 def test_passage_is_reading_only() -> None:
@@ -280,6 +308,9 @@ def test_generated_set_requires_only_success_items() -> None:
         status=ProblemSetStatus.GENERATED,
         target_source=TargetSource.WEAKNESS_AUTO,
         personalized=True,
+        requested_count=1,
+        processed_count=1,
+        unstarted_count=0,
         items=(ItemResult(item_id=ITEM_ID, status=ProblemItemStatus.VERIFIED, attempt_no=1),),
         summary="1문항 생성",
     )
@@ -293,6 +324,9 @@ def test_manual_set_must_be_non_personalized() -> None:
             status=ProblemSetStatus.QUEUED,
             target_source=TargetSource.TEACHER_MANUAL,
             personalized=True,
+            requested_count=1,
+            processed_count=0,
+            unstarted_count=1,
         )
 
 
@@ -303,6 +337,9 @@ def test_partial_success_requires_success_and_failure() -> None:
             status=ProblemSetStatus.PARTIAL_SUCCESS,
             target_source=TargetSource.WEAKNESS_AUTO,
             personalized=True,
+            requested_count=1,
+            processed_count=1,
+            unstarted_count=0,
             items=(ItemResult(item_id=ITEM_ID, status=ProblemItemStatus.VERIFIED, attempt_no=1),),
         )
 
@@ -315,8 +352,423 @@ def test_failed_set_rejects_success_item() -> None:
             target_source=TargetSource.WEAKNESS_AUTO,
             personalized=True,
             stop_reason=SetStopReason.TIME_BUDGET_EXCEEDED,
+            requested_count=1,
+            processed_count=1,
+            unstarted_count=0,
             items=(ItemResult(item_id=ITEM_ID, status=ProblemItemStatus.VERIFIED, attempt_no=1),),
         )
+
+
+def test_rejected_insufficient_is_discriminated_normal_outcome() -> None:
+    rejected = RejectedInsufficientOutcome(status_reason="개인화에 필요한 풀이 표본이 부족하다")
+
+    outcome: ProblemGenerationOutcome = TypeAdapter(ProblemGenerationOutcome).validate_python(
+        rejected.model_dump(mode="json")
+    )
+
+    assert isinstance(outcome, RejectedInsufficientOutcome)
+    assert outcome == rejected
+    assert outcome.status == "rejected_insufficient"
+    assert outcome.personalized is False
+    assert outcome.weakness_map_id is None
+
+
+def test_rejected_insufficient_is_auto_target_only() -> None:
+    with pytest.raises(ValueError, match="target_source"):
+        RejectedInsufficientOutcome.model_validate(
+            {
+                "target_source": TargetSource.TEACHER_MANUAL,
+                "status_reason": "표본 부족",
+            }
+        )
+
+
+def test_processed_count_must_match_items() -> None:
+    with pytest.raises(ValueError, match="processed_count"):
+        ProblemSetResult(
+            set_id=SET_ID,
+            status=ProblemSetStatus.GENERATING,
+            target_source=TargetSource.WEAKNESS_AUTO,
+            personalized=True,
+            requested_count=3,
+            processed_count=2,
+            unstarted_count=1,
+            items=(ItemResult(item_id=ITEM_ID, status=ProblemItemStatus.VERIFIED, attempt_no=1),),
+        )
+
+
+def test_requested_count_must_preserve_all_slots() -> None:
+    with pytest.raises(ValueError, match="requested_count"):
+        ProblemSetResult(
+            set_id=SET_ID,
+            status=ProblemSetStatus.GENERATING,
+            target_source=TargetSource.WEAKNESS_AUTO,
+            personalized=True,
+            requested_count=3,
+            processed_count=1,
+            unstarted_count=1,
+            items=(ItemResult(item_id=ITEM_ID, status=ProblemItemStatus.VERIFIED, attempt_no=1),),
+        )
+
+
+def test_terminal_result_with_unstarted_items_requires_stop_reason() -> None:
+    with pytest.raises(ValueError, match="stop_reason"):
+        ProblemSetResult(
+            set_id=SET_ID,
+            status=ProblemSetStatus.PARTIAL_SUCCESS,
+            target_source=TargetSource.WEAKNESS_AUTO,
+            personalized=True,
+            requested_count=3,
+            processed_count=1,
+            unstarted_count=2,
+            items=(ItemResult(item_id=ITEM_ID, status=ProblemItemStatus.VERIFIED, attempt_no=1),),
+        )
+
+
+def test_early_stop_preserves_success_failure_and_unstarted_counts() -> None:
+    result = ProblemSetResult(
+        set_id=SET_ID,
+        status=ProblemSetStatus.PARTIAL_SUCCESS,
+        stop_reason=SetStopReason.DROP_RATIO_EXCEEDED,
+        target_source=TargetSource.WEAKNESS_AUTO,
+        personalized=True,
+        requested_count=5,
+        processed_count=2,
+        unstarted_count=3,
+        items=(
+            ItemResult(item_id=ITEM_ID, status=ProblemItemStatus.VERIFIED, attempt_no=1),
+            ItemResult(
+                status=ProblemItemStatus.DROPPED,
+                attempt_no=3,
+                failure_reason=ProblemFailureReason.GENERATION_EXHAUSTED,
+            ),
+        ),
+        dropped_reasons=(ProblemFailureReason.GENERATION_EXHAUSTED,),
+    )
+
+    outcome: ProblemGenerationOutcome = TypeAdapter(ProblemGenerationOutcome).validate_python(
+        result.model_dump(mode="json")
+    )
+
+    assert isinstance(outcome, ProblemSetResult)
+    assert outcome == result
+    assert outcome.processed_count + outcome.unstarted_count == outcome.requested_count
+
+
+def test_time_budget_can_stop_after_only_successful_items() -> None:
+    result = ProblemSetResult(
+        set_id=SET_ID,
+        status=ProblemSetStatus.PARTIAL_SUCCESS,
+        stop_reason=SetStopReason.TIME_BUDGET_EXCEEDED,
+        target_source=TargetSource.WEAKNESS_AUTO,
+        personalized=True,
+        requested_count=3,
+        processed_count=1,
+        unstarted_count=2,
+        items=(ItemResult(item_id=ITEM_ID, status=ProblemItemStatus.VERIFIED, attempt_no=1),),
+    )
+
+    assert result.status is ProblemSetStatus.PARTIAL_SUCCESS
+
+
+def test_verification_unavailable_is_normal_failed_set_result() -> None:
+    result = ProblemSetResult(
+        set_id=SET_ID,
+        status=ProblemSetStatus.FAILED,
+        stop_reason=SetStopReason.VERIFIER_OUTAGE,
+        target_source=TargetSource.WEAKNESS_AUTO,
+        personalized=True,
+        requested_count=3,
+        processed_count=1,
+        unstarted_count=2,
+        items=(
+            ItemResult(
+                item_id=ITEM_ID,
+                status=ProblemItemStatus.VERIFICATION_UNAVAILABLE,
+                attempt_no=1,
+                failure_reason=ProblemFailureReason.SOURCE_UNVERIFIED,
+            ),
+        ),
+    )
+
+    outcome: ProblemGenerationOutcome = TypeAdapter(ProblemGenerationOutcome).validate_python(
+        result.model_dump(mode="json")
+    )
+
+    assert isinstance(outcome, ProblemSetResult)
+    assert outcome == result
+    assert outcome.outcome == "problem_set"
+
+
+def test_generated_set_rejects_verification_unavailable_item() -> None:
+    with pytest.raises(ValueError, match="generated"):
+        ProblemSetResult(
+            set_id=SET_ID,
+            status=ProblemSetStatus.GENERATED,
+            target_source=TargetSource.WEAKNESS_AUTO,
+            personalized=True,
+            requested_count=1,
+            processed_count=1,
+            unstarted_count=0,
+            items=(
+                ItemResult(
+                    item_id=ITEM_ID,
+                    status=ProblemItemStatus.VERIFICATION_UNAVAILABLE,
+                    attempt_no=1,
+                ),
+            ),
+        )
+
+
+def test_generating_set_cannot_have_processed_all_items() -> None:
+    with pytest.raises(ValueError, match="generating"):
+        ProblemSetResult(
+            set_id=SET_ID,
+            status=ProblemSetStatus.GENERATING,
+            target_source=TargetSource.WEAKNESS_AUTO,
+            personalized=True,
+            requested_count=2,
+            processed_count=2,
+            unstarted_count=0,
+            items=(
+                ItemResult(item_id=ITEM_ID, status=ProblemItemStatus.VERIFIED, attempt_no=1),
+                ItemResult(
+                    item_id=SECOND_ITEM_ID,
+                    status=ProblemItemStatus.NEEDS_REVIEW,
+                    attempt_no=1,
+                ),
+            ),
+        )
+
+
+def test_item_result_rejects_attempt_over_common_budget() -> None:
+    with pytest.raises(ValueError, match="attempt_no"):
+        ItemResult(
+            status=ProblemItemStatus.DROPPED,
+            attempt_no=4,
+            failure_reason=ProblemFailureReason.GENERATION_EXHAUSTED,
+        )
+
+
+def test_problem_generation_state_roundtrip_and_slot_key() -> None:
+    state = _state()
+
+    restored = ProblemGenerationState.model_validate(state.model_dump(mode="json"))
+
+    assert restored == state
+    assert restored.state_schema_version == "problem_generation.v1"
+    assert restored.current_slot_key == f"problem-set:{SET_ID}:slot:0"
+    assert restored.unstarted_count == 3
+
+
+def test_problem_generation_state_rejects_cursor_items_mismatch() -> None:
+    with pytest.raises(ValueError, match="cursor"):
+        _state(cursor=1)
+
+
+def test_problem_generation_state_rejects_attempt_on_terminal_checkpoint() -> None:
+    with pytest.raises(ValueError, match="item_attempt"):
+        _state(
+            item_attempt=1,
+            stop_reason=SetStopReason.TIME_BUDGET_EXCEEDED,
+        )
+
+
+def test_problem_generation_state_rejects_unknown_schema_version() -> None:
+    with pytest.raises(ValueError, match="state_schema_version"):
+        _state(state_schema_version="problem_generation.v2")
+
+
+def test_problem_generation_state_transition_preserves_current_attempt() -> None:
+    initial = _state()
+    first_attempt_started = _state(item_attempt=1)
+    first_item_completed = _state(
+        cursor=1,
+        items=(
+            ItemResult(
+                item_id=ITEM_ID,
+                status=ProblemItemStatus.VERIFIED,
+                attempt_no=1,
+            ),
+        ),
+    )
+
+    assert_problem_generation_state_transition(initial, first_attempt_started)
+    assert_problem_generation_state_transition(first_attempt_started, first_item_completed)
+
+    assert first_attempt_started.unstarted_count == 2
+    assert first_item_completed.item_attempt == 0
+    assert first_item_completed.current_slot_key == f"problem-set:{SET_ID}:slot:1"
+
+
+def test_problem_generation_state_transition_requires_attempt_reset() -> None:
+    previous = _state(item_attempt=1)
+    not_reset = _state(
+        cursor=1,
+        item_attempt=1,
+        items=(
+            ItemResult(
+                item_id=ITEM_ID,
+                status=ProblemItemStatus.VERIFIED,
+                attempt_no=1,
+            ),
+        ),
+    )
+
+    with pytest.raises(InvalidProblemGenerationStateTransition, match="초기화"):
+        assert_problem_generation_state_transition(previous, not_reset)
+
+
+def test_problem_generation_state_transition_requires_pre_call_checkpoint() -> None:
+    initial = _state()
+    completed_without_checkpoint = _state(
+        cursor=1,
+        items=(
+            ItemResult(
+                item_id=ITEM_ID,
+                status=ProblemItemStatus.VERIFIED,
+                attempt_no=1,
+            ),
+        ),
+    )
+
+    with pytest.raises(InvalidProblemGenerationStateTransition, match="외부 호출 전"):
+        assert_problem_generation_state_transition(initial, completed_without_checkpoint)
+
+
+def test_problem_generation_state_third_attempt_exhaustion_is_preserved() -> None:
+    initial = _state()
+    first_attempt_started = _state(item_attempt=1)
+    second_attempt_started = _state(item_attempt=2)
+    third_attempt_started = _state(item_attempt=3)
+    dropped = _state(
+        cursor=1,
+        items=(
+            ItemResult(
+                status=ProblemItemStatus.DROPPED,
+                attempt_no=3,
+                failure_reason=ProblemFailureReason.GENERATION_EXHAUSTED,
+            ),
+        ),
+    )
+
+    assert_problem_generation_state_transition(initial, first_attempt_started)
+    assert_problem_generation_state_transition(first_attempt_started, second_attempt_started)
+    assert_problem_generation_state_transition(second_attempt_started, third_attempt_started)
+    assert_problem_generation_state_transition(third_attempt_started, dropped)
+
+
+def test_problem_generation_state_transition_rejects_cursor_skip() -> None:
+    initial = _state()
+    skipped = _state(
+        cursor=2,
+        items=(
+            ItemResult(
+                item_id=ITEM_ID,
+                status=ProblemItemStatus.VERIFIED,
+                attempt_no=1,
+            ),
+            ItemResult(
+                item_id=SECOND_ITEM_ID,
+                status=ProblemItemStatus.NEEDS_REVIEW,
+                attempt_no=1,
+            ),
+        ),
+    )
+
+    with pytest.raises(InvalidProblemGenerationStateTransition, match="cursor"):
+        assert_problem_generation_state_transition(initial, skipped)
+
+
+def test_problem_generation_state_transition_rejects_input_change() -> None:
+    initial = _state()
+    changed_request = _state(
+        request_ref="problem-request:request-2",
+        item_attempt=1,
+    )
+
+    with pytest.raises(InvalidProblemGenerationStateTransition, match="불변"):
+        assert_problem_generation_state_transition(initial, changed_request)
+
+
+def test_problem_generation_state_transition_rejects_completed_item_replacement() -> None:
+    previous = _state(
+        cursor=1,
+        items=(
+            ItemResult(
+                item_id=ITEM_ID,
+                status=ProblemItemStatus.VERIFIED,
+                attempt_no=1,
+            ),
+        ),
+    )
+    replaced = _state(
+        cursor=1,
+        items=(
+            ItemResult(
+                item_id=SECOND_ITEM_ID,
+                status=ProblemItemStatus.NEEDS_REVIEW,
+                attempt_no=1,
+            ),
+        ),
+    )
+
+    with pytest.raises(InvalidProblemGenerationStateTransition, match="items"):
+        assert_problem_generation_state_transition(previous, replaced)
+
+
+def test_terminal_problem_generation_state_converts_to_partial_result() -> None:
+    state = _state(
+        requested_count=5,
+        cursor=2,
+        items=(
+            ItemResult(
+                item_id=ITEM_ID,
+                status=ProblemItemStatus.VERIFIED,
+                attempt_no=1,
+            ),
+            ItemResult(
+                status=ProblemItemStatus.DROPPED,
+                attempt_no=3,
+                failure_reason=ProblemFailureReason.GENERATION_EXHAUSTED,
+            ),
+        ),
+        stop_reason=SetStopReason.DROP_RATIO_EXCEEDED,
+    )
+
+    result = state.to_result(summary="2문항 처리 후 조기중단")
+
+    assert result.status is ProblemSetStatus.PARTIAL_SUCCESS
+    assert result.requested_count == 5
+    assert result.processed_count == 2
+    assert result.unstarted_count == 3
+    assert result.dropped_reasons == (ProblemFailureReason.GENERATION_EXHAUSTED,)
+
+
+def test_nonterminal_problem_generation_state_cannot_convert_to_result() -> None:
+    with pytest.raises(ValueError, match="종료되지 않은"):
+        _state().to_result()
+
+
+def test_completed_problem_generation_state_converts_to_generated_result() -> None:
+    state = _state(
+        requested_count=1,
+        cursor=1,
+        items=(
+            ItemResult(
+                item_id=ITEM_ID,
+                status=ProblemItemStatus.VERIFIED,
+                attempt_no=1,
+            ),
+        ),
+    )
+
+    result = state.to_result()
+
+    assert state.current_slot_key is None
+    assert result.status is ProblemSetStatus.GENERATED
+    assert result.processed_count == 1
+    assert result.unstarted_count == 0
 
 
 def test_ai_refine_request_requires_instruction() -> None:

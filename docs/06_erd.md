@@ -1,8 +1,10 @@
-# [체크온] AI PostgreSQL 전체 ERD v2 — [PART_A] 소유 · [PART_A+PART_B] 공용 계약 확장 반영
+# [체크온] AI PostgreSQL 전체 ERD v3 — [PART_A] 소유 · [PART_A+PART_B] 공용 실행 원장 반영
 
 원칙(변경 없음): AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본(학생·학습 기록·Alert 상태·문의 원문·Draft 승인)은 백엔드 MySQL 소유 — `…_ref`는 전부 MySQL을 가리키는 **논리 참조**(물리 FK 아님). 전 테이블 `tenant_id` 필수 + RLS.
 
-v2 추가분: `AGENT_RUN` `AGENT_STEP`(LangGraph 에이전트 2종) · `SIGNAL_BRIEF`(ⓐ) · `INQUIRY_CLASS`(ⓑ) · `TAG_SUGGESTION`(ⓒ) · `LABEL_SUGGESTION`(ⓓ)
+v2 추가분: `AGENT_RUN` `AGENT_STEP` · `SIGNAL_BRIEF`(ⓐ) · `INQUIRY_CLASS`(ⓑ) · `TAG_SUGGESTION`(ⓒ) · `LABEL_SUGGESTION`(ⓓ)
+
+v3 확장: `AGENT_RUN`을 워커 3종의 영속 `WorkerJob` 실행 원장으로 확장했다. `AGENT_RUN.id`=`job_id`, `run_id`=`execution_id`, `status`=`JobPhase`이며 operation·우선순위·lease·fencing·복구 횟수·불투명한 payload/checkpoint/result 참조를 보존한다. 워커 state의 정본은 공식 LangGraph PostgresSaver가 관리하는 내부 테이블이고, 아래 26개는 애플리케이션 소유 테이블만 센다. `state_checkpoint`는 기존 호환을 위한 **마스킹된 관측 캐시**일 뿐 재개 원본으로 사용하지 않는다.
 
 **`AI_RUN` 버전 세트:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이다. 공통 6종(`pipeline` · `engine` · `threshold` · `prompt` · `schema` · `contract`)과 [PART_B] 실행 전용 nullable 4종(`graph` · `taxonomy` · `verify_config` · `difficulty_calib`)으로 구성되며, **버전 컬럼은 총 10개**다. 실행 식별자·모델 정보·재현성 키·생성 시각까지 포함한 `AI_RUN` 전체 컬럼은 **총 18개**다.
 
@@ -16,8 +18,8 @@ erDiagram
   AI_RUN ||--o{ SIGNAL : "감지 실행"
   AI_RUN ||--o{ DRAFT : "생성 실행"
   AI_RUN ||--o{ LLM_CALL : "호출 기록"
-  AI_RUN ||--o{ AGENT_RUN : "에이전트 실행(v2)"
-  AGENT_RUN ||--o{ AGENT_STEP : "노드·도구 이력(v2)"
+  AI_RUN ||--o{ AGENT_RUN : "워커 Job 실행 원장(v3)"
+  AGENT_RUN ||--o{ AGENT_STEP : "노드·도구 이력"
   AGENT_STEP |o--o| LLM_CALL : "LLM 노드인 경우"
   LLM_CALL ||--o| LLM_PAYLOAD : "본문(마스킹 전제)"
 
@@ -70,13 +72,30 @@ erDiagram
     timestamptz created_at "TTL 30일 — alert_context 창과 정합(D-② 확정). 초과분 정리 배치"
   }
   AGENT_RUN {
-    uuid id PK
-    uuid run_id FK
-    varchar tenant_id
-    varchar agent_kind "counsel_pack|mapping_probe"
-    jsonb state_checkpoint "LangGraph 체크포인터"
-    varchar progress "예: 19/22"
-    varchar status "running|paused|done|failed"
+    uuid id PK "WorkerJob.job_id"
+    uuid run_id FK "WorkerJob.execution_id"
+    varchar tenant_id "RLS·lease 조회 범위"
+    varchar agent_kind "counsel_pack|mapping_probe|problem_generation"
+    varchar operation "고정 라우팅 5종"
+    varchar payload_ref "불변 command 논리 참조"
+    varchar payload_hash "sha256:64hex"
+    varchar priority_class "batch|standard|interactive"
+    int dispatch_attempt "lease 획득 누적 횟수"
+    int lease_generation "fencing token"
+    int recovery_count "lease 만료 회수 횟수"
+    int max_recovery_attempts "기본 3"
+    varchar lease_owner "leased|running에서만"
+    timestamptz lease_acquired_at
+    timestamptz lease_expires_at
+    varchar checkpoint_ref "PostgresSaver checkpoint 불투명 참조"
+    varchar result_ref "워커 도메인 결과 불투명 참조"
+    varchar error_code "failed|cancelled 사유"
+    timestamptz queued_at
+    timestamptz started_at
+    timestamptz finished_at
+    jsonb state_checkpoint "마스킹된 관측 캐시 — 재개 정본 아님"
+    varchar progress "조회용 투영, 예: 19/22"
+    varchar status "queued|leased|running|paused|succeeded|failed|cancelled"
     timestamptz updated_at
   }
   AGENT_STEP {
@@ -310,3 +329,5 @@ erDiagram
 **증분 반영 메모:** ① `DRAFT.agent_run_id` · `MAPPING_SPEC.probe_agent_run` 컬럼 추가(에이전트 산출 연결, 기존 경로는 null) ② `LLM_CALL.role`에 `classifier` 추가(ⓑⓒⓓ) ③ `SOURCE_PROFILE.sheets`에 양식 시그니처 포함(재수입 매칭 키) ④ 양자 승인 대상은 기존과 동일(EVIDENCE_ITEM 구조·LLM_CALL 지표 필드) + `TAG_SUGGESTION`의 area/type enum은 B의 약점 지도와 공용 어휘이므로 **[A+B]** ⑤ **(v2.1) `DRAFT_REVISION` 추가**(핑퐁 턴 이력) · 사용량 미터링은 **일일 턴제**로 확정 — `llm_usage`를 `(tenant_id, date)` 그레인으로 변경: `usage_daily(tenant_id, date PK, interactive_turns int, batch_jobs jsonb)`. 인터랙티브 턴만 일일 한도 대상, 일괄 작업(상담팩·리포트)은 월 단위 작업 카운트(게이팅 소유는 백엔드 Billing — AI는 미터링 리포트만).
 
 **(D-② 확정 통보 · 7/22)** `IDEMPOTENCY_RECORD` 신설 — 멱등 저장소의 프로세스 인메모리(재시작 소실·멀티워커 비공유, 99 ⑨)를 영속화한다. **유니크 제약 `(tenant_id, endpoint, idempotency_key)`** — 동시 삽입 경합은 이 제약으로 원자성 보장(B 크로스체킹 스코프 제안 수용). 같은 키 + 같은 `snapshot_hash` = 저장된 `response_body` 재반환 · 다른 hash = 409. **TTL 30일**(`alert_context` 창과 정합 — 새 숫자 발명 없이 기존 시간 창 재사용). 재현·감사는 `AI_RUN`이 담당하므로 응답 본문을 무기한 보관하지 않는다.
+
+**(B-1 실행 계약 확정 · 7/27)** `AGENT_RUN`은 `contracts/agents.py`의 `WorkerJob`을 영속 투영한다. 큐 선택 인덱스는 tenant·worker·phase·priority·queued_at·id, lease 회수 인덱스는 tenant·worker·phase·lease_expires_at 순이다. `dispatch_attempt`·`lease_generation`은 lease마다 증가하고, 장애 예산은 별도 `recovery_count`만 소비하므로 정상 수동 pause/resume가 복구 상한을 깎지 않는다.

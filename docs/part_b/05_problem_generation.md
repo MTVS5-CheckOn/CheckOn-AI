@@ -61,7 +61,7 @@ class PassageRequest(BaseModel):
 
 ## 4. 계약 스키마 — contracts/problem_generation.py (B 단독)
 
-**enum 규율:** `area_tag`·`type_tag`·`item_format`은 `contracts/taxonomy.py` 공용 enum을 **직접 사용**(6영역 확정 — 경계 사례만 `# TODO(B-3)`). 문자열 자유 입력 금지. `item_format`은 v1에서 `mcq` 고정 — short·essay 분기 코드 작성 금지(CLAUDE.md §3).
+**enum 규율:** `area_tag`·`type_tag`·`item_format`은 `contracts/taxonomy.py` 공용 enum을 **직접 사용**한다(6영역·B-3 경계 사례 확정). 문자열 자유 입력 금지. `item_format`은 v1에서 `mcq` 고정 — short·essay 분기 코드 작성 금지(CLAUDE.md §3).
 
 ### 4.1 워크플로 내부 요청 command
 
@@ -90,6 +90,8 @@ class ProblemRequest(BaseModel):
 `ProblemRequest`는 HTTP body DTO가 아니라 공통 헤더와 body를 조립한 **내부 command**다. 외부 `POST /problem-sets` body DTO에는 `request_id`·`idempotency_key`·`tenant_id`를 두지 않고, `X-Request-Id`·`Idempotency-Key`·`X-Tenant-Id`를 단일 원천으로 읽어 이 command에 매핑한다([`09`](09_integration_proposals.md) §2-1 B 확정).
 
 **결과 메타:** `target_source=teacher_manual` 세트는 응답과 저장에 `personalized=false`를 명시 — 화면 "약점 데이터 기반 개인화 아님" 표기의 근거 필드.
+
+**v1 단일 영역 제한:** `ProblemRequest.area_tag`는 세트 전체의 measured area 하나다. 모든 `GeneratedItem.area_tag`는 요청값을 에코해야 하며, 서로 다른 measured area를 한 세트에서 생성하지 않는다. source/passage 소재 영역은 이 필드와 별도다. 혼합 지문의 문항별 태깅은 가능하지만, 화법+작문 등 혼합영역 자동 세트 생성은 후속 다중 목표 계약 전까지 지원하지 않는다([`taxonomy`](../policies/taxonomy.md) §2.1).
 
 **taxonomy_version 정본 규칙:** 실행 단위의 정본은 `ExecutionContext.versions.taxonomy_version`이다. `ProblemRequest.taxonomy_version`은 요청 대상 약점 지도·실행 버전 확인용 **에코**이고, `WeaknessMap.taxonomy_version`([`04`](04_curriculum_graph.md) §5.5)과 함께 **세 값이 해당 실행에서 반드시 같아야 한다.** 값이 다르면 LLM 호출·문항 생성을 시작하지 않는다 — 워크플로 입력 조립 단계에서 결정론적으로 거부(임의 보정·최신 버전 자동 변환 금지). 강제 주체는 개별 Pydantic 모델이 아니라 워크플로 구현이다.
 
@@ -151,7 +153,41 @@ class SolveResult(BaseModel):
 
 - 응답은 공용 envelope: `data` / `meta.execution_id` / `meta.versions` / `error`. **meta.versions는 공용 `VersionSet`** — 공통 6종(pipeline·engine·schema·contract + nullable threshold·prompt) + **B 전용 nullable 4종(graph·taxonomy·verify_config·difficulty_calib — ✅ A+B 승인·`d5283d0` 구현 및 공용 문서 동기화 완료, [`09`](09_integration_proposals.md) §2-9·§2-10)** 을 그대로 따른다. B 버전은 산출물 행(WEAKNESS_MAP·PROBLEM_ITEM)에도 함께 저장된다(재현 조회 키). **meta.quota는 없다**(7/15 폐기 — AI는 쿼터 무관).
 - 비동기 세트 상태: `queued → generating → generated | partial_success | failed` + 진행률(`"7/10"`). 완료 통지는 Kafka(09 §2-1), GET은 보조. `partial_success` 등 상태 사전 추가는 공용 제안(09 §2-2) — 확정 전 `[제안]`.
-- 결과: `ProblemSetResult { set_id, status, stop_reason, personalized, items: list[ItemResult], summary, dropped_reasons }` — 수량 미달을 숨기지 않는다.
+- 생성 요청의 정상 결과는 `ProblemGenerationOutcome` 판별 유니언이다.
+
+```python
+class RejectedInsufficientOutcome(BaseModel):
+    outcome: Literal["rejected_insufficient"]
+    status: Literal["rejected_insufficient"]
+    target_source: Literal[TargetSource.WEAKNESS_AUTO]
+    personalized: Literal[False]
+    weakness_map_id: None
+    status_reason: str
+
+class ProblemSetResult(BaseModel):
+    outcome: Literal["problem_set"]
+    set_id: UUID
+    status: ProblemSetStatus
+    stop_reason: SetStopReason | None
+    target_source: TargetSource
+    personalized: bool
+    requested_count: int
+    processed_count: int
+    unstarted_count: int
+    items: tuple[ItemResult, ...]
+    summary: str | None
+    dropped_reasons: tuple[ProblemFailureReason, ...]
+
+type ProblemGenerationOutcome = Annotated[
+    RejectedInsufficientOutcome | ProblemSetResult,
+    Field(discriminator="outcome"),
+]
+```
+
+- `rejected_insufficient`는 자동 개인화 데이터가 부족해 세트를 만들기 전에 정상 종료한 결과다. 예외나 워커 실패가 아니며 HTTP 200으로 반환한다. 세트가 생성되지 않았으므로 `set_id`와 수량 필드는 없다.
+- `processed_count == len(items)`와 `requested_count == processed_count + unstarted_count`를 항상 만족한다. 진행 결과는 문항 체크포인트 경계에서만 기록해 처리 중 슬롯이 별도로 남지 않게 한다.
+- `generated`는 요청 문항을 모두 처리하고 모두 `verified|needs_review`인 경우만 허용한다. `partial_success`는 성공 문항이 하나 이상이고 실패 문항 또는 미처리 문항이 있을 때, `failed`는 성공 문항이 없을 때만 허용한다.
+- 최종 결과에 `unstarted_count > 0`이면 조기 중단 원인을 `stop_reason`에 반드시 기록한다. `verification_unavailable`과 `partial_success`는 결과를 정상 확정한 워크플로의 도메인 상태이며, 그 자체를 워커 실행 실패로 승격하지 않는다.
 
 ## 5. 프롬프트 템플릿 3종 — registry 등록 사양
 

@@ -1,4 +1,4 @@
-"""FastAPI 앱 팩토리 · 예외 핸들러 — 공통 계약 (⚠ B 확인 대기, 02_ownership §5 v3).
+"""FastAPI 앱 팩토리 · 예외 핸들러 — 공통 계약 (A+B 확인 완료, 02_ownership §5 v3).
 
 DomainException(runtime/errors.py, error_codes §4)을 code·http_status로 매핑해
 error envelope로 응답한다. 미분류 예외는 500 INTERNAL(내부 상세 응답 미포함 — 로그만).
