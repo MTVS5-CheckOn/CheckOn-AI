@@ -23,7 +23,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 
 ## 2. Request — `POST /v1/detect` (백엔드 → AI, 매일 새벽 02:10 1회)
 
-헤더: `X-Tenant-Id`(강사 alias) · `X-Request-Id` · `Idempotency-Key = tenant + week_start` (같은 키로 재호출하면 같은 결과 — 배치 재시도 안전).
+헤더: `X-Tenant-Id`(강사 alias) · `X-Request-Id` · `Idempotency-Key = tenant + analysis_date`(배치 실행 기준일) **[A 확정 7/28 — 백엔드 협의 회신 반영]**. 멱등키는 **"같은 실행의 재시도 보호"** 단위이고 배치는 매일 새벽 02:10 1회이므로 실행 기준일(`analysis_date`)로 스코프한다 — 판정 기준인 `week_start`는 `snapshot_meta`(바디) 소유라 **판정 의미는 무변**이다. 재시도는 저장해 둔 **동일 스냅숏 바디를 그대로 재전송**한다(재생성 금지) — 같은 키 + **다른 `snapshot_hash`**의 `409 IDEMPOTENCY_CONFLICT`는 오류가 아니라 "다른 실행"을 막는 안전장치다(error_codes §1 의미 무변).
 **실명·연락처 필드는 어디에도 없습니다** — 보내기 전에 전부 가명(alias)으로 치환해 주세요.
 
 ```json
@@ -35,6 +35,9 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
     "snapshot_hash": "sha256:9f2c...",
         // 이 요청 본문 전체(alert_context 포함)를 해시한 값. 백엔드가 계산해서 보냄.
         // 용도: 나중에 "그날 왜 그런 판정이 나왔나" 재현·감사할 때 같은 입력임을 증명
+        // 계산·정규화 규칙은 백엔드 소유 — AI는 재계산·검증하지 않고 ① AI_RUN 원장 저장(재현성
+        //   추적) ② 멱등 바디 동일성 문자열 비교에만 쓴다. 형식은 sha256:{64자리 hex} 관례
+        //   권장(스키마 강제 아님 — contracts 제약은 min_length=1뿐). [A 확정 7/28]
 
     "term_context": "normal",
         // 학사 상황. normal(평상시) | new_term(신학기 — 반 재편성 직후라 AI가 기준을 느슨하게 잡음)
