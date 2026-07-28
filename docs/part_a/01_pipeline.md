@@ -183,7 +183,7 @@ label_suggestion(id PK, tenant_id, guardian_ref, axis, value,
                  status[suggested|confirmed|rejected])                           -- ⓓ
 ```
 
-기존 원칙 유지: 전 테이블 tenant_id+RLS, 도메인 원본은 MySQL, ai_run/llm_call 연결로 재현·비용 추적.
+기존 원칙 유지: 전 테이블 tenant_id + 애플리케이션 계층 격리(RLS 미도입 — 99 BE-11), 도메인 원본은 MySQL, ai_run/llm_call 연결로 재현·비용 추적.
 
 ## 6. 검증·테스트 증분
 

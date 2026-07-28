@@ -318,7 +318,7 @@ sequenceDiagram
 
 > 현재 애플리케이션 정본은 `docs/06_erd.md` v3의 26테이블이다. 아래 다이어그램은 A 파트 v2.1 설계 맥락을 보존한 것이며, 구현·마이그레이션 대조에는 사용하지 않는다.
 
-**원칙(불변):** AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본은 백엔드 MySQL 소유 — `…_ref`는 논리 참조(물리 FK 아님). 전 테이블 `tenant_id` + RLS. (v2.1: `DRAFT_REVISION` 추가 · 사용량 미터링은 `usage_daily(tenant_id, date)` 그레인 — ERD 전체 v2 문서와 동일)
+**원칙(불변):** AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본은 백엔드 MySQL 소유 — `…_ref`는 논리 참조(물리 FK 아님). 전 테이블 `tenant_id` + **애플리케이션 계층 격리**(RLS 미도입 — 실도입 여부는 99 BE-11). (v2.1: `DRAFT_REVISION` 추가 · 사용량 미터링은 `usage_daily(tenant_id, date)` 그레인 — ERD 전체 v2 문서와 동일)
 
 ```mermaid
 erDiagram
@@ -352,7 +352,7 @@ erDiagram
 
   AI_RUN {
     uuid execution_id PK
-    varchar tenant_id "teacher alias · RLS 키"
+    varchar tenant_id "teacher alias · 격리 키"
     varchar capability "detection|composition|import_mapping"
     varchar pipeline_version
     varchar engine_version

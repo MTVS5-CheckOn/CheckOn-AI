@@ -63,6 +63,7 @@
 | B-6 | LangSmith 도입 | runtime/ | ✅ **(7/15) 공통 1개로 도입** — 프로젝트·키 공용. 마스킹 훅은 게이트웨이 앞단(트레이스에 마스킹 통과분만) |
 | B-7 | evidence resolver 주입 시그니처 | evidence/resolver.py | ☐ |
 | B-8 | **VersionSet capability별 validator [양자]** | contracts/execution.py | ☐ **(7/22 등록)** — A 실행에 B 버전 키 혼입 금지·B 실행에 B 키 필수를 `ExecutionContext` 조립 경계에서 강제할지. `execution.py`(양자 승인 파일) 변경이라 A·B 강제 수준 합의 필요. 04 §2.2 크로스체킹 회신 |
+| B-10 | **RLS 구현 부재** `[B 신규 등록 — part_b/09 §3]` | 06_erd · part_a/01·02 | ✅ **(7/28) A 판정 — 문서 표현 정정으로 확정.** `src/` 전체 `ROW LEVEL SECURITY`·`CREATE POLICY` 0건 실측 → 문서를 "전 테이블 `tenant_id` + 애플리케이션 계층 격리"로 정정. B 8테이블도 기존 26테이블 패턴 유지. **실도입 여부는 BE-11로 이관** |
 
 ## C. 백엔드 합의 안건
 
@@ -77,6 +78,7 @@
 | BE-7 | 체크온 표준 스키마 공동 확정 (3자 일치) | 표준 스키마 정의서 — 미작성 | ✅ **(7/15) 원칙 합의** — ☐ 초안 A 작성→백엔드 리뷰 잔여 |
 | BE-8 | suggested 확정 회신 경로 | 04 §3.3 | 🟠 **(7/15) A가 만들기로** — 규약은 계약 §3.3에 이미 있음, /confirmations 구현이 A 백로그로 확정 |
 | BE-9 | Import 결과 반영 경로 | 04 §3.8 | 🟠 **(7/15) A가 만들기로** — Open-3 확정(산출물 스토리지 URL → 백엔드 F1 경로 반영)대로 A가 출력 스펙 구현 |
+| BE-11 | **RLS 실도입 여부 [A+BE]** | 06_erd · part_a/01·02 · db/session.py · db/store_factory.py | ☐ **(7/28 등록 — `part_b/09` §2-4.5·§3 B-10에서 이관)** — 현재 26+8테이블 전부 `tenant_id` 컬럼 + **앱 계층 격리**이며 `src/` 전체에 `ROW LEVEL SECURITY`·`CREATE POLICY` **0건**(7/28 실측). 도입 시 `db/session.py`·`db/store_factory.py`의 연결·역할 설계와 함께 **일괄 적용**(테이블마다 격리 방식이 갈리면 안 됨). 문서 표현은 7/28 앱 계층 격리로 정정 완료. `src/`의 "RLS 키" 주석 3줄(`contracts/execution.py`·`db/models.py` ×2)은 **양자 승인 파일**이라 RLS 결론 확정 시 함께 정정한다 |
 | BE-10 | R2 제출률 분모(주간 기대 과제 수) 제공 | 04 §1 R2 · 09 §2 · contracts/detection.py | ☐ **(7/21 등록)** — `submit_drop_pp` 경로 활성화에 필요. 현재 스냅숏엔 submit 이벤트 유무만 있어 제출률 분모가 없음 → v0는 `consecutive_missing`만 동작. 백엔드가 주간 기대 과제 수를 요청 필드로 제공하면 활성화. 계약 필드 추가라 협의 대상 |
 
 ## D. 남은 작성물 (A 자체)
