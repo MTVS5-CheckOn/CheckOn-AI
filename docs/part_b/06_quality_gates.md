@@ -149,7 +149,7 @@ A threshold 시트 방식 준용: `verify_config` 버전 행(이전 버전 보�
 | 키 | 값 | 소비처 |
 | --- | --- | --- |
 | `regen_max` | **2** (총 시도 3회 — 확정) | §4 item_attempt |
-| `transport_retry` | 1 | gateway 전송 재시도(§4) |
+| `transport_retry` | 1 | gateway 전송 재시도(§4). **소비 범위는 B role 한정**(`generator`·`verifier`) `[2026-07-28]` — 게이트웨이가 role별 주입을 받게 되면서 A 소비자(`narrator`·`mapper`)는 A 정책값을 따로 쓴다. 이 시트값은 **조립부가 게이트웨이에 주입**하며 게이트웨이는 시트를 모른다(계산·I/O 분리 — [`09`](09_integration_proposals.md) §1-10). 최악 호출 수 계산(§4 논리 6콜·전송 12요청)은 이 값 기준이다 |
 | `dup_similarity_max` | 0.8 | R-6 |
 | `cross_confidence_high` | 0.8 | ② 풀이 판정 |
 | `alignment_confidence_min` | 0.7 | ② 정렬 판정(경계 미만 = 배지) |

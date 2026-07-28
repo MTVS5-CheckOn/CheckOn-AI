@@ -106,9 +106,10 @@ A가 브리핑·mapping_probe 배선 전에 요청한 게이트웨이(`llm/` —
 
 | 안건 | B 회신 | 작업 주체 |
 | --- | --- | --- |
-| **① role별 전송 재시도 0회 허용** | ✅ **승인 — B가 파라미터를 연다.** A가 제시한 차선책 "어댑터 직결 유지"는 [`01`](01_pipeline.md) §5 "모든 LLM 호출은 gateway 경유 — 예외 없음" **위반이므로 수용 불가**. 직결 시 role 라우팅·원가 기록·redaction 훅이 소비자마다 갈라진다 | **B**(구현) → A(값 주입) |
-| **② `LlmCallRecord.execution_id`** | ✅ **②안 동의**(recorder가 `ExecutionContext`를 함께 수신). 게이트웨이가 이미 `complete(request, context)`로 context를 받고 있어 추가 배선 0. `LlmCallRecord`의 정의가 "호출 1회분 비민감 관측 메타"이므로 실행 문맥을 record에 복제하지 않는다 | A(적재) · B(시그니처 리뷰·머지) |
-| **③ LangSmith 마스킹 훅** | ◐ **조건부 승인 — 훅을 2개로 분리**. "기본 no-op 단일 훅"은 `CLAUDE.md` 불변식 3과 충돌 | B(훅 신설) · A(마스킹 함수 주입) |
+| **① role별 전송 재시도 0회 허용** | ✅ **승인 → `[2026-07-28] 구현 완료·머지`**(A PR `feat/llm-gateway-policy-v1`). A가 제시한 차선책 "어댑터 직결 유지"는 [`01`](01_pipeline.md) §5 "모든 LLM 호출은 gateway 경유 — 예외 없음" **위반이므로 수용 불가**였고, 대신 B가 파라미터를 열기로 했으나 **A가 합의문 그대로 구현**했다. 조건 (a)~(d) 전수 충족 확인: 생성자 주입 · `0..1` 기동 실패(`_validated_transport_retry`) · sheet-agnostic · 성공·예외 양쪽 경로 시도별 기록 | A(구현·머지) · B(리뷰 완료) |
+| **② `LlmCallRecord.execution_id`** | ✅ **②안 동의 → `[2026-07-28] 구현 완료·머지`.** `LlmCallRecorder = Callable[[LlmCallRecord, ExecutionContext], None]`로 확장됐고, B 조건이던 **"적재 실패가 호출을 실패시키지 않되 조용한 누락도 금지"** 가 `LlmGateway.record_failures` 카운터로 구현됐다. `LlmCallRecord`의 정의("호출 1회분 비민감 관측 메타")를 지켜 실행 문맥을 record에 복제하지 않았다 | A(적재) · B(리뷰 완료) |
+| **③ LangSmith 마스킹 훅** | ◐ **조건부 승인 — 훅을 2개로 분리**. "기본 no-op 단일 훅"은 `CLAUDE.md` 불변식 3과 충돌. **잔여 — 별도 PR** | B(훅 신설) · A(마스킹 함수 주입) |
+| **(부수) `ModelRole.NARRATOR` 신설** | ✅ **O → `[2026-07-28] 구현 완료.`** `composer` 대신 **작업 성격 기반** 이름을 택해 기존 4종(생성·검증·매핑추론·분류) 관례와 정합. capability 전체를 뜻하지 않으므로 초안·리포트·refine이 자동 흡수되지 않는다 — 그 셋을 narrator에 넣을지는 배선 시점에 **재시도 정책이 브리핑과 같아도 되는지**로 판단한다. `llm_call.role`이 varchar라 마이그레이션 없음(`06_erd.md` §255 반영 완료) | A(신설) · B(승인) |
 
 #### ① 전송 재시도 파라미터 — B 확정 사양
 
@@ -198,7 +199,7 @@ M2 문제생성 착수에 필요한 A 승인·작업을 한 표로 모았다. �
 | **A-7** | **`[7/27 범위 축소]`** `docs/policies/langgraph_state.md` §2.4의 `ProblemGenerationState` 코드블록에 **필드 2줄 추가 리뷰** — `fallback_ref: str \| None` · `difficulty_regen_used: bool`. `state_schema_version`은 **`v1` 유지**(기본값 보유로 기존 체크포인트 그대로 재개 · 올리면 §3.2에 따라 진행 중 세트 전량 재기동) | §2-4.6 · [`10`](10_m2_problem_generation_architecture.md) §4.1 C3 | 공용 정책(A 리뷰) | 종전 "보존 규칙을 정해달라"에서 축소됨 — **B가 KEEP-1~9로 설계를 닫았고**, 본문은 `ITEM_CANDIDATE`에 두고 state엔 포인터만 둬 §2.4의 "본문 미복제" 원칙을 지킨다 | ☐ 확인 |
 | **A-8** | §2-10 문서 동기화 **잔여 4건** — `99_open_items`(B-2 완료 표기) · `part_a/08 §1`(`golden/diagnosis/` 행) · `02_ownership §5`(`golden/diagnosis/` 소유 행) · `00_INDEX`(part_b 링크 절) | §2-10 | 문서(A·공용) | 승인·구현이 끝난 항목의 문서 지연분 | ☐ 잔여 |
 | **A-9** | 7/22 감지·API 리뷰 잔여 회신 — ongoing 상한 제외 후 요약 동기화 · 병합 lifecycle 경계 · 회귀/데모 · 공용 실패 meta · 민감 detail 제거 `[P0]` | §1-7 · §1-8 · §2-11 | A(+BE) | B 무관하나 공용 wire 확정에 필요 | ◐ 진행 |
-| **A-10** | **"모든 LLM 호출은 gateway 경유 — 예외 없음" 규칙을 `docs/03_coding_rules.md`로 승격** (A 제안·B 동의). 현재 이 규칙은 [`01`](01_pipeline.md) §5에만 있어 B 규율로 읽힌다. **확인된 사실:** `03_coding_rules.md`에 gateway·LLM 호출 관련 조항이 **0건**이라 승격할 자리가 비어 있다. 과도기(브리핑 #22 어댑터 직결) 조건 2건 — **종료 시점 = ①+② 머지** · **그때까지 신규 직결 추가 금지** | §1-10 | 문서(A 소유) | 규칙의 적용 범위가 A·B 공용으로 확정됨. 승격 전에는 A 소비자의 직결이 규율 위반인지 해석이 갈린다 | ☐ 신규 |
+| **A-10** | **"모든 LLM 호출은 gateway 경유 — 예외 없음" 규칙을 `docs/03_coding_rules.md`로 승격** (A 제안·B 동의). 현재 이 규칙은 [`01`](01_pipeline.md) §5에만 있어 B 규율로 읽힌다. **확인된 사실:** `03_coding_rules.md`에 gateway·LLM 호출 관련 조항이 **0건**이라 승격할 자리가 비어 있다. **`[2026-07-28] 과도기 종료 — 조건 충족.`** ①+②가 머지되고 브리핑이 `narrator` role로 게이트웨이에 배선되면서 어댑터 직결이 해소됐다. 이제 **남은 것은 `03_coding_rules.md` 승격 실행 한 건**이다 | §1-10 | 문서(A 소유) | 규칙의 적용 범위가 A·B 공용으로 확정됨. 승격 전에는 A 소비자의 직결이 규율 위반인지 해석이 갈린다 | ☐ 승격 대기 |
 
 **P0 5건(A-1~A-5)이 M2 착수의 실질 관문이다.** 나머지는 병렬로 진행 가능하다.
 
