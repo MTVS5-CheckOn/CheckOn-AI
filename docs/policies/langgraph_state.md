@@ -108,6 +108,8 @@ class ProblemGenerationState(BaseModel):
     cursor: int = 0                   # 완료된 슬롯 수이자 다음 슬롯의 0-based index
     items: tuple[ItemResult, ...] = ()
     item_attempt: int = 0             # 현재 cursor 슬롯에서 이미 소모한 공통 예산, 0..3
+    fallback_ref: str | None = None   # 첫 검증본 ITEM_CANDIDATE 포인터 — 본문 미복제(part_b/10 §4.1 C3 · part_b/09 §2-4.6)
+    difficulty_regen_used: bool = False   # 난이도 사유 재생성 1회 소모 여부(part_b/10 §4.1 C3)
     stop_reason: SetStopReason | None = None
 ```
 
