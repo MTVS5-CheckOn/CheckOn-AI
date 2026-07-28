@@ -56,7 +56,7 @@
 | # | 안건 | 결과 반영처 | 상태 |
 | --- | --- | --- | --- |
 | B-1 | 지시서 개정 4건 + 에이전트 구조 | part_a/01_pipeline · policies/langgraph_state | ✅ **(7/15 구조 승인 · 7/27 실행 계약 확정)** — 슈퍼바이저 1 + 워커 3(상담팩[A]·매핑조사[A]·문제생성[B]). 영속 WorkerJob·결정론 라우팅·부분 수렴·재개·멱등 terminal 이벤트까지 확정되어 구현 착수 가능 |
-| B-2 | 공용 계약 4파일 초안 리뷰 순서 | contracts/ | ☐ |
+| B-2 | 공용 계약 4파일 초안 리뷰 순서 | contracts/ | ✅ **(7/28 표기 반영)** — 공용 계약 B 확장 **14항목 승인·구현 완료**(`d5283d0`). 잔여는 `EVIDENCE_ITEM.owner_kind` += `problem_item` 1건뿐이며 A-2로 승인(7/28), 편집은 B의 8테이블 PR 몫(09 §2-4.1) |
 | B-3 | 수능 enum 확정(=Open-11) + 경계 사례 7건 판정 | policies/taxonomy · contracts/taxonomy.py | ✅ **완료** — enum 확정(7/15), 경계 사례 7건·measured area 원칙·v1 단일 영역 세트 제한 확정(7/27) |
 | B-4 | ~~서술형 채점 분담~~ | — | ❌ **폐기(7/15)** — v1은 mcq만이라 서술형 채점 자체가 없음. F17 OCR 소유만 P2 시점에 Open-12와 함께 재론 |
 | B-5 | LLM 게이트웨이 인터페이스·벤더 | contracts/llm.py | ✅ **(7/23) 벤더 확정 — 팀 로컬 OpenAI 호환 서버(Gemma 계열).** SDK 설치 금지 해제. `openai` SDK는 `llm/providers/` 안에서만 import 허용(capability·contracts 직접 import 금지 — 벤더 독립 유지). provider 어댑터는 **A 초안 PR + B 승인**(llm/ 소유 §4). 게이트웨이 재시도·라우팅은 B |
