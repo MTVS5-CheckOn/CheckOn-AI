@@ -38,6 +38,14 @@ def _week(offset_weeks: int) -> str:
     return (_BASE_MONDAY + timedelta(weeks=offset_weeks)).isoformat()
 
 
+def _analysis_date(day: int) -> str:
+    """배치 실행 기준일(analysis_date) — 멱등키 스코프. 일별 배치(02:10)라 실행마다 하루씩
+    나아간다. 판정 기준 week_start(바디)와 별개다 — 09 §2 [A 확정 7/28]. day0 배치는 백필
+    주간(10주) 다음에 돈다."""
+    first_run = _BASE_MONDAY + timedelta(weeks=10)  # day0 배치 실행일
+    return (first_run + timedelta(days=day)).isoformat()
+
+
 def _plans(total_weeks: int) -> list[StudentPlan]:
     """고정 seed 시나리오 — 하락 지속(R1)·숨은 위기(R4)·안정 대조."""
     declining = tuple(round(0.9 - 0.05 * i, 4) for i in range(total_weeks))
@@ -56,11 +64,12 @@ def _plans(total_weeks: int) -> list[StudentPlan]:
     ]
 
 
-def _headers(week_start: str) -> dict[str, str]:
+def _headers(week_start: str, analysis_date: str) -> dict[str, str]:
     return {
         "X-Tenant-Id": _TENANT,
         "X-Request-Id": f"sim-{week_start}",
-        "Idempotency-Key": f"{_TENANT}:{week_start}",
+        # 멱등키 = tenant + analysis_date(배치 실행 기준일) — 09 §2 [A 확정 7/28].
+        "Idempotency-Key": f"{_TENANT}:{analysis_date}",
     }
 
 
@@ -102,7 +111,9 @@ def run(base_url: str, days: int) -> int:
                 request = request.model_copy(update={"alert_context": context})
 
                 response = client.post(
-                    "/v1/detect", json=to_payload(request), headers=_headers(week_start)
+                    "/v1/detect",
+                    json=to_payload(request),
+                    headers=_headers(week_start, _analysis_date(day)),
                 )
                 response.raise_for_status()
                 signals = response.json()["data"]["signals"]
