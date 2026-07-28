@@ -56,12 +56,13 @@ class _StubProvider:
 
 
 def test_model_role_values_frozen() -> None:
-    """ERD LLM_CALL.role "generator|verifier|mapper|classifier(v2)"."""
+    """ERD LLM_CALL.role "generator|verifier|mapper|classifier(v2)|narrator(v2.1)"."""
     assert {role.value for role in ModelRole} == {
         "generator",
         "verifier",
         "mapper",
         "classifier",
+        "narrator",
     }
 
 
