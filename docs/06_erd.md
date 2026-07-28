@@ -66,7 +66,7 @@ erDiagram
     uuid id PK
     varchar tenant_id "RLS 키"
     varchar endpoint "예: POST /v1/detect — 키 스코프"
-    varchar idempotency_key "= tenant + week_start 등 (요청 헤더)"
+    varchar idempotency_key "= tenant + analysis_date 등 (요청 헤더 — 09 §2)"
     varchar snapshot_hash "바디 동일성 판정 — 04 부록 A canonical 해시"
     jsonb response_body "저장된 응답 envelope (같은 키+같은 hash면 재반환)"
     timestamptz created_at "TTL 30일 — alert_context 창과 정합(D-② 확정). 초과분 정리 배치"
@@ -252,7 +252,7 @@ erDiagram
   LLM_CALL {
     uuid id PK
     uuid run_id FK
-    varchar role "generator|verifier|mapper|classifier(v2)"
+    varchar role "generator|verifier|mapper|classifier(v2)|narrator(v2.1)"
     varchar provider
     varchar model
     varchar prompt_id
@@ -326,7 +326,7 @@ erDiagram
 
 > **[PART_B 크로스체킹 요청 · 미확정 — SIGNAL.rank]** `SIGNAL.rank`의 “상한 적용 후”는 A가 7/22 확정한 `new`·`follow_up`만 상한 적용 후 ongoing·R5 합류 정책을 충분히 표현하지 못한다. 상한 밖 신호도 rank를 가지며 최종 rank는 5를 넘을 수 있다. **제안 해결안:** rank를 “반 내 최종 표시 순번(new·follow_up 통과분 뒤 ongoing·R5)”으로 정의하고, DB·백엔드 DTO에 rank≤`cap_max` 제약이 없는지 A·백엔드가 확인해 달라. 기존 ERD 값은 확인 전 변경하지 않는다.
 
-**증분 반영 메모:** ① `DRAFT.agent_run_id` · `MAPPING_SPEC.probe_agent_run` 컬럼 추가(에이전트 산출 연결, 기존 경로는 null) ② `LLM_CALL.role`에 `classifier` 추가(ⓑⓒⓓ) ③ `SOURCE_PROFILE.sheets`에 양식 시그니처 포함(재수입 매칭 키) ④ 양자 승인 대상은 기존과 동일(EVIDENCE_ITEM 구조·LLM_CALL 지표 필드) + `TAG_SUGGESTION`의 area/type enum은 B의 약점 지도와 공용 어휘이므로 **[A+B]** ⑤ **(v2.1) `DRAFT_REVISION` 추가**(핑퐁 턴 이력) · 사용량 미터링은 **일일 턴제**로 확정 — `llm_usage`를 `(tenant_id, date)` 그레인으로 변경: `usage_daily(tenant_id, date PK, interactive_turns int, batch_jobs jsonb)`. 인터랙티브 턴만 일일 한도 대상, 일괄 작업(상담팩·리포트)은 월 단위 작업 카운트(게이팅 소유는 백엔드 Billing — AI는 미터링 리포트만).
+**증분 반영 메모:** ① `DRAFT.agent_run_id` · `MAPPING_SPEC.probe_agent_run` 컬럼 추가(에이전트 산출 연결, 기존 경로는 null) ② `LLM_CALL.role`에 `classifier` 추가(ⓑⓒⓓ) · **(v2.1) `narrator` 추가**(브리핑 문장화 전용 — 09 §1-10 · varchar라 마이그레이션 없음) ③ `SOURCE_PROFILE.sheets`에 양식 시그니처 포함(재수입 매칭 키) ④ 양자 승인 대상은 기존과 동일(EVIDENCE_ITEM 구조·LLM_CALL 지표 필드) + `TAG_SUGGESTION`의 area/type enum은 B의 약점 지도와 공용 어휘이므로 **[A+B]** ⑤ **(v2.1) `DRAFT_REVISION` 추가**(핑퐁 턴 이력) · 사용량 미터링은 **일일 턴제**로 확정 — `llm_usage`를 `(tenant_id, date)` 그레인으로 변경: `usage_daily(tenant_id, date PK, interactive_turns int, batch_jobs jsonb)`. 인터랙티브 턴만 일일 한도 대상, 일괄 작업(상담팩·리포트)은 월 단위 작업 카운트(게이팅 소유는 백엔드 Billing — AI는 미터링 리포트만).
 
 **(D-② 확정 통보 · 7/22)** `IDEMPOTENCY_RECORD` 신설 — 멱등 저장소의 프로세스 인메모리(재시작 소실·멀티워커 비공유, 99 ⑨)를 영속화한다. **유니크 제약 `(tenant_id, endpoint, idempotency_key)`** — 동시 삽입 경합은 이 제약으로 원자성 보장(B 크로스체킹 스코프 제안 수용). 같은 키 + 같은 `snapshot_hash` = 저장된 `response_body` 재반환 · 다른 hash = 409. **TTL 30일**(`alert_context` 창과 정합 — 새 숫자 발명 없이 기존 시간 창 재사용). 재현·감사는 `AI_RUN`이 담당하므로 응답 본문을 무기한 보관하지 않는다.
 

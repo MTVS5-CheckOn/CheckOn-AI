@@ -30,7 +30,7 @@ from pydantic import ValidationError
 from ai.api.envelope import success_envelope
 from ai.composition.briefing import make_brief
 from ai.composition.briefing_context import build_contexts
-from ai.composition.provider import build_brief_provider
+from ai.composition.provider import build_brief_gateway, build_brief_provider
 from ai.contracts.detection import (
     CONSENT_GRANTED,
     OBSERVED_ONLY_MIN_WEEKS,
@@ -59,6 +59,7 @@ from ai.detection.features import (
 from ai.detection.lifecycle import has_return_care_history
 from ai.detection.segments import resolve_segment
 from ai.detection.thresholds import ThresholdConfig, default_threshold_config
+from ai.llm.gateway import LlmGateway
 from ai.runtime.errors import IdempotencyConflict, SnapshotInvalid
 
 logger = logging.getLogger(__name__)
@@ -86,20 +87,27 @@ _idempotency_store: IdempotencyStore = build_idempotency_store()
 _detection_store: DetectionStore = build_detection_store()
 
 #: 브리핑 문장화(ⓐ) — provider는 settings로 fake↔openai_compat(기본 fake). 총 예산 45s.
+#: LLM 호출은 gateway(role=narrator, 전송 재시도 0) 경유 — 어댑터 직결 종료(03_coding_rules §2).
 _brief_provider: LLMProvider = build_brief_provider()
+_brief_gateway: LlmGateway = build_brief_gateway(_brief_provider)
 _BRIEFING_BUDGET_S = 45.0
 #: 신호별 브리핑 LLM 호출 동시 실행 상한 — 팀 로컬 서버 부하를 배려한 세마포어(v3 병렬화).
 _BRIEFING_CONCURRENCY = 3
 
 
 def set_brief_provider(provider: LLMProvider) -> None:
-    """브리핑 provider 주입 — 테스트에서 실패·게이트 시나리오 mock을 꽂는다."""
-    global _brief_provider
+    """브리핑 provider 주입 — 테스트에서 실패·게이트 시나리오 mock을 꽂는다.
+
+    provider는 narrator 게이트웨이로 감싸 주입한다 — make_brief는 gateway 경유로 호출한다
+    (직결 제거). mock의 호출 횟수·예외는 gateway가 그대로 통과시켜 기존 검증이 유지된다.
+    """
+    global _brief_provider, _brief_gateway
     _brief_provider = provider
+    _brief_gateway = build_brief_gateway(provider)
 
 
 def reset_brief_provider() -> None:
-    """테스트 격리용 — 브리핑 provider를 재빌드한다(기본 fake)."""
+    """테스트 격리용 — 브리핑 provider·게이트웨이를 재빌드한다(기본 fake)."""
     set_brief_provider(build_brief_provider())
 
 
@@ -272,7 +280,7 @@ async def _apply_briefing(
         async with semaphore:
             return await make_brief(
                 contexts[signal.signal_id],
-                _brief_provider,
+                _brief_gateway,
                 context=context,
                 now=time.monotonic,
                 deadline=deadline,

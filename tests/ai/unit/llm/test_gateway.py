@@ -18,11 +18,20 @@ from ai.contracts.llm import (
     ParseFailed,
     TokenUsage,
 )
-from ai.llm.gateway import LlmCallRecord, LlmGateway
+from ai.llm.gateway import LlmCallRecord, LlmCallRecorder, LlmGateway
 
 
 def _run[ResultT](coroutine: Coroutine[object, object, ResultT]) -> ResultT:
     return asyncio.run(coroutine)
+
+
+def _collect(records: list[LlmCallRecord]) -> LlmCallRecorder:
+    """리스트에 기록을 모으는 recorder(2인자 시그니처 — 09 §1-10 ②). context는 미사용."""
+
+    def _record(record: LlmCallRecord, _context: ExecutionContext) -> None:
+        records.append(record)
+
+    return _record
 
 
 def _context() -> ExecutionContext:
@@ -64,7 +73,7 @@ def _result(outcome: CallOutcome = CallOutcome.OK) -> LLMResult:
 def test_timeout_once_then_success_retries_once_and_records_both_attempts() -> None:
     records: list[LlmCallRecord] = []
     provider = FakeProvider([LlmTimeout("일시 장애"), _result()])
-    gateway = LlmGateway({ModelRole.GENERATOR: provider}, recorder=records.append)
+    gateway = LlmGateway({ModelRole.GENERATOR: provider}, recorder=_collect(records))
 
     result = _run(gateway.complete(_request(), _context()))
 
@@ -79,7 +88,7 @@ def test_timeout_once_then_success_retries_once_and_records_both_attempts() -> N
 def test_two_timeouts_propagate_without_third_attempt() -> None:
     records: list[LlmCallRecord] = []
     provider = FakeProvider([LlmTimeout("첫 실패"), LlmTimeout("둘째 실패")])
-    gateway = LlmGateway({ModelRole.GENERATOR: provider}, recorder=records.append)
+    gateway = LlmGateway({ModelRole.GENERATOR: provider}, recorder=_collect(records))
 
     with pytest.raises(LlmTimeout, match="둘째 실패"):
         _run(gateway.complete(_request(), _context()))
@@ -104,7 +113,7 @@ def test_unavailable_is_retried_once() -> None:
 def test_parse_failed_is_propagated_without_retry() -> None:
     records: list[LlmCallRecord] = []
     provider = FakeProvider([ParseFailed("JSON 오류"), "호출되면 안 됨"])
-    gateway = LlmGateway({ModelRole.GENERATOR: provider}, recorder=records.append)
+    gateway = LlmGateway({ModelRole.GENERATOR: provider}, recorder=_collect(records))
 
     with pytest.raises(ParseFailed, match="JSON 오류"):
         _run(gateway.complete(_request(), _context()))
@@ -124,7 +133,7 @@ def test_recorder_receives_non_sensitive_result_metadata() -> None:
     records: list[LlmCallRecord] = []
     gateway = LlmGateway(
         {ModelRole.GENERATOR: FakeProvider([_result()])},
-        recorder=records.append,
+        recorder=_collect(records),
     )
 
     _run(gateway.complete(_request(), _context()))
@@ -147,7 +156,7 @@ def test_recorder_receives_non_sensitive_result_metadata() -> None:
 def test_non_ok_result_outcome_is_recorded_without_retry() -> None:
     records: list[LlmCallRecord] = []
     provider = FakeProvider([_result(CallOutcome.BAD_REF)])
-    gateway = LlmGateway({ModelRole.GENERATOR: provider}, recorder=records.append)
+    gateway = LlmGateway({ModelRole.GENERATOR: provider}, recorder=_collect(records))
 
     result = _run(gateway.complete(_request(), _context()))
 
@@ -181,3 +190,62 @@ def test_multiple_providers_reject_same_generator_and_verifier_assignment() -> N
                 ModelRole.MAPPER: fallback,
             }
         )
+
+
+# ── 전송 재시도 파라미터(transport_retry) — 09 §1-10 ① (a)~(d) ──────
+
+
+@pytest.mark.parametrize("role", [ModelRole.GENERATOR, ModelRole.VERIFIER])
+@pytest.mark.parametrize("bad", [2, -1])
+def test_transport_retry_out_of_range_rejected_at_construction(
+    role: ModelRole, bad: int
+) -> None:
+    """값 0..1 밖이면 기동 실패(b) — generator·verifier에 정책 밖 값 주입도 거부(c)."""
+    with pytest.raises(ValueError, match="0..1"):
+        LlmGateway({role: FakeProvider([])}, transport_retry={role: bad})
+
+
+def test_unspecified_role_defaults_to_one_retry() -> None:
+    """미지정 role은 재시도 1(총 2회) — 현행 보존(문제생성 무변)."""
+    provider = FakeProvider([LlmTimeout("1"), LlmTimeout("2")])
+    gateway = LlmGateway({ModelRole.GENERATOR: provider}, transport_retry={})
+
+    with pytest.raises(LlmTimeout, match="2"):
+        _run(gateway.complete(_request(), _context()))
+    assert len(provider.requests) == 2  # 재시도 1회 = 2 시도
+
+
+def test_zero_retry_single_attempt_even_on_timeout() -> None:
+    """재시도 0 등록 시 LlmTimeout에도 재시도 없이 1회 시도 후 전파(d 회계: 시도별 기록)."""
+    records: list[LlmCallRecord] = []
+    provider = FakeProvider([LlmTimeout("한 번뿐"), "호출되면 안 됨"])
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        recorder=_collect(records),
+        transport_retry={ModelRole.GENERATOR: 0},
+    )
+
+    with pytest.raises(LlmTimeout, match="한 번뿐"):
+        _run(gateway.complete(_request(), _context()))
+    assert len(provider.requests) == 1  # 재시도 없음
+    assert [record.outcome for record in records] == [CallOutcome.TIMEOUT]  # 시도별 기록
+
+
+# ── recorder 실패 격리 — 09 §1-10 ② (관측이지 게이트 아님) ──────────
+
+
+def test_recorder_failure_does_not_fail_call_and_increments_counter() -> None:
+    """적재 실패가 LLM 호출을 실패시키지 않는다 — 경고+실패 카운터, 호출은 성공."""
+
+    def _boom(record: LlmCallRecord, context: ExecutionContext) -> None:
+        del record, context
+        raise RuntimeError("적재 장애")
+
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: FakeProvider([_result()])}, recorder=_boom
+    )
+
+    result = _run(gateway.complete(_request(), _context()))
+
+    assert result.outcome is CallOutcome.OK  # 호출은 성공
+    assert gateway.record_failures == 1  # 조용한 누락 금지 — 카운터 증가

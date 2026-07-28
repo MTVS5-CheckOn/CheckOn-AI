@@ -97,10 +97,12 @@ def _harness(loop_max: int = 6) -> _Harness:
 
 
 def _put_profile(profiles: InMemoryProfileStore, headers: list[str]) -> str:
-    return profiles.put(
-        ProfileRecord(
-            id=UUID(int=1000), tenant_id="t1", file_hash="h", filename="r.xlsx",
-            sheets=serialize_profile(_profile(headers)), created_at=_NOW,
+    return _run(
+        profiles.put(
+            ProfileRecord(
+                id=UUID(int=1000), tenant_id="t1", file_hash="h", filename="r.xlsx",
+                sheets=serialize_profile(_profile(headers)), created_at=_NOW,
+            )
         )
     )
 
@@ -129,9 +131,9 @@ def test_run_next_succeeds_with_result_ref() -> None:
     done = _run(scenario())
     assert done is not None and done.phase is JobPhase.SUCCEEDED
     assert done.result_ref is not None and done.result_ref.startswith("spec://")
-    spec = specs.get(done.result_ref)
+    spec = _run(specs.get(done.result_ref))
     assert spec is not None and spec.status == "succeeded"
-    assert spec.probe_agent_run == UUID(int=6)  # execution_id 링크
+    assert spec.probe_agent_run == UUID(int=5)  # AGENT_RUN.id(=job_id) 링크
     assert len(spec.spec["resolved"]) == 5 and spec.spec["unresolved"] == []
 
 
@@ -144,7 +146,7 @@ def test_agent_step_persisted_with_orm_fields() -> None:
         await runner.run_next(tenant_id="t1")
 
     _run(scenario())
-    steps = sink.steps(UUID(int=6))
+    steps = _run(sink.steps(UUID(int=5)))  # agent_run_id = job_id
     assert len(steps) == 5  # 컬럼 5개 조사
     first = steps[0]
     assert first.node_name == "tool_call" and first.tool_called == "get_unique_values"
@@ -164,7 +166,7 @@ def test_partial_unresolved_still_succeeds() -> None:
 
     done = _run(scenario())
     assert done is not None and done.phase is JobPhase.SUCCEEDED
-    spec = specs.get(done.result_ref or "")
+    spec = _run(specs.get(done.result_ref or ""))
     assert spec is not None and len(spec.spec["unresolved"]) == 3
 
 

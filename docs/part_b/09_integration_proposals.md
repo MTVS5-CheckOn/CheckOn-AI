@@ -122,6 +122,9 @@ LlmGateway(providers, *, recorder=..., transport_retry: Mapping[ModelRole, int] 
 | 값 범위 | `0..1`, 벗어나면 **기동 실패** | 불변식 6(모든 루프에 상한) |
 | 기본값 | 미지정 role은 `1`(총 2회 — 현행 보존) → **문제생성 무변경** | [`06`](06_quality_gates.md) §4 최악 논리 6콜·전송 12요청 유지 |
 | 단일 원천 | `generator`·`verifier`는 `verify_config.transport_retry`를 조립 시점에 주입. 게이트웨이는 시트를 모른다(계산·I/O 분리) | `CLAUDE.md` §6 · `03_coding_rules` |
+| **가드 위치** `[2026-07-28 확정 — A 해석 승인]` | 단일 원천 보장은 **게이트웨이 내부 검사가 아니라 조립부 테스트**로 한다. 게이트웨이는 sheet-agnostic을 유지하고 `0..1` 범위 검증만 남긴다. **B 담당분(B-5 정리 PR):** `src/ai/problem_generation/provider.py`(신규 — `composition/provider.py`·`import_mapping/provider.py` 선례)가 `verify_config.transport_retry`를 읽어 `{GENERATOR, VERIFIER}`에 주입하고, `tests/ai/unit/problem_generation/test_provider.py`가 ① 시트값이 그대로 주입 ② 시트에 없는 role은 미주입(기본 1로 낙하) ③ 시트값이 `0..1` 밖이면 **조립 단계**에서 실패 를 고정한다. 시트를 patch했을 때 주입값이 따라 바뀌는지로 **리터럴 하드코딩 부재**를 증명한다 | 위 "단일 원천" 행의 문언 해석 — 게이트웨이에 시트 비교를 넣으면 계산·I/O 분리와 충돌 |
+
+> **`[2026-07-28]` A 해석 확인 — O.** A가 게이트웨이에 `verify_config` 비교를 넣지 않고 sheet-agnostic을 유지한 것은 **위 "단일 원천" 행(line 124)의 문언 그대로**다. B 회신 본문에 쓴 "role 파라미터가 우회하지 못하게"라는 표현이 게이트웨이 내부 강제로 읽힐 여지를 준 **B 측 문언 문제**이며, 같은 회신의 다음 문장("게이트웨이는 시트를 모르고 주입만 받는다")과 이 표가 정본이다. 현재 `problem_generation` 패키지가 없어 **gen/verifier를 게이트웨이에 배선하는 조립부 자체가 존재하지 않으므로** 이번 PR(narrator 단독 배선)에는 실효 차이가 없다. 가드 착수 시점은 B-5 정리 PR이다.
 | 회계 | 재시도 0회여도 **시도별 `LlmCallRecord` 기록 유지** | [`06`](06_quality_gates.md) §4 재생성/전송 회계 분리 |
 | 예외 | `RedactionBlocked`는 재시도 대상 아님(정책 차단 ≠ 일시 오류) — 현행 `retry_if_exception_type` 유지 | 불변식 3 |
 
@@ -493,7 +496,7 @@ resolver가 만족해야 하는 조건(B 요구):
 | B-3 잔여 | taxonomy 경계 사례 7건 판정 | 태깅 골든셋 시드와 동시 확정 | A+B | 04·06 §5 |
 | Open-12 | F17 OCR 실명→alias·OCR 소유 (P2) | 스캔·매칭·마스킹=BE 유지, 판독 소유는 벤더 선정과 함께 | BE(+A·B) | 02 §1-C |
 | B-2 | 공용 계약 리뷰·구현·14항목 승인 완료 — **문서 동기화 3/7 완료, 4건 잔여(§2-10)** | 잔여 4건 소유자 반영 요청 | A+B | 02 §5 |
-| B-5 / D-06 | ✅ PR #15로 로컬 OpenAI 호환·Gemma 계열 공급자와 어댑터 확정 — verifier 폴백 패밀리만 잔여 | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제 | A+B | 06 §2·§3 |
+| B-5 / D-06 | ✅ PR #15로 로컬 OpenAI 호환·Gemma 계열 공급자와 어댑터 확정 — verifier 폴백 패밀리만 잔여. **B-5 정리 PR 할 일 2건** `[2026-07-28]`: ① `gateway.py`의 `TODO(B-5)` 제거(provider 1개일 때 패밀리 강제가 우회되는 현행 동작) ② **`problem_generation/provider.py` 조립부 가드 + `test_provider.py`**(§1-10 "가드 위치") | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제. 두 항목 모두 role 키 설정 구조를 공유하므로 같은 PR에서 처리 | A+B | 06 §2·§3 · §1-10 |
 | B-7 | evidence resolver 주입 시그니처 — **GraphRAG 경유 근거 해소와 병합**(§2-12-②) | fail-closed·권리 게이트·결정론·예산 불변·blind 무오염 5조건 | A+B | §2-12 · `10` §4.2 |
 | **B-8** `[신규]` | **GraphRAG `VersionSet` 3필드 확장** — `content_graph_version`·`graph_index_version`·`retrieval_config_version`. **`graph_version` 재사용 금지** | §2-9 선례(nullable 흡수) 준용 | A+B | §2-12-① · `10` §4.2 |
 | **B-9** `[신규]` | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** — 검증 통과 문항이 미검증 문항으로 대체될 수 있는 미정의 동작 | `07` §4의 "마지막 검증본 유지"를 생성 경로에 대칭 적용 제안. 확정 전 `difficulty_regen_enabled=false` 유지 | B 초안 → A+B | `10` §4.1 C3 |

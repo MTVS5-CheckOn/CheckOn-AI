@@ -26,7 +26,7 @@ class ModelRole(StrEnum):
     """
 
     GENERATOR = "generator"
-    """초안·지문 등 생성."""
+    """지문·문항 등 생성 (문제생성 중심)."""
 
     VERIFIER = "verifier"
     """생성물 검증·교차 풀이."""
@@ -36,6 +36,13 @@ class ModelRole(StrEnum):
 
     CLASSIFIER = "classifier"
     """문의 분류·태깅 제안 (v2 신설)."""
+
+    NARRATOR = "narrator"
+    """위험신호 브리핑 문장화 전용 (v2.1 신설).
+
+    초안·리포트·refine은 도입 시 별도 role을 양자 결정으로 신설한다 — narrator를
+    재사용하지 않는다(role별 전송 재시도·원가 회계가 소비자마다 갈리지 않게).
+    """
 
 
 class CallOutcome(StrEnum):

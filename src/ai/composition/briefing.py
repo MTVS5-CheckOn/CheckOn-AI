@@ -33,6 +33,7 @@ from ai.contracts.llm import (
     ModelRole,
     ParseFailed,
 )
+from ai.llm.gateway import LlmGateway
 from ai.runtime.redaction import redact
 
 _PROMPT_PATH = (
@@ -82,7 +83,7 @@ def _fallback(ctx: BriefingContext) -> Brief:
 
 async def make_brief(
     ctx: BriefingContext,
-    provider: LLMProvider,
+    completer: LlmGateway | LLMProvider,
     *,
     context: ExecutionContext,
     now: Callable[[], float],
@@ -90,8 +91,10 @@ async def make_brief(
 ) -> tuple[Brief, str]:
     """근거 패키지 하나를 문장화한다. (brief, outcome 라벨[로그용]) 반환.
 
-    now/deadline은 시간 예산(호출당·총)을 호출자(라우터)가 관리하도록 주입한다
-    (datetime.now() 직접 호출 금지 — 03_coding_rules §3).
+    completer는 프로덕션에선 LlmGateway(role=narrator 라우팅·전송 재시도 0)이며, 단위
+    테스트는 provider mock을 직접 주입한다 — 둘 다 `complete(request, context)` 동형이다
+    (gateway 경유는 라우터가 조립). now/deadline은 시간 예산(호출당·총)을 호출자(라우터)가
+    관리하도록 주입한다 (datetime.now() 직접 호출 금지 — 03_coding_rules §3).
     """
     if now() >= deadline:
         return _fallback(ctx), "budget_exhausted"
@@ -101,7 +104,7 @@ async def make_brief(
         return _fallback(ctx), "redaction_blocked"
 
     request = LLMRequest(
-        role=ModelRole.GENERATOR,
+        role=ModelRole.NARRATOR,
         prompt=redacted.masked_text,
         prompt_id=PROMPT_ID,
         prompt_version=PROMPT_VERSION,
@@ -111,7 +114,7 @@ async def make_brief(
     last_reason = ""
     for _ in range(MAX_REGEN):
         try:
-            result = await provider.complete(request, context)
+            result = await completer.complete(request, context)
         except (LlmUnavailable, LlmTimeout, ParseFailed):
             return _fallback(ctx), "llm_failed"  # 재시도 없이 즉시
         text = (result.text or "").strip()

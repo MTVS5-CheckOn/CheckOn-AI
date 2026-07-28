@@ -19,8 +19,21 @@ from ai.db.repositories.idempotency import (
     InMemoryIdempotencyStore,
     PgIdempotencyStore,
 )
+from ai.db.repositories.probe_stores import (
+    PgAgentStepSink,
+    PgProfileStore,
+    PgSpecResultStore,
+)
 from ai.db.session import get_sessionmaker
 from ai.db.settings import DbSettings, get_db_settings
+from ai.import_mapping.probe.stores import (
+    AgentStepSink,
+    InMemoryAgentStepSink,
+    InMemoryProfileStore,
+    InMemorySpecResultStore,
+    ProfileStore,
+    SpecResultStore,
+)
 
 _PG = "pg"
 
@@ -47,3 +60,27 @@ def build_detection_store(settings: DbSettings | None = None) -> DetectionStore:
     if settings.store_backend == _PG:
         return PgDetectionStore(sessionmaker=get_sessionmaker())
     return InMemoryDetectionStore()
+
+
+def build_profile_store(settings: DbSettings | None = None) -> ProfileStore:
+    """mapping_probe 입력(source_profile) 저장소 — PG 선택 시 워커·enqueue가 공유."""
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgProfileStore(sessionmaker=get_sessionmaker())
+    return InMemoryProfileStore()
+
+
+def build_spec_result_store(settings: DbSettings | None = None) -> SpecResultStore:
+    """mapping_probe 산출(mapping_spec) 저장소 — result_ref로 참조되는 조사 결과."""
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgSpecResultStore(sessionmaker=get_sessionmaker())
+    return InMemorySpecResultStore()
+
+
+def build_agent_step_sink(settings: DbSettings | None = None) -> AgentStepSink:
+    """mapping_probe 스텝(agent_step) 싱크 — 도구 호출 이력(마스킹 통과분)."""
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgAgentStepSink(sessionmaker=get_sessionmaker())
+    return InMemoryAgentStepSink()

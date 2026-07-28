@@ -161,7 +161,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 
 | 방식 | 호출자 | 멱등 |
 | --- | --- | --- |
-| 동기 | 백엔드 배치 | `Idempotency-Key = tenant + week_start` |
+| 동기 | 백엔드 배치 | `Idempotency-Key = tenant + analysis_date`(배치 실행 기준일 — 09 §2 [A 확정 7/28]) |
 
 **Request** — 필드별 타입·필수 여부는 §4.1 표 · 09 §2 참조 (주석은 JSON5 스타일 — 실제 전송 시 제거):
 
@@ -519,7 +519,7 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 ## §5. 비기능 규약 `[제안]`
 
 - **타임아웃:** 동기 10s · 비동기 작업 총 5분(초과 시 `failed` + 사유). 백엔드 서킷브레이커 임계는 v1.0에서 함께 확정.
-- **AI 장애 시:** 백엔드는 전일 브리핑 유지 + 배지(기존 NFR). `/detect` 실패 시 다음 배치까지 대기 — 멱등키(tenant+week)로 중복 방지.
+- **AI 장애 시:** 백엔드는 전일 브리핑 유지 + 배지(기존 NFR). `/detect` 실패 시 다음 배치까지 대기 — 멱등키(tenant+analysis_date)로 중복 방지.
 - **감사:** 모든 요청·응답은 `X-Request-Id`로 양쪽에서 상호 추적 가능.
 - **하위호환:** 필드 **추가** = 마이너(무통보 가능) · 필드 **삭제·의미 변경** = 메이저(협의 필수). `meta.versions.contract`로 상호 확인.
 

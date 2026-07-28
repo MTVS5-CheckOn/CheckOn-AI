@@ -70,12 +70,14 @@
 
 ### 2.4 Import (`GET /v1/imports/{job_id}`)
 
+> **상태명 정본:** 작업 상태(status)는 `contracts/imports.ImportStatus`(= `10_import_spec §2` 상태기계 · `04 §3.8`)를 투영한다 — 진행형(`profiling`·`transforming`)·종단(`done`)을 쓴다. `needs_review`·`unmapped`은 작업 상태가 아니라 **컬럼(매핑) 플래그**로 `mapping_preview`에 실린다(10 §1.2·§3.4).
+
 | status | 뜻 | 문구 |
 | --- | --- | --- |
-| `profiled` → `preview_ready` | 매핑 추론 완료 — 강사 확인 대기 | 미리보기 화면 |
+| `profiling` → `preview_ready` | 매핑 추론 완료 — 강사 확인 대기 | 미리보기 화면 |
 | `needs_review` (컬럼 플래그) | confidence 낮은 매핑 — **숨기지 않고 노출** | "이 열은 확신이 낮아요 — 확인해 주세요" |
 | `unmapped` (컬럼 플래그) | 매핑 불가 — '모름' 정직 표기 | "무엇인지 알 수 없어 건너뛰어요" |
-| `transformed` | 변환 완료 — `row_ok/row_fail` | 결과 요약 |
+| `done` | 변환 완료 — `row_ok/row_fail` | 결과 요약 |
 | `failed` | 파일 손상·형식 불가 | "파일을 읽지 못했어요" |
 
 ### 2.5 에이전트 (`GET /v1/agents/{run_id}`)
