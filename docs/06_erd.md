@@ -66,7 +66,7 @@ erDiagram
     uuid id PK
     varchar tenant_id "RLS 키"
     varchar endpoint "예: POST /v1/detect — 키 스코프"
-    varchar idempotency_key "= tenant + week_start 등 (요청 헤더)"
+    varchar idempotency_key "= tenant + analysis_date 등 (요청 헤더 — 09 §2)"
     varchar snapshot_hash "바디 동일성 판정 — 04 부록 A canonical 해시"
     jsonb response_body "저장된 응답 envelope (같은 키+같은 hash면 재반환)"
     timestamptz created_at "TTL 30일 — alert_context 창과 정합(D-② 확정). 초과분 정리 배치"
