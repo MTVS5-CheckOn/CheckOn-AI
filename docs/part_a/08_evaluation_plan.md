@@ -15,7 +15,8 @@ golden/
 ├─ refine_attack/    # §5 게이트 공격 케이스
 ├─ redaction/        # 마스킹 failure 코퍼스 30건 (마스킹 정의서 §5 — 별도 관리)
 ├─ import_corpus/    # §6 타사 양식 10종
-└─ classify/         # §7 문의 분류
+├─ classify/         # §7 문의 분류
+└─ diagnosis/        # part_b/08 §6 진단 그래프·결정론 회귀 [B 소유]
 ```
 
 ## 2. 감지 골든셋 — 합성 학생 시나리오 12종 (`detection/`)

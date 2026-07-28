@@ -180,7 +180,8 @@ ai/
         ├── redaction/  (코퍼스 30건)    [박진희]
         ├── import_corpus/ (양식 10종)   [박진희]
         ├── classify/                   [박진희]
-        └── problems/   (문항 검증)      [염준영]
+        ├── problems/   (문항 검증)      [염준영]
+        └── diagnosis/  (진단 회귀)      [염준영]
 
 tests/ai/                               # 대응 프로덕션 파일의 오너를 그대로 따름
 ├── unit/ · contract/ · integration/ · gates/ · golden/ · failure/

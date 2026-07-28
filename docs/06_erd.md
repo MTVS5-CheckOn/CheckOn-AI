@@ -1,6 +1,6 @@
 # [체크온] AI PostgreSQL 전체 ERD v3 — [PART_A] 소유 · [PART_A+PART_B] 공용 실행 원장 반영
 
-원칙(변경 없음): AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본(학생·학습 기록·Alert 상태·문의 원문·Draft 승인)은 백엔드 MySQL 소유 — `…_ref`는 전부 MySQL을 가리키는 **논리 참조**(물리 FK 아님). 전 테이블 `tenant_id` 필수 + RLS.
+원칙(변경 없음): AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본(학생·학습 기록·Alert 상태·문의 원문·Draft 승인)은 백엔드 MySQL 소유 — `…_ref`는 전부 MySQL을 가리키는 **논리 참조**(물리 FK 아님). 전 테이블 `tenant_id` 필수 + **애플리케이션 계층 격리**(RLS 미도입 — 실도입 여부는 99 BE-11).
 
 v2 추가분: `AGENT_RUN` `AGENT_STEP` · `SIGNAL_BRIEF`(ⓐ) · `INQUIRY_CLASS`(ⓑ) · `TAG_SUGGESTION`(ⓒ) · `LABEL_SUGGESTION`(ⓓ)
 
@@ -44,7 +44,7 @@ erDiagram
 
   AI_RUN {
     uuid execution_id PK
-    varchar tenant_id "teacher alias · RLS 키"
+    varchar tenant_id "teacher alias · 격리 키"
     varchar capability "detection|composition|import_mapping|diagnosis|problem_generation"
     varchar pipeline_version
     varchar engine_version
@@ -64,7 +64,7 @@ erDiagram
   }
   IDEMPOTENCY_RECORD {
     uuid id PK
-    varchar tenant_id "RLS 키"
+    varchar tenant_id "격리 키"
     varchar endpoint "예: POST /v1/detect — 키 스코프"
     varchar idempotency_key "= tenant + analysis_date 등 (요청 헤더 — 09 §2)"
     varchar snapshot_hash "바디 동일성 판정 — 04 부록 A canonical 해시"
@@ -74,7 +74,7 @@ erDiagram
   AGENT_RUN {
     uuid id PK "WorkerJob.job_id"
     uuid run_id FK "WorkerJob.execution_id"
-    varchar tenant_id "RLS·lease 조회 범위"
+    varchar tenant_id "격리 키·lease 조회 범위"
     varchar agent_kind "counsel_pack|mapping_probe|problem_generation"
     varchar operation "고정 라우팅 5종"
     varchar payload_ref "불변 command 논리 참조"
