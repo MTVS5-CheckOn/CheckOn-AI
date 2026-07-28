@@ -1,4 +1,4 @@
-"""초기 마이그레이션 ↔ metadata 대조 — 세 정본(ERD·모델·마이그레이션)이 어긋나지 않게.
+"""전체 마이그레이션 체인 ↔ metadata 대조 — 세 정본의 드리프트를 막는다.
 
 test_erd_model_parity 가 ERD==모델 을 강제하고, 이 검사가 모델==마이그레이션 을 강제해
 루프를 닫는다. 마이그레이션은 metadata 에서 생성했으므로 지금은 일치하지만, 누가
@@ -14,15 +14,7 @@ from pathlib import Path
 
 from ai.db.models import Base
 
-_INITIAL = (
-    Path(__file__).resolve().parents[3]
-    / "src"
-    / "ai"
-    / "db"
-    / "migrations"
-    / "versions"
-    / "0001_initial_schema.py"
-)
+_VERSIONS = Path(__file__).resolve().parents[3] / "src" / "ai" / "db" / "migrations" / "versions"
 
 _CREATE = re.compile(r"op\.create_table\(\s*['\"](\w+)['\"]")
 _DROP = re.compile(r"op\.drop_table\(\s*['\"](\w+)['\"]")
@@ -34,32 +26,46 @@ def _split_upgrade_downgrade(src: str) -> tuple[str, str]:
     return src[up_idx:down_idx], src[down_idx:]
 
 
-def test_initial_migration_exists() -> None:
-    assert _INITIAL.is_file(), "초기 마이그레이션 파일이 없다"
+def _migration_paths() -> tuple[Path, ...]:
+    return tuple(sorted(_VERSIONS.glob("[0-9]*.py")))
 
 
-def test_upgrade_creates_exactly_metadata_tables() -> None:
-    up, _ = _split_upgrade_downgrade(_INITIAL.read_text(encoding="utf-8"))
-    created = set(_CREATE.findall(up))
+def test_migration_chain_exists() -> None:
+    paths = _migration_paths()
+    assert paths, "마이그레이션 파일이 없다"
+    assert paths[0].name == "0001_initial_schema.py"
+
+
+def test_upgrades_create_exactly_metadata_tables() -> None:
+    created = {
+        table
+        for path in _migration_paths()
+        for table in _CREATE.findall(_split_upgrade_downgrade(path.read_text(encoding="utf-8"))[0])
+    }
     expected = set(Base.metadata.tables)
     assert created == expected, (
-        f"마이그레이션에만: {sorted(created - expected)} · "
-        f"모델에만: {sorted(expected - created)}"
+        f"마이그레이션에만: {sorted(created - expected)} · 모델에만: {sorted(expected - created)}"
     )
 
 
-def test_downgrade_drops_exactly_metadata_tables() -> None:
-    _, down = _split_upgrade_downgrade(_INITIAL.read_text(encoding="utf-8"))
-    dropped = set(_DROP.findall(down))
+def test_downgrades_drop_exactly_metadata_tables() -> None:
+    dropped = {
+        table
+        for path in _migration_paths()
+        for table in _DROP.findall(_split_upgrade_downgrade(path.read_text(encoding="utf-8"))[1])
+    }
     expected = set(Base.metadata.tables)
     assert dropped == expected, (
         f"drop에만: {sorted(dropped - expected)} · 모델에만: {sorted(expected - dropped)}"
     )
 
 
-def test_downgrade_is_reverse_of_upgrade() -> None:
-    """FK 의존 역순으로 drop 해야 한다 — create 순서의 정확한 역순."""
-    up, down = _split_upgrade_downgrade(_INITIAL.read_text(encoding="utf-8"))
-    created = _CREATE.findall(up)
-    dropped = _DROP.findall(down)
-    assert dropped == list(reversed(created)), "downgrade 가 upgrade 의 역순이 아니다"
+def test_each_downgrade_reverses_its_upgrade_table_order() -> None:
+    """각 리비전은 자신이 만든 테이블을 FK 의존 역순으로 제거해야 한다."""
+    for path in _migration_paths():
+        up, down = _split_upgrade_downgrade(path.read_text(encoding="utf-8"))
+        created = _CREATE.findall(up)
+        dropped = _DROP.findall(down)
+        assert dropped == list(reversed(created)), (
+            f"{path.name}: downgrade가 upgrade의 테이블 생성 순서를 역전하지 않는다"
+        )
