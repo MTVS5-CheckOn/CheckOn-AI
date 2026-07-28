@@ -111,7 +111,9 @@ flowchart LR
   RG["prompts/registry.yaml"] -.-> GW
 ```
 
-- **모든 LLM 호출은 gateway 경유** — 예외 없음. `ModelRole = generator | verifier | mapper | classifier`. **verifier는 generator와 다른 모델 패밀리 강제**(라우팅 수준 보장, 호출자 우회 불가).
+- **모든 LLM 호출은 gateway 경유** — 예외 없음. `ModelRole = generator | verifier | mapper | classifier | narrator`(narrator는 브리핑 문장화 전용 — `[2026-07-28 A 신설]`, [`09`](09_integration_proposals.md) §1-10). **verifier는 generator와 다른 모델 패밀리 강제**(라우팅 수준 보장, 호출자 우회 불가).
+  - 이 규칙은 A·B 공용이나 현재 B 문서에만 있어 B 규율로 읽힌다 — `docs/03_coding_rules.md` 승격을 요청했다([`09`](09_integration_proposals.md) §1-9 A-10).
+- **전송 재시도는 role별 주입** `[2026-07-28 구현]` — `LlmGateway(..., transport_retry: Mapping[ModelRole, int])`, 값 범위 `0..1`(벗어나면 기동 실패), 미지정 role 기본 1회. 게이트웨이는 `verify_config`를 모르며 값은 **조립부가 주입**한다(계산·I/O 분리). B role 값의 단일 원천은 [`06`](06_quality_gates.md) 부록 `transport_retry`다.
 - 재시도 2층 분리: **생성 재시도**(item_attempt — 워크플로 소유)와 **전송 재시도**(논리 콜당 1회 — gateway 소유). 최악 계산은 06 §4.
 - 쿼터 무관(7/15) — gateway는 **LLM 원가 관측만**(비용·토큰, ARPU 20% 검증용 — `quota_metering.md` §5). 차단·카운트·잔여는 전부 백엔드.
 - LangSmith 도입 확정(B-6) — 트레이스는 마스킹 통과분만(게이트웨이 앞단 훅).

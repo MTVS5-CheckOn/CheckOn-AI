@@ -149,7 +149,7 @@ A threshold 시트 방식 준용: `verify_config` 버전 행(이전 버전 보�
 | 키 | 값 | 소비처 |
 | --- | --- | --- |
 | `regen_max` | **2** (총 시도 3회 — 확정) | §4 item_attempt |
-| `transport_retry` | 1 | gateway 전송 재시도(§4) |
+| `transport_retry` | 1 | gateway 전송 재시도(§4). **소비 범위는 B role 한정**(`generator`·`verifier`) `[2026-07-28]` — 게이트웨이가 role별 주입을 받게 되면서 A 소비자(`narrator`·`mapper`)는 A 정책값을 따로 쓴다. 이 시트값은 **조립부가 게이트웨이에 주입**하며 게이트웨이는 시트를 모른다(계산·I/O 분리 — [`09`](09_integration_proposals.md) §1-10). 최악 호출 수 계산(§4 논리 6콜·전송 12요청)은 이 값 기준이다 |
 | `dup_similarity_max` | 0.8 | R-6 |
 | `cross_confidence_high` | 0.8 | ② 풀이 판정 |
 | `alignment_confidence_min` | 0.7 | ② 정렬 판정(경계 미만 = 배지) |
@@ -158,7 +158,9 @@ A threshold 시트 방식 준용: `verify_config` 버전 행(이전 버전 보�
 | `t1_light_mode` | **false** | §1 T1 특칙 — 파일럿 첫 2주 전 문항 전체 검증 |
 | `difficulty_regen_enabled` | **false** | §5 — 파일럿 첫 2주 난이도 사유 재생성 비활성 |
 | `difficulty_regen_max` | **1** (확정) | §5 — `regen_max`와 별도 예산이 아니라 총 3회 안의 난이도 사유 상한 |
-| `difficulty_band_tolerance` | null | 하·중·상 band 경계 B+제품·FE 확정 전 활성화 금지 |
+| `difficulty_band_tolerance` | **1** `[결정안 BAND-3]` | 인접 밴드는 허용, **상↔하(2단계)만** 재생성 트리거. 산식이 `[잠정]`이라 경계 오차로 예산을 태우지 않는다 |
+| `difficulty_band_map.T1` | `low: 1.0~1.5` · `medium: 2.0~2.5` · `high: 3.0~3.5` `[결정안 BAND-1]` | **트랙별** 밴드 경계. T1은 지문이 없어 길이 가중치가 항상 0이므로 실제 범위가 `1.0~3.5`다(05 §6) |
+| `difficulty_band_map.T2`·`.T3` | 미정 | 트랙 개방 시 행 추가. 기존 T1 경계는 건드리지 않는다 |
 | `diag_relative_cut_pp` | −15 | 진단 weak 판정(04 §4) |
 | `diag_decay` | 0.7 | 역전파 감쇠(04 §5.4) |
 | `diag_propagate_threshold` | 0.5 | root_candidate 임계(04 §5.4) |

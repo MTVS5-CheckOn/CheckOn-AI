@@ -106,9 +106,10 @@ A가 브리핑·mapping_probe 배선 전에 요청한 게이트웨이(`llm/` —
 
 | 안건 | B 회신 | 작업 주체 |
 | --- | --- | --- |
-| **① role별 전송 재시도 0회 허용** | ✅ **승인 — B가 파라미터를 연다.** A가 제시한 차선책 "어댑터 직결 유지"는 [`01`](01_pipeline.md) §5 "모든 LLM 호출은 gateway 경유 — 예외 없음" **위반이므로 수용 불가**. 직결 시 role 라우팅·원가 기록·redaction 훅이 소비자마다 갈라진다 | **B**(구현) → A(값 주입) |
-| **② `LlmCallRecord.execution_id`** | ✅ **②안 동의**(recorder가 `ExecutionContext`를 함께 수신). 게이트웨이가 이미 `complete(request, context)`로 context를 받고 있어 추가 배선 0. `LlmCallRecord`의 정의가 "호출 1회분 비민감 관측 메타"이므로 실행 문맥을 record에 복제하지 않는다 | A(적재) · B(시그니처 리뷰·머지) |
-| **③ LangSmith 마스킹 훅** | ◐ **조건부 승인 — 훅을 2개로 분리**. "기본 no-op 단일 훅"은 `CLAUDE.md` 불변식 3과 충돌 | B(훅 신설) · A(마스킹 함수 주입) |
+| **① role별 전송 재시도 0회 허용** | ✅ **승인 → `[2026-07-28] 구현 완료·머지`**(A PR `feat/llm-gateway-policy-v1`). A가 제시한 차선책 "어댑터 직결 유지"는 [`01`](01_pipeline.md) §5 "모든 LLM 호출은 gateway 경유 — 예외 없음" **위반이므로 수용 불가**였고, 대신 B가 파라미터를 열기로 했으나 **A가 합의문 그대로 구현**했다. 조건 (a)~(d) 전수 충족 확인: 생성자 주입 · `0..1` 기동 실패(`_validated_transport_retry`) · sheet-agnostic · 성공·예외 양쪽 경로 시도별 기록 | A(구현·머지) · B(리뷰 완료) |
+| **② `LlmCallRecord.execution_id`** | ✅ **②안 동의 → `[2026-07-28] 구현 완료·머지`.** `LlmCallRecorder = Callable[[LlmCallRecord, ExecutionContext], None]`로 확장됐고, B 조건이던 **"적재 실패가 호출을 실패시키지 않되 조용한 누락도 금지"** 가 `LlmGateway.record_failures` 카운터로 구현됐다. `LlmCallRecord`의 정의("호출 1회분 비민감 관측 메타")를 지켜 실행 문맥을 record에 복제하지 않았다 | A(적재) · B(리뷰 완료) |
+| **③ LangSmith 마스킹 훅** | ◐ **조건부 승인 — 훅을 2개로 분리**. "기본 no-op 단일 훅"은 `CLAUDE.md` 불변식 3과 충돌. **잔여 — 별도 PR** | B(훅 신설) · A(마스킹 함수 주입) |
+| **(부수) `ModelRole.NARRATOR` 신설** | ✅ **O → `[2026-07-28] 구현 완료.`** `composer` 대신 **작업 성격 기반** 이름을 택해 기존 4종(생성·검증·매핑추론·분류) 관례와 정합. capability 전체를 뜻하지 않으므로 초안·리포트·refine이 자동 흡수되지 않는다 — 그 셋을 narrator에 넣을지는 배선 시점에 **재시도 정책이 브리핑과 같아도 되는지**로 판단한다. `llm_call.role`이 varchar라 마이그레이션 없음(`06_erd.md` §255 반영 완료) | A(신설) · B(승인) |
 
 #### ① 전송 재시도 파라미터 — B 확정 사양
 
@@ -122,6 +123,9 @@ LlmGateway(providers, *, recorder=..., transport_retry: Mapping[ModelRole, int] 
 | 값 범위 | `0..1`, 벗어나면 **기동 실패** | 불변식 6(모든 루프에 상한) |
 | 기본값 | 미지정 role은 `1`(총 2회 — 현행 보존) → **문제생성 무변경** | [`06`](06_quality_gates.md) §4 최악 논리 6콜·전송 12요청 유지 |
 | 단일 원천 | `generator`·`verifier`는 `verify_config.transport_retry`를 조립 시점에 주입. 게이트웨이는 시트를 모른다(계산·I/O 분리) | `CLAUDE.md` §6 · `03_coding_rules` |
+| **가드 위치** `[2026-07-28 확정 — A 해석 승인]` | 단일 원천 보장은 **게이트웨이 내부 검사가 아니라 조립부 테스트**로 한다. 게이트웨이는 sheet-agnostic을 유지하고 `0..1` 범위 검증만 남긴다. **B 담당분(B-5 정리 PR):** `src/ai/problem_generation/provider.py`(신규 — `composition/provider.py`·`import_mapping/provider.py` 선례)가 `verify_config.transport_retry`를 읽어 `{GENERATOR, VERIFIER}`에 주입하고, `tests/ai/unit/problem_generation/test_provider.py`가 ① 시트값이 그대로 주입 ② 시트에 없는 role은 미주입(기본 1로 낙하) ③ 시트값이 `0..1` 밖이면 **조립 단계**에서 실패 를 고정한다. 시트를 patch했을 때 주입값이 따라 바뀌는지로 **리터럴 하드코딩 부재**를 증명한다 | 위 "단일 원천" 행의 문언 해석 — 게이트웨이에 시트 비교를 넣으면 계산·I/O 분리와 충돌 |
+
+> **`[2026-07-28]` A 해석 확인 — O.** A가 게이트웨이에 `verify_config` 비교를 넣지 않고 sheet-agnostic을 유지한 것은 **위 "단일 원천" 행(line 124)의 문언 그대로**다. B 회신 본문에 쓴 "role 파라미터가 우회하지 못하게"라는 표현이 게이트웨이 내부 강제로 읽힐 여지를 준 **B 측 문언 문제**이며, 같은 회신의 다음 문장("게이트웨이는 시트를 모르고 주입만 받는다")과 이 표가 정본이다. 현재 `problem_generation` 패키지가 없어 **gen/verifier를 게이트웨이에 배선하는 조립부 자체가 존재하지 않으므로** 이번 PR(narrator 단독 배선)에는 실효 차이가 없다. 가드 착수 시점은 B-5 정리 PR이다.
 | 회계 | 재시도 0회여도 **시도별 `LlmCallRecord` 기록 유지** | [`06`](06_quality_gates.md) §4 재생성/전송 회계 분리 |
 | 예외 | `RedactionBlocked`는 재시도 대상 아님(정책 차단 ≠ 일시 오류) — 현행 `retry_if_exception_type` 유지 | 불변식 3 |
 
@@ -186,16 +190,16 @@ M2 문제생성 착수에 필요한 A 승인·작업을 한 표로 모았다. �
 
 | # | A가 해야 하는 일 | 상세 | 유형 | 승인되면 풀리는 것 | 상태 |
 | --- | --- | --- | --- | --- | --- |
-| **A-1** | **B 7테이블의 `docs/06_erd.md` 편입 승인** + 이 PR 한정 `06_erd.md` 편집 go-ahead | §2-4 · §2-4.2 | 문서(A 소유) | B 저장 계층 전체. 미승인 시 `problem_generation` 영속화 불가 | ☐ **P0** |
+| **A-1** | **B 8테이블의 `docs/06_erd.md` 편입 승인** + 이 PR 한정 `06_erd.md` 편집 go-ahead `[7/27 정정: 7 → 8테이블 — KEEP-4로 ITEM_CANDIDATE 추가]` | §2-4 · §2-4.2 · §2-4.6 | 문서(A 소유) | B 저장 계층 전체. 미승인 시 `problem_generation` 영속화 불가 | ☐ **P0** |
 | **A-2** | `EVIDENCE_ITEM.owner_kind` += `problem_item` 양자 승인 | §2-3 마지막 행 | 공용 계약 | `PROBLEM_ITEM.rationale` 근거 저장. 공용 확장 14항목 중 **유일한 미승인 잔여** | ☐ **P0** |
-| **A-3** | `tests/ai/db/test_erd_model_parity.py`의 `== 26` → `== 33` 상수 변경 동의 | §2-4.2 | 테스트(양자 성격) | A-1과 같은 PR. 미변경 시 CI 적색 | ☐ P0 |
+| **A-3** | `tests/ai/db/test_erd_model_parity.py`의 `== 26` → **`== 34`** 상수 변경 동의 `[7/27 정정: 33 → 34]` | §2-4.2 · §2-4.6 | 테스트(양자 성격) | A-1과 같은 PR. 미변경 시 CI 적색 | ☐ P0 |
 | **A-4** | **`VersionSet` GraphRAG 3필드 확장** 양자 승인 | §2-12 | 공용 계약 | GraphRAG 실행 재현 키. **`graph_version` 재사용 금지가 핵심** | ☐ **P0** |
 | **A-5** | **evidence resolver 주입 시그니처 확정** (기존 B-7 + GraphRAG 경유 해소 병합) | §2-12 · §3 B-7 | `evidence/`(A 소유) | 게이트 ① R-1·R-4의 Graph path·quote·license 검증 | ☐ **P0** |
 | **A-6** | RLS 구현 부재 판정 — 문서 표현 정정 vs 실제 도입 | §2-4.5 | 공용 정책 | B 7테이블의 격리 방식 확정. **B는 기존 26테이블과 동일 패턴으로 진행 중** | ☐ 확인 |
-| **A-7** | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** 판정 | [`10`](10_m2_problem_generation_architecture.md) §4.1 C3 | B 초안 → A+B | 슬롯 후보 보존이 필요하면 `langgraph_state.md` §2.4 영향. **확정 전까지 B가 해당 플래그를 off로 유지** | ☐ 확인 |
+| **A-7** | **`[7/27 범위 축소]`** `docs/policies/langgraph_state.md` §2.4의 `ProblemGenerationState` 코드블록에 **필드 2줄 추가 리뷰** — `fallback_ref: str \| None` · `difficulty_regen_used: bool`. `state_schema_version`은 **`v1` 유지**(기본값 보유로 기존 체크포인트 그대로 재개 · 올리면 §3.2에 따라 진행 중 세트 전량 재기동) | §2-4.6 · [`10`](10_m2_problem_generation_architecture.md) §4.1 C3 | 공용 정책(A 리뷰) | 종전 "보존 규칙을 정해달라"에서 축소됨 — **B가 KEEP-1~9로 설계를 닫았고**, 본문은 `ITEM_CANDIDATE`에 두고 state엔 포인터만 둬 §2.4의 "본문 미복제" 원칙을 지킨다 | ☐ 확인 |
 | **A-8** | §2-10 문서 동기화 **잔여 4건** — `99_open_items`(B-2 완료 표기) · `part_a/08 §1`(`golden/diagnosis/` 행) · `02_ownership §5`(`golden/diagnosis/` 소유 행) · `00_INDEX`(part_b 링크 절) | §2-10 | 문서(A·공용) | 승인·구현이 끝난 항목의 문서 지연분 | ☐ 잔여 |
 | **A-9** | 7/22 감지·API 리뷰 잔여 회신 — ongoing 상한 제외 후 요약 동기화 · 병합 lifecycle 경계 · 회귀/데모 · 공용 실패 meta · 민감 detail 제거 `[P0]` | §1-7 · §1-8 · §2-11 | A(+BE) | B 무관하나 공용 wire 확정에 필요 | ◐ 진행 |
-| **A-10** | **"모든 LLM 호출은 gateway 경유 — 예외 없음" 규칙을 `docs/03_coding_rules.md`로 승격** (A 제안·B 동의). 현재 이 규칙은 [`01`](01_pipeline.md) §5에만 있어 B 규율로 읽힌다. **확인된 사실:** `03_coding_rules.md`에 gateway·LLM 호출 관련 조항이 **0건**이라 승격할 자리가 비어 있다. 과도기(브리핑 #22 어댑터 직결) 조건 2건 — **종료 시점 = ①+② 머지** · **그때까지 신규 직결 추가 금지** | §1-10 | 문서(A 소유) | 규칙의 적용 범위가 A·B 공용으로 확정됨. 승격 전에는 A 소비자의 직결이 규율 위반인지 해석이 갈린다 | ☐ 신규 |
+| **A-10** | **"모든 LLM 호출은 gateway 경유 — 예외 없음" 규칙을 `docs/03_coding_rules.md`로 승격** (A 제안·B 동의). 현재 이 규칙은 [`01`](01_pipeline.md) §5에만 있어 B 규율로 읽힌다. **확인된 사실:** `03_coding_rules.md`에 gateway·LLM 호출 관련 조항이 **0건**이라 승격할 자리가 비어 있다. **`[2026-07-28] 과도기 종료 — 조건 충족.`** ①+②가 머지되고 브리핑이 `narrator` role로 게이트웨이에 배선되면서 어댑터 직결이 해소됐다. 이제 **남은 것은 `03_coding_rules.md` 승격 실행 한 건**이다 | §1-10 | 문서(A 소유) | 규칙의 적용 범위가 A·B 공용으로 확정됨. 승격 전에는 A 소비자의 직결이 규율 위반인지 해석이 갈린다 | ☐ 승격 대기 |
 
 **P0 5건(A-1~A-5)이 M2 착수의 실질 관문이다.** 나머지는 병렬로 진행 가능하다.
 
@@ -319,6 +323,29 @@ D-② ERD-parity 안전망은 `tests/ai/db/test_erd_model_parity.py`의 ERD↔`d
 | `WEAKNESS_MAP` | `UNIQUE(tenant_id, student_ref, graph_version, 주차)` — 주차 컬럼 표현을 `computed_at` 파생이 아니라 명시 컬럼으로 둘지 확정 필요 | §2 주석 |
 | `PROBLEM_SET` | `request` jsonb가 이미 **"난이도"를 포함**한다고 적혀 있으나 `contracts/problem_generation.py`의 `ProblemRequest`에는 난이도 필드가 없다(확인된 간극). 요청 난이도 필드 신설과 함께 정합 | §2 · [`05`](05_problem_generation.md) §4.1 |
 | `PROBLEM_ITEM` | **`difficulty_fit` numeric nullable 추가** — 절대 난이도(`difficulty_est`)와 학생 적합도를 분리한다. **v1은 값을 산출하지 않고 항상 null이며 처리 분기 코드를 만들지 않는다** | B-M2-01 = A `[2026-07-27 B 확정]` · 공용 ERD·ORM 편입은 A+B 승인 대상 · [`04`](04_curriculum_graph.md) §1(문항 단위 실측은 B 출제분 제출부터 축적) |
+
+#### 2-4.6 `ITEM_CANDIDATE` — 8번째 테이블 `[KEEP-4 확정 2026-07-27]`
+
+난이도 사유 재생성 시 **첫 검증본 보존**이 확정되면서(KEEP-1) 슬롯 후보 스냅숏 저장소가 필요해졌다. **`PROBLEM_ITEM`에 넣을 수 없는 구조적 이유**가 있다 — `PROBLEM_ITEM`은 슬롯당 1행이고 후보는 `attempt_no`별로 여러 행이라 **키 차수가 다르다.**
+
+| 컬럼 | 타입 | 비고 |
+| --- | --- | --- |
+| `id` | uuid PK | |
+| `set_id` | uuid FK → `PROBLEM_SET` | |
+| `tenant_id` | varchar | 전 테이블 공통 |
+| `slot_index` | int | `ProblemGenerationState.cursor` 대응 |
+| `attempt_no` | int | 1..3 — `item_attempt` 회차 |
+| `snapshot` | jsonb | `GeneratedItem` 전문(불변) |
+| `gate_summary` | jsonb | ①② 판정 결과·confidence·정렬 판정 |
+| `difficulty_est` | numeric | 후보 시점 추정값 |
+| `created_at` | timestamptz | |
+
+- **UNIQUE `(tenant_id, set_id, slot_index, attempt_no)`** — `langgraph_state.md` §2.4의 "슬롯 저장 키는 결정론적이며 저장소에서 unique/upsert로 강제"를 후보 축까지 확장한 것.
+- **불변 스냅숏**이다. 생성 후 갱신하지 않는다.
+- 슬롯 확정 시 승자를 `PROBLEM_ITEM`으로 승격하고, **state의 `fallback_ref`는 clear하되 이 행은 보존**한다(KEEP-8 — 난이도 회귀·골든셋 증보 재료).
+- 기각한 대안: `ITEM_REVISION`(강사 수정 이력이라 화면에 오노출) · `VERIFICATION_RESULT.detail`(관측 상세지 본문 저장소 아님) · state 인라인(§2.4 위반) · `PROBLEM_ITEM` 후보 행(수량 불변식 오염).
+
+**연쇄 영향:** B 테이블 **7 → 8**, 공용 ERD **26 → 34**, `test_erd_model_parity.py` 상수 **`== 34`**. A-1·A-3에 반영했다.
 
 #### 2-4.4 저장소 ORM 규약 (편입 시 준수 — `db/models.py`·`db/base.py`에서 확인)
 
@@ -470,7 +497,7 @@ resolver가 만족해야 하는 조건(B 요구):
 | B-3 잔여 | taxonomy 경계 사례 7건 판정 | 태깅 골든셋 시드와 동시 확정 | A+B | 04·06 §5 |
 | Open-12 | F17 OCR 실명→alias·OCR 소유 (P2) | 스캔·매칭·마스킹=BE 유지, 판독 소유는 벤더 선정과 함께 | BE(+A·B) | 02 §1-C |
 | B-2 | 공용 계약 리뷰·구현·14항목 승인 완료 — **문서 동기화 3/7 완료, 4건 잔여(§2-10)** | 잔여 4건 소유자 반영 요청 | A+B | 02 §5 |
-| B-5 / D-06 | ✅ PR #15로 로컬 OpenAI 호환·Gemma 계열 공급자와 어댑터 확정 — verifier 폴백 패밀리만 잔여 | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제 | A+B | 06 §2·§3 |
+| B-5 / D-06 | ✅ PR #15로 로컬 OpenAI 호환·Gemma 계열 공급자와 어댑터 확정 — verifier 폴백 패밀리만 잔여. **B-5 정리 PR 할 일 2건** `[2026-07-28]`: ① `gateway.py`의 `TODO(B-5)` 제거(provider 1개일 때 패밀리 강제가 우회되는 현행 동작) ② **`problem_generation/provider.py` 조립부 가드 + `test_provider.py`**(§1-10 "가드 위치") | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제. 두 항목 모두 role 키 설정 구조를 공유하므로 같은 PR에서 처리 | A+B | 06 §2·§3 · §1-10 |
 | B-7 | evidence resolver 주입 시그니처 — **GraphRAG 경유 근거 해소와 병합**(§2-12-②) | fail-closed·권리 게이트·결정론·예산 불변·blind 무오염 5조건 | A+B | §2-12 · `10` §4.2 |
 | **B-8** `[신규]` | **GraphRAG `VersionSet` 3필드 확장** — `content_graph_version`·`graph_index_version`·`retrieval_config_version`. **`graph_version` 재사용 금지** | §2-9 선례(nullable 흡수) 준용 | A+B | §2-12-① · `10` §4.2 |
 | **B-9** `[신규]` | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** — 검증 통과 문항이 미검증 문항으로 대체될 수 있는 미정의 동작 | `07` §4의 "마지막 검증본 유지"를 생성 경로에 대칭 적용 제안. 확정 전 `difficulty_regen_enabled=false` 유지 | B 초안 → A+B | `10` §4.1 C3 |
