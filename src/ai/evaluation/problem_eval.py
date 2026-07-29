@@ -13,7 +13,22 @@ _EXPECTED_CASE_IDS: dict[str, tuple[str, ...]] = {
     "normal_pass": tuple(f"N{index}" for index in range(1, 11)),
     "refine": tuple(f"RF{index}" for index in range(1, 12)),
     "graphrag": tuple(f"GR{index}" for index in range(1, 12)),
+    "suneung_format": tuple(f"SF{index}" for index in range(1, 7)),
 }
+
+type SuneungFormatFeature = Literal[
+    "single_stimulus",
+    "labeled_examples",
+    "text_table",
+    "historical_korean",
+    "compound_choices",
+    "shared_stimulus",
+]
+type FormatContractSupport = Literal[
+    "not_assessed",
+    "supported_in_stem",
+    "design_gap",
+]
 
 
 class ProblemGoldenError(ValueError):
@@ -63,9 +78,17 @@ class ProblemGoldenCase(BaseModel):
     track: Literal["T1", "T2", "T3"]
     item_format: Literal["mcq"] = "mcq"
     review_status: Literal["expert_review_pending"]
+    format_features: tuple[SuneungFormatFeature, ...] = ()
+    contract_support: FormatContractSupport = "not_assessed"
     educational_draft: EducationalDraft
     mutation: GoldenMutation
     expected: GoldenExpectation
+
+    @model_validator(mode="after")
+    def validate_design_gap(self) -> Self:
+        if self.contract_support == "design_gap" and self.expected.llm_calls:
+            raise ValueError("포맷 설계 간극 케이스는 LLM을 호출하지 않는다")
+        return self
 
 
 class ProblemGoldenSuite(BaseModel):
@@ -124,6 +147,8 @@ class ProblemGoldenReport(BaseModel):
     total_cases: int = Field(ge=1)
     suites: tuple[ProblemGoldenSuiteSummary, ...]
     prompt_snapshot_count: int = Field(ge=1)
+    suneung_format_features: tuple[SuneungFormatFeature, ...]
+    design_gap_case_ids: tuple[str, ...]
     educational_review_status: Literal["expert_review_pending"] = (
         "expert_review_pending"
     )
@@ -155,6 +180,12 @@ def _load_suite(root: Path, suite_name: str) -> ProblemGoldenSuite:
     if actual_ids != expected_ids:
         raise ProblemGoldenError(
             f"{suite_name} case_id 불일치: actual={actual_ids}, expected={expected_ids}"
+        )
+    if suite_name == "suneung_format" and any(
+        case.contract_support == "not_assessed" for case in suite.cases
+    ):
+        raise ProblemGoldenError(
+            "suneung_format 케이스는 포맷 계약 지원 여부를 명시해야 한다"
         )
     return suite
 
@@ -224,8 +255,25 @@ class ProblemGoldenEvaluator:
             ProblemGoldenSuiteSummary(suite=suite.suite, case_count=len(suite.cases))
             for suite in suites
         )
+        suneung_suite = next(
+            suite for suite in suites if suite.suite == "suneung_format"
+        )
         return ProblemGoldenReport(
             total_cases=sum(summary.case_count for summary in summaries),
             suites=summaries,
             prompt_snapshot_count=len(manifest.snapshots),
+            suneung_format_features=tuple(
+                sorted(
+                    {
+                        feature
+                        for case in suneung_suite.cases
+                        for feature in case.format_features
+                    }
+                )
+            ),
+            design_gap_case_ids=tuple(
+                case.case_id
+                for case in suneung_suite.cases
+                if case.contract_support == "design_gap"
+            ),
         )

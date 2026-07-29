@@ -193,6 +193,31 @@ def test_generated_item_roundtrip() -> None:
     assert GeneratedItem.model_validate(item.model_dump(mode="json")) == item
 
 
+def test_generated_item_preserves_synthetic_suneung_t1_text_shapes() -> None:
+    data = _item().model_dump(mode="json")
+    data["stem"] = (
+        "[합성 자료]\n"
+        "㉠ 합성 예문 하나\n"
+        "㉡ 합성 예문 둘\n"
+        "구분 | 예문 A | 예문 B\n"
+        "옛한글 코드 포인트: ᄀᆞᄅᆞ\n"
+        "자료를 분석한 내용으로 가장 적절한 것은?"
+    )
+    data["choices"][0]["text"] = "ㄱ, ㄴ"
+    data["choices"][1]["text"] = "ㄱ, ㄷ"
+    data["choices"][2]["text"] = "ㄴ, ㄹ"
+    data["choices"][3]["text"] = "ㄱ, ㄴ, ㄷ"
+    data["choices"][4]["text"] = "ㄴ, ㄷ, ㄹ"
+
+    item = GeneratedItem.model_validate(data)
+    restored = GeneratedItem.model_validate(item.model_dump(mode="json"))
+
+    assert restored == item
+    assert "㉠" in restored.stem
+    assert "ᄀᆞᄅᆞ" in restored.stem
+    assert restored.choices[4].text == "ㄴ, ㄷ, ㄹ"
+
+
 def test_generated_item_requires_five_choices() -> None:
     data = _item().model_dump(mode="json")
     data["choices"] = data["choices"][:4]
