@@ -169,7 +169,7 @@ POST → profiling → inferring → [probing] → preview_ready ──confirm(�
 - **confirm-on-blocked HTTP 형태([제안] 검토)** — 필수 미매핑 상태 confirm을 `200 + status=blocked`(현 제안, 게이트 거부=정상 원칙)로 둘지, `409`(상태 충돌)로 둘지. 계약 §1 코드 사전과 함께 확인.
 
 ### 6.2 [문서 정합 — A 후속]
-- **상태명 동기화** — `error_codes.md §2.4`가 `profiled`/`transformed`(과거형)를, 본 문서·04 §3.8은 `profiling`/`transforming`/`done`을 쓴다. **04 §3.8을 정본**으로 §2.4 라벨을 동기화(별도 커밋 — 본 스펙 확정 후).
+- ~~**상태명 동기화**~~ ✅ **완료(2026-07-30)** — `error_codes.md §2.4`가 `profiled`/`transformed`(과거형)를 쓰던 것을 04 §3.8 정본(`profiling`·`inferring`·`probing`·`preview_ready`·`done`)에 맞춰 동기화했다. `transforming`은 세 문서 모두에서 제거됐다(§4 소유 이동). **ERD 잔여**(`IMPORT_JOB.status`의 `transformed`·`row_*` 컬럼·`IMPORT_ROW_ERROR`)는 양자 파일·마이그레이션이 걸려 별건이다 — 99 D ⑲.
 - **`failed` 상태 명문화** — 04 §3.8 화살표엔 `done/blocked`만 있으나 async 규약(04 line 119 "5분 초과 시 failed")·error_codes §2.4·§6에 `failed`가 있어 본 문서가 종단 상태로 편입. 04 §3.8 상태열에 `failed` 한 단어 추가 제안.
 
 ### 6.3 A 단독 확정(본 문서 범위)
