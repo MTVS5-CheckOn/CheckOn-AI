@@ -30,7 +30,7 @@ def test_pg_survives_restart() -> None:
 async def _run() -> str:
     from sqlalchemy import text
 
-    from ai.api.routers.detect import _build_feature_weeks
+    from ai.api.routers.detect import _FEATURE_VERSION, _build_feature_weeks
     from ai.contracts.detection import SignalType
     from ai.contracts.execution import Capability, ExecutionContext, VersionSet
     from ai.db.models import Base
@@ -109,7 +109,10 @@ async def _run() -> str:
         assert hit is not None and hit.response_body == cached_body
 
         # ② read-path 생존 — PG 축적분으로 baseline 구성 → 판정
-        rows = await detection_b.load_feature_weeks(tenant, ["st_dec"])
+        # feature_version은 호출부가 주입한다(4-5) — 라우터와 같은 상수를 쓴다.
+        rows = await detection_b.load_feature_weeks(
+            tenant, ["st_dec"], feature_version=_FEATURE_VERSION
+        )
         assert len(rows) == 10  # day1 10주분 PG 생존
         stored = {
             "st_dec": [
