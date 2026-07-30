@@ -95,7 +95,7 @@ def _minimal_raw() -> dict[str, object]:
     axis_rules = {axis: dict.fromkeys(vals, "설명") for axis, vals in _DOC_AXIS_VOCAB.items()}
     combos = {
         key: {"blocks": ["인사", "제안"], "sentences_per_block": 2, "buffer_level": 1}
-        for key in expected_keys(axis_rules)  # type: ignore[arg-type]
+        for key in expected_keys(axis_rules)
     }
     return {
         "version": "0.1",
