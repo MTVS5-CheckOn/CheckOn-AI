@@ -3,7 +3,8 @@
 > **지위:** member-B(염준영) 공식 규격 v1. `src/ai/problem_generation/`의 근거 조립 계층과 `src/ai/diagnosis/`의 교육과정 그래프 projection의 사양 원본. 입력 초안은 `CODEXPROMPT/출제스튜디오_AI_GraphRAG_아키텍처_개발설계_v1.md`(작업·회의용 자료)이며, **본 문서가 `docs/part_b/` 정본이다.**
 >
 > **변경 이력**
-> - v1.2 (2026-07-30): §0의 `contracts/graphrag.py` 소유를 **`[제안 — 미승인]`으로 정정**([`09`](09_integration_proposals.md) §2-14 · `docs/02_ownership.md` 미등록 확인). §5에서 `quote_hash` 검증 주체를 A-5 resolver로 바로잡고 `license_ref` 유효성 주체를 `[미확정]`으로 명시 — 종전 표기는 `EvidencePathResult` 3필드에 근거가 없었다.
+> - v1.3 (2026-07-30): §0의 `contracts/graphrag.py`를 **A+B 양자 승인 완료**로 승격하고, PR #49의 `docs/02_ownership.md` v5 §3·§4·§5 및 `CLAUDE.md` §2 등록 완료(13곳)를 반영했다.
+> - v1.2 (2026-07-30): §0의 `contracts/graphrag.py` 소유를 **당시 미승인 상태로 정정**([`09`](09_integration_proposals.md) §2-14 · `docs/02_ownership.md` 미등록 확인). §5에서 `quote_hash` 검증 주체를 A-5 resolver로 바로잡고 `license_ref` 유효성 주체를 `[미확정]`으로 명시 — 종전 표기는 `EvidencePathResult` 3필드에 근거가 없었다.
 > - v1.1 (2026-07-30): A-5 초안에 맞춰 §5에 `EvidenceResolver.resolve`의 고정 시그니처·결과 구조를 편입하고, 그래프 내부 경로 검증·실제 근거 해소(A)·R-1 판정의 경계를 분리했다.
 > - v1 (2026-07-27): 신규 작성. GraphRAG 채택 확정([`10`](10_m2_problem_generation_architecture.md) §1·§4.2)에 따라 설계 초안을 정본 규격으로 편입. 공용 계약을 건드리는 2건(`VersionSet` 3필드 · evidence resolver 시그니처)은 본 문서에서 확정하지 않고 [`09`](09_integration_proposals.md) §2-12 제안으로 분리했다.
 >
@@ -18,7 +19,7 @@
 | 범위 | 확정 주체 | 위치 |
 | --- | --- | --- |
 | Graph 도메인 3종의 의미·검색 모드·색인 파이프라인·권리 매니페스트 | **B 단독** | 본 문서 |
-| `contracts/graphrag.py`의 `ContextPack`·`EvidencePack`·`GraphContextService` 등 공용 타입 | **A+B 양자 승인 `[제안 — 미승인]`** | [`09`](09_integration_proposals.md) §2-14 `[제안]` — `docs/02_ownership.md`에 **미등록**(현행 양자 승인 대상 12곳) |
+| `contracts/graphrag.py`의 `ContextPack`·`EvidencePack`·`GraphContextService` 등 공용 타입 | **A+B 양자 승인 ✅** | `docs/02_ownership.md` v5 §3·§4·§5 · `CLAUDE.md` §2 — 등록 완료(13곳) |
 | `contracts/execution.py` `VersionSet` GraphRAG 3필드 | **A+B 양자 승인** | [`09`](09_integration_proposals.md) §2-12-① `[제안]` |
 | `evidence/models.py`의 `EvidenceRef` 스키마 | **A+B 양자 승인** | `docs/02_ownership.md` §3·§4·§5 |
 | `evidence/resolver.py`의 resolver 시그니처·결과 타입·구현 | **A 단독** | [`09`](09_integration_proposals.md) §2-12-② `[A-5]` |

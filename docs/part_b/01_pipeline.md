@@ -3,13 +3,14 @@
 > **지위:** member-B(염준영) 공식 파이프라인 v1.2. part_a/01_pipeline과 대칭인 B의 전체 구조 문서 — 상세 시퀀스·ERD는 [`02_design.md`](02_design.md), 도메인 규격은 04~07.
 >
 > **변경 이력**
+> - v1.4 (2026-07-31): 서비스 전제의 잘못된 백엔드 DB 표기를 실제 스택인 PostgreSQL로 정정했다. 표기 정합화이며 기능 변경은 없다.
 > - v1.3 (2026-07-30): §5 LangSmith 마스킹 경계를 **LLM gateway 앞단 `(b)` 훅**과 **LangGraph 노드·체크포인터 경계**로 분리했다. 전자는 `llm/`(B), 후자는 `agents/`(A) 소유이며 실제 LangSmith 효과 대상은 [`09`](09_integration_proposals.md) §2-16에서 재활성화 전에 실측 확정한다.
 > - v1.2 (2026-07-27): **GraphRAG 지식 계층 채택**([`11`](11_graphrag_knowledge_layer.md)) — §0 판정표에 플랫폼 계층으로 추가(에이전트 아님·LLM 금지·판정 권한 없음), §3 출제 흐름에 `ResolveGenerationContext` 선행 단계 삽입, §7 Phase 배치에 GraphRAG P0-1~P1-5 반영. 계약(`ContextPack`·`EvidencePack`·`GraphContextService`)은 문제 생성 LangGraph보다 **앞선다**. 공용 계약을 건드리는 2건(`VersionSet` 3필드·evidence resolver)은 [`09`](09_integration_proposals.md) §2-12 제안으로 분리했다.
 > - v1.2 (2026-07-27): B-M2-02 확정 반영 — 난이도 추정을 게이트 ③ 앞으로 이동하고, 난이도 사유 재생성도 문항당 총 3회 공통 예산 안에서 1회만 허용.
 > - v1.1 (2026-07-27): 슈퍼바이저 실행 계약 확정 — 영속 WorkerJob 정본, `problem_set.generate`·`problem_item.refine`·`problem_item.reverify` operation 분리, 강제 선점 금지·문항 경계 협력적 양보, 실행 phase와 문제생성 결과 status 분리.
 > - v1 (2026-07-15): 구 `01_design.md` §1을 분리·증보. 7/15 결정 반영 — ① B-1 승인: **슈퍼바이저 1 + 워커 3**(문제 생성 = B 워커) ② v1 문항 형식 **mcq만** ③ 완료 통지 **Kafka** ④ AI는 쿼터 무관(meta.quota 폐기) ⑤ B-4(서술형 분담) 폐기 ⑥ 수능 고등 타겟. 대화 결정 반영 — 재시도 총 3회 · 약점 의미 정렬 판정 · 수동 목표 출제 허용 · 핑퐁 수정 MVP 승격.
 >
-> **전제** — AI는 별도 Python 서비스(AI PostgreSQL), 백엔드(Java·MySQL)가 도메인 원본·승인·노출 소유, 입력은 alias 스냅숏만(실명·연락처는 경계 통과 금지), 쿼터는 전부 백엔드 Billing(AI는 알지 못함). 소스 루트 `src/ai/` — 구조 재편 금지(`docs/02_ownership.md`).
+> **전제** — AI는 별도 Python 서비스(AI PostgreSQL), 백엔드(Java·PostgreSQL)가 도메인 원본·승인·노출 소유, 입력은 alias 스냅숏만(실명·연락처는 경계 통과 금지), 쿼터는 전부 백엔드 Billing(AI는 알지 못함). 소스 루트 `src/ai/` — 구조 재편 금지(`docs/02_ownership.md`).
 
 ---
 
