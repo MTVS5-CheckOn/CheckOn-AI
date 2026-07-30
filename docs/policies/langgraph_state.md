@@ -48,6 +48,8 @@ class CounselPackState(BaseModel):
     summary: str | None = None                 # "22명 중 19명 생성·2명 데이터 부족·1명 실패"
 ```
 
+> **트레이스 노출 실측(2026-07-30):** 이 §1.2의 본문 미복제 결정이 트레이스 노출을 실제로 줄인다 — LangSmith span에 `prompt`·`facts`·`fallback_text`가 **등재되지 않았다**. 단 `emphasis_points`는 근거 라벨·수치·`record_id`가 문면 그대로 실린다(P2 1순위). 실측: `part_a/11_langsmith_trace_probe.md`.
+
 **불변식:** ① `emphasis_points`의 모든 강조점은 `record_id` 동반(plan 노드도 Evidence 규칙 적용) ② `cursor`는 단조 증가 — 재개 시 `results` 길이와 일치 검증(불일치 = 체크포인트 손상 → failed) ③ 학생 1명 실패가 루프를 멈추지 않는다(계약: failed여도 완료분 보존) ④ 재개 시 `context_ref`를 역참조한 컨텍스트 묶음의 해시를 `context_hash`와 대조 — 불일치 = 체크포인트 손상 → failed.
 
 ### 1.3 중단·재개
