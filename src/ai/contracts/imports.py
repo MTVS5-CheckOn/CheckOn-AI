@@ -6,6 +6,11 @@
 범위(2026-07-30 확정): AI는 **매핑 제안까지**다 — 전체 행 변환·행별 검증·집계·산출물 저장은
 백엔드 소유(10 §4). 그래서 이 계약에 output_url·행 집계 타입이 없다.
 
+**책임 경계(2026-07-30 백엔드 확정):** 백엔드가 확정 매핑의 기준 데이터를 보유하고, AI는 양식
+재사용을 위해 확정된 매핑을 전달받아 활용한다. **필수 여부 판단도 백엔드가 Import 유형별
+규칙으로** 한다 — AI는 정보만 준다(미매핑 표준 필드·미매핑 원본 컬럼·신뢰도·강사 확인 필요
+표시). 그래서 이 계약에 `blocked` 축이 없다(AI 측 확정 차단 제거).
+
 불변식 1(CLAUDE.md): LLM은 매핑을 추론만 — 확정은 결정론. 억지 매핑 금지(모르면 unmapped).
 불변식 3: AI의 LLM·저장소는 실명 값을 보지 않는다(§5). extra="forbid"로 경계 밖 필드를
 구조적으로 차단한다.
@@ -28,7 +33,6 @@ class ImportStatus(StrEnum):
     DONE = "done"
     """강사 확정 spec 저장 완료 — 전체 행 변환은 AI 범위 밖(10 §4)."""
 
-    BLOCKED = "blocked"
     FAILED = "failed"
 
 
@@ -123,7 +127,13 @@ class StructureNotice(BaseModel):
 
 
 class MappingPreview(BaseModel):
-    """preview_ready·blocked의 강사 확인 자료 — 04 §3.8 mapping_preview."""
+    """preview_ready의 강사 확인 자료 — 04 §3.8 mapping_preview.
+
+    **AI는 판정하지 않고 정보를 준다**(2026-07-30 백엔드 확정): 매핑 후보를 찾지 못한 표준
+    필드(`unmapped_target_fields`) · 매핑되지 않은 원본 컬럼(`columns[].target is None`) ·
+    각 매핑의 신뢰도(`confidence`) · 강사 확인이 필요한 매핑(`needs_review`). 필수 여부
+    판단과 확정 차단은 백엔드 소유다.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -132,15 +142,31 @@ class MappingPreview(BaseModel):
     """true = 같은 양식 재수입 → LLM·에이전트 0회로 기존 spec 재사용(§3.4)."""
 
     columns: tuple[MappingColumn, ...]
+    unmapped_target_fields: tuple[str, ...] = ()
+    """**매핑 후보를 찾지 못한 표준 필드**(정렬 — 결정론). 07 표준 필드 여집합이다.
+
+    ⚠ **유형 무관** — 07 §2(명부) + §3(learning_event) 표준 필드 **전체 기준**의 여집합이므로
+    이번 Import 유형과 무관한 필드도 포함된다(명부 파일을 올리면 `occurred_at`·`event_type`
+    같은 학습기록 필드가 전부 들어온다).
+    ⚠ **필수 여부 판단이 아니다** — 필수는 백엔드가 Import 유형별 규칙으로 판단한다
+    (2026-07-30 백엔드 확정). AI는 "무엇이 안 채워졌는지"만 알려준다.
+    """
+
+    source_fingerprint: str = ""
+    """양식 지문 — AI 내부의 "양식 시그니처"(§3.4 `form_signature`)와 같은 값이다.
+
+    **백엔드는 이 값을 재계산할 수 없다**(헤더 정규화·시트 구성 규칙이 AI 안에 있다). 받은
+    값을 그대로 보관하고 확정 매핑과 함께 반송하는 용도다 — 그래야 AI가 다음 재수입에서
+    `reused`를 판정할 수 있다.
+    🔴 **해시 입력에 `tenant_id`가 들어간다** — 같은 양식이라도 테넌트가 다르면 값이 다르다.
+    테넌트 간에 공유·대조할 수 있는 값이 아니다.
+    """
+
     structure_notices: tuple[StructureNotice, ...] = ()
     """파일 구조 주의사항(백엔드 요청, 2026-07-30) — 없으면 빈 목록."""
 
     sample_rows: tuple[dict[str, str], ...] = ()
     """변환 예시(≤N행). 실명 무접촉 가드레일(§5.2) — redactor 미주입 시 비어 있다(구조적)."""
-
-    blocked: bool = False
-    blocked_reason: str | None = None
-    """blocked=true면 필수 필드 미매핑 → confirm 차단(override로 해제 가능)."""
 
 
 class ImportJobView(BaseModel):
@@ -157,7 +183,7 @@ class ImportJobView(BaseModel):
     """failed 사유(file_unreadable·timeout_5min 등) — error_codes §2.4."""
 
     mapping_preview: MappingPreview | None = None
-    """preview_ready·blocked·done 공통 — done은 강사가 확정한 spec이 실린다.
+    """preview_ready·done 공통 — done은 강사가 확정한 spec이 실린다.
 
     변환 결과(산출물 URL·행 집계)는 없다 — 백엔드 소유(10 §4, 2026-07-30).
     """

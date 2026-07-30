@@ -43,15 +43,27 @@ def test_confirm_request_defaults_empty_overrides() -> None:
     assert ConfirmRequest(spec_overrides=(ov,)).spec_overrides[0].target_field == "score"
 
 
-def test_preview_blocked_shape() -> None:
+def test_preview_reports_unmapped_targets_without_blocking() -> None:
+    """구 `test_preview_blocked_shape`의 자리 — 판정 축이 정보 축으로 바뀌었다.
+
+    같은 관심사(무엇이 안 채워졌나)를 구조화 목록으로 검사한다(2026-07-30 백엔드 확정).
+    """
     pv = MappingPreview(
         spec_version=1,
         reused=False,
         columns=(MappingColumn(source="이름", target="student_name", confidence=0.97),),
-        blocked=True,
-        blocked_reason="필수 필드 occurred_at 미매핑",
+        unmapped_target_fields=("event_type", "occurred_at"),
+        source_fingerprint="a" * 64,
     )
-    assert pv.blocked and pv.sample_rows == ()
+    assert pv.unmapped_target_fields == ("event_type", "occurred_at")
+    assert pv.source_fingerprint == "a" * 64
+    assert pv.sample_rows == ()
+    assert not hasattr(pv, "blocked")
+
+
+def test_preview_has_no_blocking_axis() -> None:
+    """`blocked`·`blocked_reason`이 계약에서 사라졌다 — AI는 확정을 차단하지 않는다."""
+    assert not {"blocked", "blocked_reason"} & set(MappingPreview.model_fields)
 
 
 def test_job_view_status_enum() -> None:
@@ -67,13 +79,12 @@ def test_job_view_has_no_transform_result() -> None:
 
 
 def test_import_status_values_frozen() -> None:
-    """10 §2 상태기계 — transforming 없음(백엔드 소유), blocked 유지(회신 대기 §6.1)."""
+    """10 §2 상태기계 — transforming·blocked 없음(둘 다 백엔드 소유로 이관)."""
     assert {status.value for status in ImportStatus} == {
         "profiling",
         "inferring",
         "probing",
         "preview_ready",
         "done",
-        "blocked",
         "failed",
     }
