@@ -110,6 +110,11 @@ def build_brief_gateway(provider: LLMProvider | None = None) -> LlmGateway:
     전송 재시도는 narrator=0으로 등록(재시도 값은 여기서 주입 — 하드코딩 금지). 원가 기록
     recorder는 기본 no-op(LLM_CALL DB 적재는 후속 — 99 등록).
 
+    ⚠ **㉒-a 추적 가드를 여기 걸지 않는다** — 실측상 briefing은 span 0건이라 위험 표면이
+    아니다(`part_a/11` §3: 그래프도 Runnable도 아니고 `openai_compat`이 `wrap_openai`를
+    쓰지 않아 briefing만 돌리면 LangSmith 프로젝트조차 생성되지 않았다). 가드는 LangGraph
+    워커 조립부(counsel_pack·mapping_probe)에만 있다.
+
     `trace_masking_hook`도 **조립부가 주입한다** — `transport_retry`와 같은 규약이다
     (01 §5 "게이트웨이는 값을 모른다"). 미주입이면 `LANGSMITH_TRACING=true`에서
     게이트웨이 생성이 실패한다(09 §2-16 P1′ 기동 가드).

@@ -48,6 +48,7 @@ from ai.contracts.llm import LLMProvider, ModelRole
 from ai.db.settings import DbSettings, get_db_settings
 from ai.llm.gateway import LlmGateway
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
+from ai.runtime.tracing import require_tracing_disabled
 
 _PG = "pg"
 
@@ -103,6 +104,12 @@ async def open_counsel_pack_runner(
     조용히 폴백했는데, 운영 배선 실수가 곧 **날조 산출 저장**이었다(조용한 Fake가 최악).
     테스트·개발 조립부는 Fake를 명시적으로 꽂고, 프로덕션 미배선은 기동 시점에 터진다.
     """
+    # ㉒-a fail-closed — 추적이 켜져 있으면 아예 돌지 않는다. LangGraph 워커는 마스킹 전
+    # state를 노드 경계로 내보내므로(part_a/11 §1.1) P2 은닉 전까지 기동을 막는다.
+    # ⚠ briefing 조립부(`composition/provider.py`)에는 걸지 않는다 — 실측상 span 0건이라
+    #   위험 표면이 아니다(11 §3 "briefing만 돌리면 프로젝트조차 생성되지 않았다").
+    require_tracing_disabled("counsel_pack")
+
     resolved_db = db_settings or get_db_settings()
     #: 산출물 저장소 기본값 — 인메모리(PG 영속은 후속 · 99 D). 미주입이면 결과가 어디에도
     #: 도착하지 않으므로 None을 허용하지 않는다.

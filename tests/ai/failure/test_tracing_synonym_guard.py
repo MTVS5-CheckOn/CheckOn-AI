@@ -36,13 +36,13 @@ def _isolate_tracing_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # langsmith는 env를 lru_cache로 기억한다 — 케이스마다 비운다.
     from langsmith.utils import get_env_var
 
-    get_env_var.cache_clear()
+    get_env_var.cache_clear()  # type: ignore[attr-defined]
 
 
 def _tracing_enabled() -> bool:
     from langsmith.utils import get_env_var, tracing_is_enabled
 
-    get_env_var.cache_clear()
+    get_env_var.cache_clear()  # type: ignore[attr-defined]
     return tracing_is_enabled() is not False
 
 
@@ -201,6 +201,8 @@ def test_langsmith_import_is_confined_to_runtime_tracing() -> None:
                 names = [a.name for a in node.names]
             elif isinstance(node, ast.ImportFrom):
                 names = [node.module or ""]
+            else:
+                continue
             if any(n.split(".")[0] == "langsmith" for n in names) and rel != allowed:
                 offenders.append(f"{rel}:{node.lineno}")
     assert not offenders, (
