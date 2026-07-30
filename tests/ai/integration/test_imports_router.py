@@ -140,7 +140,53 @@ def test_tenant_isolation_hides_other_tenant_job(client: TestClient) -> None:
     assert resp.status_code == 404  # 존재 은닉
 
 
-def test_confirm_transitions_to_transforming(client: TestClient) -> None:
+def test_structure_notices_ride_in_get_response() -> None:
+    """파일 구조 주의사항이 실제 GET 응답 JSON에 실린다(10 §1.2 — 백엔드 요청 5종 중 하나).
+
+    중복 헤더가 있는 원본을 openpyxl로 직접 만든다(pandas 경유로는 중복을 파일에 못 만든다).
+    """
+    from openpyxl import Workbook  # type: ignore[import-untyped]
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "명부"
+    sheet.append(["원생명", "반", "등원일", "상태", "동의", "점수", "점수"])
+    sheet.append(["김철수", "A1", "2026-03-02", "재원", "동의", 88, 91])
+    buffer = BytesIO()
+    book.save(buffer)
+
+    reset_import_stores()
+    set_import_stores(source_loader=FakeSourceLoader({"s3://dup.xlsx": buffer.getvalue()}))
+    try:
+        client = TestClient(create_app())
+        job_id = client.post(
+            "/v1/imports",
+            json={"source_url": "s3://dup.xlsx", "filename": "dup.xlsx"},
+            headers={**_HEADERS, "Idempotency-Key": "t1:dup"},
+        ).json()["data"]["job_id"]
+        body = client.get(
+            f"/v1/imports/{job_id}", headers={"X-Tenant-Id": "t1", "X-Request-Id": "r"}
+        ).json()
+        notices = body["data"]["mapping_preview"]["structure_notices"]
+        assert [(n["sheet"], n["kind"], n["column_index"], n["header"]) for n in notices] == [
+            ("명부", "duplicate_header", 6, "점수"),
+            ("명부", "duplicate_header", 7, "점수"),
+        ]
+    finally:
+        reset_import_stores()
+
+
+def test_clean_file_has_empty_structure_notices(client: TestClient) -> None:
+    """정상 파일이면 빈 목록 — 없는 문제를 만들어 강사를 불안하게 하지 않는다."""
+    job_id = _post(client, "s3://roster.xlsx", "roster.xlsx").json()["data"]["job_id"]
+    body = client.get(
+        f"/v1/imports/{job_id}", headers={"X-Tenant-Id": "t1", "X-Request-Id": "r"}
+    ).json()
+    assert body["data"]["mapping_preview"]["structure_notices"] == []
+
+
+def test_confirm_keeps_preview_ready(client: TestClient) -> None:
+    """확정 재검증 통과 — transforming으로 보내지 않는다(전체 행 변환은 백엔드 소유 §4)."""
     job_id = _post(client, "s3://roster.xlsx", "roster.xlsx").json()["data"]["job_id"]
     resp = client.post(
         f"/v1/imports/{job_id}/confirm",
@@ -148,7 +194,8 @@ def test_confirm_transitions_to_transforming(client: TestClient) -> None:
         headers={**_HEADERS, "Idempotency-Key": "t1:confirm:1"},
     )
     assert resp.status_code == 200
-    assert resp.json()["data"]["status"] == "transforming"
+    assert resp.json()["data"]["status"] == "preview_ready"
+    assert resp.json()["data"]["mapping_preview"]["blocked"] is False
 
 
 def test_confirm_rejects_non_standard_target_field(client: TestClient) -> None:

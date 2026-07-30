@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from ai.contracts.imports import ImportResult, ImportStatus, MappingPreview
+from ai.contracts.imports import ImportStatus, MappingPreview
 from ai.import_mapping.profiling import SourceProfile
 
 
@@ -23,7 +23,6 @@ class ImportJob:
     status: ImportStatus
     profile: SourceProfile | None = None
     preview: MappingPreview | None = None
-    result: ImportResult | None = None
     status_reason: str | None = None
 
 

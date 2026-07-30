@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ai.contracts.imports import ImportStatus, MappingColumn, MappingPreview
-from ai.import_mapping.profiling import SourceProfile, source_columns
+from ai.import_mapping.profiling import SourceProfile, source_columns, structure_notices
 from ai.import_mapping.provider import MappingInferenceError, MappingProvider
 from ai.import_mapping.signature import CachedSpec, SpecCache, form_signature
 
@@ -97,10 +97,15 @@ async def infer_mapping(
 ) -> InferenceOutcome:
     """프로파일 → 미리보기·상태. 판정식은 결정론, provider(LLM)는 매핑 후보만."""
     signature = form_signature(profile, tenant_id)
+    # 구조 주의사항은 **이번에 올린 파일**의 사실이라 캐시 hit(reused)에도 함께 싣는다(§1.2).
+    notices = structure_notices(profile)
     cached = cache.get(signature)
     if cached is not None:
         preview = MappingPreview(
-            spec_version=cached.spec_version, reused=True, columns=cached.columns
+            spec_version=cached.spec_version,
+            reused=True,
+            columns=cached.columns,
+            structure_notices=notices,
         )
         return InferenceOutcome(preview, ImportStatus.PREVIEW_READY, needs_probing=False)
 
@@ -109,7 +114,10 @@ async def infer_mapping(
     except MappingInferenceError:
         # 폴백 — 전 컬럼 수동 미리보기. required 미충족이라도 blocked가 아니라 preview_ready(§3.2).
         preview = MappingPreview(
-            spec_version=1, reused=False, columns=_fallback_columns(profile)
+            spec_version=1,
+            reused=False,
+            columns=_fallback_columns(profile),
+            structure_notices=notices,
         )
         return InferenceOutcome(preview, ImportStatus.PREVIEW_READY, needs_probing=False)
 
@@ -125,12 +133,15 @@ async def infer_mapping(
             spec_version=1,
             reused=False,
             columns=columns,
+            structure_notices=notices,
             blocked=True,
             blocked_reason=f"필수 필드 미매핑: {', '.join(sorted(missing))}",
         )
         return InferenceOutcome(preview, ImportStatus.BLOCKED, needs_probing)
 
-    preview = MappingPreview(spec_version=1, reused=False, columns=columns)
+    preview = MappingPreview(
+        spec_version=1, reused=False, columns=columns, structure_notices=notices
+    )
     return InferenceOutcome(preview, ImportStatus.PREVIEW_READY, needs_probing)
 
 

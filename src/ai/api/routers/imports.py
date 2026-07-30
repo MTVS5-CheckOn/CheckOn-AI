@@ -3,9 +3,9 @@
 소유: 박진희 (import_mapping 라우터). 계약(contracts/imports)과 결정론 코어(import_mapping)를
 HTTP로 노출한다. envelope·에러코드는 공통 계약 정본(§2.2·error_codes §1)과 정합.
 
-**골격 범위(§6.3):** 프로파일링·매핑 추론(Fake)·상태 저장까지 동기로 수행하고 202를 낸다.
-실 비동기 워커·Kafka 완료 통지는 후속. 변환기(transforming 이후)·스토리지 fetch·조사
-에이전트 실행은 명시적 보류(NotImplementedError·스텁 주입).
+**범위(2026-07-30):** AI는 매핑 제안까지다 — 전체 행 변환·산출물은 백엔드 소유(§4).
+프로파일링·매핑 추론(Fake)·상태 저장까지 동기로 수행하고 202를 낸다. 실 비동기 워커·Kafka
+완료 통지는 후속. 스토리지 fetch·조사 에이전트 실행은 명시적 보류(스텁 주입).
 
 멱등: 감지 라우터 선례 재사용 — (tenant_id, endpoint, idempotency_key) 스코프,
 바디 동일성은 canonical 해시. 캐시 fail-open.
@@ -162,7 +162,6 @@ def _view_body(job: ImportJob) -> dict[str, Any]:
         status=job.status,
         status_reason=job.status_reason,
         mapping_preview=job.preview,
-        result=job.result,
     )
     return success_envelope(
         view.model_dump(mode="json"), execution_id=job.job_id, versions=import_versions()
@@ -272,7 +271,7 @@ async def get_import(job_id: str, request: Request) -> dict[str, Any]:
 
 @router.post("/v1/imports/{job_id}/confirm")
 async def confirm_import(job_id: str, request: Request) -> dict[str, Any]:
-    """강사 확정 → override 재검증 → transforming 진입(§1.3). 실제 변환은 후속."""
+    """강사 확정 → override 재검증 → 확정 spec 캐시(§1.3). 전체 행 변환은 백엔드 소유(§4)."""
     job = _load_job(request, job_id, _WRITE_HEADERS)
     tenant_id = request.headers["X-Tenant-Id"]
     idempotency_key = request.headers["Idempotency-Key"]
@@ -316,17 +315,19 @@ async def confirm_import(job_id: str, request: Request) -> dict[str, Any]:
         )
         job.status = ImportStatus.BLOCKED
     else:
-        assert_transition(job.status, ImportStatus.TRANSFORMING)
         job.preview = job.preview.model_copy(
             update={"columns": new_columns, "blocked": False, "blocked_reason": None}
         )
-        job.status = ImportStatus.TRANSFORMING
+        if job.status is ImportStatus.BLOCKED:  # override로 필수 채움 → blocked 해제
+            assert_transition(job.status, ImportStatus.PREVIEW_READY)
+            job.status = ImportStatus.PREVIEW_READY
         if job.profile is not None:  # 확정 spec 캐시 → 다음 재수입 reused(§3.4)
             _spec_cache.put(
                 form_signature(job.profile, tenant_id), confirmed_cache_entry(job.preview)
             )
-        # NOTE: 실제 변환(transform.run_transform)은 후속 — 워커 미배선(§4·§6.1).
-        logger.info("import 확정 → transforming(변환기 후속) job=%s", job.job_id)
+        # TODO(10 §6.1-ⓐ): confirm 소유 확정 후 재정의 — reused는 확정 spec의 AI 저장에 의존
+        # 전체 행 변환은 백엔드 소유(§4, 2026-07-30)라 transforming으로 보내지 않는다.
+        logger.info("import 확정 재검증 통과 job=%s status=%s", job.job_id, job.status.value)
 
     _job_store.update(job)
     body_out = _view_body(job)

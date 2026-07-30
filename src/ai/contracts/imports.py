@@ -3,9 +3,12 @@
 사양 원본: docs/part_a/10_import_spec.md §1 (04_api_contract §3.8 상세화 · A 확정 범위 §6.3)
 소유: 박진희(member-A) 단독 — 양자 승인 대상 아님 (docs/02_ownership.md §3, detection.py 선례).
 
-불변식 1(CLAUDE.md): LLM은 매핑을 추론만 — 변환·확정은 결정론. 억지 매핑 금지(모르면 unmapped).
-불변식 3: 실명은 산출물(②)에 담기되 AI의 LLM·저장소는 값을 보지 않는다(§5). extra="forbid"로
-경계 밖 필드를 구조적으로 차단한다.
+범위(2026-07-30 확정): AI는 **매핑 제안까지**다 — 전체 행 변환·행별 검증·집계·산출물 저장은
+백엔드 소유(10 §4). 그래서 이 계약에 output_url·행 집계 타입이 없다.
+
+불변식 1(CLAUDE.md): LLM은 매핑을 추론만 — 확정은 결정론. 억지 매핑 금지(모르면 unmapped).
+불변식 3: AI의 LLM·저장소는 실명 값을 보지 않는다(§5). extra="forbid"로 경계 밖 필드를
+구조적으로 차단한다.
 """
 
 from __future__ import annotations
@@ -22,8 +25,9 @@ class ImportStatus(StrEnum):
     INFERRING = "inferring"
     PROBING = "probing"
     PREVIEW_READY = "preview_ready"
-    TRANSFORMING = "transforming"
     DONE = "done"
+    """강사 확정 spec 저장 완료 — 전체 행 변환은 AI 범위 밖(10 §4)."""
+
     BLOCKED = "blocked"
     FAILED = "failed"
 
@@ -87,6 +91,37 @@ class MappingColumn(BaseModel):
     """target=null의 정직한 사유('모름' 또는 개인정보 정책 제외)."""
 
 
+class StructureNoticeKind(StrEnum):
+    """파일 구조 주의사항 유형 — 10 §1.2 `structure_notices[].kind`."""
+
+    DUPLICATE_HEADER = "duplicate_header"
+    """같은 헤더 이름이 2회 이상 — 매핑 대상 목록에서는 하나로 합쳐진다."""
+
+    EMPTY_HEADER = "empty_header"
+    """이름 없는(공백만인) 헤더."""
+
+    HEADER_WITHOUT_DATA = "header_without_data"
+    """헤더는 있으나 그 컬럼의 값이 전량 결측."""
+
+
+class StructureNotice(BaseModel):
+    """파일 구조 주의사항 1건 — AI가 파일을 어떻게 해석했는지 강사가 검토할 참고정보.
+
+    강사가 **원본에서 찾을 수 있어야** 하므로 시트·컬럼 위치·유형이 함께 실린다.
+    ⚠ **셀 값은 담지 않는다**(10 §5.2 가드레일) — 헤더 이름만.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    sheet: str = Field(min_length=1)
+    kind: StructureNoticeKind
+    column_index: int = Field(ge=1)
+    """원본의 1-based 컬럼 위치(좌→우) — 강사가 파일에서 세어 찾는다."""
+
+    header: str = ""
+    """헤더 텍스트. `empty_header`면 빈 문자열."""
+
+
 class MappingPreview(BaseModel):
     """preview_ready·blocked의 강사 확인 자료 — 04 §3.8 mapping_preview."""
 
@@ -97,33 +132,15 @@ class MappingPreview(BaseModel):
     """true = 같은 양식 재수입 → LLM·에이전트 0회로 기존 spec 재사용(§3.4)."""
 
     columns: tuple[MappingColumn, ...]
+    structure_notices: tuple[StructureNotice, ...] = ()
+    """파일 구조 주의사항(백엔드 요청, 2026-07-30) — 없으면 빈 목록."""
+
     sample_rows: tuple[dict[str, str], ...] = ()
     """변환 예시(≤N행). 실명 무접촉 가드레일(§5.2) — redactor 미주입 시 비어 있다(구조적)."""
 
     blocked: bool = False
     blocked_reason: str | None = None
     """blocked=true면 필수 필드 미매핑 → confirm 차단(override로 해제 가능)."""
-
-
-class RowError(BaseModel):
-    """변환 실패 행 1건 — 04 §3.8 result.row_errors[]."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    row_no: int = Field(ge=1)
-    column: str = Field(min_length=1)
-    reason: str = Field(min_length=1)
-
-
-class ImportResult(BaseModel):
-    """변환 완료 산출물 — 04 §3.8 result(§4 BE-9). 변환기는 후속(NotImplementedError)."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    output_url: str = Field(min_length=1)
-    row_total: int = Field(ge=0)
-    row_ok: int = Field(ge=0)
-    row_errors: tuple[RowError, ...] = ()
 
 
 class ImportJobView(BaseModel):
@@ -140,4 +157,7 @@ class ImportJobView(BaseModel):
     """failed 사유(file_unreadable·timeout_5min 등) — error_codes §2.4."""
 
     mapping_preview: MappingPreview | None = None
-    result: ImportResult | None = None
+    """preview_ready·blocked·done 공통 — done은 강사가 확정한 spec이 실린다.
+
+    변환 결과(산출물 URL·행 집계)는 없다 — 백엔드 소유(10 §4, 2026-07-30).
+    """

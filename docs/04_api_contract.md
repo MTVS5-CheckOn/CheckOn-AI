@@ -421,9 +421,9 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 }
 ```
 
-**confirm Request:** `{ "spec_overrides": [{ "source_column": "점수B", "target_field": "weekly_score_2" }] }` → 변환 실행 → `status: done` + `result: { "output_url": "...", "row_total": 1240, "row_ok": 1228, "row_errors": [{ "row_no": 88, "column": "제출일", "reason": "날짜 형식" }] }`.
+**confirm Request:** `{ "spec_overrides": [{ "source_column": "점수B", "target_field": "weekly_score_2" }] }` → 확정 spec 저장 → `status: done` + 확정된 `mapping_preview`.
 
-**status:** `profiling → inferring → probing(조사 에이전트) → preview_ready → transforming → done` / `blocked`(필수 필드 미매핑 — 확정 차단). **규약:** 산출물 반영은 백엔드가 기존 F1 업로드 경로로 · 동의 미보유 행 '보류'는 백엔드 · 같은 양식 재수입은 `reused: true`(LLM 0회).
+**status:** `profiling → inferring → probing(조사 에이전트) → preview_ready → done(확정 spec)` / `blocked`(필수 필드 미매핑 — 확정 차단). **규약(2026-07-30 개정):** **AI는 매핑 제안까지** — 전체 행 변환·행별 검증·집계·산출물 저장은 백엔드 소유이며 AI 응답에 `output_url`·행 집계가 없다(`part_a/10_import_spec.md` §4). 동의 미보유 행 '보류'는 백엔드 · 같은 양식 재수입은 `reused: true`(LLM 0회).
 
 ---
 
