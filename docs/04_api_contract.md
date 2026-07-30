@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | **상태** | 🟢 **7/15 리뷰 완료 — v1.0 승격 대기.** 잔여 2건: Open-9 백분위 출처 · Kafka 토픽/이벤트 스키마 부록. 채워지면 v1.0 커밋 |
-| **당사자** | AI 서비스(Python·PostgreSQL, member-A) ↔ 백엔드(Java·Spring·MySQL) |
+| **당사자** | AI 서비스(Python·PostgreSQL, member-A) ↔ 백엔드(Java·Spring·PostgreSQL) |
 | **읽는 법** | `[제안]` = 이견 없으면 그대로 확정 · `[Open-n]` = **결정 필요 → §1만 논의하면 30분에 끝남** |
 | **확정 후** | A는 FakeSnapshot으로, 백엔드는 AI 스텁으로 **서로 안 기다리고 동시 개발** 시작 |
 | **참조** | `part_a/01_pipeline` `part_a/02_design` `06_erd` · 안건 추적 `99_open_items` · 요청 JSON만 모은 실무용: `05_request_json` |
@@ -208,7 +208,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
       },
       "evidence": [{                     // 근거 — 항상 1건 이상 (없으면 신호 자체가 생성 안 됨)
         "source_table": "learning_event",
-        "record_id": "le_1029",          // 백엔드 MySQL PK — 강사가 "근거 보기" 누르면 이걸로 원본 조회
+        "record_id": "le_1029",          // 백엔드 DB PK — 강사가 "근거 보기" 누르면 이걸로 원본 조회
         "summary": "7/3 숙제 지연 제출"
       }]
     }],
@@ -487,7 +487,7 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 
 | 필드 | 타입 | 필수 | 쓰는 곳 | 비고 |
 | --- | --- | --- | --- | --- |
-| `record_id` | string | ✅ | **evidence 역추적 키** | MySQL PK — **불변 필수** |
+| `record_id` | string | ✅ | **evidence 역추적 키** | 백엔드 DB PK — **불변 필수** |
 | `student_ref` | string | ✅ | | |
 | `type` | enum `solve·submit·attend·consult` | ✅ | 규칙별 | |
 | `occurred_at` | datetime | ✅ | 시계열 | |

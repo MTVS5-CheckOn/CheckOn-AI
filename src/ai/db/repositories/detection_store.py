@@ -8,7 +8,7 @@
 - 원장(이 파일)은 **fail-closed** — 산출물의 근거·재현 기록이라 저장 실패 시
   `LedgerWriteFailed`(500)로 요청을 실패시킨다. 백엔드가 재시도한다.
 
-**축적 대상 = 파생물이다.** raw learning_events(record_id 원본)는 백엔드 MySQL 소유
+**축적 대상 = 파생물이다.** raw learning_events(record_id 원본)는 백엔드 DB 소유
 도메인 원본이라 AI PG에 저장하지 않는다(CLAUDE.md — 도메인 원본 테이블 금지). 대신
 주차 피처(FEATURE_WEEK)를 upsert한다. record_id dedupe는 요청 이벤트에 대한 순수 로직
 (재전송=정정, 최신 승리 + 로그)이며 엔진은 여전히 요청 구동이다(시그니처 무변경) —

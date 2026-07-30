@@ -9,10 +9,10 @@
 >
 > **전제 (v1과 동일)**
 > 1. AI 영역은 별도 Python 서비스이고 저장소는 **PostgreSQL**.
-> 2. 백엔드(Java·Spring)는 **MySQL**로 도메인 원본(학생·학습 기록·Alert·Draft 승인 상태 등)을 소유.
+> 2. 백엔드(Java·Spring)는 **PostgreSQL**로 도메인 원본(학생·학습 기록·Alert·Draft 승인 상태 등)을 소유.
 > 3. 내부 REST 통신 — 백엔드가 **alias 기반 스냅숏**을 넘기고 AI는 산출물을 반환.
 > 4. 실명·연락처는 AI 경계를 넘지 않음(에이전트 도구 포함).
-> 5. AI PG에는 **AI 산출물·실행 메타·캐시**만 저장(evidence는 MySQL 논리 참조).
+> 5. AI PG에는 **AI 산출물·실행 메타·캐시**만 저장(evidence는 백엔드 DB 논리 참조).
 >
 > **참조** — AI 아키텍처 지시서(개정 안건 4건: 파이프라인 v2 §0 — B 합의 전 에이전트 착수 보류) · 소유권 v1 · R&R v1 · 파이프라인 v2 · 유스케이스 v2
 
@@ -141,7 +141,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
   autonumber
-  participant BE as 백엔드 (Java·MySQL)
+  participant BE as 백엔드 (Java·PostgreSQL)
   participant API as AI 앱 계층 (Python)
   participant DET as ai/detection
   participant CMP as ai/composition (ⓐ)
@@ -161,7 +161,7 @@ sequenceDiagram
     CMP->>PG: signal_brief(gate_passed=true)
   end
   API-->>BE: 신호 목록 + 브리핑 문장 반환
-  BE->>BE: Alert 생성 (MySQL) — 상태 관리는 백엔드
+  BE->>BE: Alert 생성 (백엔드 DB) — 상태 관리는 백엔드
   Note over BE: 피드백 루프 보류(7/16) — /feedback API·화면 버튼 v1 제외 · signal_id 저장·RULE_FEEDBACK 예약 (명세 09)
 ```
 
@@ -320,7 +320,7 @@ sequenceDiagram
 
 > 현재 애플리케이션 정본은 `docs/06_erd.md` v3의 26테이블이다. 아래 다이어그램은 A 파트 v2.1 설계 맥락을 보존한 것이며, 구현·마이그레이션 대조에는 사용하지 않는다.
 
-**원칙(불변):** AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본은 백엔드 MySQL 소유 — `…_ref`는 논리 참조(물리 FK 아님). 전 테이블 `tenant_id` + **애플리케이션 계층 격리**(RLS 미도입 — 실도입 여부는 99 BE-11). (v2.1: `DRAFT_REVISION` 추가 · 사용량 미터링은 `usage_daily(tenant_id, date)` 그레인 — ERD 전체 v2 문서와 동일)
+**원칙(불변):** AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본은 백엔드 DB 소유 — `…_ref`는 논리 참조(물리 FK 아님). 전 테이블 `tenant_id` + **애플리케이션 계층 격리**(RLS 미도입 — 실도입 여부는 99 BE-11). (v2.1: `DRAFT_REVISION` 추가 · 사용량 미터링은 `usage_daily(tenant_id, date)` 그레인 — ERD 전체 v2 문서와 동일)
 
 ```mermaid
 erDiagram
@@ -456,7 +456,7 @@ erDiagram
     varchar tenant_id
     varchar owner_kind "signal|draft_block"
     uuid owner_id
-    varchar source_table "MySQL 논리 참조"
+    varchar source_table "백엔드 DB 논리 참조"
     varchar record_id
     varchar summary "표시용 한 줄"
   }
@@ -606,7 +606,7 @@ erDiagram
 
 ## 4. 데이터 경계 — 뭐가 어느 DB에 있나 (v2 갱신)
 
-| 데이터 | 백엔드 MySQL (원본 소유) | AI PostgreSQL (A 소유) |
+| 데이터 | 백엔드 PostgreSQL (원본 소유) | AI PostgreSQL (A 소유) |
 | --- | --- | --- |
 | 학생·학부모·동의 | ✅ 원본 (실명은 vault) | ❌ — alias 참조만 |
 | 학습 기록 (learning_event) | ✅ 원본 (append-only) | ❌ — 스냅숏은 페이로드로만, 저장 안 함 |

@@ -11,7 +11,7 @@
 다형 참조 패턴을 쓰므로(`db/models.py` `EvidenceItem` — "다형 소유 — 물리 FK 없음")
 근거 축도 같은 패턴으로 가는 것이 테이블 내 일관성이다.
 
-- **(a) 기존 A 경로**(감지·상담) — `source_table`=MySQL 테이블명 · `record_id`=원본 PK
+- **(a) 기존 A 경로**(감지·상담) — `source_table`=백엔드 DB 테이블명 · `record_id`=원본 PK
 - **(b) GraphRAG 경로**(문항) — `source_table`=`EVIDENCE_PACK_ANCHOR` ·
   `record_id`=`encode_anchor_record_id(evidence_pack_id, anchor_id)`
 
@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict
 from ai.contracts.graphrag import NonEmptyStr
 
 #: `source_table` 값 — GraphRAG 앵커 경로. 리터럴을 흩뿌리면 오타로 조용히 갈라지므로
-#: 이 상수 하나만 쓴다(A 경로의 MySQL 테이블명은 열린 집합이라 enum으로 닫지 않는다).
+#: 이 상수 하나만 쓴다(A 경로의 백엔드 DB 테이블명은 열린 집합이라 enum으로 닫지 않는다).
 EVIDENCE_PACK_ANCHOR: Final = "evidence_pack_anchor"
 
 #: `record_id` 안에서 `evidence_pack_id`와 `anchor_id`를 가르는 구분자.
@@ -123,7 +123,7 @@ class EvidenceRef(BaseModel):
         record_id: str,
         summary: str,
     ) -> Self:
-        """(a) 기존 A 경로 — MySQL 원본 record_id 논리 참조(감지·상담 근거)."""
+        """(a) 기존 A 경로 — 백엔드 DB 원본 record_id 논리 참조(감지·상담 근거)."""
         return cls(
             id=_derive_id(owner_id, source_table, record_id),
             tenant_id=tenant_id,

@@ -117,7 +117,7 @@ def test_primary_keys_match_erd(table_name: str) -> None:
 
 @pytest.mark.parametrize("table_name", sorted(ERD_TABLES), ids=lambda n: n)
 def test_foreign_keys_match_erd(table_name: str) -> None:
-    """ERD의 FK 마커 컬럼 = ORM의 물리 FK 컬럼. `…_ref`(MySQL 논리참조)는 FK 아님."""
+    """ERD의 FK 마커 컬럼 = ORM의 물리 FK 컬럼. `…_ref`(백엔드 DB 논리참조)는 FK 아님."""
     erd = ERD_TABLES[table_name]
     orm = METADATA_TABLES.get(table_name)
     assert orm is not None, f"ORM에 테이블 없음: {table_name}"

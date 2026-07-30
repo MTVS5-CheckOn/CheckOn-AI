@@ -213,7 +213,7 @@ class LearningEvent(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     record_id: str = Field(min_length=1)
-    """MySQL 원본 PK — 근거 역추적 키, 불변 필수."""
+    """백엔드 DB 원본 PK — 근거 역추적 키, 불변 필수."""
 
     student_ref: str = Field(min_length=1)
     type: EventType
@@ -309,7 +309,7 @@ class EvidenceItem(BaseModel):
 
     source_table: str = Field(min_length=1)
     record_id: str = Field(min_length=1)
-    """MySQL 원본 PK — 강사 [근거 보기]가 이 ID로 원본 조회."""
+    """백엔드 DB 원본 PK — 강사 [근거 보기]가 이 ID로 원본 조회."""
 
     summary: str = Field(min_length=1)
 

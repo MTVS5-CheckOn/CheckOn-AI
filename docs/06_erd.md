@@ -1,6 +1,6 @@
 # [체크온] AI PostgreSQL 전체 ERD v4 — [PART_A+PART_B] 문제생성 저장 계층 반영
 
-원칙(변경 없음): AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본(학생·학습 기록·Alert 상태·문의 원문·Draft 승인)은 백엔드 MySQL 소유 — `…_ref`는 전부 MySQL을 가리키는 **논리 참조**(물리 FK 아님). 전 테이블 `tenant_id` 필수 + **애플리케이션 계층 격리**(RLS 미도입 — 실도입 여부는 99 BE-11).
+원칙(변경 없음): AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본(학생·학습 기록·Alert 상태·문의 원문·Draft 승인)은 백엔드 DB 소유 — `…_ref`는 전부 백엔드 DB를 가리키는 **논리 참조**(물리 FK 아님). 전 테이블 `tenant_id` 필수 + **애플리케이션 계층 격리**(RLS 미도입 — 실도입 여부는 99 BE-11).
 
 v2 추가분: `AGENT_RUN` `AGENT_STEP` · `SIGNAL_BRIEF`(ⓐ) · `INQUIRY_CLASS`(ⓑ) · `TAG_SUGGESTION`(ⓒ) · `LABEL_SUGGESTION`(ⓓ)
 
@@ -197,7 +197,7 @@ erDiagram
     varchar tenant_id
     varchar owner_kind "signal|draft_block|problem_item"
     uuid owner_id
-    varchar source_table "논리 참조 — MySQL 테이블명 또는 내부 참조 종류(evidence_pack_anchor)"
+    varchar source_table "논리 참조 — 백엔드 DB 테이블명 또는 내부 참조 종류(evidence_pack_anchor)"
     varchar record_id "원본 PK 또는 앵커 좌표(pack_id|anchor_id)"
     varchar summary "표시용 한 줄"
   }

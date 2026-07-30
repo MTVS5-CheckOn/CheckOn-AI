@@ -100,7 +100,7 @@ class EvidenceFact(BaseModel):
     value: NonEmptyStr
 
     record_id: str | None = None
-    """MySQL 논리 참조(04 §4.2 `interventions[]`·`comm_history[]`가 주는 그것).
+    """백엔드 DB 논리 참조(04 §4.2 `interventions[]`·`comm_history[]`가 주는 그것).
 
     **집계·기준선 파생 fact는 `None`이다** — "평소 정답률(개인 기준선)"·"하락폭"처럼 여러
     기록에서 파생된 값에는 단일 record_id가 없다. 가짜 ID를 지어내지 않는다(억지 매핑 금지).
