@@ -49,6 +49,10 @@
 - 반·일 **TOP 3~5** (`cap_min: 3, cap_max: 5`) — 초과분은 폐기가 아니라 점수순 대기(다음 날 재평가). 상한은 new·follow_up에만 걸리므로 ongoing이 많은 날은 응답 신호 수가 3~5를 넘을 수 있다.
 - 복수 규칙 동시 발화 시 학생당 1경보로 병합(신호 목록 첨부), 점수 = 규칙별 정규화 점수의 max(합산 아님 — 인플레 방지).
 - R5는 상한 밖(정책 신호 — 쿼터를 안 먹음).
+- **상한 통과분의 정렬(7/30 명문화):** 상한 대상(`new`·`follow_up`)은 `score` **내림차순**으로 정렬해 앞에서 `cap_max`개를 통과시킨다. 통과분의 `rank`는 1부터 연속 부여한다.
+- **상한 밖 합류 순서(7/30 명문화):** 상한 밖(`ongoing`·R5)은 통과분 **뒤에** `student_ref` **오름차순**으로 이어붙이고 `rank`를 끊김 없이 연속 부여한다(통과분이 N건이면 상한 밖은 N+1부터). 따라서 **`rank`는 `cap_max`를 넘을 수 있다** — 09 §4 상한 각주·`examples/detect_demo_response.json`(`st_08(R5)=3 · st_10(ongoing)=4`)와 동일한 순서다. 회귀: `tests/ai/unit/detection/test_engine.py::test_outside_cap_signals_are_ordered_by_student_ref_with_exact_ranks`.
+
+> **[확인된 현행 · 미확정 — 동점 tie-break 방향 비대칭]** `score`가 같을 때의 정렬 방향이 상한 통과분과 상한 밖 합류분에서 **서로 반대**다. **실측(7/30):** `ranking.py`의 `rank_class`는 `key=(score, student_ref)` + `reverse=True`라 동점 시 `student_ref` **내림차순**으로 통과 순서가 정해지고(튜플 키 전체에 `reverse`가 걸린 부작용), `engine.py`의 `_rank_with_lifecycle` ④는 `sorted(free_pool, key=student_ref)`라 **오름차순**이다. 어느 쪽이 제품 의도인지 아직 판단하지 않았으므로 **규정으로 굳히지 않고 사실만 기록한다.** 방향 통일 여부는 99 D 백로그 ⑯에서 후속으로 다룬다 — 통일하면 프로덕션 코드(`ranking.py` 1줄)와 골든셋 기대값에 영향이 있어 문서 PR과 성격이 다르다.
 
 > **[PART_B 크로스체킹 요청 · 미확정 — 병합 lifecycle×상한]** 한 학생의 복수 규칙을 1경보로 병합한 뒤 primary의 `signal_type` 하나로 lifecycle을 판정하므로, primary가 ongoing·secondary가 new이면 전체가 상한 밖이 되고 반대로 secondary만 ongoing이면 그 이력이 무시된다. **제안 해결안:** 학생당 1경보를 유지할 경우 “병합 lifecycle=primary 기준”과 secondary lifecycle이 신규 카드/기존 카드 갱신을 만들지 않는다는 점을 명문화하고 양방향 회귀로 고정한다. 새 위험을 lifecycle별로 반드시 노출해야 한다면 단순 우선순위 변경이 아니라 병합 단위·응답 계약·백엔드 Alert 처리를 함께 분리한다. v0 현행 유지와 구조 확장 중 어느 쪽이 제품 의도인지 A·백엔드가 확인해 달라.
 
@@ -70,7 +74,7 @@
 | **R2** | 제출률 하락 %p (또는 연속 미제출 수) | `submit_drop_pp`=25 (miss=3) | 보정 상한 40 (miss=5) | 둘 중 정규화값이 큰 쪽 채택 |
 | **R3** | 학습량 결핍 = (임계 − 실제)/임계 | `volume_ratio`=0.4 | ratio 0 (완전 공백) | 0.4→0, 0.0→1 선형 |
 | **R4** | 어절 정규화 시간 배율 | `time_ratio`=1.5 | 보정 상한 2.0 | 2.0배 이상은 천장 |
-| **R5** | (정책 신호) | — | — | 고정 `score=1.0`(상한 밖·정렬 무관) |
+| **R5** | (정책 신호) | — | — | 고정 `score=1.0` — 상한 밖이라 **score 정렬에 참여하지 않는다**(합류 순서는 §3의 `student_ref` 오름차순 규정을 따른다) |
 | **R6** | 편중 셀 오답 비중 | `cell_error_share`=0.5 | 보정 상한 0.6 | 0.6 이상 집중은 천장 |
 
 - **정규화 공식:** `score = clamp((지표 − 임계값) / (포화값 − 임계값), 0, 1)`. R3는 방향이 반대라 `(임계 − 실제)/임계`.
