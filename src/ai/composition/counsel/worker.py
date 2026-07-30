@@ -103,17 +103,6 @@ class CounselPackRunner:
             checkpoint_ref=thread_id,
         )
 
-        init = CounselPackState(
-            tenant_id=job.tenant_id,
-            class_ref=bundle.class_ref,
-            student_refs=sorted(bundle.contexts),  # 처리 순서 고정(재현성)
-            context_ref=job.payload_ref,
-            context_hash=bundle.content_hash,
-            plan_version=job.payload_hash,
-        )
-        if init.context_hash != bundle.content_hash:  # 불변식 ④ — 이중 확인
-            raise ContextHashMismatchError(job.payload_ref)
-
         # ③ 그래프 실행 — 학생 경계마다 체크포인트(§1.3).
         graph = build_counsel_graph(
             planner=self._planner,
@@ -128,13 +117,18 @@ class CounselPackRunner:
             new_draft_id=self._new_id,
             now=self._now,
         )
-        final = await graph.ainvoke(
-            init, config={"configurable": {"thread_id": thread_id}}
-        )
+        config = {"configurable": {"thread_id": thread_id}}
+        graph_input = await self._resume_input(graph, config, job, bundle)
+        final = await graph.ainvoke(graph_input, config=config)
 
         # ④ agent_step 영속 — 학생 처리 이력(AGENT_STEP 1:1, 마스킹 통과분만).
         # agent_run_id = job_id (AGENT_STEP.agent_run_id → AGENT_RUN.id, §5 1:1 투영).
+        # **멱등**: 재개 시 이 루프가 다시 돌아 `(agent_run_id, seq)`가 중복된다 — 이미
+        # 기록된 seq는 건너뛴다(재개가 생긴 순간 이건 잠재 버그에서 실버그가 된다).
+        recorded = {step.seq for step in await self._steps.steps(job.job_id)}
         for seq, result in enumerate(final["results"]):
+            if seq in recorded:
+                continue
             await self._steps.record(
                 AgentStepRecord(
                     id=self._new_id(),
@@ -159,6 +153,38 @@ class CounselPackRunner:
             lease_owner=self._lease_owner,
             lease_generation=job.lease_generation,
             result_ref=result_ref,
+        )
+
+    async def _resume_input(
+        self,
+        graph: Any,  # noqa: ANN401 — LangGraph 컴파일 그래프 제네릭
+        config: dict[str, Any],
+        job: WorkerJob,
+        bundle: ContextBundleRecord,
+    ) -> CounselPackState | None:
+        """체크포인트가 있으면 **input=None으로 재개**, 없으면 init을 투입한다(§1.3).
+
+        `None`을 넘기면 LangGraph가 저장된 state를 `cursor`부터 이어간다 — init을 다시 넣으면
+        plan 재호출·완료 학생 전원 재생성·draft_id 이중 발급이 된다("cursor부터 · 재생성
+        없음(멱등)"과 정면 충돌).
+
+        **불변식 ④는 여기가 진짜 자리다** — 저장된 state의 `context_hash`를 **재역참조한
+        묶음의 해시**와 대조한다. 이전 코드는 방금 만든 init의 해시를 같은 값과 비교하는
+        자기 대조라 손상을 검출할 수 없었다.
+        """
+        snapshot = await graph.aget_state(config)
+        stored: Mapping[str, Any] | None = getattr(snapshot, "values", None) or None
+        if stored and stored.get("cursor") is not None:
+            if stored.get("context_hash") != bundle.content_hash:
+                raise ContextHashMismatchError(job.payload_ref)
+            return None  # 재개 — 저장된 state의 cursor부터
+        return CounselPackState(
+            tenant_id=job.tenant_id,
+            class_ref=bundle.class_ref,
+            student_refs=sorted(bundle.contexts),  # 처리 순서 고정(재현성)
+            context_ref=job.payload_ref,
+            context_hash=bundle.content_hash,
+            plan_version=job.payload_hash,
         )
 
     async def _store_pack(

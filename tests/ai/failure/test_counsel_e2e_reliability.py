@@ -98,11 +98,14 @@ class _MutableContextStore:
     def __init__(self) -> None:
         self._inner = InMemoryContextStore()
         self._dropped: set[str] = set()
+        self._boom = False
 
     async def put(self, record: ContextBundleRecord) -> str:
         return await self._inner.put(record)
 
     async def get(self, ref: str, *, tenant_id: str) -> ContextBundleRecord | None:
+        if self._boom:
+            raise RuntimeError("저장소 예상 밖 오류")
         if ref in self._dropped:
             return None
         return await self._inner.get(ref, tenant_id=tenant_id)
@@ -116,6 +119,9 @@ class _MutableContextStore:
             k: v.model_copy(update={"tenant_id": tenant_id})
             for k, v in self._inner._rows.items()  # noqa: SLF001
         }
+
+    def explode(self) -> None:
+        self._boom = True
 
     def corrupt_hash(self) -> None:
         self._inner._rows = {  # noqa: SLF001 — 체크포인트 손상 주입(불변식 ④)
@@ -146,6 +152,9 @@ class _Harness:
         self.packs = InMemoryPackResultStore()
         self.sink = InMemoryAgentStepSink()
         self.provider = provider or FakeCounselProvider(drafts=[_DRAFT_TEXT] * 40)
+        #: ⚠ **인스턴스마다 새 체크포인터** — 클래스 속성으로 두면 테스트 간 체크포인트가
+        #: 새서 재개 테스트가 서로를 오염시킨다(실제로 그랬다).
+        self.saver: Any = InMemorySaver()
         self.runner = self._runner()
 
     def _runner(self) -> CounselPackRunner:
@@ -157,13 +166,11 @@ class _Harness:
             step_sink=self.sink,
             planner=self.provider,
             writer=self.provider,
-            checkpointer=self._saver,
+            checkpointer=self.saver,
             regen_max=DEFAULT_REGEN_MAX,
             lease_owner="worker-1",
             new_id=_counter(),
         )
-
-    _saver: Any = InMemorySaver()
 
     async def enqueue(self, refs: list[str], *, tenant_id: str = "t1") -> WorkerJob:
         enqueuer = CounselPackEnqueuer(
@@ -257,22 +264,22 @@ def test_failed_student_has_no_draft_record() -> None:
 def test_resume_only_processes_remaining_students() -> None:
     """k명 처리 후 죽고 재lease → **잔여 학생 수만큼만** LLM 호출이 늘어난다."""
     refs = ["st_1", "st_2", "st_3", "st_4"]
-    h = _Harness(lease_seconds=1)
+    killer = _KillAfter(FakeCounselProvider(drafts=[_DRAFT_TEXT] * 40), after=2)
+    h = _Harness(provider=killer, lease_seconds=1)  # type: ignore[arg-type]
 
     async def scenario() -> tuple[int, int, CounselPackResultRecord | None]:
         await h.enqueue(refs)
-        # ① 2명까지만 처리하고 워커가 죽은 상황을 만든다(interrupt로 중단).
-        h.runner._interrupt_after = 2  # type: ignore[attr-defined]
+        # ① 2명까지 처리하고 워커가 급사한다.
         with pytest.raises(_WorkerKilled):
             await h.runner.run_next(tenant_id="t1")
-        after_first = len(h.provider.write_calls)
+        after_first = len(killer.write_calls)
 
         # ② lease 만료 → recovery → 재lease. 같은 thread_id로 재개된다.
-        h.runner._interrupt_after = None  # type: ignore[attr-defined]
+        killer.armed = False
         h._clock = lambda: _NOW + timedelta(seconds=120)  # lease 만료 유도
         done = await h.runner.run_next(tenant_id="t1")
         assert done is not None and done.result_ref is not None
-        return after_first, len(h.provider.write_calls), await h.runner.result_of(
+        return after_first, len(killer.write_calls), await h.runner.result_of(
             done.result_ref
         )
 
@@ -286,16 +293,16 @@ def test_resume_only_processes_remaining_students() -> None:
 def test_resume_does_not_reissue_draft_ids() -> None:
     """완료 학생의 draft_id가 재발급되지 않는다 — 커밋 1의 store로 검증 가능해졌다."""
     refs = ["st_1", "st_2", "st_3"]
-    h = _Harness(lease_seconds=1)
+    killer = _KillAfter(FakeCounselProvider(drafts=[_DRAFT_TEXT] * 40), after=2)
+    h = _Harness(provider=killer, lease_seconds=1)  # type: ignore[arg-type]
 
     async def scenario() -> tuple[list[UUID], list[UUID]]:
         await h.enqueue(refs)
-        h.runner._interrupt_after = 2  # type: ignore[attr-defined]
         with pytest.raises(_WorkerKilled):
             await h.runner.run_next(tenant_id="t1")
         before = sorted(h.drafts.ids())
 
-        h.runner._interrupt_after = None  # type: ignore[attr-defined]
+        killer.armed = False
         h._clock = lambda: _NOW + timedelta(seconds=120)  # lease 만료 유도
         await h.runner.run_next(tenant_id="t1")
         return before, sorted(h.drafts.ids())
@@ -309,23 +316,56 @@ def test_resume_does_not_reissue_draft_ids() -> None:
 def test_resume_does_not_recall_plan() -> None:
     """plan은 멱등 — 재개 시 다시 호출되지 않는다(§1.3)."""
     refs = ["st_1", "st_2", "st_3"]
-    h = _Harness(lease_seconds=1)
+    killer = _KillAfter(FakeCounselProvider(drafts=[_DRAFT_TEXT] * 40), after=2)
+    h = _Harness(provider=killer, lease_seconds=1)  # type: ignore[arg-type]
 
     async def scenario() -> int:
         await h.enqueue(refs)
-        h.runner._interrupt_after = 1  # type: ignore[attr-defined]
         with pytest.raises(_WorkerKilled):
             await h.runner.run_next(tenant_id="t1")
-        h.runner._interrupt_after = None  # type: ignore[attr-defined]
+        killer.armed = False
         h._clock = lambda: _NOW + timedelta(seconds=120)  # lease 만료 유도
         await h.runner.run_next(tenant_id="t1")
-        return len(h.provider.plan_calls)
+        return len(killer.plan_calls)
 
     assert _run(scenario()) == 1, "재개가 plan을 다시 호출했다"
 
 
-class _WorkerKilled(RuntimeError):
-    """테스트에서 워커 프로세스 급사를 흉내내는 신호."""
+class _WorkerKilled(BaseException):
+    """워커 프로세스 급사 — **`BaseException`이다.**
+
+    진짜 프로세스 kill은 `Exception`이 아니므로(SystemExit·KeyboardInterrupt와 같은 결)
+    커밋 3의 `except Exception` 수렴 핸들러에 잡히지 않는다. 잡은 running 상태로 남고
+    lease 만료 → recovery → 재lease로 이어진다 — 재개 경로를 정확히 재현한다.
+    """
+
+
+class _KillAfter:
+    """k명 성공 후 급사하는 provider 래퍼 — 프로덕션에 테스트 훅을 넣지 않기 위해.
+
+    `write_calls`를 그대로 위임해 호출 수 검증이 유지된다.
+    """
+
+    def __init__(self, inner: FakeCounselProvider, *, after: int) -> None:
+        self._inner = inner
+        self._after = after
+        self.armed = True
+
+    @property
+    def write_calls(self) -> list[str]:
+        return self._inner.write_calls
+
+    @property
+    def plan_calls(self) -> list[tuple[str, ...]]:
+        return self._inner.plan_calls
+
+    async def plan(self, **kwargs: object) -> dict[str, list[str]]:
+        return await self._inner.plan(**kwargs)  # type: ignore[arg-type]
+
+    async def write(self, **kwargs: object) -> str:
+        if self.armed and len(self._inner.write_calls) >= self._after:
+            raise _WorkerKilled("kill")
+        return await self._inner.write(**kwargs)  # type: ignore[arg-type]
 
 
 # ── 3-5: 실패가 즉시 수렴한다 ─────────────────────────────────────
@@ -364,15 +404,15 @@ def test_tenant_mismatch_converges_to_failed() -> None:
 def test_hash_mismatch_converges_to_failed() -> None:
     """재개 시 해시 불일치 = 체크포인트 손상 → failed(불변식 ④ 실검증)."""
     refs = ["st_1", "st_2", "st_3"]
-    h = _Harness(lease_seconds=1)
+    killer = _KillAfter(FakeCounselProvider(drafts=[_DRAFT_TEXT] * 40), after=1)
+    h = _Harness(provider=killer, lease_seconds=1)  # type: ignore[arg-type]
 
     async def scenario() -> WorkerJob | None:
         await h.enqueue(refs)
-        h.runner._interrupt_after = 1  # type: ignore[attr-defined]
         with pytest.raises(_WorkerKilled):
             await h.runner.run_next(tenant_id="t1")
         h.contexts.corrupt_hash()  # 같은 ref인데 내용 해시가 달라졌다
-        h.runner._interrupt_after = None  # type: ignore[attr-defined]
+        killer.armed = False
         h._clock = lambda: _NOW + timedelta(seconds=120)  # lease 만료 유도
         return await h.runner.run_next(tenant_id="t1")
 
@@ -388,7 +428,7 @@ def test_unclassified_exception_converges_to_failed() -> None:
 
     async def scenario() -> WorkerJob | None:
         await h.enqueue(["st_1"])
-        h.runner._boom = RuntimeError("예상 밖")  # type: ignore[attr-defined]
+        h.contexts.explode()  # 저장소가 예상 밖 예외를 던진다
         return await h.runner.run_next(tenant_id="t1")
 
     done = _run(scenario())
