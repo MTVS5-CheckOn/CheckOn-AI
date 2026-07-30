@@ -16,6 +16,10 @@ plan → [학생 루프: assemble_context → generate_draft → gate_check → 
 
 ### 1.2 State (Pydantic)
 
+상담팩 워커는 반의 학생을 순차 처리하므로 재개 지점이 학생 경계다. 체크포인트에는 학생 컨텍스트 본문·초안 본문을 복제하지 않고, 불변 입력 참조와 완료 결과 포인터만 둔다. 학생별 컨텍스트는 `context_ref`를 역참조해 그때그때 읽고, 생성된 초안은 `results[].draft_id`로만 가리킨다. `WorkerJob.phase`·lease·`result_ref`는 슈퍼바이저 정본이므로 이 state에 넣지 않는다.[^cp-body]
+
+[^cp-body]: state는 PostgresSaver 체크포인트와 LangSmith 노드 트레이스 두 경로로 나간다. 후자의 훅 위치는 `part_b/09_integration_proposals.md` §2-16(B 제안 진행 중).
+
 ```python
 class StudentResult(BaseModel):
     student_ref: str
@@ -28,7 +32,8 @@ class CounselPackState(BaseModel):
     tenant_id: str
     class_ref: str
     student_refs: list[str]                    # 처리 순서 고정 (재현성)
-    contexts: dict[str, DraftContext]          # 학생별 — label_snapshot 동결 포함
+    context_ref: str                           # 학생 컨텍스트 묶음의 저장소 참조 — 본문 미복제
+    context_hash: str                          # sha256:<64 lowercase hex> — 재개 시 대조
     plan_version: str
 
     # plan 노드 산출 (LLM 1회 — 확정 수치 내 강조점만, 새 사실 생성 금지)
@@ -43,7 +48,7 @@ class CounselPackState(BaseModel):
     summary: str | None = None                 # "22명 중 19명 생성·2명 데이터 부족·1명 실패"
 ```
 
-**불변식:** ① `emphasis_points`의 모든 강조점은 `record_id` 동반(plan 노드도 Evidence 규칙 적용) ② `cursor`는 단조 증가 — 재개 시 `results` 길이와 일치 검증(불일치 = 체크포인트 손상 → failed) ③ 학생 1명 실패가 루프를 멈추지 않는다(계약: failed여도 완료분 보존).
+**불변식:** ① `emphasis_points`의 모든 강조점은 `record_id` 동반(plan 노드도 Evidence 규칙 적용) ② `cursor`는 단조 증가 — 재개 시 `results` 길이와 일치 검증(불일치 = 체크포인트 손상 → failed) ③ 학생 1명 실패가 루프를 멈추지 않는다(계약: failed여도 완료분 보존) ④ 재개 시 `context_ref`를 역참조한 컨텍스트 묶음의 해시를 `context_hash`와 대조 — 불일치 = 체크포인트 손상 → failed.
 
 ### 1.3 중단·재개
 
@@ -151,7 +156,7 @@ class ProblemGenerationState(BaseModel):
 
 ## 4. 워커 공통 후속 항목
 
-1. state에 B 소유 타입(DraftContext 등) 의존 — `contracts/`로 승격할 최소 집합
+1. ✅ **해소(7/30)** — "state에 **B 소유** 타입(`DraftContext` 등) 의존"은 stale 서술이었다. `02_ownership.md` §3은 `composition.py`를 **박진희 단독**으로 지정하므로 상담 타입인 `DraftContext`는 **A 소유**이고 양자 승격 대상이 아니다. 게다가 §1.2 개정으로 `contexts`가 state에서 빠져(`context_ref`+`context_hash` 참조로 교체) **state의 타입 의존 자체가 사라졌다** — `contracts/` 승격할 최소 집합은 없다. `DraftContext`의 정의 위치(`composition/` 내부 vs `contracts/composition.py`)는 counsel_pack 워커 구현 시 A가 단독 결정한다.
 2. ✅ 체크포인트 정본은 LangGraph PostgresSaver 테이블, `AGENT_RUN`은 최신 `checkpoint_ref`·진행률 투영으로 확정
 3. probe 도구 3종의 시그니처 동결(마스킹 규칙 포함 — 마스킹 정의서 §4)
 
