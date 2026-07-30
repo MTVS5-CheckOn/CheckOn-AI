@@ -93,10 +93,6 @@ async def open_counsel_pack_runner(
     writer: DraftWriter,
     draft_store: DraftResultStore | None = None,
     pack_store: PackResultStore | None = None,  # 미지정이면 인메모리(PG는 후속)
-    draft_store: DraftResultStore | None = None,
-    pack_store: PackResultStore | None = None,  # 미지정이면 인메모리(PG는 후속)
-    planner: CounselPlanner | None = None,
-    writer: DraftWriter | None = None,
     db_settings: DbSettings | None = None,
     regen_max: int = DEFAULT_REGEN_MAX,
     new_id: Callable[[], UUID] = uuid4,
@@ -108,7 +104,6 @@ async def open_counsel_pack_runner(
     테스트·개발 조립부는 Fake를 명시적으로 꽂고, 프로덕션 미배선은 기동 시점에 터진다.
     """
     resolved_db = db_settings or get_db_settings()
-    fake = FakeCounselProvider()
     #: 산출물 저장소 기본값 — 인메모리(PG 영속은 후속 · 99 D). 미주입이면 결과가 어디에도
     #: 도착하지 않으므로 None을 허용하지 않는다.
     drafts = draft_store or InMemoryDraftResultStore()
