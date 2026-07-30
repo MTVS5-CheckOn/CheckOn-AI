@@ -97,8 +97,8 @@ POST → profiling → inferring → [probing] → preview_ready ──confirm�
 | `profiling` | POST 접수 직후 | 코드(결정론) | 파일 다운로드 불가·손상·미지원 → `failed(file_unreadable)` | 없음 — 강사 재업로드 |
 | `inferring` | 프로파일 완료, 캐시 miss | LLM 1-shot | LLM 불가(LlmUnavailable/timeout) → **전 컬럼 needs_review/unmapped 미리보기로 폴백**(§3.2, `preview_ready`, `reused=false`) | 1-shot 자체는 재시도 안 함(폴백이 정직) |
 | `probing` | inferring 결과에 저신뢰(<0.9) 컬럼 존재 | 에이전트②(LangGraph ReAct) | 도구 루프 상한 5회 소진 → 미해결 컬럼 `unmapped` 명시하고 `preview_ready` 수렴 | 루프 ≤5(01 §3·불변식 6) |
-| `preview_ready` | 게이트(RequiredField·Confidence) 산정 완료 | 코드 | — | — |
-| `done` | confirm + RequiredField 재통과 → **확정 spec 저장** | 코드 | — | — |
+| `preview_ready` | Confidence 산정 완료(`needs_review` 플래그) | 코드 | — | — |
+| `done` | confirm → **확정 spec 저장** — 재검증 게이트 없음(필수 판단은 백엔드, 2026-07-30) | 코드 | — | — |
 | `failed` | 파일 불가 · **총 5분 초과** · 내부 오류 | 코드 | 종단 | 강사 재시도(재업로드) |
 
 - **캐시 hit 경로:** POST 직후 프로파일 시그니처가 confirmed spec과 일치하면 `profiling → preview_ready`로 직행(`inferring`·`probing` 건너뜀, `reused=true`, LLM 0회 — §3.4).
