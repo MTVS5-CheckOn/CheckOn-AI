@@ -18,7 +18,7 @@ B가 자기 경로(`problem_generation`)에 같은 보호를 넣고 A 경로는 
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 
 import pytest
 
@@ -42,8 +42,22 @@ def _iter_python_files() -> list[Path]:
     return sorted(p for p in _COMPOSITION.rglob("*.py") if "__pycache__" not in p.parts)
 
 
+def _posix_rel(path: PurePath, base: PurePath) -> str:
+    """base 기준 상대경로를 **항상 `/` 표기**로 (순수 함수 — 두 인자는 같은 flavour).
+
+    이 이름이 계약을 진술한다 — `_posix_rel` 안에서 `str()`을 쓰는 건 누가 봐도
+    어색하므로, 이름 하나가 버그 재유입 확률을 낮춘다.
+    """
+    return path.relative_to(base).as_posix()
+
+
 def _rel(path: Path) -> str:
-    return str(path.relative_to(_COMPOSITION))
+    """`_ALLOWED_GATEWAY_CALLERS`와 대조할 키 — 화이트리스트의 `/` 표기가 정본이다.
+
+    `str()`을 쓰면 Windows에서 `counsel\\provider.py`가 나와 전부 불일치한다.
+    선례: `test_problem_generation_redaction.py`의 `relative_to(...).as_posix()`.
+    """
+    return _posix_rel(path, _COMPOSITION)
 
 
 def _enclosing_functions(tree: ast.AST) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
@@ -166,3 +180,40 @@ def test_gateway_caller_is_fail_closed_on_uncertain(module: str, func: str) -> N
     assert _checks_uncertain(path, func), (
         f"{module}::{func} 에 uncertain 분기가 없다 — fail-closed가 아니다"
     )
+
+
+# ── 경로 구분자 회귀 (OS 무관) ─────────────────────────────────────
+#
+# **왜 필요한가:** A는 맥·B는 Windows·CI는 리눅스였다. `_rel`이 `str()`이던 동안
+# B의 로컬에서만 위 두 테스트가 빨갰고 우리 쪽 누구도 못 잡았다. `.as_posix()`를
+# 되돌리는 변경을 **맥·리눅스에서** 잡는 게 아래 단정의 존재 이유다. 지우지 말 것.
+
+
+def test_posix_rel_normalizes_windows_separator() -> None:
+    """Windows 시맨틱을 맥에서 재현 — `.as_posix()`를 되돌리면 여기서 빨개진다.
+
+    두 인자를 **모두** `PureWindowsPath`로 준다(flavour 혼합 없음). 혼합은 파이썬
+    버전마다 동작이 갈리기 때문이다 — 실측: 3.11·3.12는 조용히 통과하고 3.13은
+    ValueError다. 혼합을 없애면 어느 버전에서도 같은 결과라 이 회귀가 버전에
+    의존하지 않는다(`requires-python = ">=3.12"` · ci.yml에 파이썬 핀 없음).
+    """
+    base = PureWindowsPath("C:/repo/src/ai/composition")
+    target = base / "counsel" / "provider.py"
+
+    assert _posix_rel(target, base) == "counsel/provider.py"
+    assert "\\" not in _posix_rel(target, base)
+    # str()이면 이 값이 나온다 — 화이트리스트(`/` 표기)와 불일치하는 그 값.
+    assert str(target.relative_to(base)) == "counsel\\provider.py"
+
+
+def test_collected_keys_are_posix() -> None:
+    """수집된 키에 백슬래시가 없다.
+
+    ⚠ **이 단정은 Windows 러너에서만 실제로 문다** — 맥·리눅스에서는 무조건 통과한다.
+    진짜 방어선은 위 `test_posix_rel_normalizes_windows_separator`이므로 그것을
+    지우고 이것만 남기면 회귀가 사라진다.
+    """
+    keys = _all_gateway_calls()
+    assert keys, "gateway 호출을 하나도 찾지 못했다 — 검사 경로가 끊겼다"
+    offenders = [module for module, _fn in keys if "\\" in module]
+    assert not offenders, f"키에 Windows 구분자가 있다: {offenders}"
