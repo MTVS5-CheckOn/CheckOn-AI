@@ -25,7 +25,14 @@ from ai.composition.counsel.prompt import (
 )
 from ai.contracts.composition import DraftContext
 from ai.contracts.execution import ExecutionContext, GenerationParams
-from ai.contracts.llm import LlmError, LLMRequest, ModelRole
+from ai.contracts.llm import (
+    CallOutcome,
+    LlmError,
+    LLMRequest,
+    LLMResult,
+    ModelRole,
+    TokenUsage,
+)
 from ai.llm.gateway import LlmGateway
 from ai.runtime.redaction import redact
 
@@ -161,10 +168,37 @@ class FakeCounselProvider:
         return step
 
 
+class FakeCounselLlmProvider:
+    """`LLMProvider` 대역 — gateway 경로의 CI 기본값(실 벤더 호출 없음).
+
+    `composition/provider.FakeBriefProvider`와 같은 자리다. 결정론이며 시계·난수를 쓰지 않는다.
+    """
+
+    def __init__(self, text: str = "이번 주 학습 상황을 정리해 드립니다.") -> None:
+        self._text = text
+
+    @property
+    def name(self) -> str:
+        return "fake-counsel"
+
+    async def complete(
+        self, request: LLMRequest, context: ExecutionContext
+    ) -> LLMResult:
+        return LLMResult(
+            outcome=CallOutcome.OK,
+            text=self._text,
+            provider=self.name,
+            model="template",
+            usage=TokenUsage(tokens_in=0, tokens_out=0, cost_usd=0.0),
+            latency_ms=0,
+        )
+
+
 __all__ = [
     "CHARS_PER_SENTENCE",
     "CounselPlanner",
     "DraftWriter",
+    "FakeCounselLlmProvider",
     "FakeCounselProvider",
     "GatewayDraftWriter",
     "RedactionBlockedError",
