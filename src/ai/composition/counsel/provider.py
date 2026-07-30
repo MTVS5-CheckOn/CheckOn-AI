@@ -109,7 +109,15 @@ class GatewayDraftWriter:
             ),
             execution_context,
         )
-        return (result.text or "").strip()
+        # outcome≠OK를 빈 문자열로 삼키면 장애가 게이트 실패(`gate_exhausted:empty`)로
+        # **오분류**된다 — 그러면 서킷 카운터도 안 오르고 알럿이 뜨지 않는다.
+        # LlmError로 승격해 `llm_failed` 경로(서킷 포함)로 태운다(error_codes §3).
+        if result.outcome is not CallOutcome.OK:
+            raise LlmError(f"counselor 호출 실패 outcome={result.outcome.value}")
+        text = (result.text or "").strip()
+        if not text:
+            raise LlmError("counselor 응답이 비었다")
+        return text
 
 
 class FakeCounselProvider:

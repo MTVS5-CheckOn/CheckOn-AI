@@ -17,16 +17,18 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 from uuid import UUID, uuid4
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ai.agents.supervisor import Supervisor, system_utc_now
-from ai.composition.counsel.graph import build_counsel_graph
+from ai.composition.counsel.graph import LlmCircuitOpenError, build_counsel_graph
 from ai.composition.counsel.provider import CounselPlanner, DraftWriter
+from ai.composition.counsel.settings import get_counsel_settings
 from ai.composition.counsel.state import CounselPackState
 from ai.composition.counsel.stores import (
     AgentStepRecord,
@@ -40,9 +42,29 @@ from ai.composition.counsel.stores import (
 from ai.contracts.agents import WorkerJob, WorkerKind
 from ai.contracts.execution import ExecutionContext
 
+logger = logging.getLogger(__name__)
+
+
+#: 잡 단위 error_code — error_codes §2.5에 등재된 어휘다(`worker_recovery_exhausted` 선례의
+#: snake_case·접두 생법). ⚠ 학생 단위 `fail_reason`(graph.py의 `context_missing` 등)과
+#: **문자열이 겹치지 않게** 접두를 붙였다 — 대시보드가 문자열로 집진하면 잡 장애와 학생
+#: 정상 스킵이 섞여 장애 오판이 된다.
+ERROR_CONTEXT_BUNDLE_MISSING: Final = "context_bundle_missing"
+ERROR_CONTEXT_HASH_MISMATCH: Final = "context_hash_mismatch"
+ERROR_TENANT_MISMATCH: Final = "tenant_mismatch"
+ERROR_WORKER_INTERNAL: Final = "worker_internal_error"
+
 
 class ContextHashMismatchError(ValueError):
     """`context_ref` 역참조 해시가 state의 `context_hash`와 다르다 — 체크포인트 손상(불변식 ④)."""
+
+
+class ContextBundleMissingError(ValueError):
+    """`payload_ref`가 해소되지 않는다 — 결과 계약을 확정할 수 없다."""
+
+
+class TenantMismatchError(ValueError):
+    """묶음의 tenant가 잡의 tenant와 다르다 — 테넌트 격리 위반(CLAUDE.md §4)."""
 
 
 class CounselPackRunner:
@@ -63,6 +85,7 @@ class CounselPackRunner:
         lease_owner: str,
         new_id: Callable[[], UUID] = uuid4,
         now: Callable[[], datetime] = system_utc_now,
+        llm_failure_circuit: int | None = None,
     ) -> None:
         self._sv = supervisor
         self._contexts = context_store
@@ -76,6 +99,13 @@ class CounselPackRunner:
         self._lease_owner = lease_owner
         self._new_id = new_id
         self._now = now
+        #: 연속 LLM 실패 학생 수 임계 — §1.3 "LLM 연속 실패 3학생(서킷)". 하드코딩하지 않고
+        #: settings에서 읽되 생성자 주입이 이긴다(테스트 결정론).
+        self._circuit = (
+            llm_failure_circuit
+            if llm_failure_circuit is not None
+            else get_counsel_settings().counsel_llm_failure_circuit
+        )
 
     async def run_next(self, *, tenant_id: str) -> WorkerJob | None:
         """다음 counsel_pack 잡을 lease해 실행하고 succeeded로 수렴한다. 없으면 None."""
@@ -86,12 +116,52 @@ class CounselPackRunner:
         )
         if job is None:
             return None
-        return await self._execute(job)
+        return await self._run_guarded(job)
+
+    async def _run_guarded(self, job: WorkerJob) -> WorkerJob:
+        """복구 불가 예외를 **즉시** 수렴시킨다 — running 방치 금지(3-5).
+
+        방치하면 lease 만료 recovery를 `max_recovery_attempts`(기본 3)까지 태우고 그때마다
+        전체 재실행이라 LLM 비용이 3배가 된다. 실패는 정직하게 즉시 기록한다.
+
+        ⚠ `BaseException`(프로세스 kill·SystemExit)은 잡지 않는다 — 그건 lease 만료·recovery가
+        다룰 영역이고 워커가 대신 판정할 수 없다.
+        """
+        try:
+            return await self._execute(job)
+        except LlmCircuitOpenError:
+            return await self._sv.pause(
+                tenant_id=job.tenant_id,
+                job_id=job.job_id,
+                lease_owner=self._lease_owner,
+                lease_generation=job.lease_generation,
+                checkpoint_ref=str(job.job_id),
+            )
+        except ContextBundleMissingError:
+            return await self._fail(job, ERROR_CONTEXT_BUNDLE_MISSING)
+        except TenantMismatchError:
+            return await self._fail(job, ERROR_TENANT_MISMATCH)
+        except ContextHashMismatchError:
+            return await self._fail(job, ERROR_CONTEXT_HASH_MISMATCH)
+        except Exception:  # noqa: BLE001 — 미분류도 방치하지 않는다(정직한 수렴)
+            logger.exception("counsel_pack 워커 미분류 실패 job=%s", job.job_id)
+            return await self._fail(job, ERROR_WORKER_INTERNAL)
+
+    async def _fail(self, job: WorkerJob, error_code: str) -> WorkerJob:
+        return await self._sv.fail(
+            tenant_id=job.tenant_id,
+            job_id=job.job_id,
+            lease_owner=self._lease_owner,
+            lease_generation=job.lease_generation,
+            error_code=error_code,
+        )
 
     async def _execute(self, job: WorkerJob) -> WorkerJob:
         bundle = await self._contexts.get(job.payload_ref, tenant_id=job.tenant_id)
         if bundle is None:
-            raise ValueError(f"컨텍스트 묶음 참조 해소 실패: {job.payload_ref}")
+            raise ContextBundleMissingError(job.payload_ref)
+        if bundle.tenant_id != job.tenant_id:  # 저장소 격리의 이중 방어
+            raise TenantMismatchError(job.payload_ref)
         thread_id = str(job.job_id)
 
         # ② start — checkpoint_ref 연결 + fencing(lease_generation).
@@ -111,6 +181,7 @@ class CounselPackRunner:
             execution_context=_execution_context(job),
             checkpointer=self._checkpointer,
             regen_max=self._regen_max,
+            llm_failure_circuit=self._circuit,
             draft_store=self._drafts,
             tenant_id=job.tenant_id,
             agent_run_id=job.job_id,
@@ -229,4 +300,13 @@ def _execution_context(job: WorkerJob) -> ExecutionContext:
     )
 
 
-__all__ = ["ContextHashMismatchError", "CounselPackRunner"]
+__all__ = [
+    "ERROR_CONTEXT_BUNDLE_MISSING",
+    "ERROR_CONTEXT_HASH_MISMATCH",
+    "ERROR_TENANT_MISMATCH",
+    "ERROR_WORKER_INTERNAL",
+    "ContextBundleMissingError",
+    "ContextHashMismatchError",
+    "CounselPackRunner",
+    "TenantMismatchError",
+]

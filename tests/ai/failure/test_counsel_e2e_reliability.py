@@ -99,6 +99,7 @@ class _MutableContextStore:
         self._inner = InMemoryContextStore()
         self._dropped: set[str] = set()
         self._boom = False
+        self._bypass_isolation = False
 
     async def put(self, record: ContextBundleRecord) -> str:
         return await self._inner.put(record)
@@ -108,6 +109,10 @@ class _MutableContextStore:
             raise RuntimeError("저장소 예상 밖 오류")
         if ref in self._dropped:
             return None
+        if self._bypass_isolation:  # 1차 방어를 뚫은 저장소를 흉내낸다
+            from ai.composition.counsel.stores import CONTEXT_SCHEME, parse_ref
+
+            return self._inner._rows.get(parse_ref(ref, CONTEXT_SCHEME))  # noqa: SLF001
         return await self._inner.get(ref, tenant_id=tenant_id)
 
     # ── 테스트 조작 ──
@@ -115,6 +120,13 @@ class _MutableContextStore:
         self._dropped.add(ref)
 
     def retag_tenant(self, tenant_id: str) -> None:
+        """다른 테넌트의 묶음을 **격리 없이 돌려주는** 저장소를 흉내낸다.
+
+        저장소 수준 격리(`InMemoryContextStore.get`의 tenant 필터)가 1차 방어이고, 워커의
+        `bundle.tenant_id != job.tenant_id` 검사가 **이중 방어**다. 이 테스트는 1차가
+        뚫린(또는 PG 구현이 필터를 빠뜨린) 상황에서 2차가 잡는지를 본다.
+        """
+        self._bypass_isolation = True
         self._inner._rows = {  # noqa: SLF001 — 테스트 전용 변조
             k: v.model_copy(update={"tenant_id": tenant_id})
             for k, v in self._inner._rows.items()  # noqa: SLF001
@@ -387,7 +399,12 @@ def test_missing_bundle_converges_to_failed() -> None:
 
 
 def test_tenant_mismatch_converges_to_failed() -> None:
-    """bundle의 tenant가 잡의 tenant와 다르면 즉시 failed — 테넌트 격리(CLAUDE.md §4)."""
+    """bundle의 tenant가 잡의 tenant와 다르면 즉시 failed — 워커의 **이중 방어**.
+
+    1차는 저장소 수준 필터(`ContextStore.get(..., tenant_id=)`)라 정상 경로에서는 애초에
+    해소되지 않는다(그 경우 `context_bundle_missing`). 이 테스트는 1차가 뚫린 상황을
+    주입해 2차가 잡는지를 본다.
+    """
     h = _Harness()
 
     async def scenario() -> WorkerJob | None:
