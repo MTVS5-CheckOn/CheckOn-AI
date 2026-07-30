@@ -20,10 +20,9 @@ from ai.import_mapping.state import (
 #: 10_import_spec §2 그림을 손으로 옮긴 기대표 — 이 값이 곧 계약이다.
 _EXPECTED: dict[S, set[S]] = {
     S.PROFILING: {S.INFERRING, S.PREVIEW_READY, S.FAILED},
-    S.INFERRING: {S.PROBING, S.PREVIEW_READY, S.BLOCKED, S.FAILED},
-    S.PROBING: {S.PREVIEW_READY, S.BLOCKED, S.FAILED},
-    S.PREVIEW_READY: {S.DONE, S.BLOCKED, S.FAILED},
-    S.BLOCKED: {S.PREVIEW_READY, S.FAILED},
+    S.INFERRING: {S.PROBING, S.PREVIEW_READY, S.FAILED},
+    S.PROBING: {S.PREVIEW_READY, S.FAILED},
+    S.PREVIEW_READY: {S.DONE, S.FAILED},
     S.DONE: set(),
     S.FAILED: set(),
 }
@@ -42,9 +41,15 @@ def test_terminal_states_are_done_and_failed() -> None:
     assert not ALLOWED_TRANSITIONS[S.DONE] and not ALLOWED_TRANSITIONS[S.FAILED]
 
 
-def test_blocked_is_not_terminal_and_can_be_released() -> None:
-    assert S.BLOCKED not in TERMINAL
-    assert can_transition(S.BLOCKED, S.PREVIEW_READY)  # override로 필수 채우면 blocked 해제
+def test_no_blocked_state_exists() -> None:
+    """확정 차단이 백엔드로 이관돼 blocked가 사라졌다(2026-07-30 확정).
+
+    구 `test_blocked_is_not_terminal_and_can_be_released`의 자리 — 상태 자체가 없어졌으므로
+    "해제 가능"이 아니라 "존재하지 않음"을 단정한다.
+    """
+    assert "blocked" not in {state.value for state in S}
+    assert all(S.PREVIEW_READY in ALLOWED_TRANSITIONS[s] or s in TERMINAL or s is S.PREVIEW_READY
+               for s in (S.INFERRING, S.PROBING))  # 수렴은 항상 preview_ready로
 
 
 def test_cache_hit_shortcut_profiling_to_preview() -> None:

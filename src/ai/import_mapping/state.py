@@ -12,17 +12,17 @@ S = ImportStatus
 
 #: 상태별 허용 전이(10_import_spec §2 그림). PROFILING→PREVIEW_READY는 캐시 hit(reused) 직행.
 #: transforming은 없다 — 전체 행 변환이 백엔드 소유가 됐다(§4, 2026-07-30). AI 종단은 확정 spec.
+#: blocked도 없다 — 필수 여부 판단·확정 차단이 백엔드 소유가 됐다(2026-07-30 확정).
 ALLOWED_TRANSITIONS: dict[ImportStatus, frozenset[ImportStatus]] = {
     S.PROFILING: frozenset({S.INFERRING, S.PREVIEW_READY, S.FAILED}),
-    S.INFERRING: frozenset({S.PROBING, S.PREVIEW_READY, S.BLOCKED, S.FAILED}),
-    S.PROBING: frozenset({S.PREVIEW_READY, S.BLOCKED, S.FAILED}),
-    S.PREVIEW_READY: frozenset({S.DONE, S.BLOCKED, S.FAILED}),
-    S.BLOCKED: frozenset({S.PREVIEW_READY, S.FAILED}),  # override로 필수 채우면 blocked 해제
+    S.INFERRING: frozenset({S.PROBING, S.PREVIEW_READY, S.FAILED}),
+    S.PROBING: frozenset({S.PREVIEW_READY, S.FAILED}),
+    S.PREVIEW_READY: frozenset({S.DONE, S.FAILED}),
     S.DONE: frozenset(),
     S.FAILED: frozenset(),
 }
 
-#: 종단 상태 — 더 전이하지 않는다. BLOCKED는 종단이 아니다(override로 해제 가능).
+#: 종단 상태 — 더 전이하지 않는다.
 TERMINAL: frozenset[ImportStatus] = frozenset({S.DONE, S.FAILED})
 
 
