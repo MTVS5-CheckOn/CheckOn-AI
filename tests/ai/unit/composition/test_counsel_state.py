@@ -46,7 +46,7 @@ def _state(**overrides: object) -> CounselPackState:
         "context_hash": _HASH,
         "plan_version": "0.1",
     }
-    return CounselPackState(**(base | overrides))  # type: ignore[arg-type]
+    return CounselPackState(**(base | overrides))
 
 
 def _result(student_ref: str, status: DraftStatus = DraftStatus.GENERATED) -> StudentResult:

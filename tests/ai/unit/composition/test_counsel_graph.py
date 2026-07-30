@@ -6,6 +6,7 @@ FakeCounselProvider + InMemorySaver로 결정론화. 실 LLM·PG 없음.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from uuid import UUID
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -81,7 +82,7 @@ def _run(
     contexts: dict[str, DraftContext] | None = None,
     interrupt: tuple[str, ...] = (),
     thread: str = "t",
-) -> tuple[object, dict[str, object]]:
+) -> tuple[Any, dict[str, Any]]:
     graph = build_counsel_graph(
         planner=provider,
         writer=provider,

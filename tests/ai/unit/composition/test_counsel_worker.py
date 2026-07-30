@@ -30,7 +30,13 @@ from ai.composition.counsel.stores import (
     parse_ref,
 )
 from ai.composition.counsel.worker import CounselPackRunner
-from ai.contracts.agents import JobPhase, OperationKind, PriorityClass, WorkerKind
+from ai.contracts.agents import (
+    JobPhase,
+    OperationKind,
+    PriorityClass,
+    WorkerJob,
+    WorkerKind,
+)
 from ai.contracts.composition import (
     CommStyle,
     DraftContext,
@@ -159,7 +165,7 @@ def test_enqueue_then_run_succeeds() -> None:
         supervisor=supervisor, context_store=contexts, new_id=_counter(), now=lambda: _NOW
     )
 
-    async def scenario() -> object:
+    async def scenario() -> WorkerJob | None:
         job = await enqueuer.enqueue(
             tenant_id="t1", class_ref="cl_a1", contexts={r: _context(r) for r in refs}
         )
@@ -184,7 +190,7 @@ def test_partial_failure_still_succeeds() -> None:
         supervisor=supervisor, context_store=contexts, new_id=_counter(), now=lambda: _NOW
     )
 
-    async def scenario() -> object:
+    async def scenario() -> WorkerJob | None:
         await enqueuer.enqueue(
             tenant_id="t1", class_ref="cl_a1", contexts={r: _context(r) for r in refs}
         )
@@ -205,7 +211,7 @@ def test_agent_steps_persisted_with_job_id() -> None:
         supervisor=supervisor, context_store=contexts, new_id=_counter(), now=lambda: _NOW
     )
 
-    async def scenario() -> object:
+    async def scenario() -> WorkerJob | None:
         await enqueuer.enqueue(
             tenant_id="t1", class_ref="cl_a1", contexts={r: _context(r) for r in refs}
         )
