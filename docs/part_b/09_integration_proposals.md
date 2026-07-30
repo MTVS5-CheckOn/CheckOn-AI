@@ -3,6 +3,9 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v2.3 (2026-07-30): §2-14의 양자 승인 카운트 위치를 `02_ownership.md` §4로 정정하고, §2-15에 blind 격리 범위 B-13 해소(PR #40)를 기록했다. §2-13의 승인 시 동시 개정 대상을 R6 임계 재산정·`taxonomy_version` 기축적분 혼재 정책·taxonomy 제목/결정 로그·ERD 2곳까지 4건 확장했다.
+> - v2.2 (2026-07-30): **크로스체크 정정 3건 + 안건 2건 신설.** ① §2-12-②를 `✅ A 승인·구현 완료(PR #37) · B 사후 검증 완료`로 승격하고 조건 5개 충족 근거를 코드 기준으로 기록 ② `verify_evidence_paths`의 소유를 **`현행 B 소유 · §2-14 승인 시 A+B`로 정정**(승인 전 확정 표기 철회)하고 `quote_hash`·`license_ref`가 이 검사의 책임이 아님을 명시 ③ **§2-14 신설** — `contracts/graphrag.py` 양자 승인 편입(12→13곳, A 제기·B 수용) ④ §3에 `B-12`(graphrag 소유)·**`B-13 [P0]`**(blind AST 테스트가 R-1 resolver 연동을 차단) 등록, `B-7` 해소 처리.
+> - v2.1 (2026-07-30): §2-12-②를 A-5 초안의 `EvidenceResolver.resolve` 시그니처·결과 타입에 정합하고, `GraphContextService.verify_evidence_paths`와 실제 근거 해소 및 R-1 판정의 3단 경계를 명문화했다.
 > - v1.10 (2026-07-29): §2-13 `type_tag` 어휘 확장 제안 신설, §3에 수능형 포맷 총괄 W8·`type_tag` 표현력 W9·롤백 재검증 W10 등록, §2-8에 `12_suneung_format_alignment.md` INDEX 링크 제안을 추가했다.
 > - v2.0 (2026-07-28): **A 공식 회신 전수 반영** — §2-4의 B 테이블 수·ERD parity 기준을 8종·34개로 통일하고 `ITEM_CANDIDATE` 유니크 제약을 원자 PR 조건에 추가. A-10 gateway 공용 규칙 승격과 데모 rank를 완료 처리하고, A-4 조건(meta.versions 10→13키 동시 개정·GraphRAG 버전 축 독립성)을 §2-12-①에 반영. `ReviewReason`·`DifficultyBand`의 `error_codes.md` §2.6 편입을 제안하고, A-6 판정에 따라 RLS 문서 불일치를 해소·실도입을 BE-11로 이관. B-8은 ⓐ validator와 ⓑ GraphRAG 3필드를 한 안건으로 병합했다.
 > - v1.9 (2026-07-27): **§1-10 「A 게이트웨이 협의 3건 — B 회신」 신설** — ① role별 전송 재시도 `0..1` 파라미터를 **B가 게이트웨이에 신설**(생성자 주입·기본 1로 문제생성 무변경·A의 "어댑터 직결" 차선책은 `01` §5 위반이라 수용 불가) ② recorder가 `ExecutionContext`를 함께 받는 ②안 동의 + `LlmCallRecord`가 양자가 아닌 **B 단독 소유**임을 정정 ③ 마스킹 훅을 **전송 redaction(fail-closed·no-op 불가)과 트레이스 마스킹(no-op 허용) 2개로 분리**.
@@ -485,9 +488,51 @@ GraphRAG 채택은 확정이다([`10`](10_m2_problem_generation_architecture.md)
 - **A-4 조건 ② — 축 독립성:** `graph_index_version`과 `retrieval_config_version`은 실제로 독립적으로 움직인다. ① 색인을 재빌드하지 않고 top-k·필터 조건·재랭킹 on/off 같은 검색 파라미터만 바꿀 수 있고, ② 반대로 검색 파라미터는 유지한 채 승인 자료 추가나 라이선스 만료 자료 제외로 색인만 갱신할 수 있다. 두 경우 모두 같은 질문에서 다른 근거가 선택되지만 원인이 다르므로, 한 필드로 합치면 재현 실패 원인을 분해할 수 없다(불변식 8).
 - **확장 부결 시 대안:** 산출물 행에만 저장하고 `meta.versions`는 유지 — 단 API 응답만으로 재현 키를 못 얻는 비대칭이 §2-9과 동일하게 발생한다.
 
-#### 2-12-②. `evidence/` resolver 주입 시그니처 — B-7 안건과 병합 `[A-5]`
+#### 2-12-②. `evidence/` resolver 주입 시그니처 — B-7 안건과 병합 `[A-5]` `✅ A 승인·구현 완료(PR #37) · B 사후 검증 완료 2026-07-30`
 
-`evidence/`는 A 소유다. GraphRAG 도입으로 근거 해소 경로가 "앵커 → 원문 직접 조회"에서 "앵커 → `EvidencePack`(path·quote·license·hash) 대조"로 확장되므로, **기존 B-7(evidence resolver 주입 시그니처, A 초안 리뷰)과 하나로 묶어 확정**할 것을 제안한다.
+`evidence/`는 A 소유다. GraphRAG 도입으로 근거 해소 경로가 "앵커 → 원문 직접 조회"에서 "앵커 → `EvidencePack`(path·quote·license·hash) 대조"로 확장되므로 기존 B-7과 하나로 묶어 확정했다. **A가 B 요구 조건 5개를 전량 수용하고 PR #37로 구현·머지했다** — `src/ai/evidence/models.py`(177줄) · `resolver.py`(249줄) · 테스트 3종.
+
+**B 사후 검증 결과 `[2026-07-30]`** — `evidence/models.py`는 양자 승인 12곳 중 하나이므로 B 검증 기록을 남긴다. 5개 조건 전부 충족을 코드에서 확인했다.
+
+| 조건 | 판정 | 근거 |
+| --- | --- | --- |
+| 1 fail-closed | ✅ | `EvidenceResolutionFailed` — `ResolvedEvidence.resolved`가 `min_length=1`이라 빈 성공 결과를 **타입으로** 만들 수 없다 |
+| 2 권리 게이트 | ✅ | `_APPROVED` 상수 · `ExclusionReason.RIGHTS_NOT_APPROVED` · Pack 단계 1차 차단 후 resolver 이중 확인임을 명시 |
+| 3 결정론 | ✅ | `classify_anchor` 순수 함수 · 시계·난수 미생성 · `EvidenceRef.id`도 입력에서 파생 |
+| 4 예산 불변 | ✅ | 내부 재시도 루프 없음 · `tenacity` 미사용 |
+| 5 blind 무오염 | ✅ | `tests/ai/contract/test_evidence_blind_isolation.py` — AST 3중 검사(verifier 경로의 `ai.evidence` import 차단 · `blind_item` 리터럴 키 검사 · `SolveResult` 역방향 유출 차단). **B가 요구한 수준을 넘는다** |
+
+조건 5의 구현이 [`12`](12_suneung_format_alignment.md) FMT-6 머지 조건 (1)을 이미 충족한다.
+
+**A-5 초안 기준 시그니처(필드·순서 고정):**
+
+```python
+@runtime_checkable
+class EvidenceResolver(Protocol):
+    async def resolve(
+        self,
+        *,
+        pack: EvidencePack,
+        anchor_ids: Sequence[str],
+        tenant_id: str,
+        owner_kind: EvidenceOwnerKind,
+        owner_id: UUID,
+    ) -> ResolvedEvidence: ...
+```
+
+`*` 뒤의 다섯 인자는 키워드 전용이며 이름과 순서를 바꾸지 않는다. `EvidencePack`·`EvidencePackAnchor`·`NonEmptyStr`·`Sha256Hash`는 `ai.contracts.graphrag`에서 import하고 `evidence/`에서 재정의하지 않는다.
+
+| 결과 타입 | 고정 필드 | 규약 |
+| --- | --- | --- |
+| `ResolvedEvidence` | `evidence_pack_id` · `resolved` · `excluded` | `resolved`는 최소 1건. 해소 0건은 빈 성공이 아니라 `EvidenceResolutionFailed` |
+| `ResolvedAnchor` | `anchor_id` · `evidence_ref` · `source_content_hash` · `quote` | 저장 근거와 대조를 통과한 값. `quote`는 verifier 페이로드에 전달 금지 |
+| `ExcludedAnchor` | `anchor_id` · `reason` | 권리 미승인·본문 hash 불일치·인용 불일치·미존재를 조용히 누락하지 않음 |
+
+**경계는 세 줄로 고정한다.**
+
+1. `GraphContextService.verify_evidence_paths(evidence_pack) -> EvidencePathResult`(**현행 B 소유** · §2-14 승인 시 A+B 공용 계약)는 앵커와 `graph_path_edge_ids`의 그래프 내부 실존을 검증한다. 결과는 `valid`·`checked_anchor_ids`·`invalid_anchor_ids`만 가지며 해소 본문을 담지 않는다. **`quote_hash`·`license_ref` 유효성은 이 검사의 책임이 아니다** — 반환 3필드에 이를 표현할 자리가 없다([`11`](11_graphrag_knowledge_layer.md) §5).
+2. `EvidenceResolver.resolve(...) -> ResolvedEvidence`(**A evidence 구현**)는 앵커를 실제 저장 근거로 해소하고 `quote`·`source_content_hash`·권리를 대조한다. `EvidencePathResult`의 필드명이나 의미를 재사용하지 않는다.
+3. 게이트 ① **R-1은 두 검사를 모두 통과해야 pass**한다. 어느 한쪽의 실패도 다른 쪽의 성공으로 상쇄하지 않는다.
 
 resolver가 만족해야 하는 조건(B 요구):
 
@@ -521,13 +566,98 @@ resolver가 만족해야 하는 조건(B 요구):
 확정하지 않는다.** `contracts/taxonomy.py`는 양자 승인 파일이므로 실제 어휘와
 경계 사례는 A+B가 태깅 골든셋과 함께 확정한다.
 
-**승인 시 동시 개정 대상.** `docs/policies/taxonomy.md`의 어휘·경계 사례,
-`area_tag × type_tag` 진단 셀 구조, 약점 지도 API 응답을 같은 변경 단위로
-개정한다. 이 제안에서는 해당 파일을 직접 수정하지 않는다.
+**승인 시 동시 개정 대상 — 기존 3건 + 확장 4건.**
+
+1. `docs/policies/taxonomy.md`의 어휘·경계 사례.
+2. `area_tag × type_tag` 진단 셀 구조.
+3. 약점 지도 API 응답.
+4. **R6 임계 재산정(A).** `detection/thresholds.py`의 R6(오답 유형 편중)은
+   `area_tag × type_tag` 24셀 기반이다. type이 N종이면 6×N셀로 늘어 셀당 표본이
+   희석되므로, [`part_a/04_threshold_config.md`](../part_a/04_threshold_config.md)
+   §1의 R6 최소 표본·편중 임계를 그대로 두면 R6가 조용히 죽거나 오발동한다.
+   어휘 확정과 임계 재산정을 같은 결정 단위로 묶는다. 근거는
+   `docs/02_ownership.md` §3의 `taxonomy.py` 행에 이미 명시된
+   “감지 R6·약점 지도·태깅ⓒ·출제가 전부 이 어휘를 씀”이다.
+5. **`taxonomy_version` 승격 + 기축적분 혼재 정책(A+B).**
+   `VersionSet.taxonomy_version`은 재현 키이므로 어휘 변경은 불변식 8 사안이다.
+   이미 쌓인 `FEATURE_WEEK` 셀 통계·`SIGNAL`이 옛 4종 기준이므로 구 어휘 매핑,
+   재계산, 버전별 분리 중 하나를 정한다. `docs/policies/taxonomy.md` §1.1의
+   “기존 3갈래 → 신규 매핑” 선례와 같은 형식으로 기록한다.
+6. **`docs/policies/taxonomy.md` §3 제목·결정 로그(A).**
+   현재 제목은 “`type_tag` — 인지 유형 (area와 직교, 변경 없음)”이며, 7/15에
+   “변경 없음”으로 확정한 축이므로 `docs/99_open_items.md` 결정 로그 갱신이 선행한다.
+7. **`docs/06_erd.md`의 `type_tag` 2곳(A).** A 회신으로 확인된 위치는
+   `PROBLEM_ITEM`(:298)과 `TAG_SUGGESTION`(:442)이다. A 소유 문서이므로 A가 둘 다
+   처리한다. 같은 자리인 `docs/part_b/02_design.md`의 `PROBLEM_ITEM`은 B가 이미
+   완료했다.
+
+이 제안에서는 위 파일을 직접 수정하지 않는다. `golden/tagging/` 라벨 확정은 A+B
+공동 부담이므로 어휘 초안 후 라벨링 일정을 조율하고, B-3 경계 7건과 같은 단위로
+묶는 것이 효율적이라는 A·B 합의를 따른다. **신규 enum 식별자와 최종 개수는
+확정하지 않는다.**
 
 **부결 시 대안.** 셀을 현행 6×4로 유지하고 `skill_node`만 세분한다. 계약 변경은
 피할 수 있지만, 4종에 매핑할 수 없는 어휘·화법·작문·매체 약점은 셀 진단으로
 표현할 수 없어 **진단 자체가 불가능**해지는 비용을 감수해야 한다.
+
+### 2-14. `contracts/graphrag.py` 소유 미등록 — 양자 승인 편입 `[제안 · A+B 양자 승인]` `(B-12)`
+
+**사실.** `src/ai/contracts/graphrag.py`(262줄)가 `docs/02_ownership.md` §3·§4·§5 어디에도 등록되지 않았다. 저장소 확인 결과 `02_ownership.md`·`CLAUDE.md` 양쪽에 `graphrag` 문자열이 **0건**이고, 양자 승인 대상은 여전히 **12곳**이다. 현재 `contracts/` 아래는 `execution`·`llm`·`gates`·`evaluation`·`taxonomy`·`agents`=양자, `detection`=A, `diagnosis`·`problem_generation`=B로 열거돼 있고 `graphrag`만 빠져 있다.
+
+**제안.** 양자 승인 대상 **12곳 → 13곳**으로 편입한다. 이 안건은 **A가 먼저 제기하고 B가 수용**했다(7/30 회신).
+
+**근거.** [`11`](11_graphrag_knowledge_layer.md) §0이 이미 evidence resolver 시그니처를 A+B 양자로 정했고, §2-12-②(PR #37)로 **A 소유 `evidence/`가 `EvidencePack`·`EvidencePathResult`를 직접 소비**하는 구조가 됐다. B 단독 파일로 두면 A의 계약이 B 단독 파일에 매달린다. A-5 초안도 `ai.contracts.graphrag`를 그대로 import한다(형상을 두 곳에서 잡으면 드리프트).
+
+**승인 시 동시 개정 대상.** ① `docs/02_ownership.md` §3 `contracts/` 파일 단위 소유 표에 `graphrag.py` 행 추가 ② §4의 “양자 승인 대상 — 12곳”을 **13곳으로 변경(카운트는 §4)** ③ §5 소유권 주석 트리에 `graphrag.py` 행 추가 ④ `CLAUDE.md` §2의 “양자 승인 12파일”을 13파일로 변경. **A가 네 곳을 한 커밋으로 처리한다(A 회신 확인)** — 이 제안에서는 해당 파일을 직접 수정하지 않는다.
+
+**부결 시 대안.** `contracts/graphrag.py`를 B 단독으로 유지하고 A가 `evidence/` 안에 별도 프로토콜을 재정의한다. 단 동일 형상이 두 곳에 생겨 드리프트하고, [`11`](11_graphrag_knowledge_layer.md) §0의 기존 양자 지정과 모순된다.
+
+**승인 전 처리.** [`11`](11_graphrag_knowledge_layer.md) §0의 해당 행은 `[제안 — 미승인]`으로 두고, 문서 어디에서도 `contracts/graphrag.py`를 확정된 공용 계약으로 표기하지 않는다. 현행 표기는 **"현행 B 소유 · §2-14 승인 시 A+B 공용 계약"** 병기다.
+
+### 2-15. blind 격리 범위 — R-1 resolver 연동 차단 `✅ A 승인·PR #40 구현 완료` `(B-13)`
+
+**사실.** `tests/ai/contract/test_evidence_blind_isolation.py`의
+`_VERIFIER_PACKAGES = ["problem_generation"]`은 패키지 전체에서 `ai.evidence`
+import를 금지했다. AST walk가 `ImportFrom`·`Import`를 모두 잡으므로
+`TYPE_CHECKING` 아래 타입 전용 import도 걸렸다.
+
+**충돌.** [`06`](06_quality_gates.md) §1의 R-1은 근거 해소 통과 확인이 필요하고,
+R-1은 `src/ai/problem_generation/verification.py:272`에 있다. §2-12-②의 확정
+분담대로 R-1은 A resolver 통과도 확인해야 하므로, R-1의 GraphRAG 확장을 구현하는
+순간 종전 테스트가 실패한다.
+
+**A 판정 근거.** [`06`](06_quality_gates.md) §1은 게이트 ①을 `RuleValidation`
+“결정론 코드”로, 교차 풀이를 게이트 ②로 분리한다. R-1은 verifier가 아니다.
+문서상 근거가 명확하므로 종전 테스트가 과잉이었다고 A가 인정했다.
+
+**결정 — B 권고 (가)안 채택.**
+
+```python
+_VERIFIER_PACKAGES = ["problem_generation"]
+# ↓
+_BLIND_PAYLOAD_MODULES = ["problem_generation/cross_solver.py"]
+```
+
+blind 제약의 대상은 verifier에게 보내는 페이로드이고, 실제 경계는
+`src/ai/problem_generation/cross_solver.py:45`의 `blind_item` 리터럴이다.
+
+**기각한 대안.** `ResolvedEvidence`·`EvidenceResolver`를 `contracts/` 경유로
+노출하는 안. `ResolvedEvidence`를 A 단독 타입으로 둔 것은 양자 승인 표면적을
+줄이려는 결정이므로, `contracts/`로 올리면 그 결정을 되돌린다.
+
+**`TYPE_CHECKING` 예외 없음.** 검사 대상을 한 파일로 좁히면 예외가 불필요하고,
+예외 자체가 blind 경계의 구멍이 된다.
+
+**범위 축소의 반대급부 — 화이트리스트 강화.** 종전 금칙 키 검사는 블랙리스트라
+새 키가 추가돼도 걸리지 않았다. 현재 6키를 화이트리스트로 고정해 정확 일치를
+검사하므로, FMT-6로 학생 가시 자료 블록을 넣을 때 사람이 한 번 확인하게 된다.
+
+**B 후속 2건.**
+
+1. R-1의 GraphRAG 확장 착수가 가능해졌다([`06`](06_quality_gates.md) §1 ·
+   [`11`](11_graphrag_knowledge_layer.md) §5).
+2. FMT-6 자료 블록 추가 시 화이트리스트 동시 갱신을 머지 조건으로 둔다
+   ([`12`](12_suneung_format_alignment.md) FMT-6 머지 조건).
 
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
@@ -537,8 +667,10 @@ resolver가 만족해야 하는 조건(B 요구):
 | Open-12 | F17 OCR 실명→alias·OCR 소유 (P2) | 스캔·매칭·마스킹=BE 유지, 판독 소유는 벤더 선정과 함께 | BE(+A·B) | 02 §1-C |
 | B-2 | 공용 계약 리뷰·구현·14항목 승인 완료 — **문서 동기화 3/7 완료, 4건 잔여(§2-10)** | 잔여 4건 소유자 반영 요청 | A+B | 02 §5 |
 | B-5 / D-06 | ✅ PR #15로 로컬 OpenAI 호환·Gemma 계열 공급자와 어댑터 확정 — verifier 폴백 패밀리만 잔여. **B-5 정리 PR 할 일 2건** `[2026-07-28]`: ① `gateway.py`의 `TODO(B-5)` 제거(provider 1개일 때 패밀리 강제가 우회되는 현행 동작) ② **`problem_generation/provider.py` 조립부 가드 + `test_provider.py`**(§1-10 "가드 위치") | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제. 두 항목 모두 role 키 설정 구조를 공유하므로 같은 PR에서 처리 | A+B | 06 §2·§3 · §1-10 |
-| B-7 | evidence resolver 주입 시그니처 — **GraphRAG 경유 근거 해소와 병합**(§2-12-②) | fail-closed·권리 게이트·결정론·예산 불변·blind 무오염 5조건 | A+B | §2-12 · `10` §4.2 |
+| B-7 | ✅ **해소** — evidence resolver 시그니처 A 승인·**PR #37 구현 완료** · B 사후 검증 완료(조건 5개 전량 충족) | 경계 3단 확정: 그래프 내부 검증(B)·근거 해소(A)·R-1 이중 통과. 잔여는 R-1 연동 구현 시 B-13 | A+B | §2-12-② · `11` §5 |
 | **B-8ⓑ** | **GraphRAG `VersionSet` 3필드 확장** — `content_graph_version`·`graph_index_version`·`retrieval_config_version`. **`graph_version` 재사용 금지** | B-8ⓐ capability별 validator와 병합. ⓐ·ⓑ 모두 `contracts/execution.py`(양자) + `04_api_contract.md` §2.2 + `06_erd.md` AI_RUN 동시 개정이 필요해 PR 단위가 같다. A-5→B-7 병합과 대칭 | A+B | §2-12-① · `10` §4.2 |
+| **B-12** `[신규]` | **`contracts/graphrag.py` 소유 미등록** — `02_ownership.md`·`CLAUDE.md`에 `graphrag` 0건, 양자 승인 대상 12곳 유지. A-5로 A 소유 `evidence/`가 이 계약을 직접 소비한다 | 양자 12곳 → **13곳** 편입. A 제기·B 수용(7/30). 동시 개정은 `02_ownership` §3·§4·§5 + `CLAUDE.md` §2 — **A가 연다** | A+B | §2-14 · `11` §0 |
+| **B-13** | ✅ **해소** — A가 (가)안을 채택해 `_BLIND_PAYLOAD_MODULES`로 조립 지점 한 곳만 검사하고, 현재 6키 화이트리스트의 정확 일치를 강제했다. **PR #40 머지 완료** | R-1 GraphRAG 확장 착수 가능. 잔여는 FMT-6 자료 블록 추가 시 화이트리스트 동시 갱신 | A+B | §2-15 · `06` §1 · `11` §5 |
 | **B-9** `[신규]` | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** — 검증 통과 문항이 미검증 문항으로 대체될 수 있는 미정의 동작 | `07` §4의 "마지막 검증본 유지"를 생성 경로에 대칭 적용 제안. 확정 전 `difficulty_regen_enabled=false` 유지 | B 초안 → A+B | `10` §4.1 C3 |
 | **BE-11** `(구 B-10)` | ✅ **A 판정 완료 — RLS 구현 부재는 문서 표현을 앱 계층 격리로 정정해 해소.** RLS 실도입 여부는 백엔드 합의 안건으로 이관 | 도입 시 `db/session.py`·`db/store_factory.py` 연결·역할 설계와 함께 기존 26+B 8테이블에 일괄 적용. 현재 B 8테이블은 기존 패턴 준수 | **BE** | §2-4.5 |
 | **W1** `[신규]` | **다중 목표·다중 measured area 세트** — M2 와이어프레임 Step 1은 셀 여러 개를 담고 개수를 각각 지정하나, `05` §4.1은 **v1 단일 영역 제한** | 요청 분할 vs 요청 형식 확장 중 택일. 협업설명서도 "회의 결정 필요"로 등재 | A+B+제품 | `05` §4.1 · `10` §6 |

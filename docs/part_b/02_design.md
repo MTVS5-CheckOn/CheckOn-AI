@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 설계 v1. 전체 파이프라인은 [`01_pipeline.md`](01_pipeline.md), 본 문서는 시퀀스·ERD·데이터 경계. 우선순위: 공용 계약 > 02_ownership > 99_open_items > part_a > 본 문서.
 >
 > **변경 이력**
+> - v1.2 (2026-07-30): `PROBLEM_ITEM.type_tag`를 값 복제 대신 `contracts/taxonomy.py`의 공용 `TypeTag` 참조로 정합. 어휘 변경 시 감지 R6·약점 지도·태깅ⓒ·출제를 같은 변경 단위로 재산정한다.
 > - v1.1 (2026-07-27): B-M2-01 확정 반영 — `PROBLEM_ITEM`의 문항 자체 난이도(`difficulty_est`)와 학생 적합도(`difficulty_fit`)를 분리하고, v1의 `difficulty_fit`은 항상 null로 고정. **계약↔ERD 간극 2건 해소**: `WEAKNESS_MAP.overall_low` 컬럼 신설(`contracts/diagnosis.py`의 `WeaknessMap.overall_low`가 산출물에 존재하나 ERD에 컬럼이 없던 문제), `PROBLEM_SET.request`의 "난이도" 표기를 신설 필드 `requested_difficulty`([`05`](05_problem_generation.md) §4.1 C6)에 정합. 공용 ERD 편입 스펙은 [`09`](09_integration_proposals.md) §2-4.3.
 > - v1 (2026-07-15): 구 `01_design.md`에서 파이프라인 절을 [`01_pipeline.md`](01_pipeline.md)로 분리하고 본 문서로 개편. 7/15·대화 결정 반영 — Kafka 완료 통지, meta.quota 폐기, v1 mcq만, B-4 폐기(서술형 v1 제외), 핑퐁 수정 MVP 승격, 수동 목표 출제(`target_source`), 낙관적 잠금. 입력 초안: `CODEXPROMPT/(염준영)_파트_설계_v0.md` · `CODEXPROMPT/(염준영)_출제스튜디오_Step3_검증라벨_핑퐁수정_요구사항_v0.md`.
 
@@ -149,7 +150,7 @@ erDiagram
     uuid set_id FK
     uuid passage_id FK "null 가능(T1)"
     varchar area_tag
-    varchar type_tag "fact|infer|critic|concept"
+    varchar type_tag "contracts/taxonomy.py TypeTag — R6·약점 지도·태깅ⓒ·출제 공용 어휘"
     varchar item_format "mcq — v1 확정 (short·essay enum 예약)"
     varchar skill_node_id "null 가능"
     text stem
