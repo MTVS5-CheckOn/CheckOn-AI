@@ -3,6 +3,8 @@
 > **지위:** member-B(염준영) 공식 규격 v1. `src/ai/problem_generation/`의 근거 조립 계층과 `src/ai/diagnosis/`의 교육과정 그래프 projection의 사양 원본. 입력 초안은 `CODEXPROMPT/출제스튜디오_AI_GraphRAG_아키텍처_개발설계_v1.md`(작업·회의용 자료)이며, **본 문서가 `docs/part_b/` 정본이다.**
 >
 > **변경 이력**
+> - v1.2 (2026-07-30): §0의 `contracts/graphrag.py` 소유를 **`[제안 — 미승인]`으로 정정**([`09`](09_integration_proposals.md) §2-14 · `docs/02_ownership.md` 미등록 확인). §5에서 `quote_hash` 검증 주체를 A-5 resolver로 바로잡고 `license_ref` 유효성 주체를 `[미확정]`으로 명시 — 종전 표기는 `EvidencePathResult` 3필드에 근거가 없었다.
+> - v1.1 (2026-07-30): A-5 초안에 맞춰 §5에 `EvidenceResolver.resolve`의 고정 시그니처·결과 구조를 편입하고, 그래프 내부 경로 검증·실제 근거 해소(A)·R-1 판정의 경계를 분리했다.
 > - v1 (2026-07-27): 신규 작성. GraphRAG 채택 확정([`10`](10_m2_problem_generation_architecture.md) §1·§4.2)에 따라 설계 초안을 정본 규격으로 편입. 공용 계약을 건드리는 2건(`VersionSet` 3필드 · evidence resolver 시그니처)은 본 문서에서 확정하지 않고 [`09`](09_integration_proposals.md) §2-12 제안으로 분리했다.
 >
 > **한 줄 원칙:** GraphRAG는 **근거를 찾아 `ContextPack`을 만든다.** 판정은 게이트가, 승인은 강사가, 발행은 백엔드가 한다 — GraphRAG는 이 셋 중 어느 권한도 갖지 않는다.
@@ -15,9 +17,11 @@
 
 | 범위 | 확정 주체 | 위치 |
 | --- | --- | --- |
-| Graph 도메인 3종·`ContextPack`·`EvidencePack`·`GraphContextService`·검색 모드·색인 파이프라인·권리 매니페스트 | **B 단독** | 본 문서 |
+| Graph 도메인 3종의 의미·검색 모드·색인 파이프라인·권리 매니페스트 | **B 단독** | 본 문서 |
+| `contracts/graphrag.py`의 `ContextPack`·`EvidencePack`·`GraphContextService` 등 공용 타입 | **A+B 양자 승인 `[제안 — 미승인]`** | [`09`](09_integration_proposals.md) §2-14 `[제안]` — `docs/02_ownership.md`에 **미등록**(현행 양자 승인 대상 12곳) |
 | `contracts/execution.py` `VersionSet` GraphRAG 3필드 | **A+B 양자 승인** | [`09`](09_integration_proposals.md) §2-12-① `[제안]` |
-| `evidence/` resolver 주입 시그니처(`evidence/`는 A 소유) | **A+B 양자 승인** | [`09`](09_integration_proposals.md) §2-12-② `[제안]` |
+| `evidence/models.py`의 `EvidenceRef` 스키마 | **A+B 양자 승인** | `docs/02_ownership.md` §3·§4·§5 |
+| `evidence/resolver.py`의 resolver 시그니처·결과 타입·구현 | **A 단독** | [`09`](09_integration_proposals.md) §2-12-② `[A-5]` |
 | Graph 저장 백엔드(벡터 DB·인덱스 인프라) | 서비스 인프라 — 본 문서 범위 밖 | — |
 
 **미승인 항목에 의존하는 코드는 작성하지 않는다.** 승인 전에는 인터페이스와 FakeGraphContextService로 진행한다.
@@ -208,9 +212,39 @@ evidence_pack_hash: sha256
 
 [`06`](06_quality_gates.md) §1의 결정론 검사를 대체하지 않고 **검사 재료를 확장**한다. 게이트 3단 구조·순서·재시도 예산은 그대로다.
 
+R-1은 아래 두 검사를 한 타입으로 합치지 않는다. 그래프 경로 검증 결과와 실제 저장 근거 해소 결과는 필드명·의미가 겹치지 않으며, 게이트가 두 결과를 받아 최종 판정한다.
+
+| 단계 | 소유·호출 | 검사 범위 | 반환 |
+| --- | --- | --- | --- |
+| 그래프 내부 검증 | **현행 B 소유** `[§2-14 승인 시 A+B 공용 계약]` · `GraphContextService.verify_evidence_paths(evidence_pack)` | 앵커 실존 · `graph_path_edge_ids` 유효성 | `EvidencePathResult(valid, checked_anchor_ids, invalid_anchor_ids)` — 해소 본문 없음 |
+| 실제 근거 해소 | **A 단독** · `EvidenceResolver.resolve(...)` | 저장 근거의 `source_content_hash`·`quote`·`quote_hash` 대조 · `rights_status=approved` 이중 확인 | `ResolvedEvidence(evidence_pack_id, resolved, excluded)` |
+| R-1 판정 | B 게이트 ① `RuleValidation` | 위 두 검사를 모두 통과했는지 판정. 한쪽 성공으로 다른 쪽 실패를 상쇄하지 않음 | 기존 `GateResult` |
+
+**`license_ref` 유효성 검증 주체는 `[미확정]`이다.** `EvidencePathResult`에는 이를 표현하는 필드가 없고(`valid`·`checked_anchor_ids`·`invalid_anchor_ids` 3필드), A-5 resolver도 `rights_status` 이중 확인까지만 수행한다. `EvidencePack` 생성 단계에서 `rights_status != approved`가 이미 차단되므로(§4.2 불변식 ①) 만료 검출은 §8 재확인 단계에 의존한다 — 어느 검사가 `license_ref` 자체의 유효성을 담당하는지는 코드에 근거가 없으므로 여기서 확정하지 않는다.
+
+`EvidenceResolver` 호출 계약은 A-5 초안과 같은 순서로 고정한다([`09`](09_integration_proposals.md) §2-12-②).
+
+```python
+@runtime_checkable
+class EvidenceResolver(Protocol):
+    async def resolve(
+        self,
+        *,
+        pack: EvidencePack,
+        anchor_ids: Sequence[str],
+        tenant_id: str,
+        owner_kind: EvidenceOwnerKind,
+        owner_id: UUID,
+    ) -> ResolvedEvidence: ...
+```
+
+- `ResolvedEvidence.resolved`는 최소 1건이며, 해소 0건은 `EvidenceResolutionFailed`로 fail-closed한다. 상위 워크플로는 `verification_unavailable`로 수렴시킨다.
+- 일부만 해소되면 성공분은 `resolved`, 실패분과 사유는 `excluded`에 함께 남긴다. resolver가 pass를 결정하지 않고 R-1 게이트가 이 결과를 판정한다.
+- `quote`는 실제 근거 대조 결과이므로 verifier 페이로드로 전달하지 않는다. `EvidencePack`·관련 GraphRAG 타입은 `ai.contracts.graphrag`에서 import하며 `evidence/`에서 재정의하지 않는다.
+
 | 규칙 | 기존 | GraphRAG 확장 |
 | --- | --- | --- |
-| **R-1** 근거 실존 | anchor 해소 가능 + `quote` 원문 일치 | + `source_content_hash` 대조 · `quote_hash` 일치 · `license_ref` 유효 · `rights_status=approved` · `graph_path_edge_ids` 실존 |
+| **R-1** 근거 실존 | anchor 해소 가능 + `quote` 원문 일치 | 위 그래프 내부 검증 + 실제 근거 해소가 모두 성공해야 함 |
 | **R-4** 외부 지식 차단 | 근거가 지문/예문/발췌 내부에서 완결 | + `coverage`가 정답·해설 핵심 주장·오답 사유를 **전부** 덮는지 검사. `missing_requirements` 비어 있지 않으면 실패 |
 
 **게이트 ②는 변경 없다.** `ContextPack`이 verifier 페이로드로 흘러들지 않으며(§6-4), blind 계약([`05`](05_problem_generation.md) §4.3)은 그대로다.
