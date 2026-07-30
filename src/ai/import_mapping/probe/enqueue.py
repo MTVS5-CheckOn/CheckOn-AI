@@ -1,8 +1,9 @@
 """Import → mapping_probe 연결 — probing 기동 판정 시 WorkerJob enqueue (10_import_spec §6).
 
-inference의 needs_probing이 참이고 필수 필드가 충족된 경우(blocked 아님), 프로파일을
-ProfileStore에 넣어 payload_ref를 만들고 WorkerJob(mapping_probe.resolve)을 슈퍼바이저에
-enqueue한다. 실행은 워커(MappingProbeRunner)가 별도로 lease해서 한다(비동기).
+기동 조건은 **저신뢰 컬럼 존재뿐**이다(§3.3 — 필수 충족 여부를 보지 않는다. 필수 판단이
+백엔드로 이관되면서 blocked 축이 제거됐다, 2026-07-30 확정). inference의 needs_probing이
+참이면 프로파일을 ProfileStore에 넣어 payload_ref를 만들고 WorkerJob(mapping_probe.resolve)을
+슈퍼바이저에 enqueue한다. 실행은 워커(MappingProbeRunner)가 별도로 lease해서 한다(비동기).
 
 payload_ref는 불투명 URI(profile://…), payload_hash는 프로파일 내용의 sha256 — §5 계약대로
 본문을 복제하지 않고 참조·해시만 경계를 넘는다.

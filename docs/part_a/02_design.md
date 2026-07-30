@@ -100,7 +100,7 @@ flowchart LR
   INF --> LOW{"저신뢰·미매핑<br/>존재? (v2)"}
   LOW -->|"예"| PRB["1-C′ 조사 에이전트 기동"]
   LOW -->|아니오| GT
-  PRB --> GT["게이트: RequiredField → Confidence"]
+  PRB --> GT["게이트: Confidence"]
   GT --> PV["미리보기 → 강사 확정 ✋ (HITL)"]
   PV -->|확정| TR["transformer.py<br/>결정론 변환 — LLM은 전체 데이터 안 봄"]
   TR --> F1["F1 품질 게이트 (부분 성공)"]
@@ -308,7 +308,7 @@ sequenceDiagram
   end
   Note over AG: check_join_key로 시트 조인 키 확정 · '비고'=제출일 발견(0.91)
   AG->>PG: 최종 spec — 미해결 컬럼(점수B)은 '모름' 명시
-  AG-->>IMP: spec 반환 → 게이트(RequiredField·Confidence)
+  AG-->>IMP: spec 반환 → 게이트(Confidence)
   IMP-->>T: 미리보기 (점수B '확인 필요' 표시)
   T->>IMP: 점수B 수동 지정 · 확정 ✋
   Note over IMP: 이후 결정론 변환 — 조사와 적용의 완전 분리

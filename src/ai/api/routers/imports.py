@@ -37,7 +37,7 @@ from ai.import_mapping.inference import (
     confirmed_cache_entry,
     infer_mapping,
     mapped_targets,
-    missing_required,
+    unmapped_target_fields,
 )
 from ai.import_mapping.job_store import (
     ImportJob,
@@ -225,13 +225,10 @@ async def post_import(request: Request) -> dict[str, Any]:
             confidence_review=settings.import_confidence_review,
         )
         job.preview = outcome.preview
-        job.status = outcome.status  # PREVIEW_READY | BLOCKED
-        if (
-            outcome.needs_probing
-            and job.status is ImportStatus.PREVIEW_READY
-            and _probe_enqueuer is not None
-        ):
-            # 필수 충족 + 저신뢰 → 조사 에이전트 enqueue(§6). blocked이면 조사 안 함(필수 우선).
+        job.status = outcome.status  # 항상 PREVIEW_READY — 차단 축 없음(2026-07-30 확정)
+        if outcome.needs_probing and _probe_enqueuer is not None:
+            # **저신뢰 컬럼이 있으면 조사한다**(§3.3 기동 조건). 필수 충족 여부는 보지 않는다
+            # — 필수 판단이 백엔드로 갔으므로 조사 기동에서 그 축이 빠졌다(2026-07-30 확정).
             assert_transition(ImportStatus.INFERRING, ImportStatus.PROBING)  # state.py 규칙
             probe_job = await _probe_enqueuer.enqueue(
                 tenant_id=tenant_id, profile=profile, file_hash=body_hash
@@ -282,7 +279,7 @@ async def confirm_import(job_id: str, request: Request) -> dict[str, Any]:
     except ValidationError as exc:
         raise SnapshotInvalid("confirm 바디 스키마 위반", exc.errors(include_url=False)) from exc
 
-    if job.status not in (ImportStatus.PREVIEW_READY, ImportStatus.BLOCKED) or job.preview is None:
+    if job.status is not ImportStatus.PREVIEW_READY or job.preview is None:
         raise SnapshotInvalid("확정 불가 상태", {"status": job.status.value})
 
     for override in confirm.spec_overrides:
@@ -302,32 +299,25 @@ async def confirm_import(job_id: str, request: Request) -> dict[str, Any]:
 
     overrides = {o.source_column: o.target_field for o in confirm.spec_overrides}
     new_columns = columns_from_overrides(job.preview.columns, overrides)
-    missing = missing_required(mapped_targets(new_columns))
 
-    if missing:
-        # override로도 필수 미충족 → blocked 유지(변환 안 함). 200 + status=blocked(§1.3 [제안]).
-        job.preview = job.preview.model_copy(
-            update={
-                "columns": new_columns,
-                "blocked": True,
-                "blocked_reason": f"필수 필드 미매핑: {', '.join(sorted(missing))}",
-            }
+    # **필수 재검증 게이트 없음** — 필수 여부 판단은 백엔드가 Import 유형별 규칙으로 한다
+    # (2026-07-30 확정). override를 적용해 미매핑 표준 필드 목록만 갱신하고 확정 spec을
+    # 캐시한다. 어느 표준 필드가 비었는지는 응답의 unmapped_target_fields가 계속 알려준다.
+    job.preview = job.preview.model_copy(
+        update={
+            "columns": new_columns,
+            "unmapped_target_fields": unmapped_target_fields(mapped_targets(new_columns)),
+        }
+    )
+    if job.profile is not None:  # 확정 spec 캐시 → 다음 재수입 reused(§3.4)
+        _spec_cache.put(
+            form_signature(job.profile, tenant_id), confirmed_cache_entry(job.preview)
         )
-        job.status = ImportStatus.BLOCKED
-    else:
-        job.preview = job.preview.model_copy(
-            update={"columns": new_columns, "blocked": False, "blocked_reason": None}
-        )
-        if job.status is ImportStatus.BLOCKED:  # override로 필수 채움 → blocked 해제
-            assert_transition(job.status, ImportStatus.PREVIEW_READY)
-            job.status = ImportStatus.PREVIEW_READY
-        if job.profile is not None:  # 확정 spec 캐시 → 다음 재수입 reused(§3.4)
-            _spec_cache.put(
-                form_signature(job.profile, tenant_id), confirmed_cache_entry(job.preview)
-            )
-        # TODO(10 §6.1-ⓐ): confirm 소유 확정 후 재정의 — reused는 확정 spec의 AI 저장에 의존
-        # 전체 행 변환은 백엔드 소유(§4, 2026-07-30)라 transforming으로 보내지 않는다.
-        logger.info("import 확정 재검증 통과 job=%s status=%s", job.job_id, job.status.value)
+    # TODO(99 D-㉑ⓐ): 확정 매핑 전달 API 계약 구체화 대기 — 경로·요청 형식은 백엔드와 이후
+    # 확정한다(델타가 아니라 **전체 spec** 방향 합의). 현행 confirm은 **과도기**다 —
+    # 확정 매핑의 기준 데이터는 백엔드가 보유하고 AI는 양식 재사용을 위해 전달받아 활용한다
+    # (2026-07-30 확정). 여기서는 확정 spec 캐시만 하고 판정·차단은 하지 않는다.
+    logger.info("import 확정 spec 캐시 job=%s status=%s", job.job_id, job.status.value)
 
     _job_store.update(job)
     body_out = _view_body(job)
