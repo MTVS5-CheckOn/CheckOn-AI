@@ -1,4 +1,4 @@
-"""Import 라우터 통합 — POST(202)→GET→confirm 흐름·멱등·404·blocked (10_import_spec §1·§2).
+"""Import 라우터 통합 — POST(202)→GET→confirm 흐름·멱등·404 (10_import_spec §1·§2).
 
 FakeSourceLoader로 스토리지 fetch를 결정론화(스텁 대체). FakeMappingProvider는 기본 주입분.
 """
@@ -121,11 +121,19 @@ def test_idempotency_conflict_on_different_body(client: TestClient) -> None:
     assert resp.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
 
 
-def test_missing_required_is_blocked(client: TestClient) -> None:
+def test_missing_targets_reported_without_blocking(client: TestClient) -> None:
+    """구 `test_missing_required_is_blocked`의 자리 — 차단이 정보로 바뀌었다.
+
+    필수 미충족 입력(점수 컬럼만)이어도 `preview_ready`이고, 어느 표준 필드가 비었는지는
+    `unmapped_target_fields`가 응답으로 알려준다(2026-07-30 백엔드 확정).
+    """
     resp = _post(client, "s3://learn.xlsx", "learn.xlsx", key="t1:import:learn")
     data = resp.json()["data"]
-    assert data["status"] == "blocked"
-    assert data["mapping_preview"]["blocked"] is True
+    assert data["status"] == "preview_ready"  # 차단하지 않는다
+    preview = data["mapping_preview"]
+    assert "blocked" not in preview
+    assert "occurred_at" in preview["unmapped_target_fields"]
+    assert preview["source_fingerprint"]  # 백엔드 보관·반송용 지문
 
 
 def test_get_unknown_job_is_404(client: TestClient) -> None:
@@ -195,7 +203,10 @@ def test_confirm_keeps_preview_ready(client: TestClient) -> None:
     )
     assert resp.status_code == 200
     assert resp.json()["data"]["status"] == "preview_ready"
-    assert resp.json()["data"]["mapping_preview"]["blocked"] is False
+    # 확정 후에도 미매핑 표준 필드 목록·지문이 유지된다(정보는 사라지지 않는다)
+    preview = resp.json()["data"]["mapping_preview"]
+    assert "unmapped_target_fields" in preview
+    assert preview["source_fingerprint"]
 
 
 def test_confirm_rejects_non_standard_target_field(client: TestClient) -> None:
