@@ -33,7 +33,6 @@ from ai.agents.supervisor import Supervisor
 from ai.composition.counsel.provider import (
     CounselPlanner,
     DraftWriter,
-    FakeCounselProvider,
     GatewayDraftWriter,
 )
 from ai.composition.counsel.stores import (
@@ -90,17 +89,21 @@ async def open_counsel_pack_runner(
     context_store: ContextStore,
     step_sink: AgentStepSink,
     lease_owner: str,
+    planner: CounselPlanner,
+    writer: DraftWriter,
     draft_store: DraftResultStore | None = None,
     pack_store: PackResultStore | None = None,  # 미지정이면 인메모리(PG는 후속)
-    planner: CounselPlanner | None = None,
-    writer: DraftWriter | None = None,
     db_settings: DbSettings | None = None,
     regen_max: int = DEFAULT_REGEN_MAX,
     new_id: Callable[[], UUID] = uuid4,
 ) -> AsyncIterator[CounselPackRunner]:
-    """설정에 맞춘 체크포인터와 LLM 접점을 주입한 러너를 연다(기본 Fake — LLM 없이 동작)."""
+    """설정에 맞춘 체크포인터와 LLM 접점을 주입한 러너를 연다.
+
+    ⚠ `planner`·`writer`는 **명시 주입 필수**다. 이전에는 미주입 시 `FakeCounselProvider`로
+    조용히 폴백했는데, 운영 배선 실수가 곧 **날조 산출 저장**이었다(조용한 Fake가 최악).
+    테스트·개발 조립부는 Fake를 명시적으로 꽂고, 프로덕션 미배선은 기동 시점에 터진다.
+    """
     resolved_db = db_settings or get_db_settings()
-    fake = FakeCounselProvider()
     #: 산출물 저장소 기본값 — 인메모리(PG 영속은 후속 · 99 D). 미주입이면 결과가 어디에도
     #: 도착하지 않으므로 None을 허용하지 않는다.
     drafts = draft_store or InMemoryDraftResultStore()
@@ -112,8 +115,8 @@ async def open_counsel_pack_runner(
             draft_store=drafts,
             pack_store=packs,
             step_sink=step_sink,
-            planner=planner or fake,
-            writer=writer or fake,
+            planner=planner,
+            writer=writer,
             checkpointer=checkpointer,
             regen_max=regen_max,
             lease_owner=lease_owner,

@@ -16,6 +16,7 @@ prod=PostgresSaver). LLM 접점(plan·generate_draft)은 Protocol 뒤에 있고 
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
@@ -25,6 +26,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
 from ai.composition.counsel.gate import check_counsel_gate
+from ai.composition.counsel.grounding import ground_emphasis
 from ai.composition.counsel.provider import (
     CounselPlanner,
     DraftWriter,
@@ -36,6 +38,8 @@ from ai.composition.counsel.stores import DraftRecord, DraftResultStore
 from ai.contracts.composition import DraftContext, DraftKind, DraftStatus, StudentResult
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError
+
+logger = logging.getLogger(__name__)
 
 
 class LlmCircuitOpenError(RuntimeError):
@@ -85,14 +89,28 @@ def build_counsel_graph(
     consecutive = {"llm_failed": 0}
 
     async def plan(state: CounselPackState) -> dict[str, Any]:
+        """강조점을 고르고 **근거 실존을 검증**한다. plan은 부가정보다.
+
+        plan 실패·전량 드롭이면 **강조점 없이 초안 생성을 계속**한다(잡 실패 아님).
+        ⚠ 이 실패는 **서킷 카운터에 넣지 않는다** — 서킷(§1.3)은 "LLM 연속 실패 3학생"으로
+        **학생 단위 write 실패**를 세는 것이고, plan은 잡당 1회라 학생 수와 무관하다.
+        plan을 카운트하면 임계 1회 실패로 22명 전체가 paused가 된다.
+        """
         if state.emphasis_points:  # 재개 — plan은 이미 끝났다(멱등)
             return {}
-        planned = await planner.plan(
-            contexts=contexts,
-            student_refs=state.student_refs,
-            execution_context=execution_context,
-        )
-        return {"emphasis_points": planned}
+        try:
+            planned = await planner.plan(
+                contexts=contexts,
+                student_refs=state.student_refs,
+                execution_context=execution_context,
+            )
+        except LlmError as exc:  # plan 실패 = 무강조 진행(초안은 계속 만든다)
+            logger.info("plan 실패 — 무강조 진행 reason=%s", type(exc).__name__)
+            return {"emphasis_points": {}}
+        outcome = ground_emphasis(planned, contexts=contexts)
+        if outcome.drops:
+            logger.info("강조점 %d건 드롭 — 사유별 기록 완료", len(outcome.drops))
+        return {"emphasis_points": outcome.emphasis_points}
 
     async def student(state: CounselPackState) -> dict[str, Any]:
         """학생 1명 처리 — assemble_context → generate_draft → gate_check → record.
@@ -121,7 +139,9 @@ def build_counsel_graph(
         for _ in range(regen_max):
             try:
                 text = await writer.write(
-                    context=context, execution_context=execution_context
+                    context=context,
+                    execution_context=execution_context,
+                    emphasis=tuple(state.emphasis_points.get(student_ref, ())),
                 )
             except RedactionBlockedError:  # fail-closed — 미전송(불변식 3)
                 return _record(

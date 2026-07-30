@@ -99,6 +99,15 @@ class EvidenceFact(BaseModel):
     label: NonEmptyStr
     value: NonEmptyStr
 
+    record_id: str | None = None
+    """MySQL 논리 참조(04 §4.2 `interventions[]`·`comm_history[]`가 주는 그것).
+
+    **집계·기준선 파생 fact는 `None`이다** — "평소 정답률(개인 기준선)"·"하락폭"처럼 여러
+    기록에서 파생된 값에는 단일 record_id가 없다. 가짜 ID를 지어내지 않는다(억지 매핑 금지).
+    ⚠ 그 대가로 **`record_id`가 없는 fact는 강조점 근거로 인용될 수 없다** — 불변식 ①은
+    "강조점이 인용하는 근거는 실존해야 한다"이고, 검증은 `cited_record_ids()` 대조로 한다.
+    """
+
 
 class DraftContext(BaseModel):
     """학생 1명의 상담 초안 근거 패키지 — LLM 입력·게이트 허용집합·폴백의 단일 출처.
@@ -124,6 +133,14 @@ class DraftContext(BaseModel):
 
     fallback_text: NonEmptyStr
     """게이트 소진·LLM 실패 시 되돌아갈 결정론 템플릿(briefing_context와 동일 역할)."""
+
+    def cited_record_ids(self) -> frozenset[str]:
+        """강조점이 **인용할 수 있는** record_id 집합 — record_id가 있는 fact들만.
+
+        plan(LLM)이 낸 강조점의 record_id를 이 집합과 대조해 실존을 검증한다(불변식 ①).
+        문자열 패턴 존재 검사로는 날조(`record_id=fake_1`)를 걸러낼 수 없다.
+        """
+        return frozenset(fact.record_id for fact in self.facts if fact.record_id)
 
     def allowed_numbers(self) -> frozenset[str]:
         """이 컨텍스트가 실제로 제공한 수치 집합(EXACT). 파생 표기의 숫자만 허용된다."""
