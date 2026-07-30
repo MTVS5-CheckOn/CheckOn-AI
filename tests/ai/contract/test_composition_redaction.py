@@ -31,6 +31,7 @@ _ALLOWED_GATEWAY_CALLERS: frozenset[tuple[str, str]] = frozenset(
     {
         ("briefing.py", "make_brief"),  # 브리핑 문장화(ⓐ) — role=narrator
         ("counsel/provider.py", "write"),  # 상담 초안 — role=counselor
+        ("counsel/provider.py", "plan"),  # 강조점 선정 — role=counselor (⑱)
     }
 )
 

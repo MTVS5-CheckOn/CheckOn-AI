@@ -15,7 +15,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Protocol, runtime_checkable
+from functools import lru_cache
+from pathlib import Path
+from typing import Final, Protocol, runtime_checkable
 
 from ai.composition.counsel.prompt import (
     PROMPT_ID,
@@ -46,6 +48,71 @@ def max_chars_for(context: DraftContext) -> int:
     return tone_rule_for(context).sentences_per_block * CHARS_PER_SENTENCE
 
 
+PLAN_PROMPT_ID: Final = "composition/counsel_plan"
+PLAN_PROMPT_VERSION: Final = "0.1"
+
+_PLAN_PROMPT_PATH: Final = (
+    Path(__file__).resolve().parents[2]
+    / "llm"
+    / "prompts"
+    / "templates"
+    / "composition"
+    / "counsel_plan.txt"
+)
+
+
+@lru_cache
+def _plan_template() -> str:
+    return _PLAN_PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def assemble_plan_prompt(
+    contexts: Mapping[str, DraftContext],
+    student_refs: Sequence[str],
+    *,
+    max_points: int,
+) -> str:
+    """plan 프롬프트 — 학생별 근거를 **record_id와 함께** 제시한다(결정론).
+
+    record_id가 없는 fact(집계·기준선 파생)는 인용 대상이 아니므로 제시하지 않는다 —
+    LLM에게 인용할 수 없는 근거를 보여주면 지어내게 된다.
+    """
+    blocks: list[str] = []
+    for ref in student_refs:
+        context = contexts.get(ref)
+        if context is None:
+            continue
+        lines = [
+            f"  - {fact.label}: {fact.value} (record_id={fact.record_id})"
+            for fact in context.facts
+            if fact.record_id
+        ]
+        blocks.append(f"{ref}\n" + ("\n".join(lines) if lines else "  - (인용 가능한 근거 없음)"))
+    return _plan_template().format(
+        max_points=max_points, student_blocks="\n".join(blocks)
+    )
+
+
+def parse_plan_response(text: str, student_refs: Sequence[str]) -> dict[str, list[str]]:
+    """`학생참조 | 강조점1; 강조점2` 형식을 파싱한다 — 관용적이되 결정론.
+
+    형식이 어긋난 줄·미지 학생은 조용히 버린다(근거 실존 검증이 뒤에서 한 번 더 걸러낸다).
+    """
+    known = set(student_refs)
+    parsed: dict[str, list[str]] = {}
+    for line in text.splitlines():
+        if "|" not in line:
+            continue
+        ref, _, rest = line.partition("|")
+        ref = ref.strip()
+        if ref not in known:
+            continue
+        points = [p.strip() for p in rest.split(";") if p.strip()]
+        if points:
+            parsed[ref] = points
+    return parsed
+
+
 class RedactionBlockedError(LlmError):
     """마스킹 불확실 — 전송하지 않았다(fail-closed · 불변식 3)."""
 
@@ -74,8 +141,12 @@ class DraftWriter(Protocol):
         *,
         context: DraftContext,
         execution_context: ExecutionContext,
+        emphasis: Sequence[str] = (),
     ) -> str:
-        """조립·마스킹을 마친 프롬프트로 초안 본문을 받는다."""
+        """조립·마스킹을 마친 프롬프트로 초안 본문을 받는다.
+
+        `emphasis`는 근거 실존 검증을 통과한 강조점이다 — 비면 프롬프트가 현행과 동일하다.
+        """
         ...
 
 
@@ -95,8 +166,9 @@ class GatewayDraftWriter:
         *,
         context: DraftContext,
         execution_context: ExecutionContext,
+        emphasis: Sequence[str] = (),
     ) -> str:
-        redacted = redact(assemble_prompt(context))
+        redacted = redact(assemble_prompt(context, emphasis))
         if redacted.uncertain:  # fail-closed — 불확실하면 LLM에 보내지 않는다
             raise RedactionBlockedError("상담 초안 프롬프트의 마스킹이 불확실하다")
         result = await self._gateway.complete(
@@ -118,6 +190,49 @@ class GatewayDraftWriter:
         if not text:
             raise LlmError("counselor 응답이 비었다")
         return text
+
+
+class GatewayPlanner:
+    """실 plan 경로 — `GatewayDraftWriter`와 **같은 규율**이다.
+
+    프롬프트 조립 → **redact(fail-closed)** → gateway(role=counselor) → 구조화 파싱.
+    파싱 실패·빈 응답은 예외로 올리지 않고 **빈 강조점**으로 수렴한다 — plan은 부가정보이고
+    잡을 죽일 사유가 아니다(그래프의 무강조 진행 경로로 이어진다).
+
+    registry.yaml에 등재하지 않는다 — composition 프롬프트는 템플릿 파일 직접 읽기가 선례다
+    (`briefing.txt`·`counsel_pack.txt`와 동일. registry는 B의 `pg.*` 전용).
+    """
+
+    def __init__(self, gateway: LlmGateway, *, max_points: int = 3) -> None:
+        self._gateway = gateway
+        self._max_points = max_points
+
+    async def plan(
+        self,
+        *,
+        contexts: Mapping[str, DraftContext],
+        student_refs: Sequence[str],
+        execution_context: ExecutionContext,
+    ) -> dict[str, list[str]]:
+        prompt = assemble_plan_prompt(
+            contexts, student_refs, max_points=self._max_points
+        )
+        redacted = redact(prompt)
+        if redacted.uncertain:  # fail-closed — 불확실하면 LLM에 보내지 않는다(불변식 3)
+            raise RedactionBlockedError("plan 프롬프트의 마스킹이 불확실하다")
+        result = await self._gateway.complete(
+            LLMRequest(
+                role=ModelRole.COUNSELOR,
+                prompt=redacted.masked_text,
+                prompt_id=PLAN_PROMPT_ID,
+                prompt_version=PLAN_PROMPT_VERSION,
+                generation_params=GenerationParams(temperature=0.0),
+            ),
+            execution_context,
+        )
+        if result.outcome is not CallOutcome.OK or not (result.text or "").strip():
+            return {}  # 무강조 진행 — 잡 실패가 아니다
+        return parse_plan_response(result.text or "", student_refs)
 
 
 class FakeCounselProvider:
@@ -162,7 +277,9 @@ class FakeCounselProvider:
         *,
         context: DraftContext,
         execution_context: ExecutionContext,
+        emphasis: Sequence[str] = (),
     ) -> str:
+        del emphasis  # Fake는 강조점을 소비하지 않는다 — 시나리오 순서로만 응답한다
         index = len(self.write_calls)
         self.write_calls.append(context.student_ref)
         if index < len(self._drafts):
@@ -203,6 +320,11 @@ class FakeCounselLlmProvider:
 
 
 __all__ = [
+    "PLAN_PROMPT_ID",
+    "PLAN_PROMPT_VERSION",
+    "GatewayPlanner",
+    "assemble_plan_prompt",
+    "parse_plan_response",
     "CHARS_PER_SENTENCE",
     "CounselPlanner",
     "DraftWriter",

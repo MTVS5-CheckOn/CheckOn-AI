@@ -265,7 +265,9 @@ def test_plan_failure_does_not_trip_llm_circuit() -> None:
 # ── 3-4 실 Planner ───────────────────────────────────────────────
 
 
-def test_gateway_planner_is_fail_closed_on_uncertain_redaction() -> None:
+def test_gateway_planner_is_fail_closed_on_uncertain_redaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """redaction 불확실이면 **전송하지 않는다**(불변식 3 · writer와 같은 규율)."""
     from ai.composition.counsel.provider import GatewayPlanner, RedactionBlockedError
 
@@ -280,22 +282,20 @@ def test_gateway_planner_is_fail_closed_on_uncertain_redaction() -> None:
     gateway = _CountingGateway()
     planner = GatewayPlanner(gateway)  # type: ignore[arg-type]
 
-    import ai.composition.counsel.provider as provider_module
     from ai.runtime.redaction import RedactionResult
 
-    original = provider_module.redact
-    provider_module.redact = lambda _t: RedactionResult(masked_text="x", uncertain=True)  # type: ignore[assignment]
-    try:
-        with pytest.raises(RedactionBlockedError):
-            _run(
-                planner.plan(
-                    contexts={"st_1": _context()},
-                    student_refs=["st_1"],
-                    execution_context=_execution_context(),
-                )
+    def _uncertain(_text: str) -> RedactionResult:
+        return RedactionResult(masked_text="x", uncertain=True)
+
+    monkeypatch.setattr("ai.composition.counsel.provider.redact", _uncertain)
+    with pytest.raises(RedactionBlockedError):
+        _run(
+            planner.plan(
+                contexts={"st_1": _context()},
+                student_refs=["st_1"],
+                execution_context=_execution_context(),
             )
-    finally:
-        provider_module.redact = original  # type: ignore[assignment]
+        )
     assert gateway.calls == 0
 
 
