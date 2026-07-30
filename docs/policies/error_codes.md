@@ -101,6 +101,16 @@
 - 문제생성의 `rejected_insufficient`, 세트 `partial_success`·도메인 `failed`, 문항 `verification_unavailable`·`dropped`도 유효한 결과 계약이면 Job은 `succeeded`.
 - 워커 장애·체크포인트 손상·결과 저장 실패처럼 결과 계약 자체를 확정할 수 없을 때만 Job은 `failed`. 완료된 하위 산출물은 보존한다.
 
+**잡 단위 `error_code` 어휘(내부 — 화면 미노출).** 학생·문항 단위 `fail_reason`과 **문자열이 겹치지 않게** 접두를 붙인다 — 대시보드가 문자열로 집계하면 잡 장애와 도메인 정상 스킵이 섞여 장애 오판이 된다.
+
+| error_code | 워커 | 의미 |
+| --- | --- | --- |
+| `worker_recovery_exhausted` | 공통 | lease 만료 회수가 `max_recovery_attempts`에 도달 |
+| `context_bundle_missing` | counsel_pack | `payload_ref`가 해소되지 않아 결과 계약을 확정할 수 없다 |
+| `context_hash_mismatch` | counsel_pack | 재개 시 재역참조 해시 ≠ 체크포인트 `context_hash`(손상 — 불변식 ④) |
+| `tenant_mismatch` | counsel_pack | 묶음의 tenant가 잡의 tenant와 다르다(격리 위반) |
+| `worker_internal_error` | counsel_pack | 미분류 예외 — running 방치 대신 즉시 수렴 |
+
 lease 만료 때만 `recovery_count`를 증가시키며, 설정된 `max_recovery_attempts`(기본 3)에 도달하면 `phase=failed`, 내부 `error_code=worker_recovery_exhausted`로 수렴한다. 정상 수동 pause/resume은 이 장애 복구 예산을 소모하지 않는다. 내부 코드는 사용자 화면에 직접 노출하지 않는다.
 
 ### 2.6 문항 생성·refine 결과 (B — `POST /v1/problems` 등, 성공 200 안의 필드)
