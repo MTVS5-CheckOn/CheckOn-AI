@@ -44,6 +44,13 @@ class ModelRole(StrEnum):
     재사용하지 않는다(role별 전송 재시도·원가 회계가 소비자마다 갈리지 않게).
     """
 
+    COUNSELOR = "counselor"
+    """상담 초안 문장화 전용 (v2.2 신설).
+
+    리포트·refine은 도입 시 별도 role을 양자 결정으로 신설한다 — counselor를
+    재사용하지 않는다(role별 전송 재시도·원가 회계가 소비자마다 갈리지 않게).
+    """
+
 
 class CallOutcome(StrEnum):
     """LLM_CALL.outcome — 내부 관측용(API 미노출). error_codes.md §3.
