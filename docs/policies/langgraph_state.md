@@ -156,7 +156,7 @@ class ProblemGenerationState(BaseModel):
 
 ## 4. 워커 공통 후속 항목
 
-1. state에 B 소유 타입(DraftContext 등) 의존 — `contracts/`로 승격할 최소 집합
+1. ✅ **해소(7/30)** — "state에 **B 소유** 타입(`DraftContext` 등) 의존"은 stale 서술이었다. `02_ownership.md` §3은 `composition.py`를 **박진희 단독**으로 지정하므로 상담 타입인 `DraftContext`는 **A 소유**이고 양자 승격 대상이 아니다. 게다가 §1.2 개정으로 `contexts`가 state에서 빠져(`context_ref`+`context_hash` 참조로 교체) **state의 타입 의존 자체가 사라졌다** — `contracts/` 승격할 최소 집합은 없다. `DraftContext`의 정의 위치(`composition/` 내부 vs `contracts/composition.py`)는 counsel_pack 워커 구현 시 A가 단독 결정한다.
 2. ✅ 체크포인트 정본은 LangGraph PostgresSaver 테이블, `AGENT_RUN`은 최신 `checkpoint_ref`·진행률 투영으로 확정
 3. probe 도구 3종의 시그니처 동결(마스킹 규칙 포함 — 마스킹 정의서 §4)
 
