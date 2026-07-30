@@ -238,7 +238,9 @@ async def _load_stored_features(
     왜곡(미탐)되므로 폴백하지 않는다. memory 백엔드도 같은 경로(축적분이 있으면 병합).
     """
     student_refs = [student.student_ref for student in request.students]
-    rows = await _detection_store.load_feature_weeks(tenant_id, student_refs)
+    rows = await _detection_store.load_feature_weeks(
+        tenant_id, student_refs, feature_version=_FEATURE_VERSION
+    )
     stored: dict[str, list[WeekFeatures]] = {}
     for row in rows:
         stored.setdefault(row.student_ref, []).append(

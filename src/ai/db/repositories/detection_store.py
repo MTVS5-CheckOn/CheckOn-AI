@@ -112,9 +112,16 @@ class DetectionStore(Protocol):
         ...
 
     async def load_feature_weeks(
-        self, tenant_id: str, student_refs: Sequence[str]
+        self, tenant_id: str, student_refs: Sequence[str], *, feature_version: str
     ) -> tuple[FeatureWeekRow, ...]:
-        """축적 FEATURE_WEEK 조회(baseline read-path). 조회 실패는 fail-closed(500)."""
+        """축적 FEATURE_WEEK 조회(baseline read-path). 조회 실패는 fail-closed(500).
+
+        `feature_version`은 **호출부가 주입한다** — 저장소 층이 detection 상수를 직접
+        import하지 않는다(계산과 I/O 분리, 03 §1). 산식 개정 배포 중에는 같은
+        (student, week)에 두 버전 행이 공존하므로(upsert 유니크 스코프에 버전이 있다)
+        필터가 없으면 둘 다 로드돼 baseline이 흔들린다 — 같은 입력에 같은 출력이
+        안 나오면 AI_RUN을 재현할 수 없다(불변식 8).
+        """
         ...
 
 
@@ -147,13 +154,14 @@ class InMemoryDetectionStore:
             self.feature_weeks[key] = row  # 최신 승리
 
     async def load_feature_weeks(
-        self, tenant_id: str, student_refs: Sequence[str]
+        self, tenant_id: str, student_refs: Sequence[str], *, feature_version: str
     ) -> tuple[FeatureWeekRow, ...]:
+        """PG와 **같은 필터**다 — 두 구현이 갈리면 테스트가 거짓말한다."""
         refs = set(student_refs)
         rows = [
             row
-            for (tenant, student, _week, _version), row in self.feature_weeks.items()
-            if tenant == tenant_id and student in refs
+            for (tenant, student, _week, version), row in self.feature_weeks.items()
+            if tenant == tenant_id and student in refs and version == feature_version
         ]
         return tuple(sorted(rows, key=lambda row: (row.student_ref, row.week_start)))
 
@@ -209,7 +217,7 @@ class PgDetectionStore:
             ) from exc
 
     async def load_feature_weeks(
-        self, tenant_id: str, student_refs: Sequence[str]
+        self, tenant_id: str, student_refs: Sequence[str], *, feature_version: str
     ) -> tuple[FeatureWeekRow, ...]:
         if not student_refs:
             return ()
@@ -218,6 +226,9 @@ class PgDetectionStore:
             .where(
                 FeatureWeek.tenant_id == tenant_id,
                 FeatureWeek.student_ref.in_(list(student_refs)),
+                # 산식 개정 배포 중 두 버전 공존 → 현재 버전만(불변식 8). upsert 유니크
+                # 스코프와 조회 스코프를 일치시킨다.
+                FeatureWeek.feature_version == feature_version,
             )
             .order_by(FeatureWeek.student_ref, FeatureWeek.week_start)
         )
