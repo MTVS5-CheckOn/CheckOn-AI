@@ -125,6 +125,6 @@ replace:
 
 ## 5. 산출 파일·검증
 
-- `tone_map.yaml`: §1·§2를 기계가독으로(조합 키 `comm.sens.interest.freq`) — 24键 전부 존재하는지 로드 시 검증.
+- `tone_map.yaml`: §1·§2·§3을 기계가독으로(조합 키 `comm.sens.interest.freq`) — 24键 전부 존재하는지 로드 시 검증. §3은 소비처가 리포트 `chart_analysis`라 `percentile_softening` 섹션으로 분리하되, 산출 파일은 이 문서 규정대로 두 개를 유지한다.
 - `buffer_lexicon.yaml`: §4 — A군 검출은 형태소 접두 매칭(활용형 대응).
 - 골든셋: 24조합 × 동일 입력 스냅숏 → 프롬프트 스냅숏 테스트(평가 계획서 §3) — 조합 바꿨는데 출력이 같으면 매핑 미적용 버그.
