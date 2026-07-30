@@ -2,10 +2,14 @@
 
 DomainException(runtime/errors.py, error_codes §4)을 code·http_status로 매핑해
 error envelope로 응답한다. 미분류 예외는 500 INTERNAL(내부 상세 응답 미포함 — 로그만).
+
+민감 detail은 예외 클래스의 노출 정책(`DomainException.detail_is_exposed()`)에 따라
+응답에서 제거된다 — 04 §2.3 · error_codes §4. 판정은 여기서 하지 않는다(예외 정의 옆).
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
@@ -16,6 +20,8 @@ from ai.api.routers.detect import detection_versions
 from ai.api.routers.detect import router as detect_router
 from ai.api.routers.imports import router as imports_router
 from ai.runtime.errors import DomainException
+
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
@@ -36,11 +42,23 @@ def create_app() -> FastAPI:
         return response
 
     @app.exception_handler(DomainException)
-    async def _domain_handler(_request: Request, exc: DomainException) -> JSONResponse:
+    async def _domain_handler(request: Request, exc: DomainException) -> JSONResponse:
+        # 민감 detail 강제 제거(error_codes §4 · 04 §2.3) — 5xx의 detail은 마스킹 실패
+        # 원문 조각·내부 상세일 수 있어 응답에서 뺀다. 4xx(필드 경로 등)는 그대로 싣는다.
+        detail = exc.detail if exc.detail_is_exposed() else None
+        if exc.detail is not None and detail is None:
+            # **응답에서만 빼는 것** — 디버깅 경로는 살린다(X-Request-Id correlation).
+            logger.warning(
+                "실패 detail 응답 미노출 code=%s status=%d request_id=%s detail=%r",
+                exc.code,
+                exc.http_status,
+                request.headers.get("X-Request-Id"),
+                exc.detail,
+            )
         # 실패에도 meta.versions를 싣는다(04 §2.2 A판정) — 정적 엔드포인트 버전.
         return JSONResponse(
             status_code=exc.http_status,
-            content=error_envelope(exc.code, exc.message, exc.detail, detection_versions()),
+            content=error_envelope(exc.code, exc.message, detail, detection_versions()),
         )
 
     @app.exception_handler(Exception)
