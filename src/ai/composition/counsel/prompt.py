@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Final
@@ -77,10 +78,26 @@ def tone_rule_for(context: DraftContext) -> ToneRule:
     return load_tone_map().combinations[combination_key(**context.label_snapshot.as_axes())]
 
 
-def assemble_prompt(context: DraftContext) -> str:
+def render_emphasis_block(emphasis: Sequence[str] | None) -> str:
+    """검증 통과 강조점을 문면으로 — **빈 경우 빈 문자열**(프롬프트 바이트 동일 보장).
+
+    강조점이 없을 때 어떤 문구도 추가하지 않는다 — 그래야 24조합 골든이 흔들리지 않는다.
+    """
+    if not emphasis:
+        return ""
+    lines = "\n".join(f"- {point}" for point in emphasis)
+    return f"\n\n이번 회차에 특히 다룰 것(근거 record_id 동반):\n{lines}"
+
+
+def assemble_prompt(
+    context: DraftContext, emphasis: Sequence[str] | None = None
+) -> str:
     """조합별 상담 초안 프롬프트 — 결정론(같은 컨텍스트 → 같은 문자열).
 
     LLM을 호출하지 않는다. 24조합 스냅숏 골든이 이 함수의 출력을 고정한다.
+
+    `emphasis`는 **근거 실존 검증을 통과한** 강조점만이다(`grounding.ground_emphasis`).
+    비었거나 미지정이면 문면이 **현행과 바이트 동일**하다 — 골든 무영향.
     """
     rule = tone_rule_for(context)
     return _template().format(
@@ -89,7 +106,7 @@ def assemble_prompt(context: DraftContext) -> str:
         sentences_per_block=rule.sentences_per_block,
         tone_key=combination_key(**context.label_snapshot.as_axes()),
         tone_rules=render_tone_rules(rule, context),
-        evidence_block=render_evidence_block(context),
+        evidence_block=render_evidence_block(context) + render_emphasis_block(emphasis),
     )
 
 
@@ -98,6 +115,7 @@ __all__ = [
     "PROMPT_VERSION",
     "assemble_prompt",
     "render_block_plan",
+    "render_emphasis_block",
     "render_evidence_block",
     "render_tone_rules",
     "tone_rule_for",
