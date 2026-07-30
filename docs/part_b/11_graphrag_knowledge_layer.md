@@ -320,9 +320,11 @@ rights_status:            # approved 외에는 색인·전송 금지
 
 | 번호 | 항목 | 담당 |
 | --- | --- | --- |
-| B-8 | `VersionSet` GraphRAG 3필드 확장 | A+B ([`09`](09_integration_proposals.md) §2-12-①) |
+| B-8ⓑ | `VersionSet` GraphRAG 3필드 확장 | A+B ([`09`](09_integration_proposals.md) §2-12-①) |
 | B-7 확장 | evidence resolver 시그니처 — GraphRAG 경유 해소 병합 | A+B (〃 §2-12-②) |
 | — | Graph 저장 백엔드 선정(벡터 DB·인덱스) — **계약 확정 후** | B+인프라 |
 | — | `pedagogy_paths` 산출 규칙 — 교육과정 그래프 경로를 정렬 근거로 쓰는 방식 `[잠정]` | B |
 | — | 임베딩·재랭커 모델·한국어 벤치마크 | B+기획 ([`10`](10_m2_problem_generation_architecture.md) §7.8) |
 | C-15 `[P0]` | 외부 표절·유사도 대조 코퍼스 — 색인 권한 | B+기획 |
+
+> **B-8 병합 근거:** ⓐ capability별 validator와 ⓑ GraphRAG 3필드는 모두 `contracts/execution.py`(양자) + `docs/04_api_contract.md` §2.2 + `docs/06_erd.md` AI_RUN 동시 개정이 필요해 PR 단위가 같다. A-5→B-7 병합과 대칭이다.
