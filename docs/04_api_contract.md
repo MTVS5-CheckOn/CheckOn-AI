@@ -414,8 +414,9 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
         { "source": "連락처",  "target": null,
           "unmapped_reason": "개인정보 필드 — 자동 이전 대상 아님" }  // '모름/제외'를 정직하게 명시 — 억지 매핑 없음
       ],
-      "sample_rows": [ { "...": "변환 예시 5행" } ],
-      "blocked": false, "blocked_reason": null   // blocked=true면 필수 필드 미매핑 → confirm 자체가 차단됨
+      "unmapped_target_fields": ["event_type", "occurred_at"],  // 매핑 후보를 못 찾은 표준 필드 — 필수 판단은 백엔드
+      "source_fingerprint": "9f2c...",           // 양식 지문 — 백엔드가 보관·반송(AI만 계산 가능)
+      "sample_rows": [ { "...": "변환 예시 5행" } ]
     }
   }
 }
@@ -423,7 +424,7 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 
 **confirm Request:** `{ "spec_overrides": [{ "source_column": "점수B", "target_field": "weekly_score_2" }] }` → 확정 spec 저장 → `status: done` + 확정된 `mapping_preview`.
 
-**status:** `profiling → inferring → probing(조사 에이전트) → preview_ready → done(확정 spec)` / `blocked`(필수 필드 미매핑 — 확정 차단). **규약(2026-07-30 개정):** **AI는 매핑 제안까지** — 전체 행 변환·행별 검증·집계·산출물 저장은 백엔드 소유이며 AI 응답에 `output_url`·행 집계가 없다(`part_a/10_import_spec.md` §4). 동의 미보유 행 '보류'는 백엔드 · 같은 양식 재수입은 `reused: true`(LLM 0회).
+**status:** `profiling → inferring → probing(조사 에이전트) → preview_ready → done(확정 spec)` / `failed`. **규약(2026-07-30 개정):** **AI는 매핑 제안까지** — 전체 행 변환·행별 검증·집계·산출물 저장은 백엔드 소유이며 AI 응답에 `output_url`·행 집계가 없다(`part_a/10_import_spec.md` §4). **필수 여부 판단도 백엔드 소유** — 백엔드가 확정 매핑의 기준 데이터를 보유하고 AI는 양식 재사용을 위해 전달받아 활용한다. AI는 정보만 준다(`unmapped_target_fields`·`columns[].confidence`·`needs_review`)이며 **확정 차단 상태가 없다.** 동의 미보유 행 '보류'는 백엔드 · 같은 양식 재수입은 `reused: true`(LLM 0회 — `source_fingerprint` 반송 기반).
 
 ---
 

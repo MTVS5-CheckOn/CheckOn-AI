@@ -12,9 +12,8 @@ from ai.contracts.imports import ImportStatus, MappingColumn
 from ai.import_mapping.inference import (
     InferenceOutcome,
     confirmed_cache_entry,
-    detect_kind,
     infer_mapping,
-    missing_required,
+    unmapped_target_fields,
 )
 from ai.import_mapping.profiling import ColumnProfile, SheetProfile, SourceProfile
 from ai.import_mapping.provider import FailingMappingProvider, FakeMappingProvider
@@ -54,11 +53,27 @@ def _infer(
 # ── 게이트 순수 함수 ───────────────────────────────────────
 
 
-def test_detect_kind_and_missing_required() -> None:
-    assert detect_kind(frozenset({"student_name"})) == "roster"
-    assert detect_kind(frozenset({"score"})) == "learning"
-    assert missing_required(frozenset({"occurred_at", "event_type"})) == frozenset()
-    assert missing_required(frozenset({"score"})) == frozenset({"occurred_at", "event_type"})
+def test_unmapped_target_fields_is_type_agnostic_complement() -> None:
+    """유형 추측 없이 STANDARD_FIELDS 여집합 — 유형별 필수 판단은 백엔드 소유(2026-07-30).
+
+    명부 필드만 매핑해도 학습기록 필드(`occurred_at` 등)가 목록에 남는다 — 의도된 동작이다.
+    """
+    from ai.import_mapping.inference import STANDARD_FIELDS
+
+    roster = frozenset({"student_name", "class_name"})
+    result = unmapped_target_fields(roster)
+    assert set(result) == set(STANDARD_FIELDS) - roster
+    assert "occurred_at" in result  # 유형 무관 — 명부만 매핑해도 학습 필드가 남는다
+    assert "student_name" not in result
+    assert list(result) == sorted(result)  # 결정론 정렬
+
+
+def test_no_type_heuristic_survives() -> None:
+    """유형 추측 휴리스틱이 근거를 잃어 제거됐다 — 두 곳이 다르게 판단하지 않게."""
+    import ai.import_mapping.inference as inference
+
+    for gone in ("detect_kind", "missing_required", "REQUIRED_ROSTER", "REQUIRED_LEARNING"):
+        assert not hasattr(inference, gone), f"{gone}이 살아 있다 — 백엔드와 판단이 갈린다"
 
 
 # ── 정상: 명부 전 필수 매핑 → preview_ready ────────────────
@@ -68,19 +83,27 @@ def test_roster_all_required_mapped_preview_ready() -> None:
     profile = _profile(["원생명", "반", "등원일", "상태", "동의"])
     outcome = _infer(profile, provider=FakeMappingProvider())
     assert outcome.status is ImportStatus.PREVIEW_READY
-    assert outcome.preview.blocked is False
     assert outcome.preview.reused is False
+    assert outcome.preview.source_fingerprint  # 백엔드 보관용 지문이 실린다
 
 
-# ── 경계: 필수 미매핑 → blocked ────────────────────────────
+# ── 경계: 필수 미매핑이어도 차단하지 않는다 (2026-07-30 확정) ──
 
 
-def test_missing_required_blocks() -> None:
-    profile = _profile(["점수"])  # score만 → learning 필수(occurred_at·event_type) 미충족
+def test_missing_targets_are_reported_not_blocked() -> None:
+    """필수 미충족이어도 `preview_ready` — 미매핑 표준 필드는 **정보 목록**으로 나간다.
+
+    구 `test_missing_required_blocks`의 의미를 뒤집어 살렸다(회귀 커버리지 유지):
+    같은 입력에 같은 관심사(무엇이 안 채워졌나)를 보되, 판정이 아니라 정보임을 단정한다.
+    `blocked_reason` 문자열 안에만 있던 정보가 구조화 목록으로 승격됐다.
+    """
+    profile = _profile(["점수"])  # score만 매핑 — 07 표준 필드 대부분이 비어 있다
     outcome = _infer(profile, provider=FakeMappingProvider())
-    assert outcome.status is ImportStatus.BLOCKED
-    assert outcome.preview.blocked is True
-    assert "occurred_at" in (outcome.preview.blocked_reason or "")
+
+    assert outcome.status is ImportStatus.PREVIEW_READY  # 차단하지 않는다
+    assert "occurred_at" in outcome.preview.unmapped_target_fields
+    assert "event_type" in outcome.preview.unmapped_target_fields
+    assert "score" not in outcome.preview.unmapped_target_fields  # 매핑된 건 빠진다
 
 
 def test_low_confidence_sets_needs_review_and_probing() -> None:
@@ -96,10 +119,14 @@ def test_low_confidence_sets_needs_review_and_probing() -> None:
 def test_llm_failure_falls_back_to_manual_preview() -> None:
     profile = _profile(["원생명", "반", "등원일", "상태", "동의"])
     outcome = _infer(profile, provider=FailingMappingProvider())
-    assert outcome.status is ImportStatus.PREVIEW_READY  # blocked 아님(§3.2)
-    assert outcome.preview.blocked is False
+    assert outcome.status is ImportStatus.PREVIEW_READY  # 작업 실패로 안 떨어뜨린다(§3.2)
     assert all(c.target is None and c.needs_review for c in outcome.preview.columns)
     assert outcome.needs_probing is False
+    # 폴백에도 정보 2필드가 채워진다 — 전 컬럼 미매핑이므로 여집합 = 표준 필드 전체
+    from ai.import_mapping.inference import STANDARD_FIELDS
+
+    assert set(outcome.preview.unmapped_target_fields) == set(STANDARD_FIELDS)
+    assert outcome.preview.source_fingerprint
 
 
 # ── reused: 시그니처 캐시 hit → LLM 0회 ────────────────────
