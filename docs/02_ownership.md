@@ -1,10 +1,12 @@
-# [체크온] `ai/` 폴더 소유권 분장 v4 — R&R v1 + 에이전트·HTTP·DB 계층 반영
+# [체크온] `ai/` 폴더 소유권 분장 v5 — R&R v1 + 에이전트·HTTP·DB·GraphRAG 계층 반영
 
 > **v1 → v2 변경:** ① 에이전트 2종(counsel_pack·mapping_probe)과 보조 4종(ⓐⓑⓒⓓ)의 파일 소유 명시 ② 데이터 파일 신설분(`tone_map.yaml` · `redaction_patterns.yaml`) 추가 ③ **수능 태그 enum을 공용 어휘로 승격** — `contracts/taxonomy.py` 신설, 양자 승인 대상 6곳 → **7곳** ④ `evaluation/golden/` 하위를 평가 계획서 v0 구성으로 세분 ⑤ F17(Phase 2) 분담 예고 각주.
 >
 > **v2 → v3 변경(7/22, B 확인 완료):** `api/` HTTP 노출 계층 신설 승인 — `app.py`·`envelope.py`는 공통 계약, capability 라우터는 해당 오너 소유. 양자 승인 대상 7곳 → **9곳**.
 >
-> **v3 → v4 변경:** `db/models.py`·`db/base.py`를 공통 계약으로 편입하고, B 소유 문제생성 워커가 합류한 슈퍼바이저 경계를 확정했다. 슈퍼바이저 구현은 A 단독 소유, 공통 Job 상태·operation·결정론 라우팅 계약(`contracts/agents.py`)은 양자 승인, 각 워커 그래프는 해당 capability 오너가 소유한다. 양자 승인 대상은 **12곳**이다.
+> **v3 → v4 변경:** `db/models.py`·`db/base.py`를 공통 계약으로 편입하고, B 소유 문제생성 워커가 합류한 슈퍼바이저 경계를 확정했다. 슈퍼바이저 구현은 A 단독 소유, 공통 Job 상태·operation·결정론 라우팅 계약(`contracts/agents.py`)은 양자 승인, 각 워커 그래프는 해당 capability 오너가 소유한다. 양자 승인 대상은 **12곳**이었다(v5에서 13곳).
+>
+> **v4 → v5 변경(7/30, A 제기·B 수용):** `contracts/graphrag.py`(PR #36, B 작성)가 신설된 뒤 §3·§4·§5 어디에도 **소유 미등록**이었다 — 저장소 실측으로 이 문서와 `CLAUDE.md` 양쪽에 `graphrag` 문자열이 0건이었다. A-5(PR #37)로 **A 소유 `evidence/` resolver가 `EvidencePack`·`EvidencePackAnchor`를 직접 소비**하게 되면서 A의 계약이 B 단독 파일에 매달리는 구조가 됐다(형상을 두 곳에서 잡으면 드리프트). 따라서 공용 계약으로 편입한다 — 양자 승인 대상 **12곳 → 13곳**. 근거: `part_b/09_integration_proposals.md` §2-14(A 제기·B 수용, 2026-07-30) · `part_b/11_graphrag_knowledge_layer.md` §0.
 >
 > **원칙(불변)** — 폴더 구조는 AI 아키텍처 지시서 그대로 유지한다(사람 기준 재편 금지). 모든 폴더·파일에 단독 오너를 지정한다. "공동 소유"는 소유가 아니므로, 공동 영역은 최소화하고 변경 절차(양자 승인)로만 남긴다.
 >
@@ -49,18 +51,19 @@
 | `import_mapping.py` | **박진희** | (v2) ProbeStep·도구 시그니처 3종 포함 |
 | `agents.py` | **공통 계약** | `WorkerKind·OperationKind·JobPhase·PriorityClass·WorkerJob`과 결정론 라우팅 테이블 — 변경 시 A·B 양자 승인 |
 | **(v2 신설) `taxonomy.py`** | **공통 계약** | **수능 6영역 area enum + subject_track + type_tag + item_format** — 감지 R6·약점 지도·태깅ⓒ·출제가 전부 이 어휘를 씀(어휘집 v0이 사양 원본). Open-11 합의로 확정 |
+| **(v5 신설) `graphrag.py`** | **공통 계약** | **GraphRAG 경계 계약** — `ContextPack`·`EvidencePack`·`EvidencePathResult`·`GraphContextService`. **B가 생산하고 A의 `evidence/` resolver가 소비**한다(A-5·PR #37) — 어휘 공용인 taxonomy와 달리 **생산·소비가 갈려서** 양자다. §2-14 승인(7/30) |
 | `execution.py` · `llm.py` · `gates.py` · `evaluation.py` | **공통 계약** | 단독 오너 없음 — 변경 시 A·B 양자 승인 필수. 신규 필드 추가도 예외 없음 |
 
 ## 4. 공동 영역의 변경 절차 (겹침을 규칙으로 관리)
 
-1. **양자 승인 대상 — 12곳:** `contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py·agents.py`, `evidence/models.py`(EvidenceRef 스키마), `runtime/metrics.py`의 이벤트 스키마, `api/app.py·api/envelope.py`, `db/models.py·db/base.py`(ERD 스키마 — B의 문제·진단·워커 실행도 포함하므로 공용). 이 12곳만 두 명 승인, 나머지는 전부 단독 오너.
+1. **양자 승인 대상 — 13곳:** `contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py·agents.py·graphrag.py`(★v5 — GraphRAG 경계 계약), `evidence/models.py`(EvidenceRef 스키마), `runtime/metrics.py`의 이벤트 스키마, `api/app.py·api/envelope.py`, `db/models.py·db/base.py`(ERD 스키마 — B의 문제·진단·워커 실행도 포함하므로 공용). 이 13곳만 두 명 승인, 나머지는 전부 단독 오너.
    - **마이그레이션 파일은 양자 목록에 넣지 않는다** — `db/models.py`의 기계적 산출물이므로, 모델 diff가 포함된 PR에서 함께 리뷰되면 충분하다. 모델 무변경 마이그레이션(인덱스 조정 등)은 해당 테이블 오너 단독. 저장소(`db/repositories/`) 구현은 capability별 오너(detection 적재 = A).
 2. **경계를 넘는 입력:** B가 감지 산출을 더 원하면 A의 `contracts/detection.py`에 PR → A 승인. 반대 방향도 동일. **상대 capability 내부 파일 직접 수정은 금지**(지시서 2.2).
 3. **골든셋·평가:** `evaluation/detection_eval.py`·`draft_eval.py`·`import_eval.py` = A, `problem_eval.py` = B. golden/ 하위는 §5 트리의 코퍼스별 소유 — **(v2) `golden/tagging/`은 정답 라벨 확정이 [A+B]**(어휘집 §2 판정 기준 합의 후 각자 라벨링, 불일치가 경계 사례집 증보분). 엔진·프롬프트 버전업 시 골든셋 diff는 상호 리뷰(오너 아닌 쪽이 리뷰어).
 4. **tests/ai/:** 프로덕션 대칭 — 소유도 대응 파일을 따름. `tests/ai/fakes/`(FakeProvider 시나리오)는 llm/ 소유자인 B — **(v2) 단 refine 게이트 공격·에이전트 장애 시나리오는 A가 시나리오 명세를 제공**(B는 Fake 구현만).
 5. **(v2 신설) 데이터 파일 규칙:** `tone_map.yaml`·`buffer_lexicon.yaml`·`redaction_patterns.yaml`은 코드와 동일하게 PR 리뷰 대상(오너 단독) — 단 **golden 코퍼스 통과가 머지 조건**(사전 갱신도 테스트를 거친다).
 
-## 5. 소유권 주석 트리 (v4 — 복붙용)
+## 5. 소유권 주석 트리 (v5 — 복붙용)
 
 ```mathematica
 ai/
@@ -76,6 +79,7 @@ ai/
 │   ├── agents.py                       [박진희+염준영]  ★슈퍼바이저 공통 Job·operation·라우팅 계약
 │   ├── import_mapping.py               [박진희]         ← v2: Probe 도구 시그니처
 │   ├── taxonomy.py                     [박진희+염준영]  ★v2 신설 — 수능 area·type·item_format enum (Open-11)
+│   ├── graphrag.py                     [박진희+염준영]  ★v5 신설 — GraphRAG 경계(ContextPack·EvidencePack·EvidencePathResult·GraphContextService) · B 생산 + A evidence 소비 (§2-14)
 │   ├── llm.py                          [박진희+염준영]  LLMProvider · ModelRole(+classifier) · 공통 예외
 │   ├── gates.py                        [박진희+염준영]  Gate · GateResult
 │   └── evaluation.py                   [박진희+염준영]  Evaluator · 지표 타입
@@ -192,7 +196,7 @@ tests/ai/                               # 대응 프로덕션 파일의 오너�
 >
 > ✅ **A 판정(7/22):** 수용 — 문서 규칙을 AST 회귀 테스트로 승격했다(`tests/ai/contract/test_evaluation_isolation.py`). 5개 프로덕션 capability가 `ai.evaluation`을 import하면 CI가 실패한다. 아직 파일이 없는 패키지(composition·import_mapping)는 파일 생성 시 자동으로 검사 대상에 편입된다.
 
-## 6. 부하 요약 (v4)
+## 6. 부하 요약 (v5)
 
 | | **박진희** | 염준영 |
 | --- | --- | --- |
@@ -201,4 +205,4 @@ tests/ai/                               # 대응 프로덕션 파일의 오너�
 | 성격 | 폭이 넓음(결정론+생성+에이전트 2종) — 각 항목은 상대적으로 가벼우나 **v2에서 항목 수 증가** — 착수 순서가 중요(체크리스트 v2 §5) | 깊음(최고 난도 체인) — 한 체인에 집중. F17 조판은 P2라 당장 부담 없음 |
 | 시기 | Phase 0~1 초반 크리티컬(감지→초안→핑퐁). 에이전트 2종은 B-1 합의 후 | 파일럿 중반부터 크리티컬(검증 게이트). 초기엔 diagnosis 그래프·taxonomy 합의부터 |
 
-> **한 줄 요지** — 폴더는 capability 기준 그대로, 소유는 주석 트리로. 슈퍼바이저 구현은 A, 각 워커 그래프는 capability 오너, 공통 Job·라우팅 계약은 양자 승인이다. 겹치는 곳은 공동 소유가 아니라 **양자 승인이 필요한 12개 파일**로 좁혀 관리한다.
+> **한 줄 요지** — 폴더는 capability 기준 그대로, 소유는 주석 트리로. 슈퍼바이저 구현은 A, 각 워커 그래프는 capability 오너, 공통 Job·라우팅 계약은 양자 승인이다. 겹치는 곳은 공동 소유가 아니라 **양자 승인이 필요한 13개 파일**로 좁혀 관리한다.

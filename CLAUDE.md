@@ -21,7 +21,7 @@
 
 - 폴더 구조는 지시서 고정 — **구조 재편 금지.** 소유권: `docs/02_ownership.md`.
 - capability 간 참조는 `contracts/`의 타입으로만. 상대 capability 내부 직접 import 금지.
-- **양자 승인 12파일**(`contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py·agents.py`, `evidence/models.py`의 EvidenceRef, `runtime/metrics.py` 이벤트 스키마, `api/app.py·api/envelope.py`, `db/models.py·db/base.py`)은 에이전트가 임의 수정하지 말 것 — 변경이 필요하면 PR 설명에 사유를 쓰고 사람 승인을 기다린다.
+- **양자 승인 13파일**(`contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py·agents.py·graphrag.py`, `evidence/models.py`의 EvidenceRef, `runtime/metrics.py` 이벤트 스키마, `api/app.py·api/envelope.py`, `db/models.py·db/base.py`)은 에이전트가 임의 수정하지 말 것 — 변경이 필요하면 PR 설명에 사유를 쓰고 사람 승인을 기다린다.
 - 데이터 파일(`tone_map.yaml`·`buffer_lexicon.yaml`·`redaction_patterns.yaml`)은 대응 골든셋 통과가 머지 조건. 규칙을 프롬프트에 하드코딩하지 말고 데이터 파일로.
 
 ## 3. 지금 하지 말 것 (미확정 — `docs/99_open_items.md` 추적)
