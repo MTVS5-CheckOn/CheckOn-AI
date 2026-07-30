@@ -4,6 +4,7 @@
 > **이 문서의 위치:** 04 §3.8을 **상세화**한다 — 새 설계를 만들지 않는다. 04와 어긋나는 결정이 필요하면 [백엔드 확인 대기]/[제안]으로 올리고, 표준 필드를 바꾸려면 07을 먼저 고친다(BE-7 3자 일치).
 > **불변(CLAUDE.md §1):** LLM은 **매핑을 추론만** 한다 — 확정은 결정론. 억지 매핑 금지(모르면 `unmapped` 정직 표기). **AI의 LLM·저장소·로그는 실명 값을 보지 않는다**(마스킹 통과분만 — §5). 최종 관문은 항상 강사 확정(HITL).
 > **범위(2026-07-30 확정):** AI는 **매핑 제안까지**다 — 전체 행 변환·행별 검증·집계·저장은 **백엔드 소유**(§4). AI 서버가 원본 파일을 읽는 것은 유지되므로 §5.2 가드레일은 완화 대상이 아니다.
+> **책임 경계(2026-07-30 백엔드 확정):** **백엔드가 확정 매핑의 기준 데이터를 보유하고, AI는 양식 재사용을 위해 확정된 매핑을 전달받아 활용한다.** 확정 데이터에는 확정자·확정 시각·매핑 버전이 포함된다. **필수 여부 판단도 백엔드가 Import 유형별 규칙으로** 하며, AI는 정보만 제공한다 — 매핑 후보를 찾지 못한 표준 필드 · 매핑되지 않은 원본 컬럼 · 각 매핑의 신뢰도 · 강사 확인이 필요한 매핑. **AI 측의 확정 차단·`blocked` 상태는 제거됐다.**
 
 작성 A · 리뷰 백엔드. 타겟: 수능 대비 고등 국어.
 
@@ -34,7 +35,6 @@
 | --- | --- |
 | `profiling`·`inferring`·`probing` | `{job_id, status}` (+선택 `progress` — probing 루프 회차 `"2/5"`) |
 | `preview_ready` | `{job_id, status, mapping_preview{…}}` — 아래 구조(04 §3.8 그대로) |
-| `blocked` | `preview_ready`와 동형 + `mapping_preview.blocked=true`·`blocked_reason`(필수 필드 미매핑) — confirm 차단 |
 | `done` | `{job_id, status, mapping_preview{…}}` — **강사가 확정한 매핑 spec**. 전체 행 변환 결과는 여기 실리지 않는다(백엔드 소유 — §4) |
 | `failed` | `{job_id, status, status_reason}` — `file_unreadable`·`profiling_failed`·`timeout_5min` |
 
@@ -50,17 +50,21 @@
     { "source": "주소", "target": null,
       "unmapped_reason": "개인정보 필드 · 표준 목적지 없음 — 자동 이전 대상 아님" }
   ],
+  "unmapped_target_fields": ["event_type", "occurred_at", "assignment_title"],
+  "source_fingerprint": "9f2c…(sha256 hex)",
   "structure_notices": [
     { "sheet": "1학기", "kind": "duplicate_header", "column_index": 5, "header": "점수" },
     { "sheet": "1학기", "kind": "empty_header", "column_index": 8, "header": "" }
   ],
-  "sample_rows": [ { "…": "변환 예시 5행 — 실명 포함 가능(§5 preview 경계)" } ],
-  "blocked": false, "blocked_reason": null
+  "sample_rows": [ { "…": "변환 예시 5행 — 실명 포함 가능(§5 preview 경계)" } ]
 }
 ```
 - `target`은 **07 표준 필드명만**(07 §2·§3) 또는 `null`(unmapped). 자유 필드명 금지. **실명 표준 필드(`student_name`·`guardian_name`·`guardian_phone`)도 매핑 대상**이다 — 매핑 제안에는 실명 컬럼의 **목적지**만 담기고 AI는 값에 접근하지 않는다(§5).
 - `needs_review`·`unmapped_reason`은 **숨기지 않고 노출**(error_codes §2.4).
 - **`structure_notices[]` — 파일 구조 주의사항(백엔드 요청, 2026-07-30):** AI가 파일 구조를 어떻게 해석했는지 강사가 검토할 **참고정보**다. `kind` = `duplicate_header`(같은 헤더 2회 이상 — 매핑 대상 목록에서는 하나로 합쳐진다) · `empty_header`(이름 없는 컬럼) · `header_without_data`(헤더는 있으나 전량 결측). 항목마다 **`sheet`·`column_index`(1-based 원본 위치)·`header`** 가 실려 강사가 원본에서 바로 찾을 수 있다. **셀 값은 담지 않는다**(§5.2 가드레일 — 헤더 이름만).
+- **`unmapped_target_fields[]` — 매핑 후보를 찾지 못한 표준 필드(2026-07-30):** `STANDARD_FIELDS` 여집합을 정렬해 싣는다. ⚠ **유형 무관**이다 — 07 §2(명부)+§3(learning_event) 전체 기준이므로 명부 파일을 올리면 `occurred_at`·`event_type` 같은 학습기록 필드도 목록에 들어온다. ⚠ **필수 여부 판단이 아니다** — 필수는 백엔드가 Import 유형별 규칙으로 판단한다.
+- **`source_fingerprint` — 양식 지문(2026-07-30):** AI 내부 "양식 시그니처"(§3.4)와 같은 값이다. **백엔드는 이 값을 재계산할 수 없다**(헤더 정규화·시트 구성 규칙이 AI 안에 있다) — 받은 값을 그대로 **보관·반송**하는 용도이며, 그래야 AI가 다음 재수입에서 `reused`를 판정한다. 🔴 해시 입력에 `tenant_id`가 들어가므로 **테넌트 간에 공유·대조할 수 있는 값이 아니다.**
+- ⚠ **`columns[]`의 키는 헤더 이름이다** — 그래서 **동명 컬럼이 하나로 합쳐진다.** 합쳐진 사실은 `structure_notices`의 `duplicate_header`로 나간다. 컬럼 ID 체계는 `SpecOverride`와 동시 변경 대상이라 후속 계약(99 D ㉑ⓑ)에서 정한다.
 - 백엔드가 요청한 미리보기 5종은 이 구조에 모두 있다: 매핑 제안(`columns[].target`) · 미매핑 컬럼(`target=null` + `unmapped_reason`) · 신뢰도(`confidence`) · `needs_review` · 파일 구조 주의사항(`structure_notices`).
 
 ### 1.3 `POST /v1/imports/{job_id}/confirm` — 강사 확정 → 변환
@@ -69,32 +73,32 @@
 | --- | --- | --- | --- | --- |
 | Req(body) | `spec_overrides[]` | `{source_column, target_field}` | ⬜ | 강사 수정분. `target_field`는 표준 필드명 또는 `null`(제외 확정). 없으면 미리보기 그대로 확정. |
 | Req(header) | `Idempotency-Key` | string | ✅ | 재확정 방지. |
-| Res | `data.status` | enum | | `transforming` 진입 → 완료 시 `done`(결과는 GET 또는 Kafka 이벤트로). |
+| Res | `data.status` | enum | | `preview_ready` 유지 — 확정 spec을 캐시한다(§3.4 `reused`). |
 
-- **확정 재검증:** override 반영 후 **RequiredField 게이트 재통과**(§3). 필수 필드가 여전히 미매핑이면 변환하지 않고 `blocked` 유지(어느 필수 필드인지 응답에 명시). `spec_overrides`의 `target_field`가 표준 필드명이 아니면 `400 INVALID_SCHEMA`.
-- **[제안] blocked 상태에서의 confirm:** override로 필수를 채우면 정상 진행. 채우지 못하면 `200 + status=blocked`로 반환(변환 미실행) — 별도 4xx를 만들지 않는다(게이트 거부=정상, error_codes 불변식). *409로 할지 200+status로 할지 §6 열린 질문.*
+- **확정 시 차단하지 않는다(2026-07-30 확정):** override를 반영해 `columns[]`·`unmapped_target_fields`를 갱신하고 확정 spec을 캐시할 뿐, **필수 재검증 게이트가 없다** — 필수 여부는 백엔드가 Import 유형별 규칙으로 판단한다. 어느 표준 필드가 비었는지는 응답의 `unmapped_target_fields`가 계속 알려준다. `spec_overrides`의 `target_field`가 표준 필드명이 아니면 `400 INVALID_SCHEMA`(이 검증은 유지 — 07 표준 필드명 강제).
+- ⚠ **이 엔드포인트는 과도기다.** **확정 매핑을 AI에 전달하는 API 경로·요청 형식은 백엔드와 이후 확정한다**(델타가 아니라 **전체 spec** 방향 합의 — 99 D ㉑ⓐ). 확정 매핑의 기준 데이터는 백엔드가 보유하고 AI는 양식 재사용을 위해 전달받는다.
 
 ---
 
 ## 2. 상태기계 — 진입·실패·재시도
 
 ```
-POST → profiling → inferring → [probing] → preview_ready ──confirm(재검증)──▶ done
-                        │           │        (강사 확정 대기)                  (확정 spec)
-                        └───────────┴────────────┴──▶ blocked (필수 미매핑 — confirm 차단, override로 해제 가능)
+POST → profiling → inferring → [probing] → preview_ready ──confirm──▶ done
+                                          (강사 확정 대기)              (확정 spec)
   (임의 단계 실패) ─────────────────────────────────▶ failed (파일 불가 · 5분 초과 · 내부 오류)
 ```
+
+**차단 상태가 없다(2026-07-30 확정)** — 필수 미충족도 `preview_ready`로 수렴하고, 무엇이 비었는지는 `unmapped_target_fields`로 알린다. 필수 판단·확정 차단은 백엔드 소유다.
 
 **AI 상태기계는 확정 spec까지다** — 그 뒤의 전체 행 변환·행별 검증·집계·저장은 백엔드 경로이며 이 상태기계에 나타나지 않는다(§4, 2026-07-30). `done` 배선은 confirm 소유 확정(§6.1) 후 정의하고, 그때까지 라우터는 재검증 뒤 `preview_ready`를 유지한다.
 
 | 상태 | 진입 조건 | 담당 | 실패 시 | 재시도 |
 | --- | --- | --- | --- | --- |
 | `profiling` | POST 접수 직후 | 코드(결정론) | 파일 다운로드 불가·손상·미지원 → `failed(file_unreadable)` | 없음 — 강사 재업로드 |
-| `inferring` | 프로파일 완료, 캐시 miss | LLM 1-shot | LLM 불가(LlmUnavailable/timeout) → **전 컬럼 needs_review/unmapped 미리보기로 폴백**(§3, `preview_ready`, `reused=false`) | 1-shot 자체는 재시도 안 함(폴백이 정직) |
+| `inferring` | 프로파일 완료, 캐시 miss | LLM 1-shot | LLM 불가(LlmUnavailable/timeout) → **전 컬럼 needs_review/unmapped 미리보기로 폴백**(§3.2, `preview_ready`, `reused=false`) | 1-shot 자체는 재시도 안 함(폴백이 정직) |
 | `probing` | inferring 결과에 저신뢰(<0.9) 컬럼 존재 | 에이전트②(LangGraph ReAct) | 도구 루프 상한 5회 소진 → 미해결 컬럼 `unmapped` 명시하고 `preview_ready` 수렴 | 루프 ≤5(01 §3·불변식 6) |
-| `preview_ready` | 게이트(RequiredField·Confidence) 산정 완료 | 코드 | — | — |
-| `blocked` | 필수 표준 필드가 미매핑 | 코드 | confirm 차단(확정 안 함) | 강사 `spec_overrides`로 해제 |
-| `done` | confirm + RequiredField 재통과 → **확정 spec 저장** | 코드 | — | — |
+| `preview_ready` | Confidence 산정 완료(`needs_review` 플래그) | 코드 | — | — |
+| `done` | confirm → **확정 spec 저장** — 재검증 게이트 없음(필수 판단은 백엔드, 2026-07-30) | 코드 | — | — |
 | `failed` | 파일 불가 · **총 5분 초과** · 내부 오류 | 코드 | 종단 | 강사 재시도(재업로드) |
 
 - **캐시 hit 경로:** POST 직후 프로파일 시그니처가 confirmed spec과 일치하면 `profiling → preview_ready`로 직행(`inferring`·`probing` 건너뜀, `reused=true`, LLM 0회 — §3.4).
@@ -113,7 +117,7 @@ POST → profiling → inferring → [probing] → preview_ready ──confirm(�
 ### 3.2 LLM 1-shot 매핑 추론
 - 입력: 마스킹된 프로파일(헤더 + 통계 + 샘플). 출력: `MappingSpec` = `columns[]{source, target, confidence, unmapped_reason?}`. **target은 표준 필드명만**(07 — enum으로 강제, 자유 텍스트 금지). 억지 매핑 금지 → 모르면 `target=null` + `unmapped_reason`.
 - LLM은 **추론만** — 값 정규화·행 변환은 하지 않는다(AI 범위 밖 — 백엔드 소유, §4).
-- **LLM 실패 폴백(HANDOFF §6·CLAUDE.md §1):** LlmUnavailable/timeout이면 프로파일링(결정론)은 이미 끝났으므로, **전 컬럼을 `confidence=0`·`needs_review=true`(식별 가능 표준 필드 후보가 없으면 `unmapped`)로 채운 `preview_ready`**를 낸다 — 강사가 수동 매핑. 작업을 `failed`로 떨구지 않는다(데이터는 안전, 다음 행동은 수동 확정). 빈 매핑을 지어내지 않는다.
+- **LLM 실패 폴백(HANDOFF §6·CLAUDE.md §1):** LlmUnavailable/timeout이면 프로파일링(결정론)은 이미 끝났으므로, **전 컬럼을 `confidence=0`·`needs_review=true`(식별 가능 표준 필드 후보가 없으면 `unmapped`)로 채운 `preview_ready`**를 낸다 — 강사가 수동 매핑. 작업을 `failed`로 떨구지 않는다(데이터는 안전, 다음 행동은 수동 확정). 빈 매핑을 지어내지 않는다. 폴백에도 `unmapped_target_fields`(전 컬럼 미매핑이므로 표준 필드 전체)·`source_fingerprint`가 채워진다.
 
 ### 3.3 조사 에이전트(probing) — 저신뢰 해소 (01 §3)
 - **기동 조건:** 1-shot 결과에 `confidence < 0.9` 컬럼이 하나라도 있으면 `agent_run(mapping_probe)` 생성.
@@ -126,9 +130,10 @@ POST → profiling → inferring → [probing] → preview_ready ──confirm(�
 | --- | --- |
 | `confidence` | LLM(1-shot/에이전트)이 컬럼별로 산정한 매핑 신뢰도 0~1. **판정값이 아니라 표시·게이트 입력**. |
 | `needs_review=true` | `confidence < CONFIDENCE_REVIEW`(**[제안] 기본 0.9** — 08 threshold 시트로 관리, 하드코딩 금지). 숨기지 않고 강사에게 노출. |
-| RequiredField 게이트 | 표준 스키마 **필수 필드**(07 §2·§3의 ✅ — 예: `occurred_at`·`event_type`, 명부 이전 시 `student_name`·`class_name`·`enrolled_at`·`status`·`consent`)가 모두 매핑돼야 통과. 하나라도 미매핑 → `blocked`. |
-| Confidence 게이트 | 필수 통과분 중 저신뢰는 발화 차단이 아니라 `needs_review` **플래그**(강사 확인용) — 게이트가 값을 지어내지 않는다. |
+| ~~RequiredField 게이트~~ | **폐기(2026-07-30 백엔드 확정)** — 필수 여부 판단이 백엔드 소유가 됐다. AI는 `unmapped_target_fields`(유형 무관 여집합)를 정보로 제공하고 차단하지 않는다. 유형 추측(`detect_kind`)도 근거를 잃어 함께 제거됐다. |
+| Confidence 게이트 | 저신뢰는 발화 차단이 아니라 `needs_review` **플래그**(강사 확인용) — 게이트가 값을 지어내지 않는다. |
 | `reused=true` | **양식 시그니처 일치 시** LLM·에이전트 **0회**로 confirmed spec 재사용(03 I3). 시그니처 = 테넌트 스코프 + **정규화된 헤더 집합**(트림·대소문자·공백 정규화 후 정렬) + 시트 구성(시트 수·컬럼 수) 의 결정론 해시. 일치 → 저장된 `spec_version` 그대로, 동일 파일+동일 spec = 동일 결과. **[제안]** 시그니처 구성요소·정규화 규칙은 골든 픽스처로 고정. |
+| `source_fingerprint` | 위 시그니처 값을 **응답으로 노출**한다(2026-07-30). 백엔드가 확정 매핑과 함께 보관·반송하면 AI가 다음 재수입에서 `reused`를 판정한다. **백엔드는 재계산할 수 없다**(정규화 규칙이 AI 안) — 받은 값을 그대로 다룬다. 🔴 해시 입력에 `tenant_id`가 포함되므로 테넌트 간 공유·대조 불가. |
 
 ---
 
@@ -166,12 +171,13 @@ POST → profiling → inferring → [probing] → preview_ready ──confirm(�
 - **★ 실명 경계 정합 — 04 §3.8 예시 개정 [제안 — 백엔드 확인 대기]** — 본 문서는 **07 §1을 정본**으로 삼아 Import 산출물(②)을 **실명 포함**(원생명→`student_name`·연락처→`guardian_phone` 등)으로 확정하고, AI는 값 미접근(§5)으로 설계했다. 이에 따라 04 §3.8 예시(`원생명→student_alias`·`連락처→null`·`weekly_score`)와 07 §4("연락처 자동 제외") 문구는 이 결정과 어긋난다. **실명·vault·명부 소유가 백엔드**이므로 [A 확정]이 아니라 **백엔드(승우) 확인 후** 04 §3.8 예시·07 §4를 함께 개정한다. (07 자체도 "백엔드 확정 대기" 문서.)
 - **`output_url` 스토리지 규격** — 버킷·경로·수명·접근 토큰 형식(Open-3 스토리지 소유가 인프라). F1 업로드 경로가 기대하는 파일 포맷(xlsx vs csv vs 표준 JSON)과 일치 여부.
 - **동의 미보유 행 보류의 정확한 경계** — AI 산출물엔 `consent` 값을 그대로 싣는다. 보류=백엔드로 확정돼 있으나, `pending`/`revoked` 행을 백엔드가 **드롭**하는지 **격리 적재**하는지 F1 경로 정의 필요.
-- **confirm-on-blocked HTTP 형태([제안] 검토)** — 필수 미매핑 상태 confirm을 `200 + status=blocked`(현 제안, 게이트 거부=정상 원칙)로 둘지, `409`(상태 충돌)로 둘지. 계약 §1 코드 사전과 함께 확인.
+- ~~**confirm-on-blocked HTTP 형태**~~ ✅ **종결(2026-07-30 백엔드 확정)** — **전제 소멸**. 필수 여부 판단이 백엔드 소유가 되면서 AI 측 확정 차단·`blocked` 상태가 제거됐으므로 "blocked 상태의 confirm"이라는 상황 자체가 없다. 확정 매핑 전달 API의 경로·형식은 후속 계약 구체화 대상이다(99 D ㉑ⓐ).
 
 ### 6.2 [문서 정합 — A 후속]
 - ~~**상태명 동기화**~~ ✅ **완료(2026-07-30)** — `error_codes.md §2.4`가 `profiled`/`transformed`(과거형)를 쓰던 것을 04 §3.8 정본(`profiling`·`inferring`·`probing`·`preview_ready`·`done`)에 맞춰 동기화했다. `transforming`은 세 문서 모두에서 제거됐다(§4 소유 이동). **ERD 잔여**(`IMPORT_JOB.status`의 `transformed`·`row_*` 컬럼·`IMPORT_ROW_ERROR`)는 양자 파일·마이그레이션이 걸려 별건이다 — 99 D ⑲.
-- **`failed` 상태 명문화** — 04 §3.8 화살표엔 `done/blocked`만 있으나 async 규약(04 line 119 "5분 초과 시 failed")·error_codes §2.4·§6에 `failed`가 있어 본 문서가 종단 상태로 편입. 04 §3.8 상태열에 `failed` 한 단어 추가 제안.
+- **`failed` 상태 명문화** — 04 §3.8 화살표엔 종단이 `done`뿐이나 async 규약(04 line 119 "5분 초과 시 failed")·error_codes §2.4·§6에 `failed`가 있어 본 문서가 종단 상태로 편입. 04 §3.8 상태열에 `failed` 한 단어 추가 제안.
 
 ### 6.3 A 단독 확정(본 문서 범위)
 - 상태기계 진입·실패·재시도(§2), LLM 실패 폴백=전 컬럼 수동 미리보기(§3.2), probing 기동 임계 `<0.9`·루프 ≤5(§3.3), reused 시그니처 산정(§3.4), **실명 무접촉 가드레일·preview 경계(§5.2·§5.3)**, 표준 목적지 없는 개인정보 컬럼 자동 제외(§5.1). *(실명 필드 매핑 자체의 정합은 6.1 백엔드 확인 안건.)*
+- ⚠ **이 목록에서 빠진 것 — RequiredField 게이트.** 이전 판에는 A 단독 확정 항목으로 있었으나 **2026-07-30 백엔드 확정**("필수 여부 판단은 백엔드가 Import 유형별 규칙으로 한다 · AI 측의 확정 차단 또는 `BLOCKED` 상태는 제거해 주세요")으로 **소유가 백엔드로 이동**했다. A가 단독으로 정할 수 있는 사안이 아니게 됐으므로 목록에서 제거한다.
 - **[제안] 임계·시그니처 값**(`CONFIDENCE_REVIEW=0.9`, 시그니처 구성)은 08 threshold 시트·골든 픽스처와 연동해 확정(하드코딩 금지 — CLAUDE.md §6).

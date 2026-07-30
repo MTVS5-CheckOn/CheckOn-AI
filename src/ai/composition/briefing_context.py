@@ -69,9 +69,15 @@ _SEGMENT_KO: dict[Segment, str] = {
 }
 
 #: lifecycle → 지속성 서술(연속 주수 대신 — rule 판정과 어긋나지 않는 표현).
+#: **Lifecycle 전 값을 덮어야 한다** — `render_evidence_block`이 직접 인덱싱하므로 누락은
+#: 런타임 KeyError이고, 그 호출은 `make_brief` 폴백 경계 밖이라 응답 전체가 500이 된다.
+#: `test_briefing_500_paths.test_lifecycle_ko_covers_every_lifecycle`가 값대조로 고정한다.
+#: ⚠ 문면에 **숫자를 넣지 않는다** — 이 블록이 곧 프롬프트라, 근거가 제공하지 않은 수치를
+#: 심으면 LLM이 그것을 되뇌고 왜곡 게이트(수치 EXACT 대조)에서 걸려 폴백이 잦아진다.
 _LIFECYCLE_KO: dict[Lifecycle, str] = {
     Lifecycle.NEW: "이번 주 새로 나타난 상태",
     Lifecycle.ONGOING: "지난주부터 이어지고 있는 상태",
+    Lifecycle.FOLLOW_UP: "해소된 뒤 다시 나타난 상태",
 }
 
 

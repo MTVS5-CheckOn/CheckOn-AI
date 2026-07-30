@@ -70,7 +70,7 @@
 
 ### 2.4 Import (`GET /v1/imports/{job_id}`)
 
-> **상태명 정본:** 작업 상태(status)는 `contracts/imports.ImportStatus`(= `10_import_spec §2` 상태기계 · `04 §3.8`)를 투영한다 — 진행형(`profiling`·`inferring`·`probing`)·종단(`done`)을 쓴다. `transforming`은 없다 — 전체 행 변환이 백엔드 소유가 됐다(2026-07-30 · 10 §4). `needs_review`·`unmapped`은 작업 상태가 아니라 **컬럼(매핑) 플래그**로 `mapping_preview`에 실린다(10 §1.2·§3.4).
+> **상태명 정본:** 작업 상태(status)는 `contracts/imports.ImportStatus`(= `10_import_spec §2` 상태기계 · `04 §3.8`)를 투영한다 — 진행형(`profiling`·`inferring`·`probing`)·종단(`done`)을 쓴다. `transforming`은 없다 — 전체 행 변환이 백엔드 소유가 됐다(2026-07-30 · 10 §4). **`blocked`도 없다** — 필수 여부 판단·확정 차단이 백엔드 소유가 됐다(2026-07-30 백엔드 확정 · 10 §1.3·§3.4). `needs_review`·`unmapped`은 작업 상태가 아니라 **컬럼(매핑) 플래그**로 `mapping_preview`에 실린다(10 §1.2·§3.4).
 
 | status | 뜻 | 문구 |
 | --- | --- | --- |

@@ -24,7 +24,7 @@ from ai.import_mapping.probe.stores import InMemoryProfileStore
 
 _HEADERS = {"X-Tenant-Id": "t1", "X-Request-Id": "r1", "Idempotency-Key": "t1:probe"}
 
-# 필수(roster) 충족 + 저신뢰 컬럼(점수→score 0.55<0.9) → needs_probing·blocked 아님.
+# 저신뢰 컬럼(점수→score 0.55<0.9) → needs_probing. 기동 조건은 저신뢰 축뿐이다(§3.3).
 _ROSTER_LOWCONF = BytesIO()
 pd.DataFrame(
     {

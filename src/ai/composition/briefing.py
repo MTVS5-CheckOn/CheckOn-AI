@@ -5,9 +5,11 @@
 실패와 무관하게 무변(분기표 #6).
 
 분기표(09 §3 · error_codes §3):
-- LLM 실패(LlmUnavailable·LlmTimeout·ParseFailed) → **재시도 없이** 즉시 템플릿 폴백
-  (재시도는 게이트웨이 후속 — 여기 넣지 않는다).
-- redaction uncertain → 미전송(fail-closed) → 템플릿 폴백.
+- LLM 실패(`LlmError` 전체 — 4xx도 plain LlmError로 온다) → **재시도 없이** 즉시 템플릿
+  폴백(재시도는 게이트웨이 후속 — 여기 넣지 않는다).
+- redaction uncertain(전송 전 로컬 검사) → 미전송(fail-closed) → 템플릿 폴백.
+- `RedactionBlocked`(전송 경로에서 차단) → 템플릿 폴백 + **outcome=redaction_blocked 유지**.
+  LlmError 서브클래스이므로 **먼저** 받는다 — 재시도 금지+알럿 의미를 잃지 않게.
 - 왜곡 게이트 실패 → 재생성 ≤3 → 소진 시 템플릿 폴백(gate_passed=False).
 - 시간 예산 소진(호출 전 deadline 초과) → 템플릿 폴백.
 
@@ -26,12 +28,11 @@ from ai.composition.briefing_gate import MAX_BRIEF_LENGTH, check_brief_gate
 from ai.contracts.detection import Brief
 from ai.contracts.execution import ExecutionContext, GenerationParams
 from ai.contracts.llm import (
+    LlmError,
     LLMProvider,
     LLMRequest,
-    LlmTimeout,
-    LlmUnavailable,
     ModelRole,
-    ParseFailed,
+    RedactionBlocked,
 )
 from ai.llm.gateway import LlmGateway
 from ai.runtime.redaction import redact
@@ -115,7 +116,14 @@ async def make_brief(
     for _ in range(MAX_REGEN):
         try:
             result = await completer.complete(request, context)
-        except (LlmUnavailable, LlmTimeout, ParseFailed):
+        except RedactionBlocked:
+            # 🔴 `LlmError`보다 **먼저** 받는다 — RedactionBlocked는 LlmError의 서브클래스라
+            # 순서가 뒤바뀌면 "재시도 금지+알럿"(error_codes §3)이 llm_failed로 뭉개진다.
+            # except 절 순서가 곧 계약이다. 위 :103의 로컬 fail-closed와 같은 outcome을 쓴다.
+            return _fallback(ctx), "redaction_blocked"
+        except LlmError:
+            # LlmError 베이스로 받는다 — `openai_compat`은 4xx(컨텍스트 한도 초과 등)를
+            # **plain LlmError**로 올리므로 좁은 튜플이면 결정론 판정이 멀쩡한 채 500이 된다.
             return _fallback(ctx), "llm_failed"  # 재시도 없이 즉시
         text = (result.text or "").strip()
         gate = check_brief_gate(text, allowed)

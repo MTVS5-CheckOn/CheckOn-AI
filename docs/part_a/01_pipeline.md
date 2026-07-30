@@ -110,7 +110,7 @@ flowchart TB
   a4 --> loop{"루프 ≤5?<br/>코드"}
   loop -->|계속| a2
   loop -->|"상한 도달"| a5["최종 spec + 미해결 컬럼 명시<br/>코드 · '모름'을 모른다고 기록"]
-  a5 --> a6["게이트: RequiredField→Confidence<br/>코드"] --> a7["미리보기 → 강사 확정 ✋<br/>HITL → 이후 결정론 변환(v1과 동일)"]
+  a5 --> a6["게이트: Confidence(needs_review)<br/>코드"] --> a7["미리보기 → 강사 확정 ✋<br/>HITL → 이후 결정론 변환(v1과 동일)"]
   classDef llm fill:#ede9fe,stroke:#7c3aed,color:#4c1d95;
   classDef code fill:#ccfbf1,stroke:#0d9488,color:#134e4a;
   class a1,a3,a4 llm;
