@@ -43,7 +43,12 @@ def _iter_python_files() -> list[Path]:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(_COMPOSITION))
+    """`_ALLOWED_GATEWAY_CALLERS`와 대조할 키 — **항상 `/` 표기**(화이트리스트가 정본).
+
+    `str()`을 쓰면 Windows에서 `counsel\\provider.py`가 나와 전부 불일치한다.
+    선례: `test_problem_generation_redaction.py`의 `relative_to(...).as_posix()`.
+    """
+    return path.relative_to(_COMPOSITION).as_posix()
 
 
 def _enclosing_functions(tree: ast.AST) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
