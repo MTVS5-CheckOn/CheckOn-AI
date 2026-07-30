@@ -246,7 +246,7 @@
     "execution_id": "ed2a36c2-5145-4f0a-a954-79808993a416",
     "versions": {
       "pipeline": "0.1.0",
-      "engine": "detection-rules-0.1",
+      "engine": "detection-rules-0.2",
       "schema": "0.1",
       "contract": "0.1",
       "threshold": "default-v1",

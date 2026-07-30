@@ -68,7 +68,9 @@ router = APIRouter()
 
 #: 앱 버전 메타 — v0 플레이스홀더. Settings 이관은 후속(버전 문자열은 앱 메타).
 _PIPELINE_VERSION = "0.1.0"
-_ENGINE_VERSION = "detection-rules-0.1"
+#: 0.2(2026-07-30) — 근거 전무 후보를 랭킹 이전에 탈락시킨다(09 §3 ②). capped_out 집계와
+#: 상한 통과 집합이 바뀔 수 있는 관상 변화라 AI_RUN 재현성 축을 올린다(불변식 8).
+_ENGINE_VERSION = "detection-rules-0.2"
 _SCHEMA_VERSION = "0.1"
 _CONTRACT_VERSION = "0.1"
 #: FEATURE_WEEK 적재 피처 버전 — 피처 산식이 바뀌면 올린다(재현성 키).

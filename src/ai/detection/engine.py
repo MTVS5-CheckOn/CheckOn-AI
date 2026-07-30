@@ -16,8 +16,9 @@ meta.versions는 응답 envelope(API 계층)의 몫이며, 이 순수 함수는 
 
 from __future__ import annotations
 
+import logging
 import uuid
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import date, timedelta
@@ -48,8 +49,13 @@ from ai.detection.thresholds import ThresholdConfig, default_threshold_config
 #: signal_id 결정론 생성을 위한 네임스페이스 (고정 — 재현성).
 _SIGNAL_NS = uuid.UUID("00000000-0000-5000-8000-0000000d0e70")
 
+logger = logging.getLogger(__name__)
+
 #: 근거로 첨부할 최대 이벤트 수.
 _MAX_EVIDENCE = 3
+
+#: 근거 전무로 신호를 만들지 못한 경우의 스킵 사유(09 §3 ②) — stats.rules_skipped.reason.
+_SKIP_EVIDENCE_ABSENT = "evidence_absent"
 
 
 def detect(
@@ -106,9 +112,10 @@ def detect(
             merge_student(student.student_ref, student.class_ref, findings)
         )
 
-    signals, capped_out = _rank_with_lifecycle(
+    signals, capped_out, evidence_skips = _rank_with_lifecycle(
         request, class_alerts, config, week_start, evidence_index
     )
+    skip_counter.update(evidence_skips)
 
     stats = DetectStats(
         students_evaluated=evaluated,
@@ -129,11 +136,17 @@ def _rank_with_lifecycle(
     config: ThresholdConfig,
     week_start: date,
     evidence_index: dict[tuple[str, date], list[str]],
-) -> tuple[list[Signal], int]:
-    """파이프라인: 병합 → lifecycle 억제(탈락) → new·follow_up만 랭킹·상한 →
-    ongoing·R5 상한 밖 합류 → 응답 (04 §3 · 09 §4, 7/22 확정).
+) -> tuple[list[Signal], int, Counter[tuple[str, str]]]:
+    """파이프라인: 병합 → lifecycle 억제(탈락) → **evidence 전무 탈락** → new·follow_up만
+    랭킹·상한 → ongoing·R5 상한 밖 합류 → 응답 (04 §3 · 09 §4, 7/22 확정).
 
     - 억제 후보(lifecycle=None)는 슬롯을 소비하지 않고 랭킹 이전에 탈락한다.
+    - **evidence 전무 후보도 같은 자리에서 탈락한다**(09 §3 A판정 ② — "관련 기록이 전무하면
+      신호를 생성하지 않는다"). 억제보다 강한 케이스다: 억제는 "지금 안 보여줄 신호"지만
+      evidence 전무는 `Signal.evidence min_length=1`(불변식 2)로 **존재 자체가 불가능**하다.
+      존재할 수 없는 신호가 상한 슬롯을 잡으면 진짜 위험이 밀려나므로 슬롯을 소비하지 않고,
+      그 결과 rank가 1..N으로 연속을 유지한다(구멍 없음). 탈락 수는 반환해
+      `stats.rules_skipped`에 남긴다 — 조용한 드롭 금지.
     - **상한 대상은 new·follow_up만**이다. ongoing(기존 카드 갱신)과 R5(정책 신호)는
       "오늘 새로 봐야 할 카드"가 아니므로 상한 밖에서 합류한다 — 만성 미해소가 슬롯을
       점유해 신규 위험을 가리는 것을 막는다. capped_out은 new·follow_up 후보 기준.
@@ -142,6 +155,7 @@ def _rank_with_lifecycle(
     """
     signals: list[Signal] = []
     capped_out = 0
+    skipped: Counter[tuple[str, str]] = Counter()
     capped_kinds = {Lifecycle.NEW, Lifecycle.FOLLOW_UP}
     for _class_ref, alerts in sorted(class_alerts.items()):
         # ① lifecycle 판정 → 억제 탈락 (랭킹 이전)
@@ -158,6 +172,16 @@ def _rank_with_lifecycle(
             )
             if lifecycle is None:
                 continue  # 억제 — 슬롯 미소비
+            if not _evidence_record_ids(alert, evidence_index):
+                # 근거가 전무 → 신호를 만들지 않는다(09 §3 ②). 슬롯 미소비·사유 기록.
+                skipped[(alert.primary.rule_id.value, _SKIP_EVIDENCE_ABSENT)] += 1
+                logger.info(
+                    "신호 미생성(근거 전무) student=%s rule=%s week=%s",
+                    alert.student_ref,
+                    alert.primary.rule_id.value,
+                    week_start.isoformat(),
+                )
+                continue
             kept.append(alert)
             lifecycles[(alert.student_ref, alert.primary.rule_id.value)] = lifecycle
 
@@ -189,19 +213,17 @@ def _rank_with_lifecycle(
             ranked_free = RankedAlert(alert=alert, rank=next_rank)
             signals.append(_build_signal(ranked_free, lifecycles[key], week_start, evidence_index))
             next_rank += 1
-    return signals, capped_out
+    return signals, capped_out, skipped
 
 
-def _build_signal(
-    ranked: RankedAlert,
-    lifecycle: Lifecycle,
-    week_start: date,
+def _evidence_record_ids(
+    alert: StudentAlert,
     evidence_index: dict[tuple[str, date], list[str]],
-) -> Signal:
-    alert = ranked.alert
-    primary = alert.primary
-    signal_type = primary.signal_type
+) -> list[str]:
+    """이 경보가 인용할 record_id — **랭킹 이전 탈락 판정과 조립이 같은 함수를 쓴다**.
 
+    두 곳에서 따로 계산하면 "탈락 안 시켰는데 조립에서 비는" 드리프트가 생긴다.
+    """
     record_ids: list[str] = []
     for finding in alert.merged:
         for week_monday in finding.evidence_weeks:
@@ -210,7 +232,21 @@ def _build_signal(
         # 부재형 신호(R2·R3·R5): 판정 창에 관련 기록이 없으면 **가장 최근** 실존 기록을
         # 맥락 근거로 인용한다 — 임의 무관(첫 매치) 대체 금지 (09 §3 A판정 7/22).
         record_ids = _latest_records(alert.student_ref, evidence_index)
-    unique_ids = list(dict.fromkeys(record_ids))[:_MAX_EVIDENCE]
+    return list(dict.fromkeys(record_ids))[:_MAX_EVIDENCE]
+
+
+def _build_signal(
+    ranked: RankedAlert,
+    lifecycle: Lifecycle,
+    week_start: date,
+    evidence_index: dict[tuple[str, date], list[str]],
+) -> Signal:
+    """경보 → 응답 Signal. 호출 전에 evidence 실존이 보장돼 있다(`_rank_with_lifecycle` ①')."""
+    alert = ranked.alert
+    primary = alert.primary
+    signal_type = primary.signal_type
+
+    unique_ids = _evidence_record_ids(alert, evidence_index)
 
     evidence = tuple(
         EvidenceItem(
