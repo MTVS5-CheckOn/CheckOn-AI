@@ -16,6 +16,7 @@ prod=PostgresSaver). LLM 접점(plan·generate_draft)은 Protocol 뒤에 있고 
 
 from __future__ import annotations
 
+
 import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime
@@ -38,6 +39,7 @@ from ai.composition.counsel.stores import DraftRecord, DraftResultStore
 from ai.contracts.composition import DraftContext, DraftKind, DraftStatus, StudentResult
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError
+
 
 logger = logging.getLogger(__name__)
 

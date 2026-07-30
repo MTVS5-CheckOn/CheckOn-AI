@@ -111,6 +111,7 @@
 | `tenant_mismatch` | counsel_pack | 묶음의 tenant가 잡의 tenant와 다르다(격리 위반) |
 | `worker_internal_error` | counsel_pack | 미분류 예외 — running 방치 대신 즉시 수렴 |
 
+
 **counsel_pack 강조점 드롭 사유(내부 관측 — `phase`와 무관).** plan(LLM) 불량 출력은 **게이트 거부**이지 잡 실패가 아니다(불변식 4). 두 사유를 구분하는 이유는 대응이 다르기 때문이다 — 전자는 plan 프롬프트 문제, 후자는 LLM 날조다.
 
 | 사유 | 의미 |
@@ -119,6 +120,8 @@
 | `unknown_record_id` | 인용한 `record_id`가 컨텍스트에 실존하지 않는다(날조·오타) |
 
 plan LLM 실패·전량 드롭이면 **강조점 없이 초안 생성을 계속**하고 Job은 정상 수렴한다. 이 실패는 `paused` 서킷 카운터에 넣지 않는다 — 서킷은 **학생 단위** write 실패 기준이다(§1.3).
+
+
 
 lease 만료 때만 `recovery_count`를 증가시키며, 설정된 `max_recovery_attempts`(기본 3)에 도달하면 `phase=failed`, 내부 `error_code=worker_recovery_exhausted`로 수렴한다. 정상 수동 pause/resume은 이 장애 복구 예산을 소모하지 않는다. 내부 코드는 사용자 화면에 직접 노출하지 않는다.
 

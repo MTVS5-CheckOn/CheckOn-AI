@@ -192,6 +192,7 @@ class GatewayDraftWriter:
         return text
 
 
+
 class GatewayPlanner:
     """실 plan 경로 — `GatewayDraftWriter`와 **같은 규율**이다.
 
