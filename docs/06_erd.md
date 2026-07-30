@@ -172,7 +172,7 @@ erDiagram
     varchar display_label "화면 표시 한글 문구(AI 확정) — 09 §1"
     varchar lifecycle "new|ongoing|follow_up — AI 경보 생애 판정, 09 §4"
     numeric score
-    int rank "상한 적용 후"
+    int rank "반 내 최종 표시 순번 — new·follow_up 통과분 뒤 ongoing·R5, 5 초과 가능"
     timestamptz created_at
   }
   SIGNAL_BRIEF {
@@ -446,7 +446,7 @@ erDiagram
   }
 ```
 
-> **[PART_B 크로스체킹 요청 · 미확정 — SIGNAL.rank]** `SIGNAL.rank`의 “상한 적용 후”는 A가 7/22 확정한 `new`·`follow_up`만 상한 적용 후 ongoing·R5 합류 정책을 충분히 표현하지 못한다. 상한 밖 신호도 rank를 가지며 최종 rank는 5를 넘을 수 있다. **제안 해결안:** rank를 “반 내 최종 표시 순번(new·follow_up 통과분 뒤 ongoing·R5)”으로 정의하고, DB·백엔드 DTO에 rank≤`cap_max` 제약이 없는지 A·백엔드가 확인해 달라. 기존 ERD 값은 확인 전 변경하지 않는다.
+> ✅ **A+BE 확인 완료(2026-07-30) — SIGNAL.rank.** `rank`는 **반 내 최종 표시 순번**이다 — `new`·`follow_up` 통과분(1..N) 뒤에 `ongoing`·R5가 이어붙어 **`cap_max`(5)를 초과할 수 있다**. **백엔드 DTO에 `rank` ≤ `cap_max` 제약이 없음을 2026-07-30 확인**했다. `capped_out`은 lifecycle 억제 후 `new`·`follow_up` 후보의 탈락 수만 센다. 정본: 04 §3 · 09 §4 · 99 #14.
 
 **증분 반영 메모:** ① `DRAFT.agent_run_id` · `MAPPING_SPEC.probe_agent_run` 컬럼 추가(에이전트 산출 연결, 기존 경로는 null) ② `LLM_CALL.role`에 `classifier` 추가(ⓑⓒⓓ) · **(v2.1) `narrator` 추가**(브리핑 문장화 전용 — 09 §1-10 · varchar라 마이그레이션 없음) ③ `SOURCE_PROFILE.sheets`에 양식 시그니처 포함(재수입 매칭 키) ④ 양자 승인 대상은 기존과 동일(EVIDENCE_ITEM 구조·LLM_CALL 지표 필드) + `TAG_SUGGESTION`의 area/type enum은 B의 약점 지도와 공용 어휘이므로 **[A+B]** ⑤ **(v2.1) `DRAFT_REVISION` 추가**(핑퐁 턴 이력) · 사용량 미터링은 **일일 턴제**로 확정 — `llm_usage`를 `(tenant_id, date)` 그레인으로 변경: `usage_daily(tenant_id, date PK, interactive_turns int, batch_jobs jsonb)`. 인터랙티브 턴만 일일 한도 대상, 일괄 작업(상담팩·리포트)은 월 단위 작업 카운트(게이팅 소유는 백엔드 Billing — AI는 미터링 리포트만).
 

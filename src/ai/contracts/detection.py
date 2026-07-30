@@ -315,7 +315,11 @@ class EvidenceItem(BaseModel):
 
 
 class Signal(BaseModel):
-    """위험신호 1건 — 명세 §3 signals[]. 반별 TOP 3~5 선별·정렬 완료 상태.
+    """위험신호 1건 — 명세 §3 signals[]. 선별·정렬 완료 상태.
+
+    반별 TOP 3~5 상한은 `new`·`follow_up`에만 적용하며 `ongoing`·`return_care`(R5)는
+    상한 밖으로 추가된다 — `signals` 길이와 `rank`가 5를 초과할 수 있다(04 §3 · 99 #14).
+    `rank`는 반 내 최종 표시 순번이다(통과분 뒤 ongoing·R5).
 
     display_label은 signal_type에 대응하는 DISPLAY_LABELS 값과 일치해야 한다 —
     AI가 만드는 신호는 항상 정합하며(validate_display_label), "모르는 signal_type"
@@ -388,7 +392,10 @@ class DetectStats(BaseModel):
     signals_raised: int = Field(ge=0)
     excluded_under_2w: int = Field(ge=0)
     capped_out: int = Field(ge=0)
-    """TOP 3~5 상한에 밀린 신호 후보 수."""
+    """lifecycle 억제 후 `new`·`follow_up` 후보의 탈락 수만 (04 §3 · 99 #14).
+
+    상한 밖으로 합류하는 `ongoing`·R5는 세지 않는다.
+    """
 
     rules_skipped: tuple[RuleSkipped, ...] = ()
 
