@@ -26,6 +26,8 @@ from ai.composition.counsel.stores import (
     AgentStepRecord,
     InMemoryAgentStepSink,
     InMemoryContextStore,
+    InMemoryDraftResultStore,
+    InMemoryPackResultStore,
     make_ref,
     parse_ref,
 )
@@ -147,6 +149,8 @@ def _harness(
     runner = CounselPackRunner(
         supervisor=supervisor,
         context_store=contexts,
+        draft_store=InMemoryDraftResultStore(),
+        pack_store=InMemoryPackResultStore(),
         step_sink=sink,
         planner=fake,
         writer=fake,

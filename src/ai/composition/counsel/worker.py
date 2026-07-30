@@ -17,20 +17,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from ai.agents.supervisor import Supervisor
+from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.composition.counsel.graph import build_counsel_graph
 from ai.composition.counsel.provider import CounselPlanner, DraftWriter
 from ai.composition.counsel.state import CounselPackState
 from ai.composition.counsel.stores import (
     AgentStepRecord,
     AgentStepSink,
+    ContextBundleRecord,
     ContextStore,
+    CounselPackResultRecord,
+    DraftResultStore,
+    PackResultStore,
 )
 from ai.contracts.agents import WorkerJob, WorkerKind
 from ai.contracts.execution import ExecutionContext
@@ -49,15 +54,20 @@ class CounselPackRunner:
         supervisor: Supervisor,
         context_store: ContextStore,
         step_sink: AgentStepSink,
+        draft_store: DraftResultStore,
+        pack_store: PackResultStore,
         planner: CounselPlanner,
         writer: DraftWriter,
         checkpointer: BaseCheckpointSaver[Any],
         regen_max: int,
         lease_owner: str,
         new_id: Callable[[], UUID] = uuid4,
+        now: Callable[[], datetime] = system_utc_now,
     ) -> None:
         self._sv = supervisor
         self._contexts = context_store
+        self._drafts = draft_store
+        self._packs = pack_store
         self._steps = step_sink
         self._planner = planner
         self._writer = writer
@@ -65,6 +75,7 @@ class CounselPackRunner:
         self._regen_max = regen_max
         self._lease_owner = lease_owner
         self._new_id = new_id
+        self._now = now
 
     async def run_next(self, *, tenant_id: str) -> WorkerJob | None:
         """다음 counsel_pack 잡을 lease해 실행하고 succeeded로 수렴한다. 없으면 None."""
@@ -78,7 +89,7 @@ class CounselPackRunner:
         return await self._execute(job)
 
     async def _execute(self, job: WorkerJob) -> WorkerJob:
-        bundle = await self._contexts.get(job.payload_ref)
+        bundle = await self._contexts.get(job.payload_ref, tenant_id=job.tenant_id)
         if bundle is None:
             raise ValueError(f"컨텍스트 묶음 참조 해소 실패: {job.payload_ref}")
         thread_id = str(job.job_id)
@@ -111,7 +122,11 @@ class CounselPackRunner:
             execution_context=_execution_context(job),
             checkpointer=self._checkpointer,
             regen_max=self._regen_max,
+            draft_store=self._drafts,
+            tenant_id=job.tenant_id,
+            agent_run_id=job.job_id,
             new_draft_id=self._new_id,
+            now=self._now,
         )
         final = await graph.ainvoke(
             init, config={"configurable": {"thread_id": thread_id}}
@@ -133,14 +148,41 @@ class CounselPackRunner:
                 )
             )
 
-        # ⑤⑥ 결과 참조 + succeed — 부분 미해결이어도 결과 계약을 저장했으므로 succeeded.
+        # ⑤ 결과 계약 저장 — 요약 + 학생별 결과 포인터. **입력 ref(payload_ref)를 결과로
+        #    쓰지 않는다** — 백엔드가 역참조하면 초안이 아니라 입력이 나온다.
+        result_ref = await self._store_pack(job, bundle, final)
+
+        # ⑥ succeed — 부분 미해결이어도 결과 계약을 저장했으므로 succeeded(error_codes §2.5).
         return await self._sv.succeed(
             tenant_id=job.tenant_id,
             job_id=job.job_id,
             lease_owner=self._lease_owner,
             lease_generation=job.lease_generation,
-            result_ref=job.payload_ref,
+            result_ref=result_ref,
         )
+
+    async def _store_pack(
+        self, job: WorkerJob, bundle: ContextBundleRecord, final: Mapping[str, Any]
+    ) -> str:
+        """요약+학생별 결과를 `pack://`로 영속하고 그 ref를 돌려준다.
+
+        저장소는 **필수 주입**이다 — 옵셔널로 두면 "결과가 어디에도 도착하지 않는" 이 PR의
+        원죄가 조용히 재발한다.
+        """
+        return await self._packs.put(
+            CounselPackResultRecord(
+                id=self._new_id(),
+                tenant_id=job.tenant_id,
+                class_ref=bundle.class_ref,
+                summary=final["summary"] or "",
+                results=tuple(final["results"]),
+                created_at=self._now(),
+            )
+        )
+
+    async def result_of(self, result_ref: str) -> CounselPackResultRecord | None:
+        """`result_ref` 역참조 — 백엔드·테스트가 결과 계약을 읽는 경로."""
+        return await self._packs.get(result_ref)
 
 
 def _execution_context(job: WorkerJob) -> ExecutionContext:

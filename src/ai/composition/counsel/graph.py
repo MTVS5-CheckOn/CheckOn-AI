@@ -16,7 +16,8 @@ prod=PostgresSaver). LLM 접점(plan·generate_draft)은 Protocol 뒤에 있고 
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -31,7 +32,8 @@ from ai.composition.counsel.provider import (
     max_chars_for,
 )
 from ai.composition.counsel.state import CounselPackState
-from ai.contracts.composition import DraftContext, DraftStatus, StudentResult
+from ai.composition.counsel.stores import DraftRecord, DraftResultStore
+from ai.contracts.composition import DraftContext, DraftKind, DraftStatus, StudentResult
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError
 
@@ -59,21 +61,19 @@ def build_counsel_graph(
     execution_context: ExecutionContext,
     checkpointer: BaseCheckpointSaver[Any],
     regen_max: int,
-    new_draft_id: Any = None,  # noqa: ANN401 — Callable[[], UUID]; 결정론 주입용
+    draft_store: DraftResultStore,
+    tenant_id: str,
+    agent_run_id: UUID,
+    new_draft_id: Callable[[], UUID],
+    now: Callable[[], datetime],
     interrupt_before: tuple[str, ...] = (),
 ) -> Any:  # noqa: ANN401 — LangGraph 컴파일 그래프 제네릭이 버전별로 달라 Any
     """의존성을 클로저로 묶어 컴파일된 그래프를 반환한다.
 
     `contexts`는 워커가 `context_ref`를 역참조해 넘긴다 — **state에 담기지 않는다**(§1.2 ⑨).
-    `new_draft_id`는 주입한다(시계·난수 금지 03 §3 — 미주입 시 결정론 카운터).
+    `new_draft_id`·`now`는 주입한다(시계·난수 금지 03 §3). `draft_store`는 게이트 통과 본문의
+    영속 경계다 — 기본 카운터(`UUID(int=n)`)는 잡 간 충돌하므로 두지 않는다.
     """
-    counter = {"n": 0}
-
-    def _next_draft_id() -> UUID:
-        if new_draft_id is not None:
-            return new_draft_id()  # type: ignore[no-any-return]
-        counter["n"] += 1
-        return UUID(int=counter["n"])
 
     async def plan(state: CounselPackState) -> dict[str, Any]:
         if state.emphasis_points:  # 재개 — plan은 이미 끝났다(멱등)
@@ -133,12 +133,36 @@ def build_counsel_graph(
                     ),
                 )
             gate = check_counsel_gate(text, context, max_chars=max_chars)
-            if gate.passed:  # ④ record — 본문은 저장소로, state엔 포인터만
+            if gate.passed:
+                # ④ record — **게이트 통과 직후** 본문을 영속한다. 순서가 곧 불변식 1이다
+                #    (LLM 산출물은 게이트를 거쳐야 저장된다).
+                #    저장을 **이 노드 안에서** 하는 이유 2개:
+                #    ① state에는 본문을 싣지 않는 규율(§1.2 ⑨ — ref만)이라 노드 밖에선
+                #       text가 존재하지 않는다.
+                #    ② 학생 경계 체크포인트보다 먼저 영속돼야 재개 시 완료 학생의 초안이
+                #       실존한다(§1.3 "재생성 없음(멱등)").
+                draft_id = new_draft_id()
+                await draft_store.put(
+                    DraftRecord(
+                        id=draft_id,
+                        run_id=execution_context.execution_id,
+                        agent_run_id=agent_run_id,
+                        tenant_id=tenant_id,
+                        kind=DraftKind.COUNSEL_PACK.value,
+                        student_ref=student_ref,
+                        guardian_ref=context.guardian_ref,
+                        label_snapshot=context.label_snapshot.model_dump(mode="json"),
+                        status=DraftStatus.GENERATED.value,
+                        fail_reason=None,
+                        created_at=now(),
+                        content=text,
+                    )
+                )
                 return _record(
                     state,
                     StudentResult(
                         student_ref=student_ref,
-                        draft_id=_next_draft_id(),
+                        draft_id=draft_id,
                         status=DraftStatus.GENERATED,
                     ),
                 )

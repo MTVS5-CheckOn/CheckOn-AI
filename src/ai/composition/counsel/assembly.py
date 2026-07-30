@@ -33,7 +33,14 @@ from ai.composition.counsel.provider import (
     FakeCounselProvider,
     GatewayDraftWriter,
 )
-from ai.composition.counsel.stores import AgentStepSink, ContextStore
+from ai.composition.counsel.stores import (
+    AgentStepSink,
+    ContextStore,
+    DraftResultStore,
+    InMemoryDraftResultStore,
+    InMemoryPackResultStore,
+    PackResultStore,
+)
 from ai.composition.counsel.worker import CounselPackRunner
 from ai.contracts.llm import LLMProvider, ModelRole
 from ai.db.settings import DbSettings, get_db_settings
@@ -76,6 +83,8 @@ async def open_counsel_pack_runner(
     context_store: ContextStore,
     step_sink: AgentStepSink,
     lease_owner: str,
+    draft_store: DraftResultStore | None = None,
+    pack_store: PackResultStore | None = None,  # 미지정이면 인메모리(PG는 후속)
     planner: CounselPlanner | None = None,
     writer: DraftWriter | None = None,
     db_settings: DbSettings | None = None,
@@ -85,10 +94,16 @@ async def open_counsel_pack_runner(
     """설정에 맞춘 체크포인터와 LLM 접점을 주입한 러너를 연다(기본 Fake — LLM 없이 동작)."""
     resolved_db = db_settings or get_db_settings()
     fake = FakeCounselProvider()
+    #: 산출물 저장소 기본값 — 인메모리(PG 영속은 후속 · 99 D). 미주입이면 결과가 어디에도
+    #: 도착하지 않으므로 None을 허용하지 않는다.
+    drafts = draft_store or InMemoryDraftResultStore()
+    packs = pack_store or InMemoryPackResultStore()
     async with _open_saver(resolved_db) as checkpointer:
         yield CounselPackRunner(
             supervisor=supervisor,
             context_store=context_store,
+            draft_store=drafts,
+            pack_store=packs,
             step_sink=step_sink,
             planner=planner or fake,
             writer=writer or fake,
