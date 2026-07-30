@@ -197,8 +197,8 @@ erDiagram
     varchar tenant_id
     varchar owner_kind "signal|draft_block|problem_item"
     uuid owner_id
-    varchar source_table "MySQL 논리 참조"
-    varchar record_id
+    varchar source_table "논리 참조 — MySQL 테이블명 또는 내부 참조 종류(evidence_pack_anchor)"
+    varchar record_id "원본 PK 또는 앵커 좌표(pack_id|anchor_id)"
     varchar summary "표시용 한 줄"
   }
   DRAFT {
