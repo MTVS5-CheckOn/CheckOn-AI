@@ -32,6 +32,7 @@ from ai.db.store_factory import (
 )
 from ai.import_mapping.probe.worker import MappingProbeRunner
 from ai.import_mapping.settings import ImportSettings, get_import_settings
+from ai.runtime.tracing import require_tracing_disabled
 
 _PG = "pg"  # store_factory._PG와 동일 스위치 — 저장소·체크포인터를 같은 플래그로 고른다.
 
@@ -56,6 +57,9 @@ async def open_mapping_probe_runner(
     new_id: Callable[[], UUID] = uuid4,
 ) -> AsyncIterator[MappingProbeRunner]:
     """설정에 맞춘 저장소·체크포인터를 주입한 러너를 연다(memory 기본, pg 전환)."""
+    # ㉒-a fail-closed — counsel_pack과 같은 위험 표면이다(11 §3 — LangGraph 워커 둘).
+    require_tracing_disabled("mapping_probe")
+
     resolved_db = db_settings or get_db_settings()
     resolved_import = import_settings or get_import_settings()
     async with _open_saver(resolved_db) as checkpointer:
