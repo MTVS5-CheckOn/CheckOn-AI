@@ -6,6 +6,8 @@ FakeCounselProvider + InMemorySaver로 결정론화. 실 LLM·PG 없음.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +16,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from ai.composition.counsel.graph import build_counsel_graph, summarize
 from ai.composition.counsel.provider import FakeCounselProvider, RedactionBlockedError
 from ai.composition.counsel.state import CounselPackState
+from ai.composition.counsel.stores import InMemoryDraftResultStore
 from ai.contracts.composition import (
     CommStyle,
     DraftContext,
@@ -29,6 +32,18 @@ from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LlmTimeout
 
 _HASH = "sha256:" + "b" * 64
+_NOW = datetime(2026, 7, 30, tzinfo=UTC)
+
+
+def _draft_ids() -> Callable[[], UUID]:
+    """결정론 draft_id 발급기 — 기본 카운터가 제거됐으므로 테스트가 주입한다."""
+    box = {"n": 0}
+
+    def _next() -> UUID:
+        box["n"] += 1
+        return UUID(int=box["n"])
+
+    return _next
 _REGEN_MAX = 3
 
 
@@ -90,6 +105,12 @@ def _run(
         execution_context=_execution_context(),
         checkpointer=InMemorySaver(),
         regen_max=_REGEN_MAX,
+        llm_failure_circuit=99,
+        draft_store=InMemoryDraftResultStore(),
+        tenant_id="t1",
+        agent_run_id=UUID("00000000-0000-4000-8000-00000000000e"),
+        new_draft_id=_draft_ids(),
+        now=lambda: _NOW,
         interrupt_before=interrupt,
     )
     config = {"configurable": {"thread_id": thread}}
@@ -200,6 +221,12 @@ def test_resume_from_student_boundary_does_not_regenerate() -> None:
         execution_context=_execution_context(),
         checkpointer=InMemorySaver(),
         regen_max=_REGEN_MAX,
+        llm_failure_circuit=99,
+        draft_store=InMemoryDraftResultStore(),
+        tenant_id="t1",
+        agent_run_id=UUID("00000000-0000-4000-8000-00000000000e"),
+        new_draft_id=_draft_ids(),
+        now=lambda: _NOW,
         interrupt_before=("summarize",),
     )
     config = {"configurable": {"thread_id": "resume"}}
@@ -223,6 +250,12 @@ def test_checkpoint_is_per_student() -> None:
         execution_context=_execution_context(),
         checkpointer=InMemorySaver(),
         regen_max=_REGEN_MAX,
+        llm_failure_circuit=99,
+        draft_store=InMemoryDraftResultStore(),
+        tenant_id="t1",
+        agent_run_id=UUID("00000000-0000-4000-8000-00000000000e"),
+        new_draft_id=_draft_ids(),
+        now=lambda: _NOW,
         interrupt_before=("student",),
     )
     config = {"configurable": {"thread_id": "cp"}}

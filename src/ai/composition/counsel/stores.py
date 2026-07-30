@@ -19,11 +19,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from ai.contracts.composition import DraftContext
+from ai.contracts.composition import DraftContext, StudentResult
 
 #: ref URI 스킴 — probe의 profile://·spec:// 선례를 따른다.
 CONTEXT_SCHEME: Final = "context"
 DRAFT_SCHEME: Final = "draft"
+#: 팩 결과(요약 + 학생별 결과 포인터) — probe의 profile://(입력)→spec://(산출) 대칭.
+#: `draft://`는 **학생별 본문 전용**이라 결이 다른 산출물에 스킴을 나눈다.
+PACK_SCHEME: Final = "pack"
 
 
 def make_ref(scheme: str, key: UUID) -> str:
@@ -60,7 +63,11 @@ class ContextBundleRecord(BaseModel):
 
 
 class DraftRecord(BaseModel):
-    """`draft` 행과 1:1 — ERD DRAFT 컬럼 그대로."""
+    """`draft` 행과 1:1 — ERD DRAFT 컬럼 + 본문.
+
+    ⚠ **게이트 통과분만 저장된다** — 저장 호출이 게이트 통과 직후에 있다(graph.py). 순서가
+    곧 불변식 1(LLM 산출물은 게이트를 거쳐야 저장된다)이다.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -74,6 +81,31 @@ class DraftRecord(BaseModel):
     label_snapshot: dict[str, Any]
     status: str
     fail_reason: str | None
+    created_at: datetime
+
+    content: str
+    """게이트를 통과한 초안 본문. state에는 싣지 않는다(§1.2 ⑨ — 본문 미복제·ref만)."""
+
+
+class CounselPackResultRecord(BaseModel):
+    """팩 1건의 결과 계약 — `result_ref`(`pack://…`)가 가리키는 대상.
+
+    `succeed(result_ref=…)`에 이 ref를 넣는다. 요약과 학생별 결과 **포인터**만 담고 본문은
+    담지 않는다(본문은 `draft://`). 부분 미해결도 유효한 결과 계약이므로 Job은 succeeded다
+    (error_codes §2.5).
+
+    ⚠ **대응 ERD 테이블이 없다**(AGENT_RUN은 `result_ref` 포인터만·DRAFT는 학생별) —
+    PG 영속 시 테이블 신설이 필요하고 `db/models.py`는 양자 승인 파일이라 B와 함께 정한다
+    (99 D 후속 등록).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: UUID
+    tenant_id: str
+    class_ref: str
+    summary: str
+    results: tuple[StudentResult, ...]
     created_at: datetime
 
 
@@ -102,13 +134,27 @@ class AgentStepRecord(BaseModel):
 class ContextStore(Protocol):
     async def put(self, record: ContextBundleRecord) -> str: ...
 
-    async def get(self, ref: str) -> ContextBundleRecord | None: ...
+    async def get(self, ref: str, *, tenant_id: str) -> ContextBundleRecord | None:
+        """참조 해소 — **테넌트 스코프 필수**(CLAUDE.md §4 "테넌트 격리 없는 쿼리는 반려").
+
+        다른 테넌트의 ref를 들고 와도 저장소 수준에서 해소되지 않는다. 워커의 추가 검증은
+        이중 방어다.
+        """
+        ...
 
 
 class DraftResultStore(Protocol):
     async def put(self, record: DraftRecord) -> str: ...
 
     async def get(self, ref: str) -> DraftRecord | None: ...
+
+
+class PackResultStore(Protocol):
+    """팩 결과(요약+포인터) 저장소 — `result_ref`의 대상."""
+
+    async def put(self, record: CounselPackResultRecord) -> str: ...
+
+    async def get(self, ref: str) -> CounselPackResultRecord | None: ...
 
 
 class AgentStepSink(Protocol):
@@ -125,8 +171,11 @@ class InMemoryContextStore:
         self._rows[record.id] = record
         return make_ref(CONTEXT_SCHEME, record.id)
 
-    async def get(self, ref: str) -> ContextBundleRecord | None:
-        return self._rows.get(parse_ref(ref, CONTEXT_SCHEME))
+    async def get(self, ref: str, *, tenant_id: str) -> ContextBundleRecord | None:
+        row = self._rows.get(parse_ref(ref, CONTEXT_SCHEME))
+        if row is None or row.tenant_id != tenant_id:  # 저장소 수준 격리
+            return None
+        return row
 
 
 class InMemoryDraftResultStore:
@@ -139,6 +188,22 @@ class InMemoryDraftResultStore:
 
     async def get(self, ref: str) -> DraftRecord | None:
         return self._rows.get(parse_ref(ref, DRAFT_SCHEME))
+
+    def ids(self) -> tuple[UUID, ...]:
+        """저장된 draft_id 목록 — 재개가 이중 발급하지 않는지 확인하는 테스트용."""
+        return tuple(self._rows)
+
+
+class InMemoryPackResultStore:
+    def __init__(self) -> None:
+        self._rows: dict[UUID, CounselPackResultRecord] = {}
+
+    async def put(self, record: CounselPackResultRecord) -> str:
+        self._rows[record.id] = record
+        return make_ref(PACK_SCHEME, record.id)
+
+    async def get(self, ref: str) -> CounselPackResultRecord | None:
+        return self._rows.get(parse_ref(ref, PACK_SCHEME))
 
 
 class InMemoryAgentStepSink:
@@ -155,15 +220,19 @@ class InMemoryAgentStepSink:
 __all__ = [
     "CONTEXT_SCHEME",
     "DRAFT_SCHEME",
+    "PACK_SCHEME",
     "AgentStepRecord",
     "AgentStepSink",
     "ContextBundleRecord",
     "ContextStore",
+    "CounselPackResultRecord",
     "DraftRecord",
     "DraftResultStore",
     "InMemoryAgentStepSink",
     "InMemoryContextStore",
     "InMemoryDraftResultStore",
+    "InMemoryPackResultStore",
+    "PackResultStore",
     "make_ref",
     "parse_ref",
 ]
