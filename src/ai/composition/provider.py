@@ -30,6 +30,7 @@ from ai.contracts.llm import (
 )
 from ai.detection.brief import build_brief
 from ai.llm.gateway import LlmGateway
+from ai.runtime.trace_masking import RedactionTripwireTraceHook
 
 #: 브리핑 전송 재시도 = 0 — LLM 실패 시 결정론 템플릿으로 즉시 폴백(재시도 없음).
 #: 04 §2.4 예산(브리핑 45s·호출당 15s)에 재시도가 얹히면 병렬 예산이 깨진다. 09 §1-10 ①.
@@ -108,8 +109,13 @@ def build_brief_gateway(provider: LLMProvider | None = None) -> LlmGateway:
     모든 LLM 호출은 gateway 경유(03_coding_rules §2 · 01 §5) — 어댑터 직결을 종료한다.
     전송 재시도는 narrator=0으로 등록(재시도 값은 여기서 주입 — 하드코딩 금지). 원가 기록
     recorder는 기본 no-op(LLM_CALL DB 적재는 후속 — 99 등록).
+
+    `trace_masking_hook`도 **조립부가 주입한다** — `transport_retry`와 같은 규약이다
+    (01 §5 "게이트웨이는 값을 모른다"). 미주입이면 `LANGSMITH_TRACING=true`에서
+    게이트웨이 생성이 실패한다(09 §2-16 P1′ 기동 가드).
     """
     return LlmGateway(
         {ModelRole.NARRATOR: provider or build_brief_provider()},
         transport_retry={ModelRole.NARRATOR: _NARRATOR_TRANSPORT_RETRY},
+        trace_masking_hook=RedactionTripwireTraceHook(),
     )
