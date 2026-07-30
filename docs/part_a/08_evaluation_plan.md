@@ -38,9 +38,9 @@ golden/
 | G11 | 경계값(R1 drop 정확히 15.0%p) | R1 발화 | ≥ 판정 명세화 |
 | G12 | 복합(R1+R2+R4 동시) | **경보 1건**에 신호 3개 병합, score=max | 병합·상한 |
 
-추가 검증(시나리오 횡단): 데이터 2주 미만 학생 → 어느 규칙도 미발화 + **`signals` 배열에 미포함 + `stats.excluded_under_2w`에 집계**(7/16 — 구 `observed_only` 목록 제거, 명세 09 §3) · TOP 3~5 상한 · evidence의 record_id가 입력 스냅숏에 전부 실존.
+추가 검증(시나리오 횡단): 데이터 2주 미만 학생 → 어느 규칙도 미발화 + **`signals` 배열에 미포함 + `stats.excluded_under_2w`에 집계**(7/16 — 구 `observed_only` 목록 제거, 명세 09 §3) · TOP 3~5 상한(new·follow_up만 대상 — ongoing·R5 합류로 응답 수·rank는 5 초과 가능) · evidence의 record_id가 입력 스냅숏에 전부 실존.
 
-> **[PART_B 크로스체킹 요청 · 미확정 — ongoing 상한 회귀]** 현재 추가 회귀는 `ongoing 3 + new 5 → 응답 8, capped_out=0`으로 ongoing이 슬롯을 소비하지 않는 점은 고정하지만, 실제 상한 초과와 rank 의미는 검증하지 않는다. **제안 해결안:** `ongoing 3 + new 6 → 응답 8, capped_out=1`, new·follow_up 혼합/단독 상한, 다중 반의 독립 상한·rank 재시작·`capped_out` 합산, `new·follow_up` 뒤 ongoing·R5가 이어지는 정확한 rank를 골든 기대값에 추가한다. 동점일 때 상한 대상은 현재 `student_ref` 내림차순, 상한 밖은 오름차순이므로 방향을 통일하거나 명문화한다. 또 복합 신호의 primary/secondary lifecycle 양방향 경계는 04 §3의 미확정 결론에 맞춰 테스트로 고정하도록 A가 확인해 달라.
+> **[PART_B 크로스체킹 요청 · 미확정 — 병합 lifecycle 경계 회귀]** 회귀 요구 4건(`ongoing 3 + new 6 → 8, capped_out=1` · `new`·`follow_up` 혼합·단독 상한 · 다중 반 독립 rank·`capped_out` · 통과분 뒤 `ongoing`·R5의 정확한 rank)은 **PR #38**의 단위 회귀 8건으로, 동점 방향 "통일 또는 명문화"는 **PR #39**의 04 §3 명문화(+ 99 D ⑯ 후속)로 ✅ 해소됐다. **잔여 1건:** 복합 신호의 primary/secondary lifecycle 양방향 경계를 04 §3의 결론에 맞춰 고정하는 것 — 04 §3에 아직 그 결론이 없어(A+BE 미결 · 09 §1-8 ☐) PR #38은 결론 고정이 아니라 **현행 기록용 TODO**다. 결정 후 테스트와 골든 기대값을 함께 갱신한다.
 
 ## 3. 라벨 24조합 프롬프트 스냅숏 (`tone/`)
 

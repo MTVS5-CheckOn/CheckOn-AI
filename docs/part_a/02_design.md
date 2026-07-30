@@ -29,14 +29,16 @@ flowchart LR
   IN["입력 스냅숏<br/>(백엔드→REST, alias만)<br/>learning_event 주간분"] --> FB["features.py<br/>주간 피처 빌드<br/>어절 정규화 시간·유형별 정답률"]
   FB --> BL["baseline.py<br/>개인 베이스라인 갱신<br/>세그먼트: normal/재적응/방학"]
   BL --> RU["rules.py R1~R6<br/>상대 변화 평가<br/>규칙별 evidence 수집"]
-  RU --> RK["ranking.py<br/>TOP 3~5 상한<br/>(per_class|per_teacher 설정)"]
+  RU --> RK["ranking.py<br/>new·follow_up score DESC 정렬<br/>cap_max 통과 · capped_out 집계<br/>(ongoing·R5는 engine에서 상한 밖 합류)"]
   RK --> OUT["Signal + EvidenceBundle<br/>PG 저장 → 백엔드 반환<br/>(Alert 생성은 백엔드)"]
   OUT -.->|"v2: 확정 신호를 입력으로"| BRF["ⓐ 브리핑 문장화 (1-D)<br/>LLM 한 줄 + 왜곡 게이트<br/>실패 시 템플릿 폴백"]
   TH["thresholds.py<br/>강사별 임계값 vN"] -.-> RU
   FBNOTE["※ 피드백 루프 보류(7/16)<br/>/feedback API·화면 버튼 v1 제외<br/>signal_id 저장·RULE_FEEDBACK 예약 (명세 09)"]
 ```
 
-> **[PART_B 크로스체킹 요청 · 미확정 — detection 상한 흐름]** 위 `ranking.py TOP 3~5` 도식과 아래 시퀀스·SIGNAL rank 설명은 모든 신호가 상한 대상인 것처럼 읽히지만, A 정본(04 §3·09 §4, #14)은 lifecycle 억제 후 `new`·`follow_up`만 상한을 적용하고 `ongoing`·R5를 상한 밖에서 합류시킨다. **제안 해결안:** 도식을 `병합 → lifecycle 억제 → new·follow_up 랭킹·상한 → ongoing·R5 합류`로 동기화하고 최종 응답 수·rank가 5를 넘을 수 있음을 표시한다. A가 설계도·시퀀스·내부 ERD 설명을 함께 갱신할지 확인해 달라. 기존 도식은 확인 전 변경하지 않는다.
+도식의 노드는 **파일 소유** 기준이다 — `ranking.py`(`rank_class`)는 lifecycle을 모르고 넘겨받은 상한 대상만 정렬·통과·집계한다. **lifecycle 억제 판정과 `ongoing`·R5의 상한 밖 합류 순서는 `engine.py`의 `_rank_with_lifecycle`이 소유한다**(04 §3 적용 순서).
+
+> ✅ **A+BE+FE 확인 완료(2026-07-30) — detection 상한 흐름.** TOP 3~5 상한은 `new`·`follow_up`에만 적용하며, `ongoing`과 `return_care`(R5)는 상한 밖으로 추가되어 `signals` 길이와 `rank`가 5를 초과할 수 있다. 백엔드·프론트 모두 응답 길이 ≤5 또는 `rank` ≤5를 가정하지 않는다. 위 도식·시퀀스·내부 ERD `rank` 설명을 정본에 맞춰 동기화했다. **억제 판정과 상한 밖 합류 순서는 `engine.py`의 `_rank_with_lifecycle`이 소유하고**, `ranking.py`의 `rank_class`는 lifecycle을 모른 채 넘겨받은 상한 대상만 정렬·집계한다. 정본: 04 §3 · 09 §4 · 99 #14.
 
 **불변식:** evidence 빈 신호는 `EmptyEvidenceError` · 데이터 2주 미만 제외(관찰 중) · 임계값 변경은 버전으로만. **문장화(ⓐ)는 detection 밖의 소비 기능** — detection 코드는 v2에서도 무변경·LLM 0.
 
@@ -149,7 +151,7 @@ sequenceDiagram
   API->>PG: ai_run 기록 (engine_ver·feature_ver·hash)
   API->>DET: run(ExecutionContext, snapshot)
   DET->>PG: feature_week upsert · baseline 갱신
-  DET->>DET: rules R1~R6 → ranking TOP 3~5
+  DET->>DET: rules R1~R6 → lifecycle 억제 → new·follow_up TOP 3~5 → ongoing·R5 합류
   DET->>PG: signal + evidence_item 저장
   API->>CMP: 문장화 요청 (확정 signal+evidence)
   CMP->>CMP: LLM 한 줄 생성 → 왜곡 게이트(수치·방향·라벨 대조)
@@ -429,7 +431,7 @@ erDiagram
     varchar rule_id
     varchar signal_type
     numeric score
-    int rank "상한 적용 후"
+    int rank "반 내 최종 표시 순번 — 통과분 뒤 ongoing·R5, 5 초과 가능"
     timestamptz created_at
   }
   SIGNAL_BRIEF {

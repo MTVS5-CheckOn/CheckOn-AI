@@ -142,7 +142,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 
 | 엔드포인트 | 방식 | 언제 호출 | 돌려주는 것 |
 | --- | --- | --- | --- |
-| `POST /detect` | 동기 | 야간 배치 02:10 | 신호 TOP 3~5 + display_label + lifecycle + 근거 + 브리핑 문장 |
+| `POST /detect` | 동기 | 야간 배치 02:10 | 신호(`new`·`follow_up` 반별 TOP 3~5 + 상한 밖 `ongoing`·`return_care`) + display_label + lifecycle + 근거 + 브리핑 문장 |
 | `POST /confirmations` | 동기 | 태그·라벨·분류·초안수정 확정 시 | ack (품질 평가셋 재료) |
 | `POST /drafts` → `GET /drafts/{id}` | 202 | 문의 도착 즉시 · 리포트 주기 | 블록별 초안 + 근거 + 게이트 + status |
 | `POST /drafts/{id}/refine` | 202 | 채팅형 다듬기(자유 지시 · 핑퐁) | 지시 반영 리비전 — 매 턴 게이트 재통과, 1턴 = 초안 할당 1 |
@@ -171,7 +171,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
     "week_start": "2026-07-13",          // 이 주차의 월요일 — 피처 계산 기준 키
     "snapshot_hash": "sha256:...",       // 부록 A 규칙으로 백엔드가 산정 — alert_context 포함해 해시
     "term_context": "normal",            // normal | new_term | vacation — 신학기·방학 오경보 방지용
-    "classes": [{ "class_ref": "cl_a1" }]  // 반 목록 — 경보 상한(반별 TOP 3~5) 계산에 필요
+    "classes": [{ "class_ref": "cl_a1" }]  // 반 목록 — 경보 상한(반별 TOP 3~5, new·follow_up만 대상) 계산에 필요
   },
   "students":        [ { "...": "§4.1 · 09 §2 students 표 참조" } ],        // 재원생 전체 (consent 포함)
   "learning_events": [ { "...": "§4.1 · 09 §2 learning_events 표 참조" } ], // 지난 주차 증분만
@@ -190,7 +190,9 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 ```json
 {
   "data": {
-    "signals": [{                        // 반별 TOP 3~5 상한 적용 후의 신호만
+    "signals": [{                        // TOP 3~5 상한은 new·follow_up에만 적용하며,
+                                         // ongoing·return_care(R5)는 상한 밖으로 추가되어
+                                         // signals 길이와 rank가 5를 초과할 수 있다
       "signal_id": "uuid",               // AI 신호 ID — Alert와 함께 저장(향후 강사 평가 회신 대비)
       "student_ref": "st_8f2a",
       "class_ref": "cl_a1",
@@ -214,7 +216,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
       "students_evaluated": 58,
       "signals_raised": 3,
       "excluded_under_2w": 4,            // ★(7/16) 재원 2주 미만 제외 수 — 구 observed_only 목록을 숫자로 대체
-      "capped_out": 2,                   // 상한에 밀린 후보 수
+      "capped_out": 2,                   // lifecycle 억제 후 new·follow_up 후보의 탈락 수만
       "rules_skipped": [{ "rule_id": "R4", "reason": "duration_missing", "students": 5 }]
     }
   }
@@ -223,7 +225,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 
 **규약:** evidence 빈 신호는 스키마상 불가 · **`observed_only` 목록은 제거(7/16)** — AI는 `stats.excluded_under_2w` 숫자만 내고, "관찰 중"(재원 14일 미만) 표시는 백엔드가 `enrolled_at`으로 직접 계산(09 §3) · **lifecycle 판정은 AI 소유**(09 §4 · 쿨다운 2주) · **Alert 생성·상태 관리는 백엔드 소유** — AI는 신호 산출까지.
 
-> **[PART_B 크로스체킹 요청 · 미확정 — 감지 상한 응답]** A 정본(`part_a/04_threshold_config.md` §3·`09_detect_spec.md` §4, #14)은 상한을 `new`·`follow_up`에만 적용하고 `ongoing`·R5를 상한 밖에서 합류시키므로 전체 `signals[]` 수와 rank가 `cap_max`를 넘을 수 있다고 확정했다. 그러나 이 문서의 §3.0 “신호 TOP 3~5”, 위 `signals[]`·`rank` 주석과 `capped_out` 설명은 모든 응답 신호가 상한 대상인 것처럼 읽힌다. **제안 해결안:** 공용 계약을 “`new`·`follow_up` 통과분 뒤 ongoing·R5 합류”, “`capped_out`=`new`·`follow_up` 탈락 수”, “rank=최종 표시 순번이며 5 초과 가능”으로 동기화하고, 백엔드·프론트가 응답 길이≤5 또는 rank≤5를 검증하지 않는지 A·B·백엔드가 확인해 달라. 확정 전 기존 본문 값은 바꾸지 않는다.
+> ✅ **A+BE+FE 확인 완료(2026-07-30) — 감지 상한 응답.** TOP 3~5 상한은 `new`·`follow_up`에만 적용하며, `ongoing`과 `return_care`(R5)는 상한 밖으로 추가되어 `signals` 길이와 `rank`가 5를 초과할 수 있다. **백엔드·프론트 확인 결과 양쪽 모두 응답 길이 ≤5 또는 `rank` ≤5를 가정·검증하지 않는다**(백엔드 DTO에 rank 상한 제약 없음 · 프론트 렌더링 개수 제한 없음). 파생 정의: `signals_raised`=상한 밖 합류를 **포함한** 최종 반환 신호 수 · `capped_out`=lifecycle 억제 후 **`new`·`follow_up` 후보의 탈락 수만** · `rank`=반 내 **최종 표시 순번**(통과분 뒤 `ongoing`·R5, 5 초과 가능). 정본은 `part_a/04_threshold_config.md` §3 · `09_detect_spec.md` §4 · 99 #14.
 
 ---
 
