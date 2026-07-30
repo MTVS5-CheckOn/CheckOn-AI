@@ -32,7 +32,7 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
   ],
   "learning_events": [
     {
-      "record_id": "le_1029",               // MySQL PK — 근거 역추적 키, 불변 필수
+      "record_id": "le_1029",               // 백엔드 DB PK — 근거 역추적 키, 불변 필수
       "student_ref": "st_8f2a",
       "type": "solve",                      // solve | submit | attend | consult
       "occurred_at": "2026-07-08T19:20:00+09:00",

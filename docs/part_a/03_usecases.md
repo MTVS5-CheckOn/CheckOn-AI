@@ -18,7 +18,7 @@
 3. 피처 계산 — 풀이시간은 지문 어절 수로 정규화, 유형별 정답률 포함(**축 = 수능 `area_tag` × `type_tag`** — threshold 시트 §1 R6 결정. `item_format`은 분리 리포팅만).
 4. 개인 베이스라인 대조(세그먼트 normal).
 5. R4 발화: **정답률 유지(83→81%) AND 정규화 시간 1.9배·3주 연속** — 상대 변화 조건.
-6. evidence 6건 수집(`EvidenceRef` — MySQL 원본 논리 참조). 비면 생성 실패.
+6. evidence 6건 수집(`EvidenceRef` — 백엔드 DB 원본 논리 참조). 비면 생성 실패.
 7. 반 단위 TOP 3~5 상한 적용 — **`new`·`follow_up`에만** 걸고 `ongoing`·`return_care`(R5)는 상한 밖으로 합류시킨다(응답 수·rank가 5를 넘을 수 있음). 데이터 2주 미만 신규생은 조용히 평가 제외 — **목록은 반환하지 않고 `stats.excluded_under_2w` 숫자만**(구 observed_only 제거, 7/16). "관찰 중"(재원 14일 미만) 표시는 백엔드가 `enrolled_at`으로 계산(명세 09 §3).
 8. signal(+display_label·lifecycle)+evidence 저장·반환. lifecycle 판정은 AI 소유(명세 09 §4). Alert 승격·상태 관리는 백엔드.
 

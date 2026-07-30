@@ -112,8 +112,8 @@ def test_anchor_coordinate_rejects_record_path() -> None:
 # ── (a) 기존 A 경로 · 결정론 PK ───────────────────────────────────
 
 
-def test_from_record_keeps_mysql_logical_reference() -> None:
-    """감지·상담 근거는 MySQL 테이블명 + 원본 PK를 그대로 논리 참조한다."""
+def test_from_record_keeps_backend_db_logical_reference() -> None:
+    """감지·상담 근거는 백엔드 DB 테이블명 + 원본 PK를 그대로 논리 참조한다."""
     ref = EvidenceRef.from_record(
         tenant_id="t1",
         owner_kind=EvidenceOwnerKind.SIGNAL,

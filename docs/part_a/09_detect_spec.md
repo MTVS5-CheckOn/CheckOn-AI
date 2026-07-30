@@ -71,7 +71,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
     // 지난 주차에 새로 생긴 학습 기록만 (매번 전체 재전송 아님)
     {
       "record_id": "le_1029",
-          // 백엔드 MySQL의 원본 기록 PK. AI가 "근거"로 이 ID를 되돌려주고,
+          // 백엔드 DB의 원본 기록 PK. AI가 "근거"로 이 ID를 되돌려주고,
           // 강사가 [근거 보기]를 누르면 백엔드가 이 ID로 원본을 보여줌. 절대 바뀌면 안 되는 키
 
       "student_ref": "st_8f2a",
@@ -135,8 +135,8 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 > - `AlertContextItem`은 `resolved`일 때 `resolved_at` 필수, `open`일 때 `resolved_at` 부재, 미래 해소 시각 금지 등 상태 조합 validator를 두는 안을 제안한다. 정확히 14일·14일 초과·다른 학생·다른 유형 격리 테스트 범위도 A가 확인해 달라.
 >
 > ✅ **A 판정(7/22):**
-> - **① 증분 격차:** AI가 `FEATURE_WEEK`·`BASELINE`을 영속 축적하는 방향으로 확정한다(D-② Alembic에서 구현). 외부 계약(`learning_events`=지난 주 증분)은 그대로 유지한다 — 백엔드 rolling 동봉 대안은 채택하지 않는다. **누적 병합 규칙(D-② 확정 7/22):** 저장된 이력 + 이번 요청을 병합할 때 `record_id`(백엔드 MySQL 원본 PK)로 dedupe하고, 같은 주차는 `FEATURE_WEEK` upsert한다. **같은 `record_id`인데 내용이 다르면 최신 수신본으로 갱신 + 로그**(재전송 = 강사의 채점 정정으로 해석 — 원본의 진실은 백엔드에 있으므로 충돌 에러로 막지 않는다). 갱신된 record_id 수를 로그로 남겨 대량 재전송을 관찰한다. 요청만으로 이력이 충분하면(데모·골든·초기 연동) DB 없이도 기존과 동일하게 동작한다.
->   - **정밀화(D-②b 확정 · 백엔드 통보 필요):** **축적 대상은 파생물(`FEATURE_WEEK`)이며 raw `learning_events`는 AI PG에 저장하지 않는다**(도메인 원본은 백엔드 MySQL 소유 — CLAUDE.md 상위 규범, ERD에도 raw 이벤트 테이블 없음). 그래서 `record_id` dedupe는 **요청 이벤트에 대한 순수 정리**(재전송 정정 최신 승리)이고, 엔진은 여전히 **요청 구동**(시그니처 무변경)이다. **baseline read-path 구현됨 [D-②b ✅ 7/23]** — 판정 시 `FEATURE_WEEK` 축적분에서 학생별 주간 피처를 되살려(cells 제외·baseline 무관) 요청 피처와 병합(같은 주 요청 승, 판정 창까지 병합)해 엔진에 주입한다. 조회는 라우터가 요청 students 전원분을 **fail-closed(500)**로 수행(반쪽 baseline은 미탐이라 폴백 금지). 구현: `engine.detect(stored_features=…)`(미주입 시 바이트 동일) · `detection_store.load_feature_weeks` · `features.week_features_from_metrics/merge_weeks`. **→ 순수 증분(1주) 전용 전환 가능** — 다만 **실제 전환은 백엔드와 일정 합의 후 별도 통보**한다(그 전까지 **최근 10주 동봉 유지** — 10주가 와도 동작 동일: 병합은 같은 주를 요청으로 덮으므로 결과 불변). **[A 확정 · 백엔드 통보 필요]**
+> - **① 증분 격차:** AI가 `FEATURE_WEEK`·`BASELINE`을 영속 축적하는 방향으로 확정한다(D-② Alembic에서 구현). 외부 계약(`learning_events`=지난 주 증분)은 그대로 유지한다 — 백엔드 rolling 동봉 대안은 채택하지 않는다. **누적 병합 규칙(D-② 확정 7/22):** 저장된 이력 + 이번 요청을 병합할 때 `record_id`(백엔드 DB 원본 PK)로 dedupe하고, 같은 주차는 `FEATURE_WEEK` upsert한다. **같은 `record_id`인데 내용이 다르면 최신 수신본으로 갱신 + 로그**(재전송 = 강사의 채점 정정으로 해석 — 원본의 진실은 백엔드에 있으므로 충돌 에러로 막지 않는다). 갱신된 record_id 수를 로그로 남겨 대량 재전송을 관찰한다. 요청만으로 이력이 충분하면(데모·골든·초기 연동) DB 없이도 기존과 동일하게 동작한다.
+>   - **정밀화(D-②b 확정 · 백엔드 통보 필요):** **축적 대상은 파생물(`FEATURE_WEEK`)이며 raw `learning_events`는 AI PG에 저장하지 않는다**(도메인 원본은 백엔드 DB 소유 — CLAUDE.md 상위 규범, ERD에도 raw 이벤트 테이블 없음). 그래서 `record_id` dedupe는 **요청 이벤트에 대한 순수 정리**(재전송 정정 최신 승리)이고, 엔진은 여전히 **요청 구동**(시그니처 무변경)이다. **baseline read-path 구현됨 [D-②b ✅ 7/23]** — 판정 시 `FEATURE_WEEK` 축적분에서 학생별 주간 피처를 되살려(cells 제외·baseline 무관) 요청 피처와 병합(같은 주 요청 승, 판정 창까지 병합)해 엔진에 주입한다. 조회는 라우터가 요청 students 전원분을 **fail-closed(500)**로 수행(반쪽 baseline은 미탐이라 폴백 금지). 구현: `engine.detect(stored_features=…)`(미주입 시 바이트 동일) · `detection_store.load_feature_weeks` · `features.week_features_from_metrics/merge_weeks`. **→ 순수 증분(1주) 전용 전환 가능** — 다만 **실제 전환은 백엔드와 일정 합의 후 별도 통보**한다(그 전까지 **최근 10주 동봉 유지** — 10주가 와도 동작 동일: 병합은 같은 주를 요청으로 덮으므로 결과 불변). **[A 확정 · 백엔드 통보 필요]**
 > - **② week_start·status 엄격 검증:** 수용. `week_start`는 ISO date 형식, `status`는 enum으로 경계 모델에서 검증하고 오타는 `400 INVALID_SCHEMA`로 수렴시킨다(계약 강화 커밋). `AlertContextItem` 상태 조합 validator(resolved↔resolved_at)·14일 경계·이력 격리 테스트도 함께 수용.
 > - **③ consent는 enum 강제하지 않는 것이 의도다.** 사양(09 §2)에 `granted`만 존재하며 다른 값을 발명하지 않는다("문서에 없는 설계 금지"). `granted`가 아닌 값은 `400`이 아니라 **'폐기'가 사양** — 09 §2 원문("granted가 아니면 이벤트를 전부 버림")대로 feature/evidence 조립 전에 폐기한다. `paused`도 판정 제외로 폐기. 두 적대 입력 회귀 테스트는 유지.
 
@@ -204,7 +204,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
             "source_table": "learning_event",
                 // [로그] 원본이 어느 테이블인지 힌트
             "record_id": "le_1029",
-                // [저장] 백엔드 MySQL 원본 PK — 강사가 [근거 보기] 클릭하면 이 ID로 원본 조회
+                // [저장] 백엔드 DB 원본 PK — 강사가 [근거 보기] 클릭하면 이 ID로 원본 조회
             "summary": "7/3 숙제 지연 제출"
                 // [표시] 근거 목록에 바로 보여줄 한 줄 요약 (AI 생성)
           },

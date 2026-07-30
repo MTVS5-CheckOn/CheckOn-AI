@@ -5,7 +5,7 @@ ERD에 없는 테이블은 만들지 않는다. A-1 승인으로 B 전용 문항
 편입했으며, 대조는 tests/ai/db/test_erd_model_parity.py 가 강제한다.
 
 **실명·연락처 컬럼 절대 없음**(불변식 3) — alias(student_ref·guardian_ref 등)만.
-`…_ref`는 MySQL 원본을 가리키는 **논리 참조**(varchar, 물리 FK 아님).
+`…_ref`는 백엔드 DB 원본을 가리키는 **논리 참조**(varchar, 물리 FK 아님).
 enum성 컬럼(signal_type·lifecycle·status류)은 PG enum 대신 **varchar + 값 검증은 앱 계층**
 (enum 확장 시 마이그레이션 부담 회피 — D-② 확정).
 
