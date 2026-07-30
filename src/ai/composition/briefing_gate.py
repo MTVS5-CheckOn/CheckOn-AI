@@ -20,13 +20,11 @@ LLM을 쓰지 않는다(불변식 1). 실패 시 재생성(≤3) 또는 템플�
 from __future__ import annotations
 
 import re
-from functools import lru_cache
-from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
-_FORBIDDEN_PATH = Path(__file__).parent / "briefing_forbidden.yaml"
+from ai.composition.buffer_lexicon import forbidden_terms
+
 _NUMBER_RE = re.compile(r"\d+")
 
 #: LaTeX·마크다운 메타문자 — 한글 브리핑엔 안 나오는 게 정상(× U+00D7은 정상 문자라 제외).
@@ -43,10 +41,14 @@ class GateResult(BaseModel):
     reason: str = ""
 
 
-@lru_cache
 def _forbidden() -> tuple[str, ...]:
-    raw = yaml.safe_load(_FORBIDDEN_PATH.read_text(encoding="utf-8"))
-    return tuple(str(word) for word in raw["forbidden"])
+    """금칙어 A군 — `buffer_lexicon.yaml` 단일 참조(99 #15 ⓒ).
+
+    종전에는 `briefing_forbidden.yaml` 복사본을 읽었다. 목록이 두 곳에서 따로 늙는 것을
+    막으려고 D-③에서 정본 한 곳으로 합쳤다 — 값·검출 방식은 그대로다(동작 무변경).
+    캐시는 `load_buffer_lexicon`의 lru_cache가 담당한다.
+    """
+    return forbidden_terms()
 
 
 def check_brief_gate(

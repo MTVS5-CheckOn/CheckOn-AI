@@ -1,0 +1,165 @@
+# 라벨→톤 매핑 — 정본: docs/part_a/05_tone_mapping.md §1·§2·§3
+#
+# 이 yaml이 런타임 원본이다(코드에 톤 규칙 하드코딩 금지 — 03_coding_rules §1).
+# 프롬프트 템플릿은 이 파일을 **조회만** 한다. 소유: A 단독(02_ownership §5).
+# 갱신도 골든 통과가 머지 조건(02_ownership §5-5).
+
+version: "0.1"
+
+# ── §1 축별 1차 규칙 (조합 이전의 단독 효과) ──────────────────
+# 각 축의 키 집합이 조합 어휘의 정본이다 — 로더가 이 4축의 데카르트곱(24)과
+# combinations 키 집합이 정확히 일치하는지 검증한다(누락·오타 시 기동 실패).
+axis_rules:
+  comm:
+    data: "수치·표 우선, 문장 짧게, 형용사 최소. \"정답률 62%→71%\" 식"
+    narrative: "서사 우선, 수치는 근거로 1~2개만. \"추론 문제를 새로 시작하면서…\""
+  sensitivity:
+    anxious: "완충 +1단계(§4 사전 적용 강화), 부정 정보는 반드시 대응 계획과 한 문장 안에, 하락 서술 후치"
+    direct: "결론 선행, 완곡 표현 최소(단 금칙어는 동일 적용 — direct ≠ 무례)"
+  interest:
+    grade: "성적·정답률·백분위 중심 구성"
+    attitude: "성실도·제출·수업 태도 중심, 점수는 보조"
+    admission: "목표(수능) 대비 현재 위치와 로드맵 프레임"
+  frequency:
+    frequent: "짧게(핵심 2~3문장/블록), 지난 소통 이후 **변경분만**"
+    monthly: "충실하게(블록당 3~5문장), 기간 전체 요약 포함"
+
+# ── §2 24조합 매핑표 ────────────────────────────────────────
+# 키 = comm.sens.interest.freq (05 §5 규정). blocks = 블록 순서(§2 '구성'의 → 를
+# 리스트로 분해한 것이 정본 — 원문 문자열은 중복 보관하지 않는다),
+# sentences_per_block = 블록당 문장 수(§2 '길이'), buffer_level = §4 사전 적용 단계(0~2).
+# note 는 §2 '비고'가 있는 행에만 둔다(빈 행은 키 자체를 생략 — 로더는 None 반환).
+combinations:
+  "data.anxious.grade.frequent":   # 1
+    blocks: ["인사", "수치 요약", "안심 포인트", "제안"]
+    sentences_per_block: 2
+    buffer_level: 2
+    note: "수치 뒤 즉시 맥락 문장 의무"
+  "data.anxious.grade.monthly":   # 2
+    blocks: ["인사", "기간 수치표", "추이 해설", "제안"]
+    sentences_per_block: 4
+    buffer_level: 2
+  "data.anxious.attitude.frequent":   # 3
+    blocks: ["인사", "제출·참여 수치", "제안"]
+    sentences_per_block: 2
+    buffer_level: 2
+  "data.anxious.attitude.monthly":   # 4
+    blocks: ["인사", "성실도 지표", "변화 해설", "제안"]
+    sentences_per_block: 4
+    buffer_level: 2
+  "data.anxious.admission.frequent":   # 5
+    blocks: ["인사", "목표 대비 지표", "제안"]
+    sentences_per_block: 2
+    buffer_level: 2
+    note: "백분위 후치(리포트 사양서 §5)"
+  "data.anxious.admission.monthly":   # 6
+    blocks: ["인사", "목표 로드맵 수치", "제안"]
+    sentences_per_block: 4
+    buffer_level: 2
+  "data.direct.grade.frequent":   # 7
+    blocks: ["결론(수치)", "근거", "제안"]
+    sentences_per_block: 2
+    buffer_level: 1
+  "data.direct.grade.monthly":   # 8
+    blocks: ["결론", "기간 수치표", "제안"]
+    sentences_per_block: 3
+    buffer_level: 1
+  "data.direct.attitude.frequent":   # 9
+    blocks: ["결론(성실도)", "근거", "제안"]
+    sentences_per_block: 2
+    buffer_level: 1
+  "data.direct.attitude.monthly":   # 10
+    blocks: ["결론", "지표", "제안"]
+    sentences_per_block: 3
+    buffer_level: 1
+  "data.direct.admission.frequent":   # 11
+    blocks: ["결론(위치)", "갭 수치", "제안"]
+    sentences_per_block: 2
+    buffer_level: 1
+  "data.direct.admission.monthly":   # 12
+    blocks: ["결론", "로드맵", "제안"]
+    sentences_per_block: 3
+    buffer_level: 1
+  "narrative.anxious.grade.frequent":   # 13
+    blocks: ["인사", "긍정 서사", "성적 맥락", "제안"]
+    sentences_per_block: 3
+    buffer_level: 2
+    note: "점수 언급 최대 1회"
+  "narrative.anxious.grade.monthly":   # 14
+    blocks: ["인사", "한 달 서사", "성장 해설", "제안"]
+    sentences_per_block: 5
+    buffer_level: 2
+  "narrative.anxious.attitude.frequent":   # 15
+    blocks: ["인사", "태도 일화", "제안"]
+    sentences_per_block: 3
+    buffer_level: 2
+    note: "evidence 일화는 기록 실존분만"
+  "narrative.anxious.attitude.monthly":   # 16
+    blocks: ["인사", "태도 서사", "변화", "제안"]
+    sentences_per_block: 5
+    buffer_level: 2
+  "narrative.anxious.admission.frequent":   # 17
+    blocks: ["인사", "방향 서사", "제안"]
+    sentences_per_block: 3
+    buffer_level: 2
+  "narrative.anxious.admission.monthly":   # 18
+    blocks: ["인사", "목표 서사", "현재 위치(완곡)", "제안"]
+    sentences_per_block: 5
+    buffer_level: 2
+  "narrative.direct.grade.frequent":   # 19
+    blocks: ["핵심 서사", "성적 근거", "제안"]
+    sentences_per_block: 3
+    buffer_level: 1
+  "narrative.direct.grade.monthly":   # 20
+    blocks: ["핵심", "한 달 흐름", "제안"]
+    sentences_per_block: 4
+    buffer_level: 1
+  "narrative.direct.attitude.frequent":   # 21
+    blocks: ["핵심(태도)", "일화", "제안"]
+    sentences_per_block: 3
+    buffer_level: 1
+  "narrative.direct.attitude.monthly":   # 22
+    blocks: ["핵심", "서사", "제안"]
+    sentences_per_block: 4
+    buffer_level: 1
+  "narrative.direct.admission.frequent":   # 23
+    blocks: ["핵심(위치)", "서사", "제안"]
+    sentences_per_block: 3
+    buffer_level: 1
+  "narrative.direct.admission.monthly":   # 24
+    blocks: ["핵심", "로드맵 서사", "제안"]
+    sentences_per_block: 4
+    buffer_level: 1
+
+# ── §3 하위 백분위 완곡 규칙 (리포트 chart_analysis 전용) ──────
+# 소비처가 상담팩이 아니라 리포트다. 수치는 사실대로(변조·은폐 금지) — 문장 프레임만 제어한다.
+# 구간 표기는 §3 원문(≥50 / 30~49 / <30)을 정수 백분위 기준 min·max 로 옮긴 것이다.
+percentile_softening:
+  bands:
+    - id: high
+      min_percentile: 50
+      max_percentile: 100
+      requires_pairing: false
+      standalone_sentence_allowed: true
+      rule: "제한 없음"
+    - id: mid
+      min_percentile: 30
+      max_percentile: 49
+      requires_pairing: true
+      standalone_sentence_allowed: true
+      rule: "반드시 개선 추이 또는 강점 영역과 병기"
+    - id: low
+      min_percentile: 0
+      max_percentile: 29
+      requires_pairing: true
+      standalone_sentence_allowed: false
+      next_plan_adjacent: true
+      rule: "병기 의무 + 단독 문장 금지 + 다음 계획 문장 직결"
+  anxious_overrides:
+    # sensitivity=anxious 이면 각 구간을 한 단계씩 엄격 적용한다.
+    stricter_by_one_band: true
+    pairing_recommended_from_percentile: 50   # 50~69도 병기 권장
+    defer_percentile_block_after_suggestion: true   # 백분위 해설 블록을 제안 블록 뒤로 후치
+  notes:
+    - "수치는 사실대로 — 변조·은폐 금지. 문장 프레임만 제어한다."
+    - "반 평균·석차는 입력에 없다(audience 필터가 선차단) — 이 규칙표는 표현만 다룬다."
