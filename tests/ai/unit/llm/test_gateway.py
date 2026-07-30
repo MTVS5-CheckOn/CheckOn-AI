@@ -19,6 +19,9 @@ from ai.contracts.llm import (
     TokenUsage,
 )
 from ai.llm.gateway import LlmCallRecord, LlmCallRecorder, LlmGateway
+from ai.llm.settings import LlmSettings
+
+_TRACE_MASKED_PROMPT = "[트레이스 마스킹 프롬프트]"
 
 
 def _run[ResultT](coroutine: Coroutine[object, object, ResultT]) -> ResultT:
@@ -68,6 +71,45 @@ def _result(outcome: CallOutcome = CallOutcome.OK) -> LLMResult:
         usage=TokenUsage(tokens_in=11, tokens_out=7, cost_usd=0.0),
         latency_ms=4,
     )
+
+
+class _ReplacingTraceMaskingHook:
+    def __init__(self, prompt: str = _TRACE_MASKED_PROMPT) -> None:
+        self._prompt = prompt
+        self.calls = 0
+
+    def mask(
+        self,
+        request: LLMRequest,
+        context: ExecutionContext,
+    ) -> LLMRequest:
+        del context
+        self.calls += 1
+        return request.model_copy(update={"prompt": self._prompt})
+
+
+class _FailingTraceMaskingHook:
+    def mask(
+        self,
+        request: LLMRequest,
+        context: ExecutionContext,
+    ) -> LLMRequest:
+        del request, context
+        raise RuntimeError("트레이스 마스킹 실패")
+
+
+class _IdentityMutatingTraceMaskingHook:
+    def __init__(self, field: str, value: object) -> None:
+        self._field = field
+        self._value = value
+
+    def mask(
+        self,
+        request: LLMRequest,
+        context: ExecutionContext,
+    ) -> LLMRequest:
+        del context
+        return request.model_copy(update={self._field: self._value})
 
 
 def test_timeout_once_then_success_retries_once_and_records_both_attempts() -> None:
@@ -197,9 +239,7 @@ def test_multiple_providers_reject_same_generator_and_verifier_assignment() -> N
 
 @pytest.mark.parametrize("role", [ModelRole.GENERATOR, ModelRole.VERIFIER])
 @pytest.mark.parametrize("bad", [2, -1])
-def test_transport_retry_out_of_range_rejected_at_construction(
-    role: ModelRole, bad: int
-) -> None:
+def test_transport_retry_out_of_range_rejected_at_construction(role: ModelRole, bad: int) -> None:
     """값 0..1 밖이면 기동 실패(b) — generator·verifier에 정책 밖 값 주입도 거부(c)."""
     with pytest.raises(ValueError, match="0..1"):
         LlmGateway({role: FakeProvider([])}, transport_retry={role: bad})
@@ -241,11 +281,146 @@ def test_recorder_failure_does_not_fail_call_and_increments_counter() -> None:
         del record, context
         raise RuntimeError("적재 장애")
 
-    gateway = LlmGateway(
-        {ModelRole.GENERATOR: FakeProvider([_result()])}, recorder=_boom
-    )
+    gateway = LlmGateway({ModelRole.GENERATOR: FakeProvider([_result()])}, recorder=_boom)
 
     result = _run(gateway.complete(_request(), _context()))
 
     assert result.outcome is CallOutcome.OK  # 호출은 성공
     assert gateway.record_failures == 1  # 조용한 누락 금지 — 카운터 증가
+
+
+# ── 트레이스 마스킹 훅·기동 가드 — 09 §1-10 ③ · §2-16 ───────────
+
+
+@pytest.mark.parametrize(
+    ("langsmith_tracing", "inject_hook"),
+    [(False, False), (False, True), (True, True)],
+)
+def test_trace_masking_hook_tracing_combinations_that_can_start(
+    langsmith_tracing: bool,
+    inject_hook: bool,
+) -> None:
+    provider = FakeProvider([_result()])
+    hook = _ReplacingTraceMaskingHook() if inject_hook else None
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        trace_masking_hook=hook,
+        settings=LlmSettings(
+            langsmith_tracing=langsmith_tracing,
+            _env_file=None,
+        ),
+    )
+
+    result = _run(gateway.complete(_request(), _context()))
+
+    assert result.outcome is CallOutcome.OK
+    expected_prompt = _TRACE_MASKED_PROMPT if inject_hook else _request().prompt
+    assert provider.requests[0].prompt == expected_prompt
+    if hook is not None:
+        assert hook.calls == 1
+
+
+def test_tracing_without_hook_fails_at_construction_with_actionable_message() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        LlmGateway(
+            {ModelRole.GENERATOR: FakeProvider([])},
+            settings=LlmSettings(
+                langsmith_tracing=True,
+                _env_file=None,
+            ),
+        )
+
+    message = str(exc_info.value)
+    assert "LANGSMITH_TRACING" in message
+    assert "§2-16" in message
+
+
+def test_hook_returned_request_reaches_provider() -> None:
+    provider = FakeProvider([_result()])
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        trace_masking_hook=_ReplacingTraceMaskingHook(),
+        settings=LlmSettings(
+            langsmith_tracing=True,
+            _env_file=None,
+        ),
+    )
+
+    _run(gateway.complete(_request(), _context()))
+
+    assert len(provider.requests) == 1
+    assert provider.requests[0].prompt == _TRACE_MASKED_PROMPT
+    assert provider.requests[0].prompt != _request().prompt
+
+
+def test_retry_uses_hook_returned_request_for_every_transport_attempt() -> None:
+    provider = FakeProvider([LlmTimeout("첫 전송 실패"), _result()])
+    hook = _ReplacingTraceMaskingHook()
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        trace_masking_hook=hook,
+        settings=LlmSettings(
+            langsmith_tracing=True,
+            _env_file=None,
+        ),
+    )
+
+    result = _run(gateway.complete(_request(), _context()))
+
+    assert result.outcome is CallOutcome.OK
+    assert hook.calls == 1
+    assert len(provider.requests) == 2
+    assert all(request.prompt == _TRACE_MASKED_PROMPT for request in provider.requests)
+    assert all(request.prompt != _request().prompt for request in provider.requests)
+
+
+def test_hook_failure_does_not_call_provider_or_recorder() -> None:
+    records: list[LlmCallRecord] = []
+    provider = FakeProvider([_result()])
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        recorder=_collect(records),
+        trace_masking_hook=_FailingTraceMaskingHook(),
+        settings=LlmSettings(
+            langsmith_tracing=True,
+            _env_file=None,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="트레이스 마스킹 실패"):
+        _run(gateway.complete(_request(), _context()))
+
+    assert provider.requests == []
+    assert records == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("role", ModelRole.VERIFIER),
+        ("prompt_id", "changed/prompt"),
+        ("prompt_version", "v999"),
+        ("response_schema_name", "ChangedSchema"),
+    ],
+)
+def test_hook_cannot_change_request_identity_fields(
+    field: str,
+    value: object,
+) -> None:
+    records: list[LlmCallRecord] = []
+    provider = FakeProvider([_result()])
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        recorder=_collect(records),
+        trace_masking_hook=_IdentityMutatingTraceMaskingHook(field, value),
+        settings=LlmSettings(
+            langsmith_tracing=True,
+            _env_file=None,
+        ),
+    )
+
+    with pytest.raises(ValueError, match=field):
+        _run(gateway.complete(_request(), _context()))
+
+    assert provider.requests == []
+    assert records == []

@@ -3,6 +3,7 @@
 import logging
 import time
 from collections.abc import Callable, Mapping
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_none
@@ -22,11 +23,48 @@ from ai.contracts.llm import (
     RedactionBlocked,
     TokenUsage,
 )
+from ai.llm.settings import LlmSettings, get_llm_settings
 
 logger = logging.getLogger(__name__)
 
 #: 미지정 role의 전송 재시도 — 총 2회(현행 stop_after_attempt(2) 보존). 09 §1-10 ① 기본값.
 _DEFAULT_TRANSPORT_RETRY = 1
+_TRACE_IDENTITY_FIELDS = (
+    "role",
+    "prompt_id",
+    "prompt_version",
+    "response_schema_name",
+)
+
+
+class TraceMaskingHook(Protocol):
+    """provider 요청의 트레이스 마스킹 경계.
+
+    반환한 요청이 provider에 전달되는 것은 이 인터페이스가 보장한다. 다만 LangSmith가
+    실제 수집하는 span·입출력 필드와 마스킹 효과 대상은 `[미확정]`이며, 추적 재활성화
+    전에 `09_integration_proposals.md` §2-16 P1' 부속 확인으로 실측해야 한다.
+    """
+
+    def mask(
+        self,
+        request: LLMRequest,
+        context: ExecutionContext,
+    ) -> LLMRequest:
+        """트레이스에 노출 가능한 요청을 마스킹해 반환한다."""
+        ...
+
+
+class _NoOpTraceMaskingHook:
+    def mask(
+        self,
+        request: LLMRequest,
+        context: ExecutionContext,
+    ) -> LLMRequest:
+        del context
+        return request
+
+
+_NO_OP_TRACE_MASKING_HOOK = _NoOpTraceMaskingHook()
 
 
 class LlmCallRecord(BaseModel):
@@ -76,9 +114,21 @@ class LlmGateway:
         *,
         recorder: LlmCallRecorder = _ignore_record,
         transport_retry: Mapping[ModelRole, int] | None = None,
+        trace_masking_hook: TraceMaskingHook | None = None,
+        settings: LlmSettings | None = None,
     ) -> None:
+        resolved_settings = settings if settings is not None else get_llm_settings()
+        if resolved_settings.langsmith_tracing and trace_masking_hook is None:
+            raise ValueError(
+                "LANGSMITH_TRACING=true이지만 trace_masking_hook이 주입되지 않았다. "
+                "LlmGateway를 생성하는 조립부(현재 src/ai/composition/provider.py 및 "
+                "src/ai/composition/counsel/assembly.py)에서 훅을 주입하거나 "
+                "LANGSMITH_TRACING을 끄라. "
+                "docs/part_b/09_integration_proposals.md §2-16."
+            )
         self._providers = dict(providers)
         self._recorder = recorder
+        self._trace_masking_hook = trace_masking_hook or _NO_OP_TRACE_MASKING_HOOK
         #: role별 전송 재시도(생성자 주입 — 호출별 금지). 미지정 role은 기본 1회.
         self._transport_retry = self._validated_transport_retry(transport_retry)
         #: recorder 적재 실패 누적 — 조용한 누락 방지(09 §1-10 ②). 호출은 성공 유지.
@@ -103,6 +153,21 @@ class LlmGateway:
         """총 시도 횟수 = 재시도 + 1. 미지정 role은 현행 보존(재시도 1 → 2회)."""
         return self._transport_retry.get(role, _DEFAULT_TRANSPORT_RETRY) + 1
 
+    @staticmethod
+    def _validate_trace_identity(
+        request: LLMRequest,
+        masked_request: LLMRequest,
+    ) -> None:
+        changed = [
+            field
+            for field in _TRACE_IDENTITY_FIELDS
+            if getattr(request, field) != getattr(masked_request, field)
+        ]
+        if changed:
+            raise ValueError(
+                f"trace_masking_hook은 호출 식별 필드를 변경할 수 없다: {', '.join(changed)}"
+            )
+
     def _validate_provider_assignment(self) -> None:
         distinct_provider_names = {provider.name for provider in self._providers.values()}
         if len(distinct_provider_names) < 2:
@@ -111,11 +176,7 @@ class LlmGateway:
 
         generator = self._providers.get(ModelRole.GENERATOR)
         verifier = self._providers.get(ModelRole.VERIFIER)
-        if (
-            generator is not None
-            and verifier is not None
-            and generator.name == verifier.name
-        ):
+        if generator is not None and verifier is not None and generator.name == verifier.name:
             raise ValueError(
                 "provider가 2개 이상이면 generator와 verifier를 같은 provider에 배정할 수 없다."
             )
@@ -131,6 +192,9 @@ class LlmGateway:
         if provider is None:
             raise LookupError(f"role={request.role.value}에 등록된 LLM provider가 없다.")
 
+        masked_request = self._trace_masking_hook.mask(request, context)
+        self._validate_trace_identity(request, masked_request)
+
         retrying = AsyncRetrying(
             retry=retry_if_exception_type((LlmTimeout, LlmUnavailable)),
             stop=stop_after_attempt(self._attempts_for(request.role)),
@@ -139,7 +203,7 @@ class LlmGateway:
         )
         async for attempt in retrying:
             with attempt:
-                return await self._complete_once(provider, request, context)
+                return await self._complete_once(provider, masked_request, context)
         raise RuntimeError("LLM 전송 재시도 흐름이 결과 없이 종료됐다.")
 
     async def _complete_once(

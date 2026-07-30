@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v2.4 (2026-07-30): **§2-16 LangGraph 트레이스 경로와 B-14 신설** — gateway `(b)` 훅 미배선과 LangGraph 경계를 분리하고, PR #43의 counsel_pack 본문 미복제 정책과 `counsel/state.py` 구현 모두를 확인했다. 개인정보 활성 유출 경로 해소에 따라 B-14를 P1으로 두되, 프롬프트 IP 노출·실측 미확정이 남아 `LANGSMITH_TRACING=false` 유지를 재활성화 전제로 고정했다. P1' 대상도 briefing·counsel_pack 조립부 2곳으로 확정했으며, §1-10 ③의 `(a)` 실제 조립부 redaction·AST 계약 보호와 `(b)` 조건부 no-op도 정정했다.
 > - v2.3 (2026-07-30): §2-14의 양자 승인 카운트 위치를 `02_ownership.md` §4로 정정하고, §2-15에 blind 격리 범위 B-13 해소(PR #40)를 기록했다. §2-13의 승인 시 동시 개정 대상을 R6 임계 재산정·`taxonomy_version` 기축적분 혼재 정책·taxonomy 제목/결정 로그·ERD 2곳까지 4건 확장했다.
 > - v2.2 (2026-07-30): **크로스체크 정정 3건 + 안건 2건 신설.** ① §2-12-②를 `✅ A 승인·구현 완료(PR #37) · B 사후 검증 완료`로 승격하고 조건 5개 충족 근거를 코드 기준으로 기록 ② `verify_evidence_paths`의 소유를 **`현행 B 소유 · §2-14 승인 시 A+B`로 정정**(승인 전 확정 표기 철회)하고 `quote_hash`·`license_ref`가 이 검사의 책임이 아님을 명시 ③ **§2-14 신설** — `contracts/graphrag.py` 양자 승인 편입(12→13곳, A 제기·B 수용) ④ §3에 `B-12`(graphrag 소유)·**`B-13 [P0]`**(blind AST 테스트가 R-1 resolver 연동을 차단) 등록, `B-7` 해소 처리.
 > - v2.1 (2026-07-30): §2-12-②를 A-5 초안의 `EvidenceResolver.resolve` 시그니처·결과 타입에 정합하고, `GraphContextService.verify_evidence_paths`와 실제 근거 해소 및 R-1 판정의 3단 경계를 명문화했다.
@@ -152,8 +153,8 @@ A 소비자 근거(수용): 브리핑은 결정론 템플릿 폴백이 있어 "L
 
 | 훅 | 대상 | 기본 no-op |
 | --- | --- | --- |
-| **(a) 전송 redaction** | provider로 나가는 페이로드 | ❌ **불가** — fail-closed. 미주입 시 **기동 실패** |
-| **(b) 트레이스 마스킹** | LangSmith로 나가는 트레이스 | ✅ 허용 (B-6 — 트레이스 미사용 시) |
+| **(a) 전송 redaction** | provider로 나가는 페이로드 | ❌ **불가** — 조립부가 직접 fail-closed 호출한다. 주입 검사 지점 대신 B 호출부 AST 계약 테스트가 누락을 차단 |
+| **(b) 트레이스 마스킹** | LangSmith로 나가는 트레이스 | ✅ **조건부** — 트레이스 미사용 시만 no-op 허용. **트레이스 사용 시 no-op 불가**(미주입 시 기동 실패) |
 
 ```text
 조립(verification.py) → (a) redaction 훅 → (b) trace 훅 → provider 호출
@@ -658,6 +659,63 @@ blind 제약의 대상은 verifier에게 보내는 페이로드이고, 실제 �
    [`11`](11_graphrag_knowledge_layer.md) §5).
 2. FMT-6 자료 블록 추가 시 화이트리스트 동시 갱신을 머지 조건으로 둔다
    ([`12`](12_suneung_format_alignment.md) FMT-6 머지 조건).
+### 2-16. LangGraph 트레이스 경로 `[제안 · A+B]` `[P1]`
+
+**사실.** `LANGSMITH_TRACING=true` 상태에서 `src/` 전체에 `(b)` 훅이 0건이었다.
+LangSmith는 이 환경 설정만 켜지면 별도 코드 없이 LangGraph 노드 입출력 state를
+전송한다. §1-10 ③이 확정한 파이프라인(조립 → `(a)` → `(b)` → provider)은 LLM
+호출 경로이므로 LangGraph 노드·체크포인터 경로를 덮지 못한다. A가 counsel_pack
+착수 중 발견했고, PR #43으로 state 정책의 마지막 본문 복제 구멍을 닫았다.
+
+**위험 분포 — 워커 3종이 갈린다. A 크로스체크와 PR #43을 반영한 결과다.**
+
+| 워커 | state | 판정 |
+| --- | --- | --- |
+| problem_generation (B) | `request_ref`·`request_hash`·`items`·`fallback_ref` | ✅ `langgraph_state` §2.4 "본문 미복제" 준수 — 실명 유입 경로 없음 |
+| mapping_probe (A) | `sheets_meta={"columns": 컬럼명만}`(`worker.py:100`) · `steps[].observation_masked` | ✅ §2.2 설계 단계에서 차단 |
+| counsel_pack (A) | `context_ref`+`context_hash` · `results[].draft_id`(`langgraph_state` §1.2 · `counsel/state.py:71`·`:74`) | ✅ **정책·구현 모두 확인** — §2.4와 대칭. `context_ref`·`context_hash`(`Sha256Hash`)와 `results[].draft_id`로 구현됨 |
+
+종전 B 초안은 `probe/stores.py:113`의 `sample_rows`를 구멍으로 지목했으나, 이는
+`SourceProfile` 저장소 역직렬화 경로이며 LangGraph state가 아니다. A 정정을 반영해
+철회한다. 가드레일 근거는 `profiling.py:55`·`:155`, `contracts/imports.py:101`에 있다.
+
+**응급조치.** `LANGSMITH_TRACING=false`. 다만 이것만으로 끝내지 않는 이유는 세
+가지다. 환경 플래그는 재발 방지가 0이고(이번에 켜진 것이 그 증거), [`01`](01_pipeline.md)
+§5가 B-6으로 LangSmith 도입을 확정했으므로 영구 false는 그 결정을 되돌리며, 멀티노드
+LangGraph를 트레이스 없이 디버깅하는 실질 손실이 있다.
+
+세 워커 모두 정책상 본문을 복제하지 않고 LLM 호출 경로의 `(a)` redaction도 개인정보를
+차단하므로 **불변식 3의 활성 유출 경로는 해소됐다.** 남은 위험은 지문·문항 등 프롬프트
+본문의 **저작권·영업비밀(IP) 노출**과 LangSmith의 실제 span·입출력 중 `(b)`가 덮는
+효과 대상이 아직 `[미확정]`이라는 점이다.
+
+**분담 4단.**
+
+- **P0 (A) ✅ 해소 — 정책(PR #43)과 구현(`counsel/state.py`) 모두 확인. 잔여 없음.**
+  `contexts: dict[str, DraftContext]`를 `context_ref`+`context_hash`로 바꾸고, 초안
+  본문은 `results[].draft_id`로만 가리킨다. `StudentResult`는 `student_ref`·`draft_id`·
+  `status`·`fail_reason`만 가지며, `summary`는 생성·부족·실패 수량 요약이라 PII가
+  없다. 재개 시 `context_ref` 역참조 해시를 `context_hash`와 대조하는 불변식 ④도
+  구현했으며, `counsel/state.py:28`은 `ProblemGenerationState.request_hash`와 같은
+  형식이라는 §2.4 대칭을 명시한다.
+- **P1 (B) — 본 PR.** `LANGSMITH_TRACING`이 참인데 `(b)` 훅이 미주입이면
+  `LlmGateway` 생성자에서 실패한다. 훅 반환 요청은 provider에 전달하지만 실제
+  LangSmith span·입출력 필드 중 어느 범위를 마스킹하는지는 아직 `[미확정]`이다.
+- **P1' (A) — P1의 부수 의존.** 머지 완료된 두 생성부
+  `composition/provider.py:112`(briefing)·`composition/counsel/assembly.py:56`
+  (counsel_pack)가 `LlmGateway`를 만들므로 두 A 조립부 모두 `(b)` 훅을 주입해야 한다.
+  TRACING을 다시 켜기 전에 A가 해야 하고, B가 만든 강제 의존이라 명시한다.
+  - **부속 확인 (A+B):** 실제 LangSmith trace의 span·입력·출력에서 `(b)` 효과
+    대상을 실측 확정한다. P1·P1'·이 확인·P2 중 하나라도 미완이면 TRACING을 켜지 않는다.
+- **P2 (A).** LangGraph 체크포인터 serde와 LangSmith 클라이언트 입출력을 은닉한다.
+  P0 정책으로 state 범위가 줄었으므로 P0 뒤에 수행한다.
+
+**부결 시 대안.** 영구 `LANGSMITH_TRACING=false`. B-6 확정을 철회해야 하고
+LangGraph 디버깅 수단을 잃는다.
+
+**부수 안건.** redact 누락 계약 테스트를 본 PR에서 B 경로에만 건다.
+`composition/`·counsel_pack은 A가 counsel_pack PR에 같은 AST 형식으로 넣기로
+확인했다.
 
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
@@ -671,6 +729,7 @@ blind 제약의 대상은 verifier에게 보내는 페이로드이고, 실제 �
 | **B-8ⓑ** | **GraphRAG `VersionSet` 3필드 확장** — `content_graph_version`·`graph_index_version`·`retrieval_config_version`. **`graph_version` 재사용 금지** | B-8ⓐ capability별 validator와 병합. ⓐ·ⓑ 모두 `contracts/execution.py`(양자) + `04_api_contract.md` §2.2 + `06_erd.md` AI_RUN 동시 개정이 필요해 PR 단위가 같다. A-5→B-7 병합과 대칭 | A+B | §2-12-① · `10` §4.2 |
 | **B-12** `[신규]` | **`contracts/graphrag.py` 소유 미등록** — `02_ownership.md`·`CLAUDE.md`에 `graphrag` 0건, 양자 승인 대상 12곳 유지. A-5로 A 소유 `evidence/`가 이 계약을 직접 소비한다 | 양자 12곳 → **13곳** 편입. A 제기·B 수용(7/30). 동시 개정은 `02_ownership` §3·§4·§5 + `CLAUDE.md` §2 — **A가 연다** | A+B | §2-14 · `11` §0 |
 | **B-13** | ✅ **해소** — A가 (가)안을 채택해 `_BLIND_PAYLOAD_MODULES`로 조립 지점 한 곳만 검사하고, 현재 6키 화이트리스트의 정확 일치를 강제했다. **PR #40 머지 완료** | R-1 GraphRAG 확장 착수 가능. 잔여는 FMT-6 자료 블록 추가 시 화이트리스트 동시 갱신 | A+B | §2-15 · `06` §1 · `11` §5 |
+| **B-14** `[신규]` `[P1]` | **LangGraph 노드 state·LLM 프롬프트가 트레이스로 나간다** — `(b)` 훅 미배선. 세 워커 모두 정책상 본문 미복제 완료(problem_generation §2.4 · mapping_probe §2.2 · counsel_pack §1.2 PR #43)로 **불변식 3 위험은 해소**. 남은 것은 프롬프트 본문의 IP 노출과 LangSmith 실측 미확정 | **`TRACING=false` 유지가 전제.** P1 가드(B, 본 PR) · P1' briefing·counsel_pack 조립부 2곳 훅 주입(A) · P1' 부속 실측 확정(A+B) · P2 serde·클라이언트 은닉(A). 넷 중 하나라도 미완이면 TRACING을 켜지 않는다 | A+B | §2-16 · `01` §5 · `langgraph_state` §1.2·§2.4 |
 | **B-9** `[신규]` | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** — 검증 통과 문항이 미검증 문항으로 대체될 수 있는 미정의 동작 | `07` §4의 "마지막 검증본 유지"를 생성 경로에 대칭 적용 제안. 확정 전 `difficulty_regen_enabled=false` 유지 | B 초안 → A+B | `10` §4.1 C3 |
 | **BE-11** `(구 B-10)` | ✅ **A 판정 완료 — RLS 구현 부재는 문서 표현을 앱 계층 격리로 정정해 해소.** RLS 실도입 여부는 백엔드 합의 안건으로 이관 | 도입 시 `db/session.py`·`db/store_factory.py` 연결·역할 설계와 함께 기존 26+B 8테이블에 일괄 적용. 현재 B 8테이블은 기존 패턴 준수 | **BE** | §2-4.5 |
 | **W1** `[신규]` | **다중 목표·다중 measured area 세트** — M2 와이어프레임 Step 1은 셀 여러 개를 담고 개수를 각각 지정하나, `05` §4.1은 **v1 단일 영역 제한** | 요청 분할 vs 요청 형식 확장 중 택일. 협업설명서도 "회의 결정 필요"로 등재 | A+B+제품 | `05` §4.1 · `10` §6 |
