@@ -230,7 +230,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
     "execution_id": "uuid",
         // [저장] 이 실행의 추적 ID. 나중에 "이 경보 왜 떴어요?" 문의가 오면
         // 이 ID로 AI 로그를 역추적할 수 있으니 Alert에 같이 저장
-    "versions": { "pipeline": "1.0.0", "engine": "rule-1.3", "threshold": "v4", "contract": "1.0" }
+    "versions": { "pipeline": "1.0.0", "engine": "detection-rules-0.2", "threshold": "v4", "contract": "1.0" }
         // [로그] 어떤 버전의 규칙으로 판정했는지 — 재현성 근거
   }
 }

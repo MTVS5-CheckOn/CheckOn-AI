@@ -65,7 +65,7 @@
     "execution_id": "uuid",
     "versions": {
       "pipeline": "1.0.0",
-      "engine": "rule-1.3",
+      "engine": "detection-rules-0.2",
       "threshold": null,
       "prompt": "v0.1",
       "schema": "0.1",
