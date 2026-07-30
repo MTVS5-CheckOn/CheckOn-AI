@@ -121,8 +121,10 @@ B 계약 기준. 모두 HTTP 에러나 `WorkerJob.phase`가 아니라 성공 응
 | 실패 사유 | `items[].failure_reason` · `dropped_reasons[]` | `generation_exhausted` | 문항당 생성 시도 소진(≤3회) |
 | 실패 사유 | 〃 | `source_unverified` | 근거 원천 대조 실패 — 발행 차단 |
 | 실패 사유 | 〃 | `banned_topic` | 금지 소재 판정으로 문항 폐기 |
+| 검토 사유 | `items[].review_reason` | `low_confidence` · `area_mismatch` · `t3_literature` · `diagnostic_purpose` · `manual_target_first` · `difficulty_band_mismatch` | `needs_review` 배지 사유 — 폐기 사유인 `failure_reason`과 분리 |
+| 난이도 밴드 | `items[].difficulty_band` | `low` · `medium` · `high` | 응답의 표시·필터용 밴드. 한글 라벨(하·중·상)은 FE 소유 |
 
-> B 규칙 원본은 `part_b/06_quality_gates.md` · `07_refine_policy.md`. 이 표는 정본 편입만이며 값 정의는 B 소유.
+> B 규칙 원본은 `part_b/05_problem_generation.md` §6 · `part_b/06_quality_gates.md` · `07_refine_policy.md`. 이 표는 정본 편입만이며 값 정의는 B 소유.
 
 ## 3. LLM_CALL.outcome (내부 관측 — API 미노출)
 
