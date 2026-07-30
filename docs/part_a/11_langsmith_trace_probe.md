@@ -127,3 +127,54 @@ span이 0건이라 **LangSmith 프로젝트가 생성조차 되지 않았다.** 
 3. **`openai_compat` 실 provider 경로** — fake로만 측정했다. 실 provider도 `wrap_openai`를 쓰지 않으므로 결과가 같을 것으로 보이지만 **확인하지 않았다**.
 4. **`hide_inputs` 실제 적용 결과** — 정적 코드 확인까지만이고 켜서 재보지 않았다(P2 범위).
 5. **`langsmith` 상위 버전 동작** — 0.10.2에서만 측정했다.
+
+## 8. 동의어 env 우회 실측 (2026-07-31 · ㉒-a)
+
+> ⚠ langsmith **0.10.2** 시점. §0과 같은 규율로 측정했다 — **탐침 마커만, 실키·실엔드포인트
+> 미사용**(가짜 키 + 로컬 관찰 소켓). `.env` 무수정.
+
+### 8.1 왜 봤나
+
+#48 기동 가드(`llm/gateway.py:120-128`)는 `LANGSMITH_TRACING` **하나만** 본다. 그런데
+`langsmith.utils.tracing_is_enabled()`(`utils.py:141`)는
+`get_env_var("TRACING_V2", default=get_env_var("TRACING", default=""))`이고,
+`get_env_var`는 `namespaces=("LANGSMITH","LANGCHAIN")`(`utils.py:423`)을 순회한다.
+**2 × 2 = 4개 이름이 같은 스위치**다.
+
+### 8.2 env 전수 — 소스가 정본
+
+| env 이름 | `tracing_is_enabled()` | 현행 `LlmSettings.langsmith_tracing` | #48 가드 |
+| --- | --- | --- | --- |
+| `LANGSMITH_TRACING` | `True` | `True` | 차단 |
+| `LANGCHAIN_TRACING` | `True` | `False` | 🔴 **침묵** |
+| `LANGSMITH_TRACING_V2` | `True` | `False` | 🔴 **침묵** |
+| `LANGCHAIN_TRACING_V2` | `True` | `False` | 🔴 **침묵** |
+
+⚠ env가 전부가 아니다 — `tracing_is_enabled()`는 컨텍스트 변수(`tc["enabled"]`)·진행 중
+run tree·전역 fallback(`_GLOBAL_TRACING_ENABLED`)도 본다(`utils.py:132-139`). **그래서 우리
+코드는 env 목록을 복제하지 않고 라이브러리 판정을 호출한다**(`runtime/tracing.py`).
+
+### 8.3 실제 유출 시도 관찰
+
+`LANGCHAIN_TRACING_V2=true`(+가짜 키 · 엔드포인트=로컬 관찰 소켓)에서 counsel_pack 그래프를
+**1회** 실행:
+
+| 관찰 | 결과 |
+| --- | --- |
+| #48 기동 가드 | 🔴 **침묵** — 훅 없이도 `LlmGateway` 생성이 통과 |
+| export 연결 시도 | **10건** (`POST /runs/multipart` · `Content-Length: 15606`) |
+| 앱 에러 | **0건** — 그래프가 정상 완주 |
+
+즉 운영자가 관례적 이름으로 켜두면 **마스킹 전 state가 조용히 외부로 나간다**(불변식 3).
+⑱ 이후 `emphasis_points`에 근거 라벨·수치·`record_id` 문면이 실리므로 노출 대상이 커졌다.
+
+### 8.4 조치와 남은 것
+
+- **A 소유 표면은 닫혔다(㉒-a)** — `runtime/tracing.py`의 `require_tracing_disabled()`가
+  LangGraph 워커 두 조립부(`counsel/assembly.py`·`probe/assembly.py`)에서 fail-closed로
+  기동을 거부한다. 판정은 `tracing_is_enabled()`에 위임하므로 동의어·컨텍스트 경로를
+  모두 덮는다. **briefing은 제외** — §3 실측대로 span 0건이라 위험 표면이 아니다.
+- **gateway(B 소유)는 그대로다** — `llm/gateway.py`의 판정은 여전히 `LANGSMITH_TRACING`
+  하나이며, 확장은 B에게 전달했다(`docs/handoff/` 전달 자료).
+- **P2는 이번에도 범위 밖**(99 D ⑳) — 이 절은 "추적이 꺼져 있어야 할 때 진짜 꺼져 있는가"만
+  다룬다.
