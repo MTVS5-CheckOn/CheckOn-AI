@@ -20,6 +20,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 
 - 새 신호가 추가되거나 문구가 바뀌면 AI가 미리 알리고 배포합니다. 응답에 문구가 실려 있으니 **모르는 signal_type이 와도 display_label만 그대로 표시하면 화면이 깨지지 않습니다.**
 - R5(복귀 케어)는 TOP 3~5 상한과 별도로 옵니다 — 경보라기보다 체크리스트 성격이라, 카드를 경보와 구분되게 표시해 주세요.
+- 이미 알림이 나간 문제가 이어지는 경우(`ongoing`)도 TOP 3~5 상한 밖으로 옵니다 — 새 카드가 아니라 기존 카드의 갱신이기 때문입니다. 그래서 하루 카드 수가 5개를 넘을 수 있으니 **5개에서 잘라서 렌더링하지 마세요** — 자르면 오래 미해결된 학생이 화면에서 사라집니다(프론트 2026-07-30 확인: 렌더링 개수 제한 없음).
 
 ## 2. Request — `POST /v1/detect` (백엔드 → AI, 매일 새벽 02:10 1회)
 
@@ -44,7 +45,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
         //          | vacation(방학 — 과제 관련 신호 R2·R3를 아예 안 봄. 오경보 방지)
 
     "classes": [ { "class_ref": "cl_a1" }, { "class_ref": "cl_b2" } ]
-        // 이 강사의 반 목록. "반마다 TOP 3~5개" 상한을 계산하는 데 필요
+        // 이 강사의 반 목록. "반마다 TOP 3~5개" 상한(new·follow_up 대상) 계산에 필요
   },
 
   "students": [
@@ -147,7 +148,8 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 {
   "data": {
     "signals": [
-      // 오늘의 위험신호. 반별 TOP 3~5 선별과 정렬이 이미 끝난 상태 —
+      // 오늘의 위험신호. 선별·정렬이 이미 끝난 상태 — TOP 3~5 상한은 new·follow_up에만
+      // 적용하고 ongoing·return_care(R5)는 상한 밖으로 뒤에 붙어 5개를 넘을 수 있습니다 —
       // 백엔드는 순서 그대로 저장하고, 프론트는 순서 그대로 그리면 됩니다
       {
         "signal_id": "0a1b2c3d-…",
@@ -214,9 +216,9 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
     "stats": {
       // [로그] 운영 지표 — 화면에 안 나감. 백엔드 로그/대시보드용으로 저장만
       "students_evaluated": 58,      // 이번에 실제로 판정한 학생 수 (동의 있음 + 재원 2주 이상)
-      "signals_raised": 3,           // 상한 적용 후 최종 신호 수
+      "signals_raised": 3,           // 상한 밖 합류를 포함한 최종 반환 신호 수
       "excluded_under_2w": 4,        // 재원 2주 미만이라 제외된 학생 수 — 백엔드 '관찰 중' 계산과 맞는지 대조용
-      "capped_out": 2,               // 신호가 됐지만 TOP 3~5 상한에 밀린 수
+      "capped_out": 2,               // lifecycle 억제 후 new·follow_up 후보의 탈락 수만
       "rules_skipped": [             // 데이터가 없어서 판정 못 한 규칙 — 데이터 품질 모니터링용
         { "rule_id": "R4", "reason": "duration_missing", "students": 5 }
             // 예: 풀이시간(duration_sec)이 없어서 5명은 R4 판정 불가였음
@@ -234,7 +236,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 }
 ```
 
-> **[PART_B 크로스체킹 요청 · 미확정 — §3 ongoing 상한 응답]** A 정본(04 §3·아래 §4, #14)은 `new`·`follow_up`에만 반별 상한을 적용하고 `ongoing`·R5를 상한 밖에서 합류시키므로 `signals_raised`와 최종 rank가 `cap_max`를 넘을 수 있다고 확정했다. 그러나 위 `signals[]`의 “반별 TOP 3~5 선별”, `signals_raised`의 “상한 적용 후”, `capped_out`의 “TOP 3~5 상한에 밀린 수” 설명은 모든 신호가 상한 대상인 것처럼 읽힌다. **제안 해결안:** `signals_raised`=상한 밖 합류를 포함한 최종 반환 수, `capped_out`=lifecycle 억제 후 `new`·`follow_up` 후보의 탈락 수, rank=`new`·`follow_up` 통과분 뒤 ongoing·R5가 이어지는 최종 표시 순번으로 설명을 동기화한다. `contracts/detection.py`·`detection/ranking.py` docstring도 같은 의미로 맞출지 A가 확인해 달라. 기존 응답 예시는 확인 전 변경하지 않는다.
+> ✅ **A+BE+FE 확인 완료(2026-07-30) — §3 ongoing 상한 응답.** TOP 3~5 상한은 `new`·`follow_up`에만 적용하며, `ongoing`과 `return_care`(R5)는 상한 밖으로 추가되어 `signals` 길이와 `rank`가 5를 초과할 수 있다. 백엔드·프론트 모두 응답 길이 ≤5 또는 `rank` ≤5를 가정하지 않는다. `signals_raised`=상한 밖 합류 포함 최종 신호 수 · `capped_out`=`new`·`follow_up` 탈락 수만 · `rank`=최종 표시 순번. 정본: 04 §3 · 09 §4 · 99 #14.
 
 > **[PART_B 크로스체킹 요청 · 미확정 — §3 응답 계약]** 현재 v0는 템플릿 brief를 만들면서 `gate_passed=true`, `fallback_used=false`로 반환하므로 위 “LLM 문장화 후 게이트/템플릿 폴백” 의미와 다르게 읽힐 수 있다. **제안 해결안:** v0 템플릿 상태가 드러나도록 값을 맞추거나, A가 의도한 것이 템플릿 우선이라면 본문 의미를 그에 맞게 정리한다. 또한 R2 연속 미제출·R3 완전 공백·R5 복귀처럼 해당 주 `learning_event`가 없을 수 있는 신호는 임의 과거 이벤트를 evidence로 대체하지 말고, 집계/상태 record 참조를 허용하거나 별도 상태 근거 필드를 받는 안 중 하나를 A·백엔드가 확인해 달라.
 >
@@ -284,4 +286,4 @@ AI는 재원 2주 미만 학생을 판정에서 조용히 제외하고, **목록
 
 **실물 예시:** `examples/detect_demo_request.json`(학생 10명×10주) → `examples/detect_demo_response.json`(6규칙 발화·`ongoing` 포함). 재생성: `python -m ai.evaluation.demo_snapshot`
 
-> **[PART_B 크로스체킹 요청 · 미확정 — 데모 rank]** 새 엔진 정책에서는 `cl_b2`의 상한 대상 신호가 먼저 오고 ongoing인 `st_10`이 상한 밖에서 뒤에 합류해 저장된 응답의 rank가 달라진다(신호 수·구성·판정은 동일). **제안 해결안:** 04 §3의 병합 lifecycle·rank 결론이 확정되면 위 생성기로 request·response 예시를 함께 재생성하고, 생성 결과와 엔진 출력이 같은지 회귀로 고정한다. 이번 단계에서 예시만 수동 수정하지 말고 A가 갱신 시점을 확인해 달라.
+> ✅ **해소(7/26 `4a4f1b1`) — 데모 rank.** `examples/detect_demo_response.json`이 현 정책 순서(`st_07=1` · `st_09=2` · `st_08(R5)=3` · `st_10(ongoing)=4`)로 재생성돼 엔진 출력과 정합하다. `part_b/09_integration_proposals.md` §1-8이 이 건을 ✅ 완료로 닫았고, A의 갱신 시점 확인도 끝났다.
