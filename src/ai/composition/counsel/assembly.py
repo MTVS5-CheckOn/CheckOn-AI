@@ -12,8 +12,11 @@
 01 §5 "게이트웨이는 값을 모르며 조립부가 주입한다" — B의 `verify_config` 시트에는
 counselor 행이 없으므로 시트를 참조하지 않는다.
 
-⚠ `llm/gateway.py`는 건드리지 않는다(B의 트레이스 PR과 충돌).
-⚠ LangSmith 계측을 추가하지 않는다 — 노드 경계 훅은 `part_b/09` §2-16(B 제안 진행 중).
+⚠ `llm/gateway.py`는 건드리지 않는다 — **B 단독 소유**(02_ownership §3). B의 트레이스
+PR(#48)은 머지됐고, 그 기동 가드가 요구하는 `trace_masking_hook`은 이 조립부가 주입한다
+(gateway 자체는 여전히 무변경).
+⚠ LangSmith 계측을 이 파일에 추가하지 않는다 — 노드 경계 계측은 `part_b/09` §2-16 P2
+범위이며, 실측 결과 (b) 훅으로는 트레이스를 가릴 수 없다(`part_a/11_langsmith_trace_probe.md`).
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ from ai.composition.counsel.worker import CounselPackRunner
 from ai.contracts.llm import LLMProvider, ModelRole
 from ai.db.settings import DbSettings, get_db_settings
 from ai.llm.gateway import LlmGateway
+from ai.runtime.trace_masking import RedactionTripwireTraceHook
 
 _PG = "pg"
 
@@ -57,11 +61,14 @@ DEFAULT_REGEN_MAX = 3
 def build_counsel_gateway(provider: LLMProvider) -> LlmGateway:
     """counselor role provider를 등록한 게이트웨이 — **머지 조건 ②**.
 
-    등록이 빠지면 `gateway.complete`가 role 조회에 실패한다. 전송 재시도는 여기서 주입한다.
+    등록이 빠지면 `gateway.complete`가 role 조회에 실패한다. 전송 재시도와
+    `trace_masking_hook`은 여기서 주입한다(09 §2-16 P1′ 기동 가드 — 미주입이면
+    `LANGSMITH_TRACING=true`에서 생성이 실패한다).
     """
     return LlmGateway(
         {ModelRole.COUNSELOR: provider},
         transport_retry={ModelRole.COUNSELOR: COUNSELOR_TRANSPORT_RETRY},
+        trace_masking_hook=RedactionTripwireTraceHook(),
     )
 
 
