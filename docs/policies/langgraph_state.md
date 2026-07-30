@@ -16,6 +16,10 @@ plan → [학생 루프: assemble_context → generate_draft → gate_check → 
 
 ### 1.2 State (Pydantic)
 
+상담팩 워커는 반의 학생을 순차 처리하므로 재개 지점이 학생 경계다. 체크포인트에는 학생 컨텍스트 본문·초안 본문을 복제하지 않고, 불변 입력 참조와 완료 결과 포인터만 둔다. 학생별 컨텍스트는 `context_ref`를 역참조해 그때그때 읽고, 생성된 초안은 `results[].draft_id`로만 가리킨다. `WorkerJob.phase`·lease·`result_ref`는 슈퍼바이저 정본이므로 이 state에 넣지 않는다.[^cp-body]
+
+[^cp-body]: state는 PostgresSaver 체크포인트와 LangSmith 노드 트레이스 두 경로로 나간다. 후자의 훅 위치는 `part_b/09_integration_proposals.md` §2-16(B 제안 진행 중).
+
 ```python
 class StudentResult(BaseModel):
     student_ref: str
@@ -28,7 +32,8 @@ class CounselPackState(BaseModel):
     tenant_id: str
     class_ref: str
     student_refs: list[str]                    # 처리 순서 고정 (재현성)
-    contexts: dict[str, DraftContext]          # 학생별 — label_snapshot 동결 포함
+    context_ref: str                           # 학생 컨텍스트 묶음의 저장소 참조 — 본문 미복제
+    context_hash: str                          # sha256:<64 lowercase hex> — 재개 시 대조
     plan_version: str
 
     # plan 노드 산출 (LLM 1회 — 확정 수치 내 강조점만, 새 사실 생성 금지)
@@ -43,7 +48,7 @@ class CounselPackState(BaseModel):
     summary: str | None = None                 # "22명 중 19명 생성·2명 데이터 부족·1명 실패"
 ```
 
-**불변식:** ① `emphasis_points`의 모든 강조점은 `record_id` 동반(plan 노드도 Evidence 규칙 적용) ② `cursor`는 단조 증가 — 재개 시 `results` 길이와 일치 검증(불일치 = 체크포인트 손상 → failed) ③ 학생 1명 실패가 루프를 멈추지 않는다(계약: failed여도 완료분 보존).
+**불변식:** ① `emphasis_points`의 모든 강조점은 `record_id` 동반(plan 노드도 Evidence 규칙 적용) ② `cursor`는 단조 증가 — 재개 시 `results` 길이와 일치 검증(불일치 = 체크포인트 손상 → failed) ③ 학생 1명 실패가 루프를 멈추지 않는다(계약: failed여도 완료분 보존) ④ 재개 시 `context_ref`를 역참조한 컨텍스트 묶음의 해시를 `context_hash`와 대조 — 불일치 = 체크포인트 손상 → failed.
 
 ### 1.3 중단·재개
 
