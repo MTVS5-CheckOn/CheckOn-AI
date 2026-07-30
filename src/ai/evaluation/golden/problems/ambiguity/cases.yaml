@@ -1,0 +1,157 @@
+schema_version: problem-golden.v1
+suite: ambiguity
+cases:
+  - case_id: AM1
+    title: 복수 정답 성립 기본형 1
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: &draft
+      stem: 다음 문법 자료를 해석한 내용으로 가장 적절한 것은?
+      choices:
+        - 첫 번째 해석 초안
+        - 두 번째 해석 초안
+        - 세 번째 해석 초안
+        - 네 번째 해석 초안
+        - 다섯 번째 해석 초안
+      answer_draft: 1
+      rationale_draft: 교차 풀이 평가용 해설 초안 — 전문가 검수 대기
+      evidence_draft: [grammar.draft.ambiguity.001]
+      difficulty_draft: null
+    mutation:
+      code: multiple_answers_pair_1_2
+      detail: 1번과 2번이 모두 참이 되도록 의미를 구성한다.
+    expected:
+      decision: regenerate
+      rule_ids: [BlindCrossSolve]
+      llm_calls: 1
+      notes: 풀이 불일치 또는 multiple_answers_possible을 검출한다.
+  - case_id: AM2
+    title: 복수 정답 성립 기본형 2
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: multiple_answers_pair_2_4
+      detail: 지문 근거로 2번과 4번이 동시에 성립한다.
+    expected:
+      decision: regenerate
+      rule_ids: [BlindCrossSolve]
+      llm_calls: 1
+      notes: 의미 중복을 문자열 규칙이 아닌 blind 풀이가 검출한다.
+  - case_id: AM3
+    title: 복수 정답 성립 경계형
+    track: T3
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: multiple_answers_interpretive_boundary
+      detail: 작품 해석에 따라 두 선지가 성립할 수 있게 구성한다.
+    expected:
+      decision: regenerate
+      rule_ids: [BlindCrossSolve]
+      llm_calls: 1
+      notes: multiple_answers_possible을 숨기지 않는다.
+  - case_id: AM4
+    title: 지문만으로 풀이 불능 1
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: passage_insufficient_external_concept
+      detail: 지문에 정의되지 않은 외부 개념을 알아야 풀리게 만든다.
+    expected:
+      decision: regenerate
+      rule_ids: [BlindCrossSolve]
+      llm_calls: 1
+      notes: 정답 불일치 또는 낮은 confidence로 수렴한다.
+  - case_id: AM5
+    title: 지문만으로 풀이 불능 2
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: passage_missing_comparison_axis
+      detail: 두 대상의 비교 기준을 지문에서 제거한다.
+    expected:
+      decision: needs_review_or_regenerate
+      rule_ids: [BlindCrossSolve]
+      llm_calls: 1
+      notes: 풀이 불능을 통과로 확정하지 않는다.
+  - case_id: AM6
+    title: 목표 약점과 실제 측정 대상 불일치 1
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: target_sound_change_measures_parts_of_speech
+      detail: 음운 변동 목표 메타를 주지만 실제 문항은 품사를 측정한다.
+    expected:
+      decision: regenerate
+      rule_ids: [Alignment]
+      llm_calls: 1
+      notes: aligned=false와 다른 measured_skill_node_id를 기록한다.
+  - case_id: AM7
+    title: 목표 약점과 실제 측정 대상 불일치 2
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: target_sentence_structure_measures_vocabulary
+      detail: 문장 구조 목표 메타를 주지만 실제 문항은 어휘 의미만 측정한다.
+    expected:
+      decision: regenerate
+      rule_ids: [Alignment]
+      llm_calls: 1
+      notes: 메타 일치만으로 의미 정렬을 통과시키지 않는다.
+  - case_id: AM8
+    title: 정렬 confidence 경계
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: aligned_but_low_alignment_confidence
+      detail: 복합 개념 때문에 aligned=true지만 alignment_confidence가 0.7 미만이다.
+    expected:
+      decision: needs_review
+      rule_ids: [Alignment]
+      llm_calls: 1
+      notes: low_confidence 검토 사유를 기록한다.
+  - case_id: AM9
+    title: 정답 유일하나 근거 빈약 1
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: unique_answer_low_solve_confidence
+      detail: 정답은 하나지만 간접 근거만 있어 solve confidence가 0.8 미만이다.
+    expected:
+      decision: needs_review
+      rule_ids: [BlindCrossSolve]
+      llm_calls: 1
+      notes: 풀이 일치 상태를 보존하되 low_confidence 배지를 남긴다.
+  - case_id: AM10
+    title: 정답 유일하나 근거 빈약 2
+    track: T3
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: unique_answer_interpretive_low_confidence
+      detail: 단일 답을 선택하지만 작품 해석 confidence가 낮다.
+    expected:
+      decision: needs_review
+      rule_ids: [BlindCrossSolve]
+      llm_calls: 1
+      notes: T3 검토 사유와 low_confidence를 함께 보존한다.
+  - case_id: AM11
+    title: 명백한 단일 정답 정상 대조군
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: none
+      detail: 정답 유일성과 목표 정렬이 모두 명확한 기준 초안을 유지한다.
+    expected:
+      decision: pass
+      rule_ids: []
+      llm_calls: 1
+      notes: 고확신·aligned 정상 대조군을 오탐하지 않는다.

@@ -1,0 +1,157 @@
+schema_version: problem-golden.v1
+suite: graphrag
+cases:
+  - case_id: GR1
+    title: Graph 검색 결과 0건
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: &draft
+      stem: 다음 문법 근거를 바탕으로 판단한 것으로 가장 적절한 것은?
+      choices:
+        - 첫 번째 판단 초안
+        - 두 번째 판단 초안
+        - 세 번째 판단 초안
+        - 네 번째 판단 초안
+        - 다섯 번째 판단 초안
+      answer_draft: 1
+      rationale_draft: GraphRAG 근거 회귀 해설 초안 — 전문가 검수 대기
+      evidence_draft: [grammar.draft.graph.001]
+      difficulty_draft: null
+    mutation:
+      code: retrieval_zero_results
+      detail: GraphContextService가 승인된 근거 후보 0건을 반환한다.
+    expected:
+      decision: verification_unavailable
+      rule_ids: [GraphContext]
+      llm_calls: 0
+      notes: 근거 없는 생성 우회 없이 발행을 차단한다.
+  - case_id: GR2
+    title: 미승인 권리 후보
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: rights_not_approved
+      detail: rights_status가 pending인 자료를 후보에 넣는다.
+    expected:
+      decision: evidence_pack_rejected
+      rule_ids: [RightsGate]
+      llm_calls: 0
+      notes: Pack 생성·색인·임베딩·LLM 전송을 모두 차단한다.
+  - case_id: GR3
+    title: 기존 문항 근거 라이선스 만료
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: license_expired
+      detail: 기존 EvidencePack의 expires_at을 현재 시각 이전으로 고정한다.
+    expected:
+      decision: generation_blocked_descendants_identified
+      rule_ids: [RightsGate]
+      llm_calls: 0
+      notes: 신규 생성에서 제외하고 파생 문항을 식별한다.
+  - case_id: GR4
+    title: source와 quote hash 변조
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: evidence_hash_tampered
+      detail: source_content_hash와 quote_hash를 원문과 다르게 바꾼다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-1]
+      llm_calls: 0
+      notes: 정규화 문자열 검사와 별도로 hash 변조를 검출한다.
+  - case_id: GR5
+    title: Evidence coverage 결손
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: evidence_coverage_missing_requirement
+      detail: 오답 사유 coverage를 제거하고 missing_requirements에 기록한다.
+    expected:
+      decision: generation_not_started
+      rule_ids: [R-4]
+      llm_calls: 0
+      notes: missing_requirements가 남은 Pack으로 생성하지 않는다.
+  - case_id: GR6
+    title: 테넌트 교차 검색 후보
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: cross_tenant_candidate
+      detail: 다른 tenant_id의 근거를 검색 후보 집합에 넣는다.
+    expected:
+      decision: candidate_rejected_before_retrieval
+      rule_ids: [TenantBoundary]
+      llm_calls: 0
+      notes: 검색 후 필터링이 아니라 후보 단계에서 제외한다.
+  - case_id: GR7
+    title: verifier blind ContextPack 누출
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: context_pack_leaked_to_blind_payload
+      detail: verifier 입력에 ContextPack 전체를 넣으려 한다.
+    expected:
+      decision: blind_payload_rejected
+      rule_ids: [BlindContract]
+      llm_calls: 0
+      notes: answer·rationale·evidence는 제거하고 목표 메타만 허용한다.
+  - case_id: GR8
+    title: GraphRAG timeout
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: graph_context_timeout
+      detail: 세 번의 공통 item_attempt에서 GraphContextService timeout을 반환한다.
+    expected:
+      decision: verification_unavailable
+      rule_ids: [GraphContext]
+      llm_calls: 0
+      notes: 별도 검색 재시도 루프와 네 번째 시도를 만들지 않는다.
+  - case_id: GR9
+    title: 동점 score 후보 정렬
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: equal_score_candidates
+      detail: score가 같은 node-b와 node-a를 역순 입력으로 제공한다.
+    expected:
+      decision: canonical_order_reproduced
+      rule_ids: []
+      llm_calls: 0
+      notes: canonical ID 동점 정렬로 두 실행의 바이트 결과가 같아야 한다.
+  - case_id: GR10
+    title: reuse_only 수정 턴 라이선스 재확인
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: reuse_only_license_expired_since_last_turn
+      detail: 지난 수정 턴 이후 기존 EvidencePack 라이선스가 만료된다.
+    expected:
+      decision: revision_blocked_previous_preserved
+      rule_ids: [RightsGate]
+      llm_calls: 0
+      notes: reuse_only도 유효성을 다시 검사한다.
+  - case_id: GR11
+    title: full retrieve 필요 수정 지시
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: refine_requires_full_retrieve
+      detail: 수정 범위를 넘어 자료·목표 교체가 필요한 지시를 제공한다.
+    expected:
+      decision: blocked_out_of_scope
+      rule_ids: [out_of_scope]
+      llm_calls: 0
+      notes: LLM 호출 없이 교체·재출제를 안내한다.

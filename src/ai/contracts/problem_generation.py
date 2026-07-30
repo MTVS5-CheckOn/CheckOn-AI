@@ -72,6 +72,14 @@ class TargetSelection(StrEnum):
     AUTO = "auto"
 
 
+class DifficultyBand(StrEnum):
+    """문항 요청·결과에 사용하는 내부 난이도 밴드."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class ProblemRequest(BaseModel):
     """맞춤 문항 세트 생성 요청."""
 
@@ -91,6 +99,7 @@ class ProblemRequest(BaseModel):
     type_tags: tuple[TypeTag, ...] = Field(min_length=1)
     item_format: ItemFormat
     count: int = Field(ge=1, le=20)
+    requested_difficulty: DifficultyBand | None = None
     target: TargetSelection = TargetSelection.AUTO
     passage: PassageRequest | None = None
     topic_hint: str | None = Field(default=None, min_length=1)
@@ -241,6 +250,17 @@ class ProblemFailureReason(StrEnum):
     BANNED_TOPIC = "banned_topic"
 
 
+class ReviewReason(StrEnum):
+    """검증 완료 문항에 강사 검토 배지를 부여한 사유."""
+
+    LOW_CONFIDENCE = "low_confidence"
+    AREA_MISMATCH = "area_mismatch"
+    T3_LITERATURE = "t3_literature"
+    DIAGNOSTIC_PURPOSE = "diagnostic_purpose"
+    MANUAL_TARGET_FIRST = "manual_target_first"
+    DIFFICULTY_BAND_MISMATCH = "difficulty_band_mismatch"
+
+
 class SetStopReason(StrEnum):
     """세트 조기 중단 원인 — 임계값 자체는 verify_config가 소유한다."""
 
@@ -263,6 +283,10 @@ class ItemResult(BaseModel):
     attempt_no: int = Field(ge=1, le=PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT)
     failure_reason: ProblemFailureReason | None = None
     failure_detail: str | None = Field(default=None, min_length=1)
+    difficulty_est: float | None = None
+    difficulty_band: DifficultyBand | None = None
+    difficulty_fit: None = None
+    review_reason: ReviewReason | None = None
 
     @model_validator(mode="after")
     def validate_status(self) -> Self:
@@ -278,6 +302,11 @@ class ItemResult(BaseModel):
                 raise ValueError("검증 완료 문항에는 failure_reason을 기록하지 않는다")
         if self.status is ProblemItemStatus.DROPPED and self.failure_reason is None:
             raise ValueError("dropped 문항에는 failure_reason이 필요하다")
+        if (
+            self.status is not ProblemItemStatus.NEEDS_REVIEW
+            and self.review_reason is not None
+        ):
+            raise ValueError("review_reason은 needs_review 문항에만 기록한다")
         return self
 
 
@@ -384,6 +413,8 @@ class ProblemGenerationState(BaseModel):
         le=PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT,
     )
     stop_reason: SetStopReason | None = None
+    fallback_ref: str | None = Field(default=None, min_length=1)
+    difficulty_regen_used: bool = False
 
     @model_validator(mode="after")
     def validate_checkpoint(self) -> Self:
@@ -393,6 +424,14 @@ class ProblemGenerationState(BaseModel):
             raise ValueError("cursor는 완료된 items 길이와 일치해야 한다")
         if self.is_terminal and self.item_attempt:
             raise ValueError("종료 state에는 현재 문항 item_attempt를 남길 수 없다")
+        if self.item_attempt == 0 and (
+            self.fallback_ref is not None or self.difficulty_regen_used
+        ):
+            raise ValueError(
+                "fallback_ref와 difficulty_regen_used는 처리 중인 문항에만 기록한다"
+            )
+        if self.difficulty_regen_used and self.fallback_ref is None:
+            raise ValueError("난이도 재생성 state에는 fallback_ref가 필요하다")
 
         succeeded = sum(
             item.status in {ProblemItemStatus.VERIFIED, ProblemItemStatus.NEEDS_REVIEW}
@@ -507,6 +546,25 @@ def assert_problem_generation_state_transition(
             raise InvalidProblemGenerationStateTransition(
                 "현재 문항 item_attempt는 한 번에 1만 증가할 수 있다"
             )
+        if (
+            previous.fallback_ref is not None
+            and current.fallback_ref != previous.fallback_ref
+        ):
+            raise InvalidProblemGenerationStateTransition(
+                "현재 슬롯의 fallback_ref는 설정 후 변경하거나 제거할 수 없다"
+            )
+        if previous.difficulty_regen_used and not current.difficulty_regen_used:
+            raise InvalidProblemGenerationStateTransition(
+                "현재 슬롯의 difficulty_regen_used는 되돌릴 수 없다"
+            )
+        if (
+            not previous.difficulty_regen_used
+            and current.difficulty_regen_used
+            and current.item_attempt != previous.item_attempt + 1
+        ):
+            raise InvalidProblemGenerationStateTransition(
+                "난이도 재생성 전 외부 호출 attempt를 먼저 증가해야 한다"
+            )
         return
 
     if current.items[:-1] != previous.items:
@@ -521,9 +579,15 @@ def assert_problem_generation_state_transition(
         raise InvalidProblemGenerationStateTransition(
             "외부 호출 전 item_attempt를 증가·체크포인트해야 한다"
         )
-    if current.items[-1].attempt_no != previous.item_attempt:
+    completed_attempt = current.items[-1].attempt_no
+    restored_fallback = (
+        previous.fallback_ref is not None
+        and previous.difficulty_regen_used
+        and completed_attempt < previous.item_attempt
+    )
+    if completed_attempt != previous.item_attempt and not restored_fallback:
         raise InvalidProblemGenerationStateTransition(
-            "완료 문항 attempt_no가 현재 슬롯의 item_attempt와 일치하지 않는다"
+            "완료 문항 attempt_no는 현재 시도 또는 보존 fallback 시도여야 한다"
         )
 
 

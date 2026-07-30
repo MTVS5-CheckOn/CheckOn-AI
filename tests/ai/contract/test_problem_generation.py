@@ -9,6 +9,7 @@ from ai.contracts.gates import BlockedReason
 from ai.contracts.problem_generation import (
     Answer,
     Choice,
+    DifficultyBand,
     EvidenceAnchor,
     EvidenceKind,
     GeneratedItem,
@@ -28,6 +29,7 @@ from ai.contracts.problem_generation import (
     ProblemSetResult,
     ProblemSetStatus,
     RejectedInsufficientOutcome,
+    ReviewReason,
     RevisionKind,
     SentenceComplexity,
     SetStopReason,
@@ -109,6 +111,15 @@ def test_problem_request_roundtrip() -> None:
     assert ProblemRequest.model_validate(request.model_dump(mode="json")) == request
 
 
+def test_problem_request_difficulty_band_values_and_default() -> None:
+    assert {band.value for band in DifficultyBand} == {"low", "medium", "high"}
+    assert _request().requested_difficulty is None
+    assert (
+        _request(requested_difficulty="high").requested_difficulty
+        is DifficultyBand.HIGH
+    )
+
+
 def test_manual_target_requires_targets() -> None:
     with pytest.raises(ValueError, match="manual_targets"):
         _request(
@@ -180,6 +191,31 @@ def test_passage_is_reading_only() -> None:
 def test_generated_item_roundtrip() -> None:
     item = _item()
     assert GeneratedItem.model_validate(item.model_dump(mode="json")) == item
+
+
+def test_generated_item_preserves_synthetic_suneung_t1_text_shapes() -> None:
+    data = _item().model_dump(mode="json")
+    data["stem"] = (
+        "[합성 자료]\n"
+        "㉠ 합성 예문 하나\n"
+        "㉡ 합성 예문 둘\n"
+        "구분 | 예문 A | 예문 B\n"
+        "옛한글 코드 포인트: ᄀᆞᄅᆞ\n"
+        "자료를 분석한 내용으로 가장 적절한 것은?"
+    )
+    data["choices"][0]["text"] = "ㄱ, ㄴ"
+    data["choices"][1]["text"] = "ㄱ, ㄷ"
+    data["choices"][2]["text"] = "ㄴ, ㄹ"
+    data["choices"][3]["text"] = "ㄱ, ㄴ, ㄷ"
+    data["choices"][4]["text"] = "ㄴ, ㄷ, ㄹ"
+
+    item = GeneratedItem.model_validate(data)
+    restored = GeneratedItem.model_validate(item.model_dump(mode="json"))
+
+    assert restored == item
+    assert "㉠" in restored.stem
+    assert "ᄀᆞᄅᆞ" in restored.stem
+    assert restored.choices[4].text == "ㄴ, ㄷ, ㄹ"
 
 
 def test_generated_item_requires_five_choices() -> None:
@@ -280,6 +316,14 @@ def test_state_enum_values_frozen() -> None:
         "source_unverified",
         "banned_topic",
     }
+    assert {item.value for item in ReviewReason} == {
+        "low_confidence",
+        "area_mismatch",
+        "t3_literature",
+        "diagnostic_purpose",
+        "manual_target_first",
+        "difficulty_band_mismatch",
+    }
 
 
 def test_item_action_values_frozen() -> None:
@@ -300,6 +344,44 @@ def test_dropped_item_requires_reason() -> None:
 def test_verification_unavailable_requires_stored_item_id() -> None:
     with pytest.raises(ValueError, match="item_id"):
         ItemResult(status=ProblemItemStatus.VERIFICATION_UNAVAILABLE, attempt_no=1)
+
+
+def test_item_result_preserves_difficulty_and_review_reason() -> None:
+    result = ItemResult(
+        item_id=ITEM_ID,
+        status=ProblemItemStatus.NEEDS_REVIEW,
+        attempt_no=1,
+        difficulty_est=2.5,
+        difficulty_band=DifficultyBand.MEDIUM,
+        review_reason=ReviewReason.LOW_CONFIDENCE,
+    )
+
+    restored = ItemResult.model_validate(result.model_dump(mode="json"))
+
+    assert restored == result
+    assert restored.difficulty_fit is None
+
+
+def test_item_result_difficulty_fit_is_always_null() -> None:
+    with pytest.raises(ValueError, match="difficulty_fit"):
+        ItemResult.model_validate(
+            {
+                "item_id": str(ITEM_ID),
+                "status": "verified",
+                "attempt_no": 1,
+                "difficulty_fit": 0.8,
+            }
+        )
+
+
+def test_review_reason_is_rejected_for_non_review_item() -> None:
+    with pytest.raises(ValueError, match="review_reason"):
+        ItemResult(
+            item_id=ITEM_ID,
+            status=ProblemItemStatus.VERIFIED,
+            attempt_no=1,
+            review_reason=ReviewReason.AREA_MISMATCH,
+        )
 
 
 def test_generated_set_requires_only_success_items() -> None:
@@ -559,6 +641,30 @@ def test_problem_generation_state_roundtrip_and_slot_key() -> None:
     assert restored.state_schema_version == "problem_generation.v1"
     assert restored.current_slot_key == f"problem-set:{SET_ID}:slot:0"
     assert restored.unstarted_count == 3
+    assert restored.fallback_ref is None
+    assert restored.difficulty_regen_used is False
+
+
+def test_problem_generation_state_restores_legacy_checkpoint_defaults() -> None:
+    payload = _state().model_dump(mode="json")
+    payload.pop("fallback_ref")
+    payload.pop("difficulty_regen_used")
+
+    restored = ProblemGenerationState.model_validate(payload)
+
+    assert restored.state_schema_version == "problem_generation.v1"
+    assert restored.fallback_ref is None
+    assert restored.difficulty_regen_used is False
+
+
+def test_problem_generation_state_rejects_fallback_without_active_slot() -> None:
+    with pytest.raises(ValueError, match="처리 중인 문항"):
+        _state(fallback_ref="candidate:1")
+
+
+def test_problem_generation_state_requires_fallback_for_difficulty_regen() -> None:
+    with pytest.raises(ValueError, match="fallback_ref"):
+        _state(item_attempt=2, difficulty_regen_used=True)
 
 
 def test_problem_generation_state_rejects_cursor_items_mismatch() -> None:
@@ -617,6 +723,62 @@ def test_problem_generation_state_transition_requires_attempt_reset() -> None:
 
     with pytest.raises(InvalidProblemGenerationStateTransition, match="초기화"):
         assert_problem_generation_state_transition(previous, not_reset)
+
+
+def test_problem_generation_state_transition_restores_preserved_candidate() -> None:
+    regenerating = _state(
+        item_attempt=2,
+        fallback_ref="candidate:slot-0:attempt-1",
+        difficulty_regen_used=True,
+    )
+    restored = _state(
+        cursor=1,
+        items=(
+            ItemResult(
+                item_id=ITEM_ID,
+                status=ProblemItemStatus.NEEDS_REVIEW,
+                attempt_no=1,
+                difficulty_est=1.5,
+                difficulty_band=DifficultyBand.LOW,
+                review_reason=ReviewReason.DIFFICULTY_BAND_MISMATCH,
+            ),
+        ),
+    )
+
+    assert_problem_generation_state_transition(regenerating, restored)
+    assert restored.fallback_ref is None
+    assert restored.difficulty_regen_used is False
+
+
+def test_problem_generation_state_transition_rejects_fallback_change() -> None:
+    previous = _state(item_attempt=1, fallback_ref="candidate:attempt-1")
+    changed = _state(item_attempt=1, fallback_ref="candidate:attempt-2")
+
+    with pytest.raises(InvalidProblemGenerationStateTransition, match="fallback_ref"):
+        assert_problem_generation_state_transition(previous, changed)
+
+
+def test_problem_generation_state_transition_checkpoints_regen_attempt() -> None:
+    preserved = _state(item_attempt=1, fallback_ref="candidate:attempt-1")
+    regenerating = _state(
+        item_attempt=2,
+        fallback_ref="candidate:attempt-1",
+        difficulty_regen_used=True,
+    )
+
+    assert_problem_generation_state_transition(preserved, regenerating)
+
+
+def test_problem_generation_state_transition_rejects_regen_without_attempt() -> None:
+    preserved = _state(item_attempt=1, fallback_ref="candidate:attempt-1")
+    not_checkpointed = _state(
+        item_attempt=1,
+        fallback_ref="candidate:attempt-1",
+        difficulty_regen_used=True,
+    )
+
+    with pytest.raises(InvalidProblemGenerationStateTransition, match="attempt"):
+        assert_problem_generation_state_transition(preserved, not_checkpointed)
 
 
 def test_problem_generation_state_transition_requires_pre_call_checkpoint() -> None:

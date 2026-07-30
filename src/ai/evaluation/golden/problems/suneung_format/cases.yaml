@@ -1,0 +1,180 @@
+schema_version: problem-golden.v1
+suite: suneung_format
+cases:
+  - case_id: SF1
+    title: 합성 설명 자료 단일 문항
+    track: T1
+    review_status: expert_review_pending
+    format_features: [single_stimulus]
+    contract_support: supported_in_stem
+    educational_draft:
+      stem: |-
+        [합성 자료]
+        한 음운은 환경에 따라 서로 다른 소리로 실현될 수 있다.
+        위 자료를 이해한 내용으로 가장 적절한 것은?
+      choices:
+        - 첫 번째 설명 초안
+        - 두 번째 설명 초안
+        - 세 번째 설명 초안
+        - 네 번째 설명 초안
+        - 다섯 번째 설명 초안
+      answer_draft: 1
+      rationale_draft: 합성 자료 기반 해설 초안 — 전문가 검수 대기
+      evidence_draft: [grammar.synthetic.format.001]
+      difficulty_draft: null
+    mutation:
+      code: synthetic_single_stimulus
+      detail: 여러 줄 설명 자료를 문두에 포함한다.
+    expected:
+      decision: contract_roundtrip_supported
+      rule_ids: []
+      llm_calls: 0
+      notes: 평가원 원문을 사용하지 않고 stem 문자열의 표현력만 확인한다.
+
+  - case_id: SF2
+    title: 합성 예문 표 문항
+    track: T1
+    review_status: expert_review_pending
+    format_features: [text_table]
+    contract_support: supported_in_stem
+    educational_draft:
+      stem: |-
+        <자료>
+        구분 | 예문 A | 예문 B
+        ㉠ | 합성 예문 하나 | 합성 예문 둘
+        ㉡ | 합성 예문 셋 | 합성 예문 넷
+        자료를 분석한 내용으로 적절하지 않은 것은?
+      choices:
+        - ㉠의 첫 번째 분석 초안
+        - ㉠의 두 번째 분석 초안
+        - ㉡의 첫 번째 분석 초안
+        - ㉡의 두 번째 분석 초안
+        - ㉠과 ㉡의 비교 분석 초안
+      answer_draft: 2
+      rationale_draft: 합성 표 기반 해설 초안 — 전문가 검수 대기
+      evidence_draft: [grammar.synthetic.format.002]
+      difficulty_draft: null
+    mutation:
+      code: synthetic_text_table
+      detail: 표를 텍스트로 직렬화한 T1 경계 형식이다.
+    expected:
+      decision: contract_roundtrip_supported
+      rule_ids: []
+      llm_calls: 0
+      notes: 시각 표 조판 지원을 의미하지 않는다.
+
+  - case_id: SF3
+    title: 기호가 붙은 합성 예문 묶음
+    track: T1
+    review_status: expert_review_pending
+    format_features: [labeled_examples]
+    contract_support: supported_in_stem
+    educational_draft:
+      stem: |-
+        ㉠ 합성 예문 하나
+        ㉡ 합성 예문 둘
+        ㉢ 합성 예문 셋
+        ㉣ 합성 예문 넷
+        ㉠~㉣을 분석한 내용으로 가장 적절한 것은?
+      choices:
+        - ㉠에 대한 분석 초안
+        - ㉡에 대한 분석 초안
+        - ㉢에 대한 분석 초안
+        - ㉣에 대한 분석 초안
+        - ㉠과 ㉣의 비교 초안
+      answer_draft: 3
+      rationale_draft: 합성 예문 묶음 해설 초안 — 전문가 검수 대기
+      evidence_draft: [grammar.synthetic.format.003]
+      difficulty_draft: null
+    mutation:
+      code: synthetic_labeled_examples
+      detail: 원문 기호와 줄바꿈을 보존한다.
+    expected:
+      decision: contract_roundtrip_supported
+      rule_ids: []
+      llm_calls: 0
+      notes: 기호 손실 없이 JSON 왕복해야 한다.
+
+  - case_id: SF4
+    title: 옛한글 문자열 보존 경계
+    track: T1
+    review_status: expert_review_pending
+    format_features: [historical_korean]
+    contract_support: supported_in_stem
+    educational_draft:
+      stem: |-
+        [합성 국어사 자료]
+        아래 문자열의 옛한글 코드 포인트를 손실 없이 보존한다: ᄀᆞᄅᆞ
+        자료의 표기 형식을 확인한 것으로 가장 적절한 것은?
+      choices:
+        - 첫 번째 표기 분석 초안
+        - 두 번째 표기 분석 초안
+        - 세 번째 표기 분석 초안
+        - 네 번째 표기 분석 초안
+        - 다섯 번째 표기 분석 초안
+      answer_draft: 4
+      rationale_draft: 유니코드 보존 확인용 초안이며 교과 정답이 아니다.
+      evidence_draft: [grammar.synthetic.format.004]
+      difficulty_draft: null
+    mutation:
+      code: synthetic_historical_korean_unicode
+      detail: 옛한글 문자열의 직렬화 손실만 검사한다.
+    expected:
+      decision: contract_roundtrip_supported
+      rule_ids: []
+      llm_calls: 0
+      notes: 국어사 노드·정답 검증 완료를 의미하지 않는다.
+
+  - case_id: SF5
+    title: 합성 조합형 선지
+    track: T1
+    review_status: expert_review_pending
+    format_features: [compound_choices]
+    contract_support: supported_in_stem
+    educational_draft:
+      stem: ㄱ~ㄹ 중 분석 결과가 적절한 것만을 고른 것은?
+      choices:
+        - ㄱ, ㄴ
+        - ㄱ, ㄷ
+        - ㄴ, ㄹ
+        - ㄱ, ㄴ, ㄷ
+        - ㄴ, ㄷ, ㄹ
+      answer_draft: 5
+      rationale_draft: 조합형 선지 직렬화 확인용 초안 — 전문가 검수 대기
+      evidence_draft: [grammar.synthetic.format.005]
+      difficulty_draft: null
+    mutation:
+      code: synthetic_compound_choices
+      detail: 선지 문자열 안의 복수 기호를 보존한다.
+    expected:
+      decision: contract_roundtrip_supported
+      rule_ids: []
+      llm_calls: 0
+      notes: 선지 조합의 교과 타당성은 검수 대상이다.
+
+  - case_id: SF6
+    title: 공유 자료 문항군 계약 간극
+    track: T2
+    review_status: expert_review_pending
+    format_features: [shared_stimulus]
+    contract_support: design_gap
+    educational_draft:
+      stem: 합성 공유 자료를 참조하는 첫 번째 문항 초안
+      choices:
+        - 첫 번째 선지 초안
+        - 두 번째 선지 초안
+        - 세 번째 선지 초안
+        - 네 번째 선지 초안
+        - 다섯 번째 선지 초안
+      answer_draft: 1
+      rationale_draft: 현 계약에는 자료 공유 키가 없어 구현하지 않는다.
+      evidence_draft: [passage.synthetic.format.006]
+      difficulty_draft: null
+    mutation:
+      code: shared_stimulus_contract_missing
+      detail: 자료 하나를 여러 문항이 참조하는 식별자·순서 계약이 없다.
+    expected:
+      decision: design_gap_documented
+      rule_ids: []
+      llm_calls: 0
+      notes: FMT-1·FMT-2 합의 전 문자열 복제로 우회하지 않는다.

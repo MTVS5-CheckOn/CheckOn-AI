@@ -1,0 +1,14 @@
+schema_version: prompt-snapshots.v1
+snapshots:
+  - prompt_id: pg.passage.v1
+    version: v1
+    file: passage.snapshot.txt
+    review_status: expert_review_pending
+  - prompt_id: pg.items.v1
+    version: v1
+    file: items.snapshot.txt
+    review_status: expert_review_pending
+  - prompt_id: pg.cross_solve.v1
+    version: v1
+    file: cross_solve.snapshot.txt
+    review_status: expert_review_pending

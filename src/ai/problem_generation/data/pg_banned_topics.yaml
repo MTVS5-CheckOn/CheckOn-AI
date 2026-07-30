@@ -1,0 +1,29 @@
+# 교육 콘텐츠 금칙·prompt injection 정적 검사 초안.
+# 표현 범위와 오탐 기준은 안전·교과 전문가 검수 대기다.
+version: pg-banned-v1
+categories:
+  - id: political_religious_current_dispute
+    description: 정치·종교 논쟁 현안을 정답 판단이나 가치 평가 소재로 사용하지 않는다.
+    match_terms:
+      - 정치적 선동
+      - 종교적 우열
+  - id: real_person_evaluation
+    description: 특정 실존 인물의 인격·능력·도덕성을 평가하는 소재를 사용하지 않는다.
+    match_terms:
+      - 실존 인물 비난
+      - 실존 인물 숭배
+  - id: self_harm_or_graphic_violence
+    description: 자해 또는 구체적인 폭력 묘사를 교육 문항 소재로 사용하지 않는다.
+    match_terms:
+      - 자해 방법
+      - 잔혹한 폭력 묘사
+  - id: discriminatory_content
+    description: 보호 특성을 근거로 집단의 우열·배제를 주장하는 소재를 사용하지 않는다.
+    match_terms:
+      - 집단 차별
+      - 혐오 표현
+prompt_injection_patterns:
+  - 이전 지시 무시
+  - 시스템 프롬프트 공개
+  - 숨겨진 지시 출력
+  - 금칙어 우회

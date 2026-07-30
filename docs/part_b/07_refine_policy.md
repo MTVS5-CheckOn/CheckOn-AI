@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 정책 v1. part_a/06_refine_policy(초안 refine)의 B 대응 문서 — 골격(지시 3분류·blocked_reason·리비전 저장·테스트 시드)은 차용하되 대상이 문항이라 규칙이 다르다. **한 줄 원칙: 강사는 자유롭게 다듬을 수 있지만, 강사 지시가 게이트를 이기지 못한다.**
 >
 > **변경 이력**
+> - v1.2 (2026-07-29): §1 롤백을 저장본 복원 후 게이트 ①②③ 전체 재검증으로 정정해 [`10`](10_m2_problem_generation_architecture.md) §3 FIX-09와 정합화했다.
 > - v1.1 (2026-07-27): **GraphRAG 편입** — §4 처리 순서에 `ResolveRevisionContext` 단계를 정적 검사와 LLM 호출 사이에 삽입([`11`](11_graphrag_knowledge_layer.md) §3·§8). 검색 모드 3종(`reuse_only`·`delta_retrieve`·`full_retrieve`)을 명시하고, `reuse_only`도 기존 `EvidencePack`의 유효성·라이선스·버전을 매 턴 재확인하도록 규정했다(지난 턴 이후 라이선스가 만료될 수 있으므로 — "기존 검증 결과 재사용 금지"와 같은 논리). `full_retrieve`가 필요한 지시는 §3 `out_of_scope`로 차단한다.
 > - v1 (2026-07-15): 신규 작성. 입력: `CODEXPROMPT/(염준영)_출제스튜디오_Step3_검증라벨_핑퐁수정_요구사항_v0.md` §4~§8 + 확정 결정 — 핑퐁 MVP 승격 · 직접 수정 허용+전체 재검증 · 낙관적 잠금 · 리비전 무제한 보존 `[잠정]` · 수동 예외 승인 불허.
 >
@@ -18,9 +19,11 @@
 | **교체** | 기존 문항을 버리고 같은 조건으로 새 문항 | 새 item 생성(새 item_id·새 item_attempt 예산) + 전체 검증 | 생성 경로와 동일 |
 | **직접 수정**(확정) | 강사가 AI 없이 텍스트를 직접 편집 | `revision_kind=teacher_direct` 리비전 + **게이트 ①②③ 전체 재검증** | 1(교차 풀이만) |
 | **삭제** | 세트에서 제외 | 생성 호출 0 — 이력은 감사용 보존 | 0 |
-| **롤백** | `revert_to=n` — 저장된 리비전 복원 | 스냅숏 복원(그 리비전의 검증 결과도 함께 복원) | 0 |
+| **롤백** | `revert_to=n` — 저장된 리비전 복원 | 스냅숏 복원 후 **게이트 ①②③ 전체 재검증**([`10`](10_m2_problem_generation_architecture.md) §3 FIX-09) | 1(교차 풀이만) |
 
 교체는 대화형 수정의 다른 이름이 아니다 — 수정은 맥락·리비전 이력을 유지하고, 교체는 새 생성 계보를 만든다. `직접 검토`(서술형 아닌 경계 문항 확인)는 화면 동작일 뿐 AI 처리 없음.
+롤백은 생성·refine LLM 없이 저장된 문항 본문을 복원하되, 과거 검증 결과를 현재
+판정으로 재사용하지 않고 복원본에 게이트 ①②③을 다시 실행한다.
 
 **계약 연결(`contracts/problem_generation.py` — `ItemAction` 5종의 워크플로 매핑):**
 
@@ -94,7 +97,7 @@
 
 ## 6. 리비전 저장·낙관적 잠금 (확정)
 
-- **저장 규칙:** 턴마다 `ITEM_REVISION` 1행 — `turn_no`(=revision_no) · `revision_kind(ai_refine|teacher_direct|rollback)` · redaction된 `instruction` · `result_snapshot`(전체 스냅숏 — 롤백 단순 복원) · `diff`(변경 전후) · `verifications_passed` · `blocked_reason` · `llm_call_id`. **차단 턴도 행을 남긴다**(감사·공격 코퍼스 재료).
+- **저장 규칙:** 턴마다 `ITEM_REVISION` 1행 — `turn_no`(=revision_no) · `revision_kind(ai_refine|teacher_direct|rollback)` · redaction된 `instruction` · `result_snapshot`(전체 스냅숏 — 롤백 본문 복원 후 전체 재검증) · `diff`(변경 전후) · `verifications_passed` · `blocked_reason` · `llm_call_id`. **차단 턴도 행을 남긴다**(감사·공격 코퍼스 재료).
 - **멱등·리비전 충돌 판정 순서:** ① 멱등키 조회를 먼저 수행한다. 같은 키+같은 바디는 기존 처리 상태·결과를 **200 재반환**하고 리비전·LLM 호출을 중복 생성하지 않는다. 같은 키+다른 바디는 **409 `IDEMPOTENCY_CONFLICT`**다. ② 새 키의 `base_revision_no`가 `PROBLEM_ITEM.current_revision_no`와 다르면 **409 `REVISION_CONFLICT`**(`detail.reason=stale_base_revision`, `base_revision_no`, `current_revision_no`)로 거부한다. ③ 문항당 진행 중 refine은 1건만 허용하며, 진행 중인 문항에 들어온 **새 키** 요청은 같은 409 `REVISION_CONFLICT`의 `detail.reason=revision_in_progress`(`current_revision_no`)로 거부한다. 두 리비전 충돌은 LLM을 호출하지 않는다.
 - **보존:** 리비전 무제한 보존 `[잠정]` — 감사·품질 평가 자료. 보존 기간·상한은 백엔드 데이터 보존 정책과 함께 `OPEN`(09 §3).
 - **품질 개선 반영:** 강사 수정 이력은 골든셋·프롬프트 개선 재료로만 — **자동 학습·자동 프롬프트 변경 금지**, 반영은 사람 리뷰+버전 절차(registry·골든 통과).

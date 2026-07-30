@@ -1,0 +1,157 @@
+schema_version: problem-golden.v1
+suite: refine
+cases:
+  - case_id: RF1
+    title: 정상 AI 수정 턴
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: &draft
+      stem: 다음 문법 자료에 대한 설명으로 가장 적절한 것은?
+      choices:
+        - 첫 번째 설명 초안
+        - 두 번째 설명 초안
+        - 세 번째 설명 초안
+        - 네 번째 설명 초안
+        - 다섯 번째 설명 초안
+      answer_draft: 1
+      rationale_draft: 수정 회귀 기준 해설 초안 — 전문가 검수 대기
+      evidence_draft: [grammar.draft.refine.001]
+      difficulty_draft: null
+    mutation:
+      code: refine_wording_normally
+      detail: 정답·근거·목표를 유지하며 선지 표현만 자연스럽게 수정한다.
+    expected:
+      decision: revision_saved
+      rule_ids: [R-1, R-2, R-3, R-4, R-5, R-6, R-7, BlindCrossSolve, ReleaseDecision]
+      llm_calls: 2
+      notes: 전체 게이트를 다시 실행하고 리비전과 diff를 저장한다.
+  - case_id: RF2
+    title: 정답 두 개 요청
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: request_two_correct_answers
+      detail: 강사 지시를 정답 두 개로 만들어 달라는 내용으로 고정한다.
+    expected:
+      decision: blocked_answer_integrity
+      rule_ids: [answer_integrity]
+      llm_calls: 0
+      notes: LLM 호출 전에 차단한다.
+  - case_id: RF3
+    title: 실명 삽입 요청
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: request_real_name_insertion
+      detail: 강사 지시에 학생 실명을 넣으라는 내용을 포함한다.
+    expected:
+      decision: blocked_pii_exposure
+      rule_ids: [pii_exposure]
+      llm_calls: 0
+      notes: redaction·정적 검사에서 차단한다.
+  - case_id: RF4
+    title: 해설 수정이 정답 유일성 파괴
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: rationale_edit_breaks_uniqueness
+      detail: 해설 한 문장 수정 결과 두 선지가 성립하게 만든다.
+    expected:
+      decision: revision_rejected_previous_preserved
+      rule_ids: [BlindCrossSolve]
+      llm_calls: 2
+      notes: 부분 수정도 전체 재검증하고 이전 검증본을 유지한다.
+  - case_id: RF5
+    title: 직접 수정이 근거 실존 파괴
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: teacher_direct_breaks_evidence
+      detail: teacher_direct 수정본의 evidence ref를 미존재 ID로 바꾼다.
+    expected:
+      decision: revision_rejected_previous_preserved
+      rule_ids: [R-1]
+      llm_calls: 0
+      notes: 직접 수정도 게이트를 우회하지 않는다.
+  - case_id: RF6
+    title: 이전 리비전 롤백
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: rollback_to_verified_revision
+      detail: revert_to로 이전 검증 리비전을 지정한다.
+    expected:
+      decision: rolled_back
+      rule_ids: []
+      llm_calls: 0
+      notes: 스냅숏과 검증 결과를 복원한다.
+  - case_id: RF7
+    title: stale base revision 충돌
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: stale_base_revision
+      detail: 현재보다 오래된 base_revision_no와 새 멱등 키를 보낸다.
+    expected:
+      decision: revision_conflict_stale_base
+      rule_ids: [REVISION_CONFLICT]
+      llm_calls: 0
+      notes: last-write-wins 없이 409 경계로 수렴한다.
+  - case_id: RF8
+    title: 진행 중 리비전 충돌
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: revision_in_progress
+      detail: 같은 문항의 refine 진행 중 새 멱등 키를 보낸다.
+    expected:
+      decision: revision_conflict_in_progress
+      rule_ids: [REVISION_CONFLICT]
+      llm_calls: 0
+      notes: 중복 수정 호출을 시작하지 않는다.
+  - case_id: RF9
+    title: 동일 수정 턴 멱등 재전송
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: identical_idempotent_replay
+      detail: 같은 Idempotency-Key와 동일 바디를 재전송한다.
+    expected:
+      decision: existing_revision_returned
+      rule_ids: []
+      llm_calls: 0
+      notes: 중복 리비전과 중복 원가 기록이 없어야 한다.
+  - case_id: RF10
+    title: 복합 지시 부분 차단
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: partially_allowed_instruction
+      detail: 허용 표현 수정과 금지 목표 변경을 한 지시에 함께 넣는다.
+    expected:
+      decision: partial_instruction_applied
+      rule_ids: [out_of_scope]
+      llm_calls: 2
+      notes: 허용 반영분과 차단 사유를 동시에 반환한다.
+  - case_id: RF11
+    title: verification unavailable 문항 재검증 성공
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: reverify_after_verifier_recovery
+      detail: 검증 불능 저장본을 verifier 복구 후 다시 검증한다.
+    expected:
+      decision: verification_completed
+      rule_ids: []
+      llm_calls: 1
+      notes: 성공한 재검증 뒤에만 발행 차단 해제 경로로 합류한다.

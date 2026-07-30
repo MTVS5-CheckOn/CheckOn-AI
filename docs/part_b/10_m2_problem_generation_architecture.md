@@ -2,6 +2,9 @@
 
 > **지위:** B 1차 결정(B-M2-01~05) 확정 · 후속 결정 수집 중. 이 문서는 두 M2 와이어프레임을 구현 계약으로 전환하기 위한 선행 결정 로그다.  
 > **원칙:** B 단독 소유 범위만 이 문서에서 확정한다. 공통 계약·백엔드·제품 합의 항목은 제안으로만 기록하고 정본을 선행 변경하지 않는다.
+>
+> **변경 이력**
+> - v1 (2026-07-29): §1 제품 화면 입력에 통신 코드 예시를 추가하고, 폐기된 GraphRAG 협업 와이어프레임 참조를 제거했다.
 
 ## 1. 입력 정본
 
@@ -9,13 +12,13 @@
 
 - `CODEXPROMPT/M2_문제출제시스템_제품와이어프레임_v1.html`
 - `CODEXPROMPT/M2_문제출제시스템_와이어프레임_협업설명_v1.html`
+- `CODEXPROMPT/M2_문제출제시스템_통신_코드예시_v1.html`
 
 **GraphRAG 지식 계층 `[2026-07-27 추가 — 채택 확정]`**
 
 - `CODEXPROMPT/출제스튜디오_AI_GraphRAG_아키텍처_개발설계_v1.md` — 개발 선순위 P0-1~P2-3·Graph 도메인 3종·`ContextPack`/`EvidencePack`·GraphContextService
-- `CODEXPROMPT/출제스튜디오_FE_BE_AI_협업_와이어프레임_v1.html` — Step 2·3의 GraphRAG 단계와 FE·BE·AI 책임 분장
 
-> 위 두 문서는 스스로를 "`CODEXPROMPT`의 작업·회의용 설계 자료"로 표기하며 **`docs/` 정본이 우선**임을 명시한다. → **[`11_graphrag_knowledge_layer.md`](11_graphrag_knowledge_layer.md)로 정본 편입 완료**(2026-07-27). 공용 계약을 건드리는 2건은 [`09`](09_integration_proposals.md) §2-12 제안으로 분리했다. 상세는 §4.2.
+> 위 문서는 스스로를 "`CODEXPROMPT`의 작업·회의용 설계 자료"로 표기하며 **`docs/` 정본이 우선**임을 명시한다. → **[`11_graphrag_knowledge_layer.md`](11_graphrag_knowledge_layer.md)로 정본 편입 완료**(2026-07-27). 공용 계약을 건드리는 2건은 [`09`](09_integration_proposals.md) §2-12 제안으로 분리했다. 상세는 §4.2.
 
 **공통 규율·B 정본**
 

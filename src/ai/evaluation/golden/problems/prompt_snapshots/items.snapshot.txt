@@ -1,0 +1,9 @@
+PROMPT_ID=pg.items.v1
+PROMPT_VERSION=v1
+REVIEW_STATUS=expert_review_pending
+
+context_pack={"context_pack_id":"00000000-0000-4000-8000-000000000301","operation":"generate","target_skill_node_ids":["language.grammar.morpheme.concept"],"evidence_pack_id":"00000000-0000-4000-8000-000000000302"}
+generation_input={"area_tag":"language","type_tag":"concept","skill_node_id":"language.grammar.morpheme.concept","item_format":"mcq","recent_stem_hashes":["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}
+retry_context={"attempt_no":1,"failed_checks":[],"previous_stem_hash":null}
+
+기대: evidence가 있는 5지선다 GeneratedItem 구조화 출력. 교육 내용은 전문가 검수 대기.

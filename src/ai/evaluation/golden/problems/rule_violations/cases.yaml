@@ -1,0 +1,248 @@
+schema_version: problem-golden.v1
+suite: rule_violations
+cases:
+  - case_id: P1
+    title: evidence quote 한 글자 불일치
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: &draft
+      stem: 다음 자료를 바탕으로 형태소의 성격을 판단한 것으로 가장 적절한 것은?
+      choices:
+        - 뜻을 가진 가장 작은 말의 단위이다.
+        - 언제나 홀로 쓰일 수 있는 단위이다.
+        - 모든 형태소는 하나의 음절로 이루어진다.
+        - 조사는 형태소가 될 수 없다.
+        - 어미는 단어 형성에만 관여한다.
+      answer_draft: 1
+      rationale_draft: 기준 규칙 발췌와 선택지의 정의를 대조한 초안 — 전문가 검수 대기
+      evidence_draft: [grammar.draft.morpheme.001]
+      difficulty_draft: null
+    mutation:
+      code: evidence_quote_one_character_mismatch
+      detail: passage_span quote의 마지막 한 글자를 원문과 다르게 만든다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-1]
+      llm_calls: 0
+      notes: 정규화 후에도 불일치하므로 R-1이 검출해야 한다.
+  - case_id: P2
+    title: passage_span 문단 범위 초과
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: passage_span_out_of_range
+      detail: 2문단 지문에서 문단 3 좌표를 참조한다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-1]
+      llm_calls: 0
+      notes: 존재하지 않는 좌표는 근거로 해소할 수 없다.
+  - case_id: P3
+    title: 정규화 후 중복 선지
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: duplicate_choices_after_normalization
+      detail: 2번과 4번 선지를 공백·문장부호 정규화 후 같게 만든다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-2]
+      llm_calls: 0
+      notes: 선지 문자열 정합 단계에서 검출해야 한다.
+  - case_id: P4
+    title: 정답 번호 범위 밖
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: answer_number_out_of_range
+      detail: answer.correct_no를 6으로 바꾼다.
+    expected:
+      decision: parse_rejected
+      rule_ids: []
+      llm_calls: 0
+      notes: R-1~R-7 이전 구조화 파싱에서 탈락해야 한다.
+  - case_id: P5
+    title: 발문에 정답 원문 노출
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: answer_text_leaked_in_stem
+      detail: 정답 선지 원문 전체를 stem에 삽입한다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-3]
+      llm_calls: 0
+      notes: 정답 유출 발문을 검출해야 한다.
+  - case_id: P6
+    title: 부정 발문 강조 누락
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: negative_stem_without_emphasis
+      detail: 적절하지 않은 것을 묻되 부정 표현 강조 표기를 제거한다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-3]
+      llm_calls: 0
+      notes: 부정 발문 형식 위반을 검출해야 한다.
+  - case_id: P7
+    title: 지문 밖 실존 통계 인용
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: unsupported_external_statistic
+      detail: rationale에 지문에 없는 실존 기관과 수치를 넣는다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-4]
+      llm_calls: 0
+      notes: 외부 지식에 의존한 핵심 주장을 차단해야 한다.
+  - case_id: P8
+    title: 정답 핵심 주장 coverage 결손
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: missing_answer_evidence_coverage
+      detail: 정답 성립을 지지하는 anchor 대응을 제거한다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-4]
+      llm_calls: 0
+      notes: evidence 존재만으로 통과하지 않고 coverage를 검사해야 한다.
+  - case_id: P9
+    title: 정치 현안 금칙 지문
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: banned_current_political_dispute
+      detail: 지문 전체의 논제로 정치 논쟁 현안을 삽입한다.
+    expected:
+      decision: reject_and_stop_passage
+      rule_ids: [R-5]
+      llm_calls: 0
+      notes: 재생성으로 우회하지 않고 즉시 폐기하며 세트를 중단한다.
+  - case_id: P10
+    title: 최근 출제분 유사도 0.85
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: duplicate_similarity_085
+      detail: 동일 학생 최근 stem과 n-gram 유사도를 0.85로 고정한다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-6]
+      llm_calls: 0
+      notes: dup_similarity_max 0.8 초과를 검출해야 한다.
+  - case_id: P11
+    title: skill node와 문항 area 불일치
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: skill_node_area_mismatch
+      detail: language 문항에 reading 영역 node를 연결한다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-7]
+      llm_calls: 0
+      notes: taxonomy 메타 정합 단계에서 검출해야 한다.
+  - case_id: P12
+    title: 요청과 item_format 불일치
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: request_item_format_mismatch
+      detail: mcq 요청에 예약값 short를 에코한다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-7]
+      llm_calls: 0
+      notes: v1 mcq 고정과 요청 에코 불일치를 검출해야 한다.
+  - case_id: P13
+    title: 유사도 정확히 0.80
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: duplicate_similarity_exact_080
+      detail: 동일 학생 최근 stem과 n-gram 유사도를 정확히 0.80으로 고정한다.
+    expected:
+      decision: pass_rule_validation
+      rule_ids: []
+      llm_calls: 0
+      notes: R-6은 dup_similarity_max 초과만 실패하므로 경계값은 통과한다.
+  - case_id: P14
+    title: quote 공백·문장부호 차이
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: normalized_quote_spacing_punctuation_only
+      detail: quote와 원문의 공백·문장부호만 다르게 만든다.
+    expected:
+      decision: pass_rule_validation
+      rule_ids: []
+      llm_calls: 0
+      notes: 문서가 허용한 정규화 범위 안이므로 R-1을 통과한다.
+  - case_id: P15
+    title: R-1과 R-4 복합 위반
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: compound_missing_anchor_and_external_claim
+      detail: 근거 좌표를 깨고 지문 밖 핵심 주장도 추가한다.
+    expected:
+      decision: regenerate
+      rule_ids: [R-1, R-4]
+      llm_calls: 0
+      notes: 복합 위반의 규칙 ID를 누락 없이 기록한다.
+  - case_id: P16
+    title: 재생성 두 번 소진
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: repeated_rule_failure_three_attempts
+      detail: 최초 생성과 재생성 두 번이 모두 R-2를 위반하도록 고정한다.
+    expected:
+      decision: dropped_generation_exhausted
+      rule_ids: [R-2]
+      llm_calls: 3
+      notes: item_attempt 총 3회 뒤 dropped로 수렴하고 네 번째 호출은 없다.
+  - case_id: P17
+    title: 지문 단위 R-5 세트 중단
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: banned_topic_shared_passage
+      detail: 여러 문항이 공유하는 지문에 금칙 소재를 삽입한다.
+    expected:
+      decision: stop_banned_topic_passage
+      rule_ids: [R-5]
+      llm_calls: 0
+      notes: 남은 슬롯을 시작하지 않고 별도 stop_reason을 기록한다.
+  - case_id: P18
+    title: 선지 네 개 파싱 탈락
+    track: T1
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: four_choices_only
+      detail: GeneratedItem 출력에서 다섯 번째 선지를 제거한다.
+    expected:
+      decision: parse_rejected
+      rule_ids: []
+      llm_calls: 0
+      notes: 게이트 이전 구조화 파싱 탈락으로 item_attempt만 소모한다.
