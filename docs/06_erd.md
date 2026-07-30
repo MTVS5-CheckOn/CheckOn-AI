@@ -1,10 +1,12 @@
-# [체크온] AI PostgreSQL 전체 ERD v3 — [PART_A] 소유 · [PART_A+PART_B] 공용 실행 원장 반영
+# [체크온] AI PostgreSQL 전체 ERD v4 — [PART_A+PART_B] 문제생성 저장 계층 반영
 
 원칙(변경 없음): AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본(학생·학습 기록·Alert 상태·문의 원문·Draft 승인)은 백엔드 MySQL 소유 — `…_ref`는 전부 MySQL을 가리키는 **논리 참조**(물리 FK 아님). 전 테이블 `tenant_id` 필수 + **애플리케이션 계층 격리**(RLS 미도입 — 실도입 여부는 99 BE-11).
 
 v2 추가분: `AGENT_RUN` `AGENT_STEP` · `SIGNAL_BRIEF`(ⓐ) · `INQUIRY_CLASS`(ⓑ) · `TAG_SUGGESTION`(ⓒ) · `LABEL_SUGGESTION`(ⓓ)
 
 v3 확장: `AGENT_RUN`을 워커 3종의 영속 `WorkerJob` 실행 원장으로 확장했다. `AGENT_RUN.id`=`job_id`, `run_id`=`execution_id`, `status`=`JobPhase`이며 operation·우선순위·lease·fencing·복구 횟수·불투명한 payload/checkpoint/result 참조를 보존한다. 워커 state의 정본은 공식 LangGraph PostgresSaver가 관리하는 내부 테이블이고, 아래 26개는 애플리케이션 소유 테이블만 센다. `state_checkpoint`는 기존 호환을 위한 **마스킹된 관측 캐시**일 뿐 재개 원본으로 사용하지 않는다.
+
+v4 확장: A-1 승인에 따라 [PART_B] 문제생성·진단 8테이블(`WEAKNESS_MAP`·`PASSAGE`·`PROBLEM_SET`·`PROBLEM_ITEM`·`VERIFICATION_RESULT`·`ITEM_REVISION`·`DIFFICULTY_CALIB`·`ITEM_CANDIDATE`)을 편입했다. 애플리케이션 소유 테이블은 **총 34개**다. `EVIDENCE_ITEM.owner_kind`에는 A-2 승인값 `problem_item`을 추가했다.
 
 **`AI_RUN` 버전 세트:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이다. 공통 6종(`pipeline` · `engine` · `threshold` · `prompt` · `schema` · `contract`)과 [PART_B] 실행 전용 nullable 4종(`graph` · `taxonomy` · `verify_config` · `difficulty_calib`)으로 구성되며, **버전 컬럼은 총 10개**다. 실행 식별자·모델 정보·재현성 키·생성 시각까지 포함한 `AI_RUN` 전체 컬럼은 **총 18개**다.
 
@@ -41,6 +43,21 @@ erDiagram
   IMPORT_JOB ||--o{ GATE_RESULT : "게이트 이력"
   MAPPING_SPEC |o--o| AGENT_RUN : "조사 에이전트가 산출(v2)"
   MAPPING_SPEC |o--o| LLM_CALL : "1-shot 추론(재사용 시 null)"
+
+  %% ───────── diagnosis · problem_generation ([PART_B]) ─────────
+  AI_RUN ||--o{ WEAKNESS_MAP : "진단 실행"
+  AI_RUN ||--o{ PROBLEM_SET : "출제 실행"
+  WEAKNESS_MAP ||--o{ PROBLEM_SET : "출제 입력(수동 목표는 null)"
+  PROBLEM_SET ||--|{ PROBLEM_ITEM : "문항 1..*"
+  PROBLEM_SET ||--o{ ITEM_CANDIDATE : "슬롯별 생성 후보"
+  PASSAGE ||--o{ PROBLEM_ITEM : "지문 공유(null 가능)"
+  PROBLEM_ITEM ||--o{ VERIFICATION_RESULT : "게이트 이력"
+  PROBLEM_ITEM ||--o{ ITEM_REVISION : "refine 턴"
+  PROBLEM_ITEM ||--o{ EVIDENCE_ITEM : "rationale 근거"
+  PROBLEM_SET ||--o{ GATE_RESULT : "게이트 요약"
+  PASSAGE |o--o| LLM_CALL : "생성 호출(풀 선택 시 null)"
+  VERIFICATION_RESULT |o--o| LLM_CALL : "교차 풀이(규칙 검증 시 null)"
+  ITEM_REVISION |o--o| LLM_CALL : "AI 수정 호출(null 가능)"
 
   AI_RUN {
     uuid execution_id PK
@@ -178,7 +195,7 @@ erDiagram
   EVIDENCE_ITEM {
     uuid id PK
     varchar tenant_id
-    varchar owner_kind "signal|draft_block"
+    varchar owner_kind "signal|draft_block|problem_item"
     uuid owner_id
     varchar source_table "MySQL 논리 참조"
     varchar record_id
@@ -228,6 +245,111 @@ erDiagram
     int seq
     boolean passed
     varchar reason
+  }
+  WEAKNESS_MAP {
+    uuid id PK
+    uuid run_id FK
+    varchar tenant_id
+    varchar student_ref "alias"
+    date week_start "주차 경계 — 스냅숏 계약과 동일"
+    varchar graph_version
+    varchar taxonomy_version
+    varchar config_version "B 기본값 시트 버전"
+    varchar snapshot_hash "재현 키"
+    jsonb cells "area×type: acc·n·verdict·severity"
+    jsonb nodes "노드 verdict"
+    jsonb propagated "역전파 — root_candidate"
+    boolean overall_low "전면 부진 플래그"
+    timestamptz computed_at "UNIQUE(tenant·student·graph_ver·week_start)"
+  }
+  PASSAGE {
+    uuid id PK
+    varchar tenant_id
+    varchar source_kind "generated|licensed_pool"
+    varchar source_ref "풀 작품 ID 논리 참조 · generated는 null"
+    varchar license_ref "라이선스·작품 버전 · T3 필수"
+    varchar area_tag "reading|literature"
+    varchar topic
+    int word_count "어절 실측"
+    jsonb complexity
+    text content "generated만 · licensed_pool은 null"
+    uuid llm_call_id FK "풀 선택 시 null"
+  }
+  PROBLEM_SET {
+    uuid id PK
+    uuid run_id FK
+    varchar tenant_id
+    varchar target_kind "student|class"
+    varchar target_ref "alias 논리 참조"
+    varchar target_source "weakness_auto|teacher_manual"
+    uuid weakness_map_id FK "자동 목표만 · 수동 목표는 null"
+    jsonb request "area·type·수량·requested_difficulty"
+    varchar status "queued|generating|generated|partial_success|failed"
+    varchar summary
+    varchar stop_reason "조기 중단 사유 · null 가능"
+    boolean diagnostic_purpose
+    timestamptz created_at
+  }
+  PROBLEM_ITEM {
+    uuid id PK
+    uuid set_id FK
+    uuid passage_id FK "T1은 null"
+    varchar area_tag
+    varchar type_tag "fact|infer|critic|concept"
+    varchar item_format "mcq — v1"
+    varchar skill_node_id "null 가능"
+    text stem
+    jsonb choices "mcq 선지 5"
+    jsonb answer
+    text rationale "근거 인용 필수"
+    numeric difficulty_est
+    numeric difficulty_fit "null 가능 · v1 항상 null"
+    varchar difficulty_calib_ver
+    boolean review_badge
+    int current_revision_no "낙관적 잠금 기준"
+    varchar status "verified|needs_review|dropped|verification_unavailable"
+    varchar drop_reason "null 가능"
+  }
+  VERIFICATION_RESULT {
+    uuid id PK
+    uuid item_id FK
+    varchar stage "rule_validation|blind_cross_solve|release_decision"
+    boolean passed
+    jsonb detail "실패 규칙·풀이·confidence·정렬 판정"
+    uuid llm_call_id FK "규칙 검증은 null"
+    int attempt_no "item_attempt 회차"
+  }
+  ITEM_REVISION {
+    uuid id PK
+    uuid item_id FK
+    int turn_no "= revision_no"
+    varchar revision_kind "ai_refine|teacher_direct|rollback"
+    text instruction "redaction 후 저장 · rollback은 null"
+    jsonb result_snapshot "전체 스냅숏 · 차단 시 null"
+    jsonb diff "변경 전후 diff"
+    boolean verifications_passed
+    varchar blocked_reason "null 가능"
+    uuid llm_call_id FK "teacher_direct·rollback은 null"
+  }
+  DIFFICULTY_CALIB {
+    uuid id PK
+    varchar tenant_id
+    jsonb params "가중치"
+    int version "이전 버전 보존"
+    varchar source "default|calibrated"
+    varchar approved_by_ref "alias 논리 참조"
+    timestamptz created_at
+  }
+  ITEM_CANDIDATE {
+    uuid id PK
+    uuid set_id FK
+    varchar tenant_id
+    int slot_index
+    int attempt_no "1..3"
+    jsonb snapshot "GeneratedItem 전문 · 불변"
+    jsonb gate_summary "게이트 ①② 판정"
+    numeric difficulty_est
+    timestamptz created_at "UNIQUE(tenant·set·slot·attempt)"
   }
   INQUIRY_CLASS {
     uuid id PK

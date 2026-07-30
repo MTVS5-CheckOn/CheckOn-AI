@@ -1,11 +1,11 @@
 """ERD ↔ ORM 대조 — 06_erd.md 가 정본, ai.db.models 가 그걸 정확히 옮겼는지 검사한다.
 
-이 검사가 커밋③의 핵심 안전망이다. 없으면 26테이블을 손으로 옮기다 컬럼 하나가
+이 검사가 커밋③의 핵심 안전망이다. 없으면 34테이블을 손으로 옮기다 컬럼 하나가
 빠지거나 타입이 어긋나도 조용히 통과한다. ERD를 파싱해(erd_parser) 테이블·컬럼·
 타입 카테고리·PK·FK·유니크를 한 항목씩 대조한다.
 
-원칙: ERD에 없는 테이블은 만들지 않는다(B 전용 테이블 부재는 의도 — B가 자기 DB를
-나중에 직접 추가). 그래서 대조는 양방향이다(누락도, 초과도 실패).
+원칙: ERD에 없는 테이블은 만들지 않는다. 그래서 대조는 양방향이다
+(누락도, 초과도 실패).
 """
 
 from __future__ import annotations
@@ -59,10 +59,10 @@ def _sa_category(t: TypeEngine[object]) -> str:
     return f"unknown:{type(t).__name__}"
 
 
-def test_erd_parsed_26_tables() -> None:
-    """파서 경로가 틀리면 아래 대조가 조용히 0건 통과한다 — 26테이블 상수로 고정."""
+def test_erd_parsed_34_tables() -> None:
+    """파서 경로가 틀리면 아래 대조가 조용히 0건 통과한다 — 34테이블 상수로 고정."""
     assert ERD_PATH.is_file()
-    assert len(ERD_TABLES) == 26, f"ERD 테이블 수 {len(ERD_TABLES)} != 26"
+    assert len(ERD_TABLES) == 34, f"ERD 테이블 수 {len(ERD_TABLES)} != 34"
 
 
 def test_table_set_matches_erd() -> None:
@@ -129,13 +129,17 @@ def test_foreign_keys_match_erd(table_name: str) -> None:
 
 
 # 유니크 제약은 ERD가 산문·주석에 적어(파싱 취약) 명시 기대셋으로 대조한다.
-# 근거: feature_week — 06_erd.md 라인 107 "UNIQUE(tenant·student·week·ver)"
-#       idempotency_record — 라인 63-71 + 라인 310 확정 통보(tenant_id·endpoint·idempotency_key)
+# 근거: feature_week — UNIQUE(tenant·student·week·ver)
+#       idempotency_record — UNIQUE(tenant_id·endpoint·idempotency_key)
+#       weakness_map — UNIQUE(tenant·student·graph_ver·week_start)
+#       item_candidate — UNIQUE(tenant·set·slot·attempt)
 EXPECTED_UNIQUES: dict[str, set[frozenset[str]]] = {
     "feature_week": {
         frozenset({"tenant_id", "student_ref", "week_start", "feature_version"})
     },
     "idempotency_record": {frozenset({"tenant_id", "endpoint", "idempotency_key"})},
+    "weakness_map": {frozenset({"tenant_id", "student_ref", "graph_version", "week_start"})},
+    "item_candidate": {frozenset({"tenant_id", "set_id", "slot_index", "attempt_no"})},
 }
 
 
@@ -153,3 +157,14 @@ def test_unique_constraints_match_erd(table_name: str) -> None:
         f"[{table_name}] 유니크 제약 누락 — 기대 {[sorted(e) for e in expected]}, 실제 "
         f"{[sorted(a) for a in actual]}"
     )
+
+
+def test_unique_constraints_have_explicit_names() -> None:
+    """유니크 제약 이름은 autogenerate 안정성을 위해 명시해야 한다(09 §2-4.4)."""
+    unnamed = [
+        f"{table.name}:{sorted(column.name for column in constraint.columns)}"
+        for table in METADATA_TABLES.values()
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint) and constraint.name is None
+    ]
+    assert not unnamed, f"이름 없는 UniqueConstraint: {unnamed}"

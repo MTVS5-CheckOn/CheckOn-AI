@@ -1,8 +1,8 @@
-"""ERD 26테이블 ORM — 06_erd.md 정본을 그대로 옮긴다.
+"""ERD 34테이블 ORM — 06_erd.md 정본을 그대로 옮긴다.
 
 소유: 공통 계약 (A+B 확인 완료 — 양자 12곳, 02_ownership §4). ERD가 정본이므로
-ERD에 없는 테이블은 만들지 않는다(B 전용 문항·진단 테이블은 B가 자기 DB를 나중에
-직접 추가 — 7/22 확정). 대조는 tests/ai/db/test_erd_model_parity.py 가 강제한다.
+ERD에 없는 테이블은 만들지 않는다. A-1 승인으로 B 전용 문항·진단 8테이블을
+편입했으며, 대조는 tests/ai/db/test_erd_model_parity.py 가 강제한다.
 
 **실명·연락처 컬럼 절대 없음**(불변식 3) — alias(student_ref·guardian_ref 등)만.
 `…_ref`는 MySQL 원본을 가리키는 **논리 참조**(varchar, 물리 FK 아님).
@@ -218,6 +218,169 @@ class GateResult(Base):
     seq: Mapped[int] = mapped_column(Integer)
     passed: Mapped[bool] = mapped_column(Boolean)
     reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# ───────────────── 진단·문제생성 계열 ([PART_B]) ─────────────────
+
+
+class WeaknessMap(Base):
+    __tablename__ = "weakness_map"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "student_ref",
+            "graph_version",
+            "week_start",
+            name="uq_weakness_map_scope",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("ai_run.execution_id"))
+    tenant_id: Mapped[str] = mapped_column(String)
+    student_ref: Mapped[str] = mapped_column(String)
+    week_start: Mapped[date] = mapped_column(Date)
+    graph_version: Mapped[str] = mapped_column(String)
+    taxonomy_version: Mapped[str] = mapped_column(String)
+    config_version: Mapped[str] = mapped_column(String)
+    snapshot_hash: Mapped[str] = mapped_column(String)
+    cells: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    nodes: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    propagated: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    overall_low: Mapped[bool] = mapped_column(Boolean)
+    computed_at: Mapped[datetime] = mapped_column(_TZ)
+
+
+class Passage(Base):
+    __tablename__ = "passage"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    source_kind: Mapped[str] = mapped_column(String)
+    source_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    license_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    area_tag: Mapped[str] = mapped_column(String)
+    topic: Mapped[str] = mapped_column(String)
+    word_count: Mapped[int] = mapped_column(Integer)
+    complexity: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_call_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("llm_call.id"), nullable=True
+    )
+
+
+class ProblemSet(Base):
+    __tablename__ = "problem_set"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("ai_run.execution_id"))
+    tenant_id: Mapped[str] = mapped_column(String)
+    target_kind: Mapped[str] = mapped_column(String)
+    target_ref: Mapped[str] = mapped_column(String)
+    target_source: Mapped[str] = mapped_column(String)
+    weakness_map_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("weakness_map.id"), nullable=True
+    )
+    request: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String)
+    summary: Mapped[str | None] = mapped_column(String, nullable=True)
+    stop_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    diagnostic_purpose: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(_TZ)
+
+
+class ProblemItem(Base):
+    __tablename__ = "problem_item"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    set_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("problem_set.id"))
+    passage_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("passage.id"), nullable=True
+    )
+    area_tag: Mapped[str] = mapped_column(String)
+    type_tag: Mapped[str] = mapped_column(String)
+    item_format: Mapped[str] = mapped_column(String)
+    skill_node_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    stem: Mapped[str] = mapped_column(Text)
+    choices: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    answer: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    rationale: Mapped[str] = mapped_column(Text)
+    difficulty_est: Mapped[Decimal] = mapped_column(Numeric)
+    difficulty_fit: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    difficulty_calib_ver: Mapped[str] = mapped_column(String)
+    review_badge: Mapped[bool] = mapped_column(Boolean)
+    current_revision_no: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String)
+    drop_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class VerificationResult(Base):
+    __tablename__ = "verification_result"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("problem_item.id"))
+    stage: Mapped[str] = mapped_column(String)
+    passed: Mapped[bool] = mapped_column(Boolean)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    llm_call_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("llm_call.id"), nullable=True
+    )
+    attempt_no: Mapped[int] = mapped_column(Integer)
+
+
+class ItemRevision(Base):
+    __tablename__ = "item_revision"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("problem_item.id"))
+    turn_no: Mapped[int] = mapped_column(Integer)
+    revision_kind: Mapped[str] = mapped_column(String)
+    instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    diff: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    verifications_passed: Mapped[bool] = mapped_column(Boolean)
+    blocked_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    llm_call_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("llm_call.id"), nullable=True
+    )
+
+
+class DifficultyCalib(Base):
+    __tablename__ = "difficulty_calib"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    version: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String)
+    approved_by_ref: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(_TZ)
+
+
+class ItemCandidate(Base):
+    __tablename__ = "item_candidate"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "set_id",
+            "slot_index",
+            "attempt_no",
+            name="uq_item_candidate_scope",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    set_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("problem_set.id"))
+    tenant_id: Mapped[str] = mapped_column(String)
+    slot_index: Mapped[int] = mapped_column(Integer)
+    attempt_no: Mapped[int] = mapped_column(Integer)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    gate_summary: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    difficulty_est: Mapped[Decimal] = mapped_column(Numeric)
+    created_at: Mapped[datetime] = mapped_column(_TZ)
+
+
+# ────────────────────────── 묶음② 상담·소통 계열 계속 ──────────────────────────
 
 
 class InquiryClass(Base):
