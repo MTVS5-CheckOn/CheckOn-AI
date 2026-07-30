@@ -140,7 +140,8 @@ def test_tenant_isolation_hides_other_tenant_job(client: TestClient) -> None:
     assert resp.status_code == 404  # 존재 은닉
 
 
-def test_confirm_transitions_to_transforming(client: TestClient) -> None:
+def test_confirm_keeps_preview_ready(client: TestClient) -> None:
+    """확정 재검증 통과 — transforming으로 보내지 않는다(전체 행 변환은 백엔드 소유 §4)."""
     job_id = _post(client, "s3://roster.xlsx", "roster.xlsx").json()["data"]["job_id"]
     resp = client.post(
         f"/v1/imports/{job_id}/confirm",
@@ -148,7 +149,8 @@ def test_confirm_transitions_to_transforming(client: TestClient) -> None:
         headers={**_HEADERS, "Idempotency-Key": "t1:confirm:1"},
     )
     assert resp.status_code == 200
-    assert resp.json()["data"]["status"] == "transforming"
+    assert resp.json()["data"]["status"] == "preview_ready"
+    assert resp.json()["data"]["mapping_preview"]["blocked"] is False
 
 
 def test_confirm_rejects_non_standard_target_field(client: TestClient) -> None:

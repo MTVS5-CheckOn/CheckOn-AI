@@ -22,9 +22,8 @@ _EXPECTED: dict[S, set[S]] = {
     S.PROFILING: {S.INFERRING, S.PREVIEW_READY, S.FAILED},
     S.INFERRING: {S.PROBING, S.PREVIEW_READY, S.BLOCKED, S.FAILED},
     S.PROBING: {S.PREVIEW_READY, S.BLOCKED, S.FAILED},
-    S.PREVIEW_READY: {S.TRANSFORMING, S.FAILED},
-    S.BLOCKED: {S.TRANSFORMING, S.FAILED},
-    S.TRANSFORMING: {S.DONE, S.FAILED},
+    S.PREVIEW_READY: {S.DONE, S.BLOCKED, S.FAILED},
+    S.BLOCKED: {S.PREVIEW_READY, S.FAILED},
     S.DONE: set(),
     S.FAILED: set(),
 }
@@ -43,17 +42,22 @@ def test_terminal_states_are_done_and_failed() -> None:
     assert not ALLOWED_TRANSITIONS[S.DONE] and not ALLOWED_TRANSITIONS[S.FAILED]
 
 
-def test_blocked_is_not_terminal_and_can_reach_transforming() -> None:
+def test_blocked_is_not_terminal_and_can_be_released() -> None:
     assert S.BLOCKED not in TERMINAL
-    assert can_transition(S.BLOCKED, S.TRANSFORMING)  # override로 필수 채우면 진행
+    assert can_transition(S.BLOCKED, S.PREVIEW_READY)  # override로 필수 채우면 blocked 해제
 
 
 def test_cache_hit_shortcut_profiling_to_preview() -> None:
     assert can_transition(S.PROFILING, S.PREVIEW_READY)  # reused(§3.4)
 
 
+def test_no_transforming_state_exists() -> None:
+    """전체 행 변환은 백엔드 소유(10 §4, 2026-07-30) — AI 상태기계에 transforming이 없다."""
+    assert "transforming" not in {state.value for state in S}
+
+
 def test_assert_transition_rejects_illegal() -> None:
-    assert not can_transition(S.DONE, S.TRANSFORMING)
+    assert not can_transition(S.DONE, S.PREVIEW_READY)
     with pytest.raises(InvalidStateTransition):
         assert_transition(S.PROFILING, S.DONE)  # 프로파일링에서 바로 완료 불가
 

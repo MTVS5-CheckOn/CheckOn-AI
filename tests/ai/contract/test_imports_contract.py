@@ -57,4 +57,23 @@ def test_preview_blocked_shape() -> None:
 def test_job_view_status_enum() -> None:
     view = ImportJobView(job_id="j1", status=ImportStatus.PREVIEW_READY)
     assert view.status is ImportStatus.PREVIEW_READY
-    assert view.mapping_preview is None and view.result is None
+    assert view.mapping_preview is None
+
+
+def test_job_view_has_no_transform_result() -> None:
+    """전체 행 변환 결과는 AI 응답에 없다 — 백엔드 소유(10 §4, 2026-07-30)."""
+    assert "result" not in ImportJobView.model_fields
+    assert not {"output_url", "row_total", "row_ok", "row_errors"} & set(ImportJobView.model_fields)
+
+
+def test_import_status_values_frozen() -> None:
+    """10 §2 상태기계 — transforming 없음(백엔드 소유), blocked 유지(회신 대기 §6.1)."""
+    assert {status.value for status in ImportStatus} == {
+        "profiling",
+        "inferring",
+        "probing",
+        "preview_ready",
+        "done",
+        "blocked",
+        "failed",
+    }
