@@ -11,7 +11,8 @@
 - `RedactionBlocked`(전송 경로에서 차단) → 템플릿 폴백 + **outcome=redaction_blocked 유지**.
   LlmError 서브클래스이므로 **먼저** 받는다 — 재시도 금지+알럿 의미를 잃지 않게.
 - 왜곡 게이트 실패 → 재생성 ≤3 → 소진 시 템플릿 폴백(gate_passed=False).
-- 시간 예산 소진(호출 전 deadline 초과) → 템플릿 폴백.
+- 시간 예산 소진(deadline 초과) → 템플릿 폴백. **매 시도 전에 재검사**한다(05 §6-4) —
+  진입 시 1회만 보면 게이트 실패 재생성이 예산 이후에도 호출을 계속한다.
 
 폴백 텍스트는 `detection/brief.py`의 결정론 템플릿을 재사용한다(중복 구현 금지).
 `fallback_used=True`가 이제 실의미(LLM 실패·게이트 소진·마스킹 불확실·예산 소진).
@@ -25,6 +26,7 @@ from pathlib import Path
 
 from ai.composition.briefing_context import BriefingContext, render_evidence_block
 from ai.composition.briefing_gate import MAX_BRIEF_LENGTH, check_brief_gate
+from ai.composition.gate_feedback import instruction_for, render_feedback_block
 from ai.contracts.detection import Brief
 from ai.contracts.execution import ExecutionContext, GenerationParams
 from ai.contracts.llm import (
@@ -62,14 +64,17 @@ def _template() -> str:
     return _PROMPT_PATH.read_text(encoding="utf-8")
 
 
-def _assemble_prompt(ctx: BriefingContext) -> str:
+def _assemble_prompt(ctx: BriefingContext, gate_feedback: str = "") -> str:
     """프롬프트 조립 — 구조화 근거 블록(v2). 엔진 초안 문장은 넣지 않는다(모사 방지).
 
     근거 블록은 briefing_context가 소유·렌더한다(무주어·무실명·수치·enum 태그만).
     이 블록이 제공한 수치만 게이트에서 허용된다(ctx.allowed_numbers).
+
+    `gate_feedback`은 직전 게이트 실패의 수정 지시다(05 §6-2) — **1회차는 빈 문자열**
+    이라 문면이 종전과 바이트 동일하다. 렌더러는 counsel과 **같은 것**을 쓴다.
     """
     return _template().format(
-        evidence_block=render_evidence_block(ctx),
+        evidence_block=render_evidence_block(ctx) + render_feedback_block(gate_feedback),
         max_length=MAX_BRIEF_LENGTH,
     )
 
@@ -97,29 +102,37 @@ async def make_brief(
     (gateway 경유는 라우터가 조립). now/deadline은 시간 예산(호출당·총)을 호출자(라우터)가
     관리하도록 주입한다 (datetime.now() 직접 호출 금지 — 03_coding_rules §3).
     """
-    if now() >= deadline:
-        return _fallback(ctx), "budget_exhausted"
-
-    redacted = redact(_assemble_prompt(ctx))
-    if redacted.uncertain:  # fail-closed — 마스킹 불확실이면 LLM에 안 보낸다
-        return _fallback(ctx), "redaction_blocked"
-
-    request = LLMRequest(
-        role=ModelRole.NARRATOR,
-        prompt=redacted.masked_text,
-        prompt_id=PROMPT_ID,
-        prompt_version=PROMPT_VERSION,
-        generation_params=_GEN_PARAMS,
-    )
     allowed = ctx.allowed_numbers()
     last_reason = ""
     for _ in range(MAX_REGEN):
+        # 예산 검사 — **호출 전, 매 반복**(05 §6-4 · 점검 4-6a). 종전에는 함수 진입 시
+        # 1회만 봤고, 게이트 실패 재생성은 그 뒤에 일어나 예산을 넘긴 2·3회차 호출이
+        # 그대로 나갔다(호출당 수 초 × 잔여 횟수). 루프가 최소 1회는 돌므로 이 검사가
+        # 종전 진입 검사를 그대로 포섭한다 — 같은 조건을 두 곳에 두지 않는다.
+        if now() >= deadline:
+            return _fallback(ctx), "budget_exhausted"
+
+        # 직전 게이트 사유를 수정 지시로 실어 다시 조립한다(05 §6-2) — 같은 프롬프트를
+        # 상한까지 반복하면 같은 실패만 되풀이한다(비용 3배·개선 0 · 99 D ㉙).
+        # 1회차는 last_reason이 비어 지시도 비므로 문면이 종전과 바이트 동일하다.
+        # 조립이 루프 안으로 들어왔으므로 **마스킹도 시도마다** 다시 건다 — 지시 문구가
+        # 붙은 문면을 검사 없이 내보내지 않는다(fail-closed 유지).
+        redacted = redact(_assemble_prompt(ctx, instruction_for(last_reason)))
+        if redacted.uncertain:  # fail-closed — 마스킹 불확실이면 LLM에 안 보낸다
+            return _fallback(ctx), "redaction_blocked"
+        request = LLMRequest(
+            role=ModelRole.NARRATOR,
+            prompt=redacted.masked_text,
+            prompt_id=PROMPT_ID,
+            prompt_version=PROMPT_VERSION,
+            generation_params=_GEN_PARAMS,
+        )
         try:
             result = await completer.complete(request, context)
         except RedactionBlocked:
             # 🔴 `LlmError`보다 **먼저** 받는다 — RedactionBlocked는 LlmError의 서브클래스라
             # 순서가 뒤바뀌면 "재시도 금지+알럿"(error_codes §3)이 llm_failed로 뭉개진다.
-            # except 절 순서가 곧 계약이다. 위 :103의 로컬 fail-closed와 같은 outcome을 쓴다.
+            # except 절 순서가 곧 계약이다. 루프 머리의 로컬 fail-closed와 같은 outcome을 쓴다.
             return _fallback(ctx), "redaction_blocked"
         except LlmError:
             # LlmError 베이스로 받는다 — `openai_compat`은 4xx(컨텍스트 한도 초과 등)를

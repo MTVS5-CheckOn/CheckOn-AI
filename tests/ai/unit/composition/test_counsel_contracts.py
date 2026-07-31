@@ -139,13 +139,17 @@ def test_no_realname_fields() -> None:
 
 
 def test_allowed_numbers_is_exact_set_from_context() -> None:
-    """게이트 EXACT 허용집합 — facts·evidence_summaries의 숫자만."""
-    assert _context().allowed_numbers() == frozenset({"62", "2"})
+    """게이트 EXACT 허용집합 — facts·evidence_summaries·period_label 세 출처(05 §6-1).
+
+    period_label은 프롬프트가 쓰라고 지시하는 표기라 허용집합에 든다(99 D ㉘).
+    """
+    assert _context().allowed_numbers() == frozenset({"62", "2", "2026", "7"})
 
 
-def test_allowed_numbers_empty_when_no_facts() -> None:
+def test_allowed_numbers_keeps_period_when_no_facts() -> None:
+    """근거가 비어도 기간 숫자는 남는다 — 프롬프트의 기간 지시는 근거 유무와 무관하다."""
     context = _context().model_copy(update={"facts": (), "evidence_summaries": ()})
-    assert context.allowed_numbers() == frozenset()
+    assert context.allowed_numbers() == frozenset({"2026", "7"})
 
 
 def test_context_is_frozen_and_forbids_extra() -> None:

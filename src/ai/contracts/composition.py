@@ -143,12 +143,24 @@ class DraftContext(BaseModel):
         return frozenset(fact.record_id for fact in self.facts if fact.record_id)
 
     def allowed_numbers(self) -> frozenset[str]:
-        """이 컨텍스트가 실제로 제공한 수치 집합(EXACT). 파생 표기의 숫자만 허용된다."""
+        """이 컨텍스트가 실제로 제공한 수치 집합(EXACT) — 05 §6-1.
+
+        출처는 셋이다: `facts` · `evidence_summaries` · **`period_label`**.
+        기간 표기를 넣는 이유는 프롬프트가 그것을 **쓰라고 지시하기 때문**이다
+        (`counsel_pack.txt`의 "{period_label} 상담 초안을 작성하세요"). 지시대로
+        "2026년 7월"을 되뇐 문장이 `ungrounded_number:2026`으로 거부되면 게이트가
+        정상 문장을 막는다(99 D ㉘). `period_label`은 스냅숏 대상 기간의 결정론
+        파생이라 `facts`의 수치와 같은 지위이지 LLM이 만든 숫자가 아니다.
+
+        어느 출처에도 없는 숫자는 그대로 거부된다 — 환산·창작 수치 차단(불변식 1·2)은
+        불변이다.
+        """
         nums: set[str] = set()
         for fact in self.facts:
             nums.update(_NUMBER_RE.findall(fact.value))
         for summary in self.evidence_summaries:
             nums.update(_NUMBER_RE.findall(summary))
+        nums.update(_NUMBER_RE.findall(self.period_label))
         return frozenset(nums)
 
 

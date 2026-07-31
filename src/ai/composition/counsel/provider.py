@@ -142,10 +142,14 @@ class DraftWriter(Protocol):
         context: DraftContext,
         execution_context: ExecutionContext,
         emphasis: Sequence[str] = (),
+        gate_feedback: str = "",
     ) -> str:
         """조립·마스킹을 마친 프롬프트로 초안 본문을 받는다.
 
         `emphasis`는 근거 실존 검증을 통과한 강조점이다 — 비면 프롬프트가 현행과 동일하다.
+        `gate_feedback`은 직전 게이트 실패의 수정 지시다(05 §6-2) — **1회차는 빈 문자열**
+        이라 프롬프트가 바이트 동일하다. 문구는 그래프가 `gate_feedback.instruction_for`로
+        파생해 넘긴다(사유 코드가 이 경계를 넘지 않는다).
         """
         ...
 
@@ -167,8 +171,9 @@ class GatewayDraftWriter:
         context: DraftContext,
         execution_context: ExecutionContext,
         emphasis: Sequence[str] = (),
+        gate_feedback: str = "",
     ) -> str:
-        redacted = redact(assemble_prompt(context, emphasis))
+        redacted = redact(assemble_prompt(context, emphasis, gate_feedback))
         if redacted.uncertain:  # fail-closed — 불확실하면 LLM에 보내지 않는다
             raise RedactionBlockedError("상담 초안 프롬프트의 마스킹이 불확실하다")
         result = await self._gateway.complete(
@@ -252,6 +257,8 @@ class FakeCounselProvider:
         self._emphasis = dict(emphasis or {})
         self.write_calls: list[str] = []
         self.plan_calls: list[tuple[str, ...]] = []
+        #: 시도별 수정 지시 — 재생성 피드백(05 §6-2)이 실제로 전달됐는지 볼 수 있게 남긴다.
+        self.gate_feedbacks: list[str] = []
 
     async def plan(
         self,
@@ -279,8 +286,10 @@ class FakeCounselProvider:
         context: DraftContext,
         execution_context: ExecutionContext,
         emphasis: Sequence[str] = (),
+        gate_feedback: str = "",
     ) -> str:
         del emphasis  # Fake는 강조점을 소비하지 않는다 — 시나리오 순서로만 응답한다
+        self.gate_feedbacks.append(gate_feedback)  # 소비는 안 하되 전달 여부는 관측한다
         index = len(self.write_calls)
         self.write_calls.append(context.student_ref)
         if index < len(self._drafts):
