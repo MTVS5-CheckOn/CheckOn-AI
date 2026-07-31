@@ -13,12 +13,10 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
 from ai.api.routers.counsel import reset_counsel_stores, set_counsel_provider
-from ai.api.routers.counsel import router as counsel_router
 from ai.composition.counsel.provider import FakeCounselProvider
 
 _HEADERS = {
@@ -63,19 +61,7 @@ _RESULT_FIELDS = {
 }
 
 
-def _mounted_app() -> FastAPI:
-    """counsel 라우터가 달린 앱.
 
-    `api/app.py`는 **양자 승인 파일**이라 등록 커밋을 이 브랜치 마지막으로 몰았다 —
-    그 전까지는 여기서 붙여 라우터 자체의 계약을 검증한다(등록 후에는 중복 등록하지 않는다).
-    """
-    app = create_app()
-    mounted = any(
-        getattr(route, "path", "").startswith("/v1/counsel") for route in app.routes
-    )
-    if not mounted:
-        app.include_router(counsel_router)
-    return app
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +73,7 @@ def _isolate() -> Iterator[None]:
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    with TestClient(_mounted_app()) as test_client:
+    with TestClient(create_app()) as test_client:
         yield test_client
 
 
@@ -273,3 +259,18 @@ def test_idempotency_is_scoped_by_tenant(client: TestClient) -> None:
         headers={**_HEADERS, "X-Tenant-Id": "t2"},
     ).json()["data"]["job_id"]
     assert first != second
+
+
+# ── 앱 등록 (api/app.py — 양자 승인 파일) ────────────────────────
+
+
+def test_counsel_routes_are_registered_in_the_app() -> None:
+    """`create_app()`이 실제로 이 경로를 서빙한다 — 라우터만 있고 등록이 빠지면 무의미하다.
+
+    `app.routes`가 아니라 OpenAPI 스키마를 본다 — 이 FastAPI 버전은 include_router 결과를
+    `path`가 없는 래퍼로 담아서, 경로 순회로는 등록 누락을 검출하지 못한다(실측).
+    """
+    paths = set(create_app().openapi()["paths"])
+    assert "/v1/counsel/drafts" in paths
+    assert "/v1/counsel/drafts/{job_id}" in paths
+    assert "/v1/counsel/drafts/{draft_id}/refine" in paths

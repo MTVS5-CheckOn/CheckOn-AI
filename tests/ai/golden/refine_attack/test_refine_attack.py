@@ -15,12 +15,10 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
 from ai.api.routers.counsel import REFINE_BLOCK_MESSAGES, reset_counsel_stores, set_counsel_provider
-from ai.api.routers.counsel import router as counsel_router
 from ai.composition.counsel.refine import refine_draft, screen_instruction
 from ai.contracts.composition import (
     CommStyle,
@@ -126,13 +124,7 @@ class _EchoWriter:
         return {}
 
 
-def _mounted_app() -> FastAPI:
-    app = create_app()
-    if not any(
-        getattr(route, "path", "").startswith("/v1/counsel") for route in app.routes
-    ):
-        app.include_router(counsel_router)
-    return app
+
 
 
 @pytest.fixture(autouse=True)
@@ -144,7 +136,7 @@ def _isolate() -> Iterator[None]:
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    with TestClient(_mounted_app()) as test_client:
+    with TestClient(create_app()) as test_client:
         yield test_client
 
 
