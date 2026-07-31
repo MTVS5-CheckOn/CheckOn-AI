@@ -11,7 +11,8 @@
 - `RedactionBlocked`(전송 경로에서 차단) → 템플릿 폴백 + **outcome=redaction_blocked 유지**.
   LlmError 서브클래스이므로 **먼저** 받는다 — 재시도 금지+알럿 의미를 잃지 않게.
 - 왜곡 게이트 실패 → 재생성 ≤3 → 소진 시 템플릿 폴백(gate_passed=False).
-- 시간 예산 소진(호출 전 deadline 초과) → 템플릿 폴백.
+- 시간 예산 소진(deadline 초과) → 템플릿 폴백. **매 시도 전에 재검사**한다(05 §6-4) —
+  진입 시 1회만 보면 게이트 실패 재생성이 예산 이후에도 호출을 계속한다.
 
 폴백 텍스트는 `detection/brief.py`의 결정론 템플릿을 재사용한다(중복 구현 금지).
 `fallback_used=True`가 이제 실의미(LLM 실패·게이트 소진·마스킹 불확실·예산 소진).
@@ -101,12 +102,16 @@ async def make_brief(
     (gateway 경유는 라우터가 조립). now/deadline은 시간 예산(호출당·총)을 호출자(라우터)가
     관리하도록 주입한다 (datetime.now() 직접 호출 금지 — 03_coding_rules §3).
     """
-    if now() >= deadline:
-        return _fallback(ctx), "budget_exhausted"
-
     allowed = ctx.allowed_numbers()
     last_reason = ""
     for _ in range(MAX_REGEN):
+        # 예산 검사 — **호출 전, 매 반복**(05 §6-4 · 점검 4-6a). 종전에는 함수 진입 시
+        # 1회만 봤고, 게이트 실패 재생성은 그 뒤에 일어나 예산을 넘긴 2·3회차 호출이
+        # 그대로 나갔다(호출당 수 초 × 잔여 횟수). 루프가 최소 1회는 돌므로 이 검사가
+        # 종전 진입 검사를 그대로 포섭한다 — 같은 조건을 두 곳에 두지 않는다.
+        if now() >= deadline:
+            return _fallback(ctx), "budget_exhausted"
+
         # 직전 게이트 사유를 수정 지시로 실어 다시 조립한다(05 §6-2) — 같은 프롬프트를
         # 상한까지 반복하면 같은 실패만 되풀이한다(비용 3배·개선 0 · 99 D ㉙).
         # 1회차는 last_reason이 비어 지시도 비므로 문면이 종전과 바이트 동일하다.
