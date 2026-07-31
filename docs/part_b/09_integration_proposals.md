@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v2.5 (2026-07-30): **§2-14 GraphRAG 공용 계약의 A+B 승인·A 반영 완료(PR #49 · `02_ownership` v5)를 동기화**하고 B-12를 해소했다. §2-17은 경로 구분자 실제 결함과 W 번호를 과대·누락 판정한 B의 패턴 검사를 철회한 기록을 유지하면서, ① `as_posix()`·② Windows CI의 A 실행 완료(PR #50), A가 제안 밖에서 추가한 OS 무관 회귀(`b994017`), ③ `.gitattributes` 미합의 잔여를 분리해 갱신했다. §2-16은 PR #51 실측으로 `(b)` 훅의 LangSmith 기록 효력이 없음을 확정하고 briefing 제외·`emphasis_points` 우선 노출면·P2 제어점·미확인 5건을 반영했으며, 동의어 env 우회와 A PR #58 완료·B `5d8e1a4` PR 대기를 기록했다. §1-9 A-11과 B-14에는 추적 판정 소스 단일화 요청과 P1·P2 미완 상태를 동기화했다. `01_pipeline`·`02_design`의 백엔드 DB 표기도 PostgreSQL로 정정했다.
 > - v2.4 (2026-07-30): **§2-16 LangGraph 트레이스 경로와 B-14 신설** — gateway `(b)` 훅 미배선과 LangGraph 경계를 분리하고, PR #43의 counsel_pack 본문 미복제 정책과 `counsel/state.py` 구현 모두를 확인했다. 개인정보 활성 유출 경로 해소에 따라 B-14를 P1으로 두되, 프롬프트 IP 노출·실측 미확정이 남아 `LANGSMITH_TRACING=false` 유지를 재활성화 전제로 고정했다. P1' 대상도 briefing·counsel_pack 조립부 2곳으로 확정했으며, §1-10 ③의 `(a)` 실제 조립부 redaction·AST 계약 보호와 `(b)` 조건부 no-op도 정정했다.
 > - v2.3 (2026-07-30): §2-14의 양자 승인 카운트 위치를 `02_ownership.md` §4로 정정하고, §2-15에 blind 격리 범위 B-13 해소(PR #40)를 기록했다. §2-13의 승인 시 동시 개정 대상을 R6 임계 재산정·`taxonomy_version` 기축적분 혼재 정책·taxonomy 제목/결정 로그·ERD 2곳까지 4건 확장했다.
 > - v2.2 (2026-07-30): **크로스체크 정정 3건 + 안건 2건 신설.** ① §2-12-②를 `✅ A 승인·구현 완료(PR #37) · B 사후 검증 완료`로 승격하고 조건 5개 충족 근거를 코드 기준으로 기록 ② `verify_evidence_paths`의 소유를 **`현행 B 소유 · §2-14 승인 시 A+B`로 정정**(승인 전 확정 표기 철회)하고 `quote_hash`·`license_ref`가 이 검사의 책임이 아님을 명시 ③ **§2-14 신설** — `contracts/graphrag.py` 양자 승인 편입(12→13곳, A 제기·B 수용) ④ §3에 `B-12`(graphrag 소유)·**`B-13 [P0]`**(blind AST 테스트가 R-1 resolver 연동을 차단) 등록, `B-7` 해소 처리.
@@ -206,6 +207,7 @@ M2 문제생성 착수에 필요한 A 승인·작업을 한 표로 모았다. �
 | **A-8** | §2-10 문서 동기화 **잔여 4건** — `99_open_items`(B-2 완료 표기) · `part_a/08 §1`(`golden/diagnosis/` 행) · `02_ownership §5`(`golden/diagnosis/` 소유 행) · `00_INDEX`(part_b 링크 절) | §2-10 | 문서(A·공용) | 승인·구현이 끝난 항목의 문서 지연분 | ☐ 잔여 |
 | **A-9** | 7/22 감지·API 리뷰 잔여 회신 — ongoing 상한 제외 후 요약 동기화 · 병합 lifecycle 경계 · 회귀/데모 · 공용 실패 meta · 민감 detail 제거 `[P0]` | §1-7 · §1-8 · §2-11 | A(+BE) | B 무관하나 공용 wire 확정에 필요 | ◐ 진행 |
 | **A-10** | **"모든 LLM 호출은 gateway 경유 — 예외 없음" 규칙을 `docs/03_coding_rules.md` §2에 승격 완료**(PR #29 · `1d2882c`). 브리핑의 gateway 배선도 `77e016f`로 완료돼 과도기가 종료됐다 | §1-10 | 문서(A 소유) | 규칙의 적용 범위가 A·B 공용으로 확정되고 신규 provider 직결 금지가 공용 규율이 됨 | ✅ 완료(PR #29 · `1d2882c`) |
+| **A-11** | **`tests/ai/contract/test_trace_masking_hook.py`의 추적 활성 표현을 env 기준으로 이관 요청** — `:142` `test_startup_guard_still_bites_without_hook`이 `settings=LlmSettings(langsmith_tracing=True)` 단독으로 가드 발동을 요구한다. 판정 정본이 `ai.runtime.tracing.external_tracing_active()`로 이동한 뒤에도 이 계약을 지키려고 B가 gateway에서 `settings.langsmith_tracing`을 fail-closed 보조 트리거로 OR했다. `monkeypatch.setenv`로 바꿔주시면 OR을 걷는다 | §2-16 후속 1 · §3 B-14 | 테스트(A 소유) | gateway 기동 가드의 판정 소스 단일화 — B가 `settings` OR을 제거한다. 미확인이어도 B 진행은 막히지 않는다(OR로 동작) | ☐ 확인 |
 
 **P0 5건(A-1~A-5)이 M2 착수의 실질 관문이다.** 나머지는 병렬로 진행 가능하다.
 
@@ -601,19 +603,35 @@ resolver가 만족해야 하는 조건(B 요구):
 피할 수 있지만, 4종에 매핑할 수 없는 어휘·화법·작문·매체 약점은 셀 진단으로
 표현할 수 없어 **진단 자체가 불가능**해지는 비용을 감수해야 한다.
 
-### 2-14. `contracts/graphrag.py` 소유 미등록 — 양자 승인 편입 `[제안 · A+B 양자 승인]` `(B-12)`
+### 2-14. `contracts/graphrag.py` 소유 미등록 — 양자 승인 편입 `✅ A+B 승인 완료 · A 반영 완료(PR #49 · 02_ownership v5)` `(B-12)`
 
-**사실.** `src/ai/contracts/graphrag.py`(262줄)가 `docs/02_ownership.md` §3·§4·§5 어디에도 등록되지 않았다. 저장소 확인 결과 `02_ownership.md`·`CLAUDE.md` 양쪽에 `graphrag` 문자열이 **0건**이고, 양자 승인 대상은 여전히 **12곳**이다. 현재 `contracts/` 아래는 `execution`·`llm`·`gates`·`evaluation`·`taxonomy`·`agents`=양자, `detection`=A, `diagnosis`·`problem_generation`=B로 열거돼 있고 `graphrag`만 빠져 있다.
+**승인·반영 완료.** A가 먼저 제기하고 B가 수용한 `contracts/graphrag.py` 공용
+계약 편입을 A+B가 승인했으며, A가 PR #49로 `docs/02_ownership.md` v5와
+`CLAUDE.md`에 반영했다. 양자 승인 대상은 **12곳 → 13곳**이다.
 
-**제안.** 양자 승인 대상 **12곳 → 13곳**으로 편입한다. 이 안건은 **A가 먼저 제기하고 B가 수용**했다(7/30 회신).
+**반영 완료 5곳.**
 
-**근거.** [`11`](11_graphrag_knowledge_layer.md) §0이 이미 evidence resolver 시그니처를 A+B 양자로 정했고, §2-12-②(PR #37)로 **A 소유 `evidence/`가 `EvidencePack`·`EvidencePathResult`를 직접 소비**하는 구조가 됐다. B 단독 파일로 두면 A의 계약이 B 단독 파일에 매달린다. A-5 초안도 `ai.contracts.graphrag`를 그대로 import한다(형상을 두 곳에서 잡으면 드리프트).
+1. `docs/02_ownership.md` 제목을 v5로 올리고, :7의 v3→v4 이력을
+   “12곳이었다(v5에서 13곳)”로 정정했으며, :9에 v4→v5 이력을 추가했다.
+   이 중 :7 정정은 B 제안에 없었고 A가 추가로 찾아냈다.
+2. `docs/02_ownership.md` §3 파일 표에 `graphrag.py`를 공용 계약으로 등록하고,
+   **B가 생산하고 A `evidence/`가 소비해 생산·소비가 갈린다**는 양자 사유를 기록했다.
+3. `docs/02_ownership.md` §4의 양자 승인 대상을 **13곳**으로 갱신했다.
+4. `docs/02_ownership.md` §5 소유권 주석 트리에 `graphrag.py` 행을 추가했다.
+5. `CLAUDE.md` §2의 양자 승인 대상을 **13파일**로 갱신했다.
 
-**승인 시 동시 개정 대상.** ① `docs/02_ownership.md` §3 `contracts/` 파일 단위 소유 표에 `graphrag.py` 행 추가 ② §4의 “양자 승인 대상 — 12곳”을 **13곳으로 변경(카운트는 §4)** ③ §5 소유권 주석 트리에 `graphrag.py` 행 추가 ④ `CLAUDE.md` §2의 “양자 승인 12파일”을 13파일로 변경. **A가 네 곳을 한 커밋으로 처리한다(A 회신 확인)** — 이 제안에서는 해당 파일을 직접 수정하지 않는다.
+**근거.** [`11`](11_graphrag_knowledge_layer.md) §0과 §2-12-②(PR #37)에 따라
+A 소유 `evidence/`가 B가 생산한 `EvidencePack`·`EvidencePathResult`를 직접
+소비한다. 동일 형상을 두 곳에 만들지 않고 `contracts/graphrag.py` 하나를 공용
+경계로 두는 것으로 소유와 실제 생산·소비 구조가 일치했다.
 
-**부결 시 대안.** `contracts/graphrag.py`를 B 단독으로 유지하고 A가 `evidence/` 안에 별도 프로토콜을 재정의한다. 단 동일 형상이 두 곳에 생겨 드리프트하고, [`11`](11_graphrag_knowledge_layer.md) §0의 기존 양자 지정과 모순된다.
+**부결 시 대안(승인으로 무효).** 종전에는 `contracts/graphrag.py`를 B 단독으로
+유지하고 A가 `evidence/` 안에 별도 프로토콜을 재정의하는 안을 남겼으나, PR #49
+승인·반영 완료로 이 대안은 적용하지 않는다.
 
-**승인 전 처리.** [`11`](11_graphrag_knowledge_layer.md) §0의 해당 행은 `[제안 — 미승인]`으로 두고, 문서 어디에서도 `contracts/graphrag.py`를 확정된 공용 계약으로 표기하지 않는다. 현행 표기는 **"현행 B 소유 · §2-14 승인 시 A+B 공용 계약"** 병기다.
+**승인 전 처리(종료).** [`11`](11_graphrag_knowledge_layer.md) §0의
+`[제안 — 미승인]` 표기와 “현행 B 소유 · §2-14 승인 시 A+B 공용 계약” 병기는
+이번 동기화로 해소한다.
 
 ### 2-15. blind 격리 범위 — R-1 resolver 연동 차단 `✅ A 승인·PR #40 구현 완료` `(B-13)`
 
@@ -661,19 +679,27 @@ blind 제약의 대상은 verifier에게 보내는 페이로드이고, 실제 �
    ([`12`](12_suneung_format_alignment.md) FMT-6 머지 조건).
 ### 2-16. LangGraph 트레이스 경로 `[제안 · A+B]` `[P1]`
 
-**사실.** `LANGSMITH_TRACING=true` 상태에서 `src/` 전체에 `(b)` 훅이 0건이었다.
-LangSmith는 이 환경 설정만 켜지면 별도 코드 없이 LangGraph 노드 입출력 state를
-전송한다. §1-10 ③이 확정한 파이프라인(조립 → `(a)` → `(b)` → provider)은 LLM
-호출 경로이므로 LangGraph 노드·체크포인터 경로를 덮지 못한다. A가 counsel_pack
-착수 중 발견했고, PR #43으로 state 정책의 마지막 본문 복제 구멍을 닫았다.
+**실측 조건과 유효 범위.** 근거는 [`part_a/11`](../part_a/11_langsmith_trace_probe.md)
+§1.1·§2·§3·§4·§5·§6·§7·§8이다. `langsmith 0.10.2` · `langgraph 1.2.9` ·
+`langchain-core 1.4.9` · Python 3.12, `InMemorySaver`, 전부 합성 데이터,
+`.env` 무수정 조건에서 측정했다. 버전이 바뀌면 재실측해야 하며, 로컬 PG 미가용으로
+`PostgresSaver`는 이 조건에 포함되지 않았다.
 
-**위험 분포 — 워커 3종이 갈린다. A 크로스체크와 PR #43을 반영한 결과다.**
+**실측 결론.** `(b)` 훅은 LangSmith 기록에 **효력이 없다.** 프롬프트에 탐침 마커를
+붙인 요청이 provider까지 전달되고 호출도 성공했지만 수집된 span 16개 전부에 마커가
+등재되지 않았다. 프롬프트 자체가 트레이스에 실리지 않아 가릴 대상이 없고, 실제로 실리는
+`emphasis_points` 등은 훅이 닿지 않는 LangGraph 노드 state 경계다. `(b)` 훅의 실효는
+`(a)` redaction을 건너뛴 요청을 provider 전송 전에 차단하는 fail-closed다. **가리는
+것이 아니라 막는 것이며, P1·P1'의 의미도 기동 가드 충족이지 트레이스 방어가 아니다.**
 
-| 워커 | state | 판정 |
+**위험 분포 — state 정책 판정과 span 실측을 분리한다.**
+
+| 경로 | state·호출 형태 | 판정 |
 | --- | --- | --- |
-| problem_generation (B) | `request_ref`·`request_hash`·`items`·`fallback_ref` | ✅ `langgraph_state` §2.4 "본문 미복제" 준수 — 실명 유입 경로 없음 |
-| mapping_probe (A) | `sheets_meta={"columns": 컬럼명만}`(`worker.py:100`) · `steps[].observation_masked` | ✅ §2.2 설계 단계에서 차단 |
-| counsel_pack (A) | `context_ref`+`context_hash` · `results[].draft_id`(`langgraph_state` §1.2 · `counsel/state.py:71`·`:74`) | ✅ **정책·구현 모두 확인** — §2.4와 대칭. `context_ref`·`context_hash`(`Sha256Hash`)와 `results[].draft_id`로 구현됨 |
+| problem_generation (B) | `request_ref`·`request_hash`·`items`·`fallback_ref` | ✅ `langgraph_state` §2.4 "본문 미복제" 정책 준수. 이번 counsel_pack 탐침의 span 실측으로 승격하지 않는다 |
+| mapping_probe (A) | `sheets_meta={"columns": 컬럼명만}` · `steps[].observation_masked` | ⚠ **span·필드 미확인.** §2.2는 state 정책 판정이며 이번 탐침은 counsel_pack만 실행했다. 같은 LangGraph 경로라도 도구 호출 span이 추가될 수 있어 추정하지 않는다 |
+| counsel_pack (A) | `context_ref`+`context_hash` · `results[].draft_id` · `emphasis_points` | 포인터화 정책·구현은 완료됐지만, 실측에서 `emphasis_points`의 근거 라벨·수치·`record_id`가 문면 그대로 등재됐다. §1.2 불변식 ①에 따른 설계이며 **P2의 1순위 노출면**이다 |
+| briefing | LangGraph·langchain-core `Runnable` 비경유 · raw `AsyncOpenAI`(`wrap_openai` 미사용) | ✅ span 0건 — LangSmith 프로젝트가 생성되지 않아 위험 표면에서 제외 |
 
 종전 B 초안은 `probe/stores.py:113`의 `sample_rows`를 구멍으로 지목했으나, 이는
 `SourceProfile` 저장소 역직렬화 경로이며 LangGraph state가 아니다. A 정정을 반영해
@@ -684,12 +710,11 @@ LangSmith는 이 환경 설정만 켜지면 별도 코드 없이 LangGraph 노�
 §5가 B-6으로 LangSmith 도입을 확정했으므로 영구 false는 그 결정을 되돌리며, 멀티노드
 LangGraph를 트레이스 없이 디버깅하는 실질 손실이 있다.
 
-세 워커 모두 정책상 본문을 복제하지 않고 LLM 호출 경로의 `(a)` redaction도 개인정보를
-차단하므로 **불변식 3의 활성 유출 경로는 해소됐다.** 남은 위험은 지문·문항 등 프롬프트
-본문의 **저작권·영업비밀(IP) 노출**과 LangSmith의 실제 span·입출력 중 `(b)`가 덮는
-효과 대상이 아직 `[미확정]`이라는 점이다.
+포인터·alias 정책과 `(a)` redaction으로 실명·연락처 유입 경로가 없으므로 **불변식 3의
+활성 유출 경로는 해소됐다.** 다만 `emphasis_points`의 정답률·근거 라벨·논리 참조
+`record_id`는 학습 정보의 IP·프라이버시 노출면이며 P2가 다뤄야 한다.
 
-**분담 4단.**
+**분담과 재활성화 4단.**
 
 - **P0 (A) ✅ 해소 — 정책(PR #43)과 구현(`counsel/state.py`) 모두 확인. 잔여 없음.**
   `contexts: dict[str, DraftContext]`를 `context_ref`+`context_hash`로 바꾸고, 초안
@@ -698,17 +723,58 @@ LangGraph를 트레이스 없이 디버깅하는 실질 손실이 있다.
   없다. 재개 시 `context_ref` 역참조 해시를 `context_hash`와 대조하는 불변식 ④도
   구현했으며, `counsel/state.py:28`은 `ProblemGenerationState.request_hash`와 같은
   형식이라는 §2.4 대칭을 명시한다.
-- **P1 (B) — 본 PR.** `LANGSMITH_TRACING`이 참인데 `(b)` 훅이 미주입이면
-  `LlmGateway` 생성자에서 실패한다. 훅 반환 요청은 provider에 전달하지만 실제
-  LangSmith span·입출력 필드 중 어느 범위를 마스킹하는지는 아직 `[미확정]`이다.
-- **P1' (A) — P1의 부수 의존.** 머지 완료된 두 생성부
+- **P1 (B) ◐ PR #48 · 동의어 4종 확장 `5d8e1a4` PR 대기.** 현행 develop 가드는
+  `settings.langsmith_tracing`만 보므로 `LANGCHAIN_TRACING_V2` 등으로 우회할 수 있다.
+  확장 브랜치는 판정을 `external_tracing_active()`에 위임했지만 A 계약 보존을 위한
+  `settings.langsmith_tracing` 보조 OR을 남겼다. 이 단계는 기동 가드이며 트레이스
+  은닉이 아니다.
+- **P1' (A) ✅ 완료(PR #51).** `src/ai/runtime/trace_masking.py`를 신설하고
   `composition/provider.py:112`(briefing)·`composition/counsel/assembly.py:56`
-  (counsel_pack)가 `LlmGateway`를 만들므로 두 A 조립부 모두 `(b)` 훅을 주입해야 한다.
-  TRACING을 다시 켜기 전에 A가 해야 하고, B가 만든 강제 의존이라 명시한다.
-  - **부속 확인 (A+B):** 실제 LangSmith trace의 span·입력·출력에서 `(b)` 효과
-    대상을 실측 확정한다. P1·P1'·이 확인·P2 중 하나라도 미완이면 TRACING을 켜지 않는다.
-- **P2 (A).** LangGraph 체크포인터 serde와 LangSmith 클라이언트 입출력을 은닉한다.
-  P0 정책으로 state 범위가 줄었으므로 P0 뒤에 수행한다.
+  (counsel_pack) 두 조립부에 `(b)` 훅을 주입했으며
+  `tests/ai/contract/test_trace_masking_hook.py`로 회귀를 고정했다.
+- **부속 확인 (A+B) ✅ 완료(PR #51).** 실제 span·입출력을
+  [`part_a/11`](../part_a/11_langsmith_trace_probe.md)에서 측정해 `(b)` 훅의
+  LangSmith 기록 효력이 없음을 확정했다.
+- **P2 (A) ☐ 미완.** LangSmith 클라이언트 입출력과 LangGraph 체크포인터 serde를
+  각각 은닉한다. **P1·P1'·부속 확인·P2 중 하나라도 미완이면 TRACING을 켜지 않는다.**
+
+**P2 제어점.** `langsmith 0.10.2`의 실제 은닉 위치는
+`Client(hide_inputs=)`·`hide_outputs=`·`hide_metadata=`·`anonymizer=` 또는
+`LANGSMITH_HIDE_INPUTS` 계열이다(`client.py:1343-1352` 폴백,
+`:2695-2713` 적용). `hide_inputs is True`이면 입력을 `{}`로 완전 대체한다.
+`PostgresSaver` serde는 트레이스와 별개로 state를 DB에 적재하는 노출면이다.
+우선순위는 **`emphasis_points` → `results[].draft_id` → `context_hash`**다.
+
+**미확인 5건 — 추정으로 채우지 않는다.**
+
+1. `PostgresSaver` span·적재 내용
+2. `mapping_probe` 워커 span·필드
+3. `openai_compat` 실 provider 경로
+4. `hide_inputs` 실적용 결과
+5. `langsmith` 상위 버전 동작
+
+**동의어 env 우회.** PR #48 가드는 `LANGSMITH_TRACING` 하나만 봤지만
+`langsmith 0.10.2`의 실제 판정 대상은
+`{LANGSMITH,LANGCHAIN}_{TRACING,TRACING_V2}` 4종이다. A가
+`LANGCHAIN_TRACING_V2=true`로 실측했을 때 가드는 침묵했고
+`POST /runs/multipart` 연결 시도 10건(`Content-Length: 15606`), 앱 에러 0건이었다.
+A는 PR #58의 `runtime/tracing.py`로 자기 워커 표면을 닫았다. B는
+`codex/tracing-synonym-gateway-guard`의 `5d8e1a4`에서 gateway 판정을
+`external_tracing_active()`로 위임했으나 **PR 리뷰 대기**이며 머지 완료가 아니다.
+상세는 `99` D ㉒-a를 따른다.
+
+**gateway docstring.** `TraceMaskingHook`의 `[미확정]` 표기는 Part A `5d8e1a4`에서
+위 실측 기준으로 갱신했으며 PR 대기다.
+
+**후속 결정.**
+
+1. **추적 판정 소스 단일화(A-11).** A 소유
+   `test_trace_masking_hook.py:142`가 settings 단독 발동을 요구해 B가 보조 OR을
+   유지한다. A가 테스트를 env 기준으로 이관하면 B가 OR을 제거한다. 현재 OR로
+   동작하므로 B 진행을 막지는 않는다.
+2. **가드 트리거와 훅 실효 불일치.** 트리거는 외부 추적 활성인데 실제 훅은 redaction
+   우회 요청을 전송 전에 차단한다. 훅 상시 요구·추적 활성 시 요구·별도 검증기 분리 중
+   어느 계약이 맞는지 재검토한다. 동작 변경이므로 이번 문서 작업에서 고치지 않는다.
 
 **부결 시 대안.** 영구 `LANGSMITH_TRACING=false`. B-6 확정을 철회해야 하고
 LangGraph 디버깅 수단을 잃는다.
@@ -716,6 +782,56 @@ LangGraph 디버깅 수단을 잃는다.
 **부수 안건.** redact 누락 계약 테스트를 본 PR에서 B 경로에만 건다.
 `composition/`·counsel_pack은 A가 counsel_pack PR에 같은 AST 형식으로 넣기로
 확인했다.
+
+### 2-17. 크로스 플랫폼 정합성 — 경로 구분자·개행 `[제안 · A+B]` `✅ ①② A 실행 완료(PR #50) · ③ 잔여`
+
+**사실 ① 경로 구분자.** 실제 결함은
+`tests/ai/contract/test_composition_redaction.py:46` 한 줄이다.
+`str(path.relative_to(_COMPOSITION))`은 Windows에서 백슬래시를 반환하지만,
+화이트리스트는 `("counsel/provider.py", "write")`처럼 슬래시로 표기해 같은
+호출부를 서로 다른 경로로 비교한다. 참조 구현은
+`tests/ai/contract/test_problem_generation_redaction.py:42`의 `.as_posix()`다.
+
+**A 크로스체크로 축소된 범위.** `relative_to()`를 쓰는 다른 네 테스트는 비교에
+경로 문자열을 사용하지 않아 같은 결함이 아니다.
+
+- `test_evaluation_isolation.py:45` — `offenders` 오류 메시지 표시용
+- `test_error_mapping.py:49` — `.parts` 뒤 `"."` 결합으로 구분자 무관
+- `test_vendor_isolation.py:47` — assert 메시지 f-string 표시용
+- `tests/ai/failure/test_import_held_boundaries.py:31` — `offenders` 오류 메시지 표시용
+
+경로 결함이 다섯 파일에 걸친다는 B의 종전 판정은 사용 여부만 세고 비교 방식을
+보지 않은 과대 판정이므로 철회한다. 잔여는 실패 메시지의 구분자 표기 차이뿐이다.
+W 번호도 `W1`~`W10`의 실제 표기를 놓치는 하이픈 필수 grep 패턴 때문에 “기존 번호
+0개”로 잘못 판정했다. 같은 원인의 누락이므로 철회하고 다음 번호를 `W11`로 잡는다.
+
+**사실 ② 개행.** 저장소에 `.gitattributes`가 없어 개행 정규화가 저장소 수준에서
+정의되지 않았다. 각 로컬 `core.autocrlf`에 따라 워킹트리 개행이 갈릴 수 있고,
+`src/ai/evaluation/golden/problems/prompt_snapshots/*.snapshot.txt`처럼 파일
+내용을 비교하는 경로가 개행에 민감해지면 플랫폼별 결과가 달라질 수 있다.
+현재 발현된 결함은 아니다.
+
+**충돌 당시 상태와 해소.** PR #50 전 `.github/workflows/ci.yml:18`·`:41`은 모두
+`runs-on: ubuntu-latest` 단독이라 Windows 경로 구분자 결함을 구조적으로 잡지 못했고,
+이번 결함도 머지 전 CI를 통과했다. A가 PR #50에서 `windows-latest` 매트릭스를 추가해
+이 경로를 닫았다.
+
+**제안 3건.**
+
+1. `test_composition_redaction.py:46`을 `.as_posix()`로 바꾼다.
+   **✅ A 실행 완료(`17fecfb`, PR #50).**
+2. `ci.yml` 매트릭스에 `windows-latest`를 추가한다.
+   **✅ A 실행 완료(`e5cd95f`, PR #50).**
+3. `.gitattributes`를 신설해 최소 `* text=auto`로 개행 정규화를 저장소 수준에
+   고정한다. **⬜ 유일한 잔여 — 공용 · A+B 미합의.**
+
+**A의 제안 외 추가 회귀.** A는 `b994017`에서 경로 구분자 회귀를 OS와 무관하게
+고정하는 테스트를 별도로 추가했다. 이는 B의 ①② 요청에 포함된 조치가 아니며,
+`windows-latest` 매트릭스와 함께 같은 유형을 이중으로 잡는다.
+
+**부결 시 대안(③ 한정).** `.gitattributes` 없이 각자 로컬 설정에 의존한다.
+스냅숏·픽스처 비교가 개행에 민감해지는 순간 플랫폼별 결과가 갈리고, ①과 같은
+“로컬에서만 발견” 구조가 반복되는 비용을 감수한다.
 
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
@@ -727,9 +843,9 @@ LangGraph 디버깅 수단을 잃는다.
 | B-5 / D-06 | ✅ PR #15로 로컬 OpenAI 호환·Gemma 계열 공급자와 어댑터 확정 — verifier 폴백 패밀리만 잔여. **B-5 정리 PR 할 일 2건** `[2026-07-28]`: ① `gateway.py`의 `TODO(B-5)` 제거(provider 1개일 때 패밀리 강제가 우회되는 현행 동작) ② **`problem_generation/provider.py` 조립부 가드 + `test_provider.py`**(§1-10 "가드 위치") | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제. 두 항목 모두 role 키 설정 구조를 공유하므로 같은 PR에서 처리 | A+B | 06 §2·§3 · §1-10 |
 | B-7 | ✅ **해소** — evidence resolver 시그니처 A 승인·**PR #37 구현 완료** · B 사후 검증 완료(조건 5개 전량 충족) | 경계 3단 확정: 그래프 내부 검증(B)·근거 해소(A)·R-1 이중 통과. 잔여는 R-1 연동 구현 시 B-13 | A+B | §2-12-② · `11` §5 |
 | **B-8ⓑ** | **GraphRAG `VersionSet` 3필드 확장** — `content_graph_version`·`graph_index_version`·`retrieval_config_version`. **`graph_version` 재사용 금지** | B-8ⓐ capability별 validator와 병합. ⓐ·ⓑ 모두 `contracts/execution.py`(양자) + `04_api_contract.md` §2.2 + `06_erd.md` AI_RUN 동시 개정이 필요해 PR 단위가 같다. A-5→B-7 병합과 대칭 | A+B | §2-12-① · `10` §4.2 |
-| **B-12** `[신규]` | **`contracts/graphrag.py` 소유 미등록** — `02_ownership.md`·`CLAUDE.md`에 `graphrag` 0건, 양자 승인 대상 12곳 유지. A-5로 A 소유 `evidence/`가 이 계약을 직접 소비한다 | 양자 12곳 → **13곳** 편입. A 제기·B 수용(7/30). 동시 개정은 `02_ownership` §3·§4·§5 + `CLAUDE.md` §2 — **A가 연다** | A+B | §2-14 · `11` §0 |
+| **B-12** | ✅ **해소 — A 승인·반영 완료(PR #49 · `02_ownership` v5 + `CLAUDE.md`, 12→13곳).** 반영처는 A가 추가로 찾아낸 :7의 v3→v4 이력 정정까지 포함한 5곳 | `graphrag.py` 공용 계약 등록과 생산(B)·소비(A) 분리 사유까지 정본에 반영 완료 | A+B | §2-14 · `11` §0 |
 | **B-13** | ✅ **해소** — A가 (가)안을 채택해 `_BLIND_PAYLOAD_MODULES`로 조립 지점 한 곳만 검사하고, 현재 6키 화이트리스트의 정확 일치를 강제했다. **PR #40 머지 완료** | R-1 GraphRAG 확장 착수 가능. 잔여는 FMT-6 자료 블록 추가 시 화이트리스트 동시 갱신 | A+B | §2-15 · `06` §1 · `11` §5 |
-| **B-14** `[신규]` `[P1]` | **LangGraph 노드 state·LLM 프롬프트가 트레이스로 나간다** — `(b)` 훅 미배선. 세 워커 모두 정책상 본문 미복제 완료(problem_generation §2.4 · mapping_probe §2.2 · counsel_pack §1.2 PR #43)로 **불변식 3 위험은 해소**. 남은 것은 프롬프트 본문의 IP 노출과 LangSmith 실측 미확정 | **`TRACING=false` 유지가 전제.** P1 가드(B, 본 PR) · P1' briefing·counsel_pack 조립부 2곳 훅 주입(A) · P1' 부속 실측 확정(A+B) · P2 serde·클라이언트 은닉(A). 넷 중 하나라도 미완이면 TRACING을 켜지 않는다 | A+B | §2-16 · `01` §5 · `langgraph_state` §1.2·§2.4 |
+| **B-14** `[신규]` `[P1]` | **LangGraph counsel_pack 노드 state의 `emphasis_points`에 근거 라벨·수치·`record_id`가 실측 등재된다.** alias와 논리 참조라 실명·연락처는 없어 **불변식 3 해소 판정은 유지**하지만, 학습 정보의 IP·프라이버시 노출면은 남는다. 프롬프트는 트레이스에 실리지 않고 briefing은 span 0건이며, mapping_probe와 P2 실적용 결과는 미확인이다 | **`TRACING=false` 유지가 전제.** P1 ◐ PR #48 · 동의어 4종 확장 `5d8e1a4` PR 대기(현행 develop 가드는 `LANGCHAIN_TRACING_V2` 등으로 우회 가능) · P1' ✅ PR #51 · 부속 실측 ✅ PR #51 · P2 ☐ serde·클라이언트 은닉 미완. 판정 소스 단일화는 A-11 확인 후이며, 넷 중 하나라도 미완이면 TRACING을 켜지 않는다 | A+B | §2-16 · `01` §5 · `langgraph_state` §1.2·§2.4 |
 | **B-9** `[신규]` | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** — 검증 통과 문항이 미검증 문항으로 대체될 수 있는 미정의 동작 | `07` §4의 "마지막 검증본 유지"를 생성 경로에 대칭 적용 제안. 확정 전 `difficulty_regen_enabled=false` 유지 | B 초안 → A+B | `10` §4.1 C3 |
 | **BE-11** `(구 B-10)` | ✅ **A 판정 완료 — RLS 구현 부재는 문서 표현을 앱 계층 격리로 정정해 해소.** RLS 실도입 여부는 백엔드 합의 안건으로 이관 | 도입 시 `db/session.py`·`db/store_factory.py` 연결·역할 설계와 함께 기존 26+B 8테이블에 일괄 적용. 현재 B 8테이블은 기존 패턴 준수 | **BE** | §2-4.5 |
 | **W1** `[신규]` | **다중 목표·다중 measured area 세트** — M2 와이어프레임 Step 1은 셀 여러 개를 담고 개수를 각각 지정하나, `05` §4.1은 **v1 단일 영역 제한** | 요청 분할 vs 요청 형식 확장 중 택일. 협업설명서도 "회의 결정 필요"로 등재 | A+B+제품 | `05` §4.1 · `10` §6 |
@@ -742,6 +858,7 @@ LangGraph 디버깅 수단을 잃는다.
 | **W8** `[신규]` | **M2 수능형 포맷 적합성 총괄** — 상세는 [`12`](12_suneung_format_alignment.md) FMT-1~11 | 개별 FMT 안건을 이 표에 중복하지 않고 `12` 정본에서 오너별로 추적 | B(+각 오너) | `12` §5 |
 | **W9** `[신규]` | **`type_tag` 4종이 실제 문항 유형의 절반을 못 담음** | 능력 범주 확장 방향을 §2-13에서 제안하고 실제 어휘·경계는 양자 승인 | A+B | §2-13 · `12` §3 |
 | **W10** `[신규]` | **롤백 재검증이 FIX-09와 충돌** — `07` 정정 | 롤백 본문 복원 후 게이트 ①②③ 전체 재검증으로 정합화 | B 단독 | `07` §1 · `10` §3 FIX-09 |
+| **W11** `[신규]` | **크로스 플랫폼 정합성** — `ci.yml`이 `ubuntu-latest` 단독이라 Windows 경로 결함을 구조적으로 잡지 못한다. 실제 결함은 `test_composition_redaction.py:46` 한 줄로 축소됐고, `.gitattributes` 부재로 개행 정규화도 미정의 | ① `.as_posix()` ✅ `17fecfb`·PR #50 ② `windows-latest` ✅ `e5cd95f`·PR #50 · A가 제안 밖에서 OS 무관 회귀 `b994017` 추가 · ③ `.gitattributes` 신설은 A+B 미합의 잔여 | A(+B) | §2-17 · `ci.yml` |
 | D-03 | T1 기준 자료(공급처·버전·라이선스) | 버전·라이선스 명확한 자료만, 장애 시 발행 차단 | B+기획 | 05 §1.1 |
 | D-04 / C-14 `[P0]` | T2 사실성 보장 수단 | 승인 자료 기반+source_ref, 수단 없으면 `source_unverified` 차단 | B+기획 | 05 §2.1 |
 | C-15 `[P0]` | 외부 표절·유사도 + injection 코퍼스 | 05 §8.2·§8.3, 08 §8 예약 | B+기획 | 05·08 |
