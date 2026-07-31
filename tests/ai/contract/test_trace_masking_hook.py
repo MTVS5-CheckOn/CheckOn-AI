@@ -34,8 +34,25 @@ from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LLMRequest, ModelRole, RedactionBlocked
 from ai.llm.settings import LlmSettings
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
+from ai.runtime.tracing import TRACING_ENV_SYNONYMS
 
 _SRC = Path(__file__).resolve().parents[3] / "src" / "ai"
+
+#: 추적 제어의 **대표 env** — B가 자기 테스트에서 쓴 방식 그대로다
+#: (`tests/ai/unit/llm/test_gateway.py`의 `_REPRESENTATIVE_TRACING_ENV`).
+#: 목록을 복제하지 않고 `runtime/tracing.py`의 정본에서 가져온다.
+_REPRESENTATIVE_TRACING_ENV = TRACING_ENV_SYNONYMS[0]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_tracing_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """추적 env를 비운 상태에서 시작한다 — 개발자 로컬 `.env`·셸 설정과 무관하게.
+
+    B 소유 `tests/ai/unit/llm/conftest.py`의 격리와 같은 규약이되, 그 파일은 B 소유라
+    건드리지 않고 여기에 둔다. **목록은 복제하지 않는다**(`TRACING_ENV_SYNONYMS` 재사용).
+    """
+    for name in TRACING_ENV_SYNONYMS:
+        monkeypatch.delenv(name, raising=False)
 
 #: gateway 생성이 허용된 조립부(화이트리스트). 목록 밖에서 생기면 사람이 한 번 본다.
 #: 경로는 **POSIX 표기**로 대조한다 — `str()`이면 Windows에서만 깨진다(⑬에서 고친 버그).
@@ -122,29 +139,48 @@ def test_no_gateway_construction_outside_whitelist() -> None:
 # ── ② 기동 — TRACING=true에서 두 조립부가 성공한다 (P1′ 완료 정의) ──
 
 
-def _tracing_on() -> LlmSettings:
-    return LlmSettings(langsmith_tracing=True)
+def _tracing_off_settings() -> LlmSettings:
+    """`langsmith_tracing` 축을 **명시적으로 끈** 설정.
+
+    추적 활성은 **env로만** 태운다(아래 두 테스트). 그래야 가드 발화가 오직 env 판정
+    (`external_tracing_active()`)에서 온다는 것이 구조적으로 보장되고, B가 §2-16 후속 1로
+    `or settings.langsmith_tracing` 보조 트리거를 걷어도 이 계약이 그대로 성립한다
+    (A-11 — 판정 소스 단일화의 A쪽 조건).
+    """
+    return LlmSettings(langsmith_tracing=False, _env_file=None)
 
 
-def test_brief_gateway_builds_with_tracing_enabled() -> None:
+def test_brief_gateway_builds_with_tracing_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """주입 전에는 ValueError였다 — 이 테스트가 P1′의 완료 정의다."""
     from ai.llm.gateway import LlmGateway
 
+    monkeypatch.setenv(_REPRESENTATIVE_TRACING_ENV, "true")
     gateway = LlmGateway(
         {ModelRole.NARRATOR: FakeBriefProvider()},
         transport_retry={ModelRole.NARRATOR: 0},
         trace_masking_hook=RedactionTripwireTraceHook(),
-        settings=_tracing_on(),
+        settings=_tracing_off_settings(),
     )
     assert gateway is not None
 
 
-def test_startup_guard_still_bites_without_hook() -> None:
-    """가드 자체가 살아 있는지 — 훅을 빼면 여전히 기동 실패다(B의 #48 동작 보존)."""
+def test_startup_guard_still_bites_without_hook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """가드 자체가 살아 있는지 — 훅을 빼면 여전히 기동 실패다(B의 #48 동작 보존).
+
+    제어 수단만 설정 → env로 바뀌었고 **가드가 무는 것 자체는 그대로 검증**한다.
+    """
     from ai.llm.gateway import LlmGateway
 
+    monkeypatch.setenv(_REPRESENTATIVE_TRACING_ENV, "true")
     with pytest.raises(ValueError, match="trace_masking_hook"):
-        LlmGateway({ModelRole.NARRATOR: FakeBriefProvider()}, settings=_tracing_on())
+        LlmGateway(
+            {ModelRole.NARRATOR: FakeBriefProvider()},
+            settings=_tracing_off_settings(),
+        )
 
 
 # ── ③ 훅 동작 ─────────────────────────────────────────────────────
