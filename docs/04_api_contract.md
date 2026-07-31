@@ -546,7 +546,7 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 | --- | --- | --- | --- | --- |
 | `interventions[]` | array | ✅ | 초안 맥락 | `{record_id, type, memo_text, at}` — 강사 본인의 기록 |
 | `comm_history[]` | array | ✅ | 톤·이력·라벨 제안 | `{record_id, direction, text, at}` — `[Open-4d]` 최근 10건·90일 · 백엔드 1차 마스킹 제안 |
-| `guardian.label_snapshot` | object | ✅ | 톤 매핑 | 4축 enum — **확정본만** |
+| `guardian.label_snapshot` | object | ❌ **(7/31 정정)** | 톤 매핑 | 4축 enum — **확정본만**. **선택이다** — 라벨 검토함 계약 §6이 "라벨 0개 = 기본 톤으로 생성"을 확정했고 개통 첫날은 전원이 0개다. **누락 축은 기본값**(`part_a/05` §7-2), 응답 `labels_applied`에 실제 적용된 4축을 싣는다. 4축 enum 밖의 문자열은 400(§7-4 — alias 금지) |
 | `inquiry` | object | reply만 | 분류·초안 | `{inquiry_ref, body_text, received_at}` |
 | `student_summary` | object | ❌ | — | `[Open-4c]` A 제안: 불필요(AI가 자기 피처 사용) |
 | `benchmarks` | object | report만 | 리포트 차트·해설 | 백엔드 집계 API 산출. **공개 등급 분리**: `{ "national_percentile": { "value": 68, "as_of": "...", "source": "...", "audience": "guardian" }, "class_avg": { "value": 74, "audience": "teacher_only" } }` — **teacher_only 항목은 학부모向 draft의 LLM 컨텍스트 조립에서 구조적으로 제외**(프롬프트에 미포함 = 유출 불가). 전국 백분위 출처·모수는 `[Open-9]` 백엔드 확인 필요(콜드스타트) |
