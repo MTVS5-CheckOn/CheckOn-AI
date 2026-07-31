@@ -16,6 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Final
 
+from ai.composition.gate_feedback import render_feedback_block
 from ai.composition.tone import ToneRule, combination_key, load_tone_map
 from ai.contracts.composition import DraftContext
 
@@ -89,17 +90,6 @@ def render_emphasis_block(emphasis: Sequence[str] | None) -> str:
     return f"\n\n이번 회차에 특히 다룰 것(근거 record_id 동반):\n{lines}"
 
 
-def render_gate_feedback_block(instruction: str) -> str:
-    """직전 시도 수정 지시를 문면으로 — **빈 경우 빈 문자열**(프롬프트 바이트 동일 보장).
-
-    문구 자체는 `composition/gate_feedback.yaml`이 소유한다(05 §6-2). 여기서는 자리와
-    머리말만 정한다 — 지시는 "상담 초안:" 직전에 놓아 마지막 지시가 되게 한다.
-    """
-    if not instruction:
-        return ""
-    return f"\n\n직전 시도 수정 지시(반드시 반영):\n- {instruction}"
-
-
 def assemble_prompt(
     context: DraftContext,
     emphasis: Sequence[str] | None = None,
@@ -126,7 +116,7 @@ def assemble_prompt(
         evidence_block=(
             render_evidence_block(context)
             + render_emphasis_block(emphasis)
-            + render_gate_feedback_block(gate_feedback)
+            + render_feedback_block(gate_feedback)
         ),
     )
 
@@ -137,7 +127,6 @@ __all__ = [
     "assemble_prompt",
     "render_block_plan",
     "render_emphasis_block",
-    "render_gate_feedback_block",
     "render_evidence_block",
     "render_tone_rules",
     "tone_rule_for",

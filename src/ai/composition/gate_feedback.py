@@ -81,9 +81,22 @@ def instruction_for(reason: str) -> str:
     return text + table.detail_suffix.format(detail=detail)
 
 
+def render_feedback_block(instruction: str) -> str:
+    """수정 지시를 프롬프트 문면으로 — **빈 경우 빈 문자열**(바이트 동일 보장).
+
+    counsel·briefing 두 경로가 **같은 렌더러**를 쓴다. 문면을 각자 두면 두 곳에서 따로
+    늙는다(`EvidenceFact` 이중 정의 · 99 D ㉚와 같은 패턴). 호출자는 이 블록을 근거
+    블록 **뒤**에 붙여 지시가 프롬프트의 마지막에 오게 한다.
+    """
+    if not instruction:
+        return ""
+    return f"\n\n직전 시도 수정 지시(반드시 반영):\n- {instruction}"
+
+
 __all__ = [
     "GateFeedbackError",
     "GateFeedbackMap",
     "instruction_for",
     "load_gate_feedback",
+    "render_feedback_block",
 ]

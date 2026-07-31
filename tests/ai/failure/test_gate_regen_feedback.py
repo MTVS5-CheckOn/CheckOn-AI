@@ -21,6 +21,8 @@ from uuid import UUID
 
 from langgraph.checkpoint.memory import InMemorySaver
 
+from ai.composition.briefing import make_brief
+from ai.composition.briefing_context import BriefingContext
 from ai.composition.counsel.graph import build_counsel_graph
 from ai.composition.counsel.prompt import assemble_prompt
 from ai.composition.counsel.state import CounselPackState
@@ -35,7 +37,10 @@ from ai.contracts.composition import (
     LabelSnapshot,
     Sensitivity,
 )
+from ai.contracts.detection import DISPLAY_LABELS, Brief, Lifecycle, SignalType
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
+from ai.contracts.llm import CallOutcome, LLMRequest, LLMResult, TokenUsage
+from ai.detection.segments import Segment
 
 _NOW = datetime(2026, 7, 30, tzinfo=UTC)
 _REGEN_MAX = 3
@@ -195,3 +200,90 @@ def test_feedback_changes_the_prompt() -> None:
     with_feedback = assemble_prompt(context, (), "직전 시도의 숫자를 고치세요.")
     assert _sha(with_feedback) != _sha(assemble_prompt(context))
     assert "직전 시도의 숫자를 고치세요." in with_feedback
+
+
+# ── briefing: 같은 결함·같은 규정 ─────────────────────────────────
+#
+# 브리핑은 실 LLM 배선이 끝나 종단 완주한 유일한 아크다 — 3회 헛도는 비용이 실재한다.
+# counsel과 달리 프롬프트를 **직접** 들여다볼 수 있어(provider가 LLMRequest를 받는다)
+# 지시가 실제로 프롬프트에 실렸는지까지 검증한다.
+
+_BRIEF_UNGROUNDED = "정답률이 83퍼센트까지 떨어졌어요."
+_BRIEF_GROUNDED = "정답률이 평소보다 낮아진 상태가 이어지고 있어요."
+_FEEDBACK_MARK = "직전 시도 수정 지시"
+
+
+class _PromptWatchingProvider:
+    """프롬프트에 수정 지시가 실렸을 때만 통과분을 낸다 — 결정론 LLM 대역."""
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    @property
+    def name(self) -> str:
+        return "prompt-watcher"
+
+    async def complete(
+        self, request: LLMRequest, context: ExecutionContext
+    ) -> LLMResult:
+        del context
+        self.prompts.append(request.prompt)
+        text = (
+            _BRIEF_GROUNDED if _FEEDBACK_MARK in request.prompt else _BRIEF_UNGROUNDED
+        )
+        return LLMResult(
+            outcome=CallOutcome.OK,
+            text=text,
+            provider=self.name,
+            model="mock",
+            usage=TokenUsage(tokens_in=0, tokens_out=0, cost_usd=0.0),
+            latency_ms=0,
+        )
+
+
+def _briefing_context() -> BriefingContext:
+    return BriefingContext(
+        signal_type=SignalType.ACC_DROP,
+        display_label=DISPLAY_LABELS[SignalType.ACC_DROP],
+        lifecycle=Lifecycle.NEW,
+        segment=Segment.NORMAL,
+        facts=(),
+        evidence_summaries=("근거 기록",),
+        fallback_text="정답률이 평소보다 눈에 띄게 떨어진 상태가 이어지고 있어요.",
+    )
+
+
+def _run_briefing(provider: _PromptWatchingProvider) -> tuple[Brief, str]:
+    return asyncio.run(
+        make_brief(
+            _briefing_context(),
+            provider,
+            context=_execution_context(),
+            now=lambda: 0.0,
+            deadline=45.0,
+        )
+    )
+
+
+def test_briefing_regen_feeds_gate_reason_to_next_attempt() -> None:
+    """🔴 ㉙ 재현(브리핑) — 수정 전에는 3회 전부 같은 실패로 폴백한다."""
+    provider = _PromptWatchingProvider()
+    brief, outcome = _run_briefing(provider)
+
+    assert brief.gate_passed, outcome
+    assert not brief.fallback_used
+    assert len(provider.prompts) == 2, "2회차에 통과했어야 한다 — 상한 소진이 아니다"
+
+
+def test_briefing_first_prompt_has_no_feedback_block() -> None:
+    """1회차 프롬프트는 종전과 동일하다 — 지시 블록이 없다."""
+    provider = _PromptWatchingProvider()
+    _run_briefing(provider)
+    assert _FEEDBACK_MARK not in provider.prompts[0]
+
+
+def test_briefing_second_prompt_names_the_actual_failure() -> None:
+    """2회차 프롬프트에 직전 사유의 가변부(83)가 실린다."""
+    provider = _PromptWatchingProvider()
+    _run_briefing(provider)
+    assert "83" in provider.prompts[1]
