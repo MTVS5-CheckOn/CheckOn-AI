@@ -17,8 +17,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
-from ai.api.routers.counsel import reset_counsel_stores
+from ai.api.routers.counsel import reset_counsel_stores, set_counsel_provider
 from ai.api.routers.counsel import router as counsel_router
+from ai.composition.counsel.provider import FakeCounselProvider
 
 _HEADERS = {
     "X-Tenant-Id": "t1",
@@ -219,3 +220,56 @@ def test_other_tenant_cannot_read_job(client: TestClient) -> None:
         f"/v1/counsel/drafts/{job_id}", headers={**_HEADERS, "X-Tenant-Id": "t2"}
     )
     assert response.status_code == 404
+
+
+# ── 멱등 (04 §2.3 · 점검 B-6) ────────────────────────────────────
+#
+# 구현은 라우터 신설 커밋에 들어 있다 — POST 핸들러의 제어 흐름이 한 갈래라 멱등 조회를
+# 떼어 놓으면 "저장은 하는데 조회는 안 하는" 중간 상태가 커밋으로 남는다.
+# 여기서는 계약을 고정한다: 같은 키 + 같은 바디 = 재반환 · 다른 바디 = 409.
+
+
+def test_same_key_same_body_replays_the_first_result(client: TestClient) -> None:
+    """재전송이 이중 생성을 만들지 않는다 — job_id가 그대로다."""
+    first = _post(client)
+    second = _post(client)
+    assert first.status_code == second.status_code == 202
+    assert first.json() == second.json()
+
+
+def test_same_key_same_body_does_not_run_the_worker_twice(client: TestClient) -> None:
+    """멱등 히트는 **실행을 건너뛴다** — LLM 원가가 두 번 나가면 안 된다."""
+    provider = FakeCounselProvider(drafts=["이번 기간 학습 상황을 정리해 드립니다."])
+    set_counsel_provider(provider)
+    _post(client)
+    calls_after_first = len(provider.write_calls)
+    _post(client)
+    assert len(provider.write_calls) == calls_after_first
+
+
+def test_same_key_different_body_is_409(client: TestClient) -> None:
+    _post(client)
+    response = _post(client, student_ref="st_other")
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_different_key_creates_a_new_job(client: TestClient) -> None:
+    first = _post(client).json()["data"]["job_id"]
+    second = client.post(
+        "/v1/counsel/drafts",
+        json=_REQUEST,
+        headers={**_HEADERS, "Idempotency-Key": "t1:counsel:2"},
+    ).json()["data"]["job_id"]
+    assert first != second
+
+
+def test_idempotency_is_scoped_by_tenant(client: TestClient) -> None:
+    """키 스코프는 (tenant_id, endpoint, key)다 — 다른 테넌트가 같은 키를 써도 독립이다."""
+    first = _post(client).json()["data"]["job_id"]
+    second = client.post(
+        "/v1/counsel/drafts",
+        json=_REQUEST,
+        headers={**_HEADERS, "X-Tenant-Id": "t2"},
+    ).json()["data"]["job_id"]
+    assert first != second
