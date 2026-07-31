@@ -271,12 +271,23 @@ async def _wire_result(
     **잡 성공 ≠ 초안 존재**(불변식 4) — 결과 계약이 저장됐어도 학생 판정은 거부일 수 있다.
     """
     pack = await runner.result_of(job.result_ref) if job.result_ref else None
-    student = pack.results[0] if pack and pack.results else None
-    if student is None:
-        # 결과 계약 자체가 없다 = 잡 장애. 초안 축에서는 실패로 정직하게 낸다.
+    if pack is None:
+        # 결과 계약 **자체가 없다** = 잡 장애(error_codes §2.5의 failed 정의).
         return CounselDraftResult(
             draft_status=WireDraftStatus.LLM_FAILED,
             status_reason=job.error_code or "job_no_result",
+            labels_applied=applied,
+            generated_at=_clock(),
+        )
+    student = pack.results[0] if pack.results else None
+    if student is None:
+        # 🔴 결과 계약은 있는데 **학생 결과가 0건** — 묶음에 그 학생이 없었다는 뜻이다
+        # (`student_refs = sorted(bundle.contexts)`). N=1에서 이건 장애가 아니라
+        # **컨텍스트 부재**다. 실패로 내면 화면이 "아직 데이터를 모으는 중이에요"가 아니라
+        # "다시 시도"를 그린다 — 인박스 계약 §4 매핑 표가 깨진다(점검 B-4).
+        return CounselDraftResult(
+            draft_status=WireDraftStatus.REJECTED_INSUFFICIENT,
+            status_reason="context_missing",
             labels_applied=applied,
             generated_at=_clock(),
         )
