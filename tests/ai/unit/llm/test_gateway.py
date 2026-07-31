@@ -19,9 +19,10 @@ from ai.contracts.llm import (
     TokenUsage,
 )
 from ai.llm.gateway import LlmCallRecord, LlmCallRecorder, LlmGateway
-from ai.llm.settings import LlmSettings
+from ai.runtime.tracing import TRACING_ENV_SYNONYMS
 
 _TRACE_MASKED_PROMPT = "[트레이스 마스킹 프롬프트]"
+_REPRESENTATIVE_TRACING_ENV = TRACING_ENV_SYNONYMS[0]
 
 
 def _run[ResultT](coroutine: Coroutine[object, object, ResultT]) -> ResultT:
@@ -292,23 +293,34 @@ def test_recorder_failure_does_not_fail_call_and_increments_counter() -> None:
 # ── 트레이스 마스킹 훅·기동 가드 — 09 §1-10 ③ · §2-16 ───────────
 
 
+def _enable_external_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_REPRESENTATIVE_TRACING_ENV, "true")
+
+
 @pytest.mark.parametrize(
-    ("langsmith_tracing", "inject_hook"),
-    [(False, False), (False, True), (True, True)],
+    ("tracing_active", "inject_hook"),
+    [(False, False), (False, True), (True, False), (True, True)],
 )
-def test_trace_masking_hook_tracing_combinations_that_can_start(
-    langsmith_tracing: bool,
+def test_trace_masking_hook_tracing_combinations(
+    tracing_active: bool,
     inject_hook: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if tracing_active:
+        _enable_external_tracing(monkeypatch)
+
     provider = FakeProvider([_result()])
     hook = _ReplacingTraceMaskingHook() if inject_hook else None
+
+    if tracing_active and not inject_hook:
+        with pytest.raises(ValueError):
+            LlmGateway({ModelRole.GENERATOR: provider})
+        assert provider.requests == []
+        return
+
     gateway = LlmGateway(
         {ModelRole.GENERATOR: provider},
         trace_masking_hook=hook,
-        settings=LlmSettings(
-            langsmith_tracing=langsmith_tracing,
-            _env_file=None,
-        ),
     )
 
     result = _run(gateway.complete(_request(), _context()))
@@ -320,30 +332,29 @@ def test_trace_masking_hook_tracing_combinations_that_can_start(
         assert hook.calls == 1
 
 
-def test_tracing_without_hook_fails_at_construction_with_actionable_message() -> None:
+@pytest.mark.parametrize("env_name", TRACING_ENV_SYNONYMS)
+def test_tracing_without_hook_fails_at_construction_with_actionable_message(
+    env_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(env_name, "true")
+
     with pytest.raises(ValueError) as exc_info:
-        LlmGateway(
-            {ModelRole.GENERATOR: FakeProvider([])},
-            settings=LlmSettings(
-                langsmith_tracing=True,
-                _env_file=None,
-            ),
-        )
+        LlmGateway({ModelRole.GENERATOR: FakeProvider([])})
 
     message = str(exc_info.value)
-    assert "LANGSMITH_TRACING" in message
+    assert env_name in message
     assert "§2-16" in message
 
 
-def test_hook_returned_request_reaches_provider() -> None:
+def test_hook_returned_request_reaches_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_external_tracing(monkeypatch)
     provider = FakeProvider([_result()])
     gateway = LlmGateway(
         {ModelRole.GENERATOR: provider},
         trace_masking_hook=_ReplacingTraceMaskingHook(),
-        settings=LlmSettings(
-            langsmith_tracing=True,
-            _env_file=None,
-        ),
     )
 
     _run(gateway.complete(_request(), _context()))
@@ -353,16 +364,15 @@ def test_hook_returned_request_reaches_provider() -> None:
     assert provider.requests[0].prompt != _request().prompt
 
 
-def test_retry_uses_hook_returned_request_for_every_transport_attempt() -> None:
+def test_retry_uses_hook_returned_request_for_every_transport_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_external_tracing(monkeypatch)
     provider = FakeProvider([LlmTimeout("첫 전송 실패"), _result()])
     hook = _ReplacingTraceMaskingHook()
     gateway = LlmGateway(
         {ModelRole.GENERATOR: provider},
         trace_masking_hook=hook,
-        settings=LlmSettings(
-            langsmith_tracing=True,
-            _env_file=None,
-        ),
     )
 
     result = _run(gateway.complete(_request(), _context()))
@@ -374,17 +384,16 @@ def test_retry_uses_hook_returned_request_for_every_transport_attempt() -> None:
     assert all(request.prompt != _request().prompt for request in provider.requests)
 
 
-def test_hook_failure_does_not_call_provider_or_recorder() -> None:
+def test_hook_failure_does_not_call_provider_or_recorder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_external_tracing(monkeypatch)
     records: list[LlmCallRecord] = []
     provider = FakeProvider([_result()])
     gateway = LlmGateway(
         {ModelRole.GENERATOR: provider},
         recorder=_collect(records),
         trace_masking_hook=_FailingTraceMaskingHook(),
-        settings=LlmSettings(
-            langsmith_tracing=True,
-            _env_file=None,
-        ),
     )
 
     with pytest.raises(RuntimeError, match="트레이스 마스킹 실패"):
@@ -406,17 +415,15 @@ def test_hook_failure_does_not_call_provider_or_recorder() -> None:
 def test_hook_cannot_change_request_identity_fields(
     field: str,
     value: object,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _enable_external_tracing(monkeypatch)
     records: list[LlmCallRecord] = []
     provider = FakeProvider([_result()])
     gateway = LlmGateway(
         {ModelRole.GENERATOR: provider},
         recorder=_collect(records),
         trace_masking_hook=_IdentityMutatingTraceMaskingHook(field, value),
-        settings=LlmSettings(
-            langsmith_tracing=True,
-            _env_file=None,
-        ),
     )
 
     with pytest.raises(ValueError, match=field):

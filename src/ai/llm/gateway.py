@@ -24,6 +24,7 @@ from ai.contracts.llm import (
     TokenUsage,
 )
 from ai.llm.settings import LlmSettings, get_llm_settings
+from ai.runtime.tracing import active_tracing_env_names, external_tracing_active
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +39,13 @@ _TRACE_IDENTITY_FIELDS = (
 
 
 class TraceMaskingHook(Protocol):
-    """provider 요청의 트레이스 마스킹 경계.
+    """provider 전송 전 fail-closed 검증 경계.
 
-    반환한 요청이 provider에 전달되는 것은 이 인터페이스가 보장한다. 다만 LangSmith가
-    실제 수집하는 span·입출력 필드와 마스킹 효과 대상은 `[미확정]`이며, 추적 재활성화
-    전에 `09_integration_proposals.md` §2-16 P1' 부속 확인으로 실측해야 한다.
+    LangSmith 0.10.2 실측에서 이 훅은 트레이스 기록에 효력이 없었다. provider
+    프롬프트는 span에 실리지 않았고, 기록되는 ``emphasis_points`` 등은 훅이 닿지 않는
+    LangGraph 노드 경계다. 실효는 (a) redaction을 건너뛴 요청을 provider 전송 전에
+    차단하는 것이다. 트레이스 은닉 제어점은 ``Client(hide_inputs=...)`` 등 클라이언트
+    레벨이며 P2 범위다. 근거: ``docs/part_a/11_langsmith_trace_probe.md`` §4·§6.
     """
 
     def mask(
@@ -50,7 +53,7 @@ class TraceMaskingHook(Protocol):
         request: LLMRequest,
         context: ExecutionContext,
     ) -> LLMRequest:
-        """트레이스에 노출 가능한 요청을 마스킹해 반환한다."""
+        """요청을 전송 전에 검사·마스킹하고 불확실하면 예외로 차단한다."""
         ...
 
 
@@ -118,12 +121,20 @@ class LlmGateway:
         settings: LlmSettings | None = None,
     ) -> None:
         resolved_settings = settings if settings is not None else get_llm_settings()
-        if resolved_settings.langsmith_tracing and trace_masking_hook is None:
+        tracing_active = external_tracing_active() or resolved_settings.langsmith_tracing
+        if tracing_active and trace_masking_hook is None:
+            detected = active_tracing_env_names()
+            names = (
+                ", ".join(detected)
+                if detected
+                else "(env 이름 미감지 — Settings·컨텍스트·전역 설정)"
+            )
             raise ValueError(
-                "LANGSMITH_TRACING=true이지만 trace_masking_hook이 주입되지 않았다. "
+                "외부 트레이싱이 활성인데 trace_masking_hook이 주입되지 않았다. "
+                f"감지된 env: {names}. "
                 "LlmGateway를 생성하는 조립부(현재 src/ai/composition/provider.py 및 "
                 "src/ai/composition/counsel/assembly.py)에서 훅을 주입하거나 "
-                "LANGSMITH_TRACING을 끄라. "
+                "위 추적 env를 모두 끄라. "
                 "docs/part_b/09_integration_proposals.md §2-16."
             )
         self._providers = dict(providers)
