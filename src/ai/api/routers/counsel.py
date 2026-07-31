@@ -22,6 +22,7 @@ import hashlib
 import json
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -34,6 +35,7 @@ from ai.api.envelope import success_envelope
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.labels import LabelVocabularyError, snapshot_from_labels
 from ai.composition.counsel.provider import FakeCounselProvider
+from ai.composition.counsel.refine import refine_draft
 from ai.composition.counsel.settings import get_counsel_settings
 from ai.composition.counsel.stores import (
     DRAFT_SCHEME,
@@ -55,10 +57,13 @@ from ai.contracts.counsel import (
     CounselDraftJobView,
     CounselDraftRequest,
     CounselDraftResult,
+    RefineRequest,
+    RefineResponse,
     WireDraftStatus,
     wire_status_for,
 )
-from ai.contracts.execution import VersionSet
+from ai.contracts.execution import Capability, ExecutionContext, VersionSet
+from ai.contracts.gates import BlockedReason
 from ai.db.repositories.idempotency import IdempotencyStore
 from ai.db.store_factory import build_agent_job_store, build_idempotency_store
 from ai.runtime.errors import IdempotencyConflict, NotFound, SnapshotInvalid
@@ -91,6 +96,24 @@ _step_sink: AgentStepSink = InMemoryAgentStepSink()
 #: 와이어 읽기 모델 — `(tenant_id, job_id) → 계약 뷰`. GET의 **유일한 출처**다.
 #: 잡 원장(`WorkerJob`)은 phase·lease·재개용 내부 상태이고, 계약 응답은 그 투영이다.
 _views: dict[tuple[str, str], CounselDraftJobView] = {}
+
+
+@dataclass
+class _DraftState:
+    """refine 대상 초안의 현재 상태 — `(tenant_id, draft_id)`로 찾는다.
+
+    `context`는 게이트 재통과에 필요하고(허용 숫자·금칙·길이 상한이 전부 여기서 나온다),
+    `citations`는 반영 턴 응답에 다시 실린다. **영속은 후속**이다 — v1은 `_views`와 같은
+    인메모리 읽기 모델이며 PG 이관 시 DRAFT_REVISION(ERD)이 자리를 받는다(06 §7).
+    """
+
+    context: DraftContext
+    citations: tuple[Citation, ...]
+    text: str
+
+
+#: refine 읽기 모델 — `(tenant_id, draft_id) → 초안 상태`.
+_drafts: dict[tuple[str, str], _DraftState] = {}
 
 #: LLM 접점 — CI 기본은 결정론 Fake다(실 호출 0). 실 경로는 주입으로 교체한다.
 _provider: Any = FakeCounselProvider()
@@ -133,6 +156,7 @@ def reset_counsel_stores() -> None:
     _pack_store = InMemoryPackResultStore()
     _step_sink = InMemoryAgentStepSink()
     _views.clear()
+    _drafts.clear()
     set_counsel_provider(FakeCounselProvider())
 
 
@@ -194,6 +218,28 @@ def _draft_context(request: CounselDraftRequest) -> DraftContext:
         evidence_summaries=(),
         period_label=request.context.period_label,
         fallback_text="이번 기간 학습 상황을 정리해 보내드립니다.",
+    )
+
+
+#: 차단 사유별 강사 문구 — 원본은 `part_a/06_refine_policy.md` §4 표다(여기서 새로 만들지
+#: 않는다). BE는 이 문구를 그대로 중계한다(계약 §4-④ `message`).
+REFINE_BLOCK_MESSAGES: dict[BlockedReason, str] = {
+    BlockedReason.EVIDENCE_MISSING: "요청하신 내용은 기록에서 확인되지 않아 반영하지 못했어요",
+    BlockedReason.COMPARISON_EXPOSURE: "반 평균·석차는 학부모 문서에 포함할 수 없어요(내부 지표)",
+    BlockedReason.TONE_VIOLATION: "해당 표현은 안전 기준에 걸려 완곡한 표현으로 제안했어요",
+    BlockedReason.PII_EXPOSURE: "개인정보는 초안에 넣을 수 없어요",
+    BlockedReason.OUT_OF_SCOPE: "이 초안의 다듬기와 무관한 요청이에요",
+}
+
+
+def _refine_execution_context(execution_id: uuid.UUID, tenant_id: str) -> ExecutionContext:
+    """refine 턴의 실행 컨텍스트 — LLM 호출 기록이 함께 받는다(불변식 8)."""
+    return ExecutionContext(
+        execution_id=execution_id,
+        tenant_id=tenant_id,
+        capability=Capability.COMPOSITION,
+        input_snapshot_hash="sha256:refine",
+        versions=counsel_versions(),
     )
 
 
@@ -304,10 +350,16 @@ async def _wire_result(
         if student.draft_id
         else None
     )
+    citations = _citations_of(request)
+    if record is not None:
+        # refine 대상 등록 — 게이트 재통과에 필요한 컨텍스트를 draft_id로 찾을 수 있게 한다.
+        _drafts[(job.tenant_id, str(record.id))] = _DraftState(
+            context=_draft_context(request), citations=citations, text=record.content
+        )
     return CounselDraftResult(
         draft_status=WireDraftStatus.GENERATED,
         text=record.content if record else None,
-        citations=_citations_of(request),
+        citations=citations,
         labels_applied=applied,
         generated_at=_clock(),
     )
@@ -383,6 +435,68 @@ async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
     return success_envelope(
         data=view.model_dump(mode="json"),
         execution_id=str(uuid.uuid4()),
+        versions=counsel_versions(),
+    )
+
+
+@router.post("/v1/counsel/drafts/{draft_id}/refine")
+async def post_counsel_refine(draft_id: str, request: Request) -> dict[str, Any]:
+    """다듬기 1턴 — 동기 · **매 턴 게이트 전체 재통과**(06 §1).
+
+    🔴 **차단도 200이다**(`applied:false` + 사유 + 문구) — 게이트 거부는 에러가 아니다
+    (불변식 4 · error_codes §4 "GateRejected를 5xx로 올리는 코드는 리뷰 반려").
+
+    대상 키는 `draft_id`다 — FE 계약 §3-③의 `inquiry_id`는 BE가 중계 매핑한다(04 §3.9).
+    턴 상한을 판정하지 않는다: `turn_no`는 받아서 로그로만 쓴다(쿼터는 전부 백엔드).
+    """
+    tenant_id = request.headers.get("X-Tenant-Id")
+    if not tenant_id:
+        raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": ["X-Tenant-Id"]})
+
+    try:
+        raw_body = await request.json()
+    except ValueError as exc:
+        raise SnapshotInvalid("요청 바디가 유효한 JSON이 아님", str(exc)) from exc
+    try:
+        refine_request = RefineRequest.model_validate(raw_body)
+    except ValidationError as exc:
+        raise SnapshotInvalid(
+            "요청 바디 스키마 위반", _format_validation_error(exc)
+        ) from exc
+
+    state = _drafts.get((tenant_id, draft_id))
+    if state is None:  # 존재 은닉 — 다른 테넌트의 draft_id도 여기로 떨어진다
+        raise NotFound("draft_id 부재", {"draft_id": draft_id})
+
+    execution_id = uuid.uuid4()
+    outcome = await refine_draft(
+        context=state.context,
+        instruction=refine_request.instruction,
+        writer=_provider,
+        execution_context=_refine_execution_context(execution_id, tenant_id),
+        regen_max=_REGEN_MAX,
+    )
+    if outcome.applied and outcome.text:
+        state.text = outcome.text  # 반영분만 승격 — 차단 턴은 직전 버전 유지(계약 §6)
+        response = RefineResponse(
+            applied=True, text=outcome.text, citations=state.citations
+        )
+    else:
+        logger.info(
+            "refine 차단 turn=%d reason=%s",
+            refine_request.turn_no,
+            outcome.blocked_reason.value if outcome.blocked_reason else "unknown",
+        )
+        response = RefineResponse(
+            applied=False,
+            blocked_reason=outcome.blocked_reason,
+            message=REFINE_BLOCK_MESSAGES[outcome.blocked_reason]
+            if outcome.blocked_reason
+            else None,
+        )
+    return success_envelope(
+        data=response.model_dump(mode="json"),
+        execution_id=str(execution_id),
         versions=counsel_versions(),
     )
 

@@ -90,10 +90,22 @@ def render_emphasis_block(emphasis: Sequence[str] | None) -> str:
     return f"\n\n이번 회차에 특히 다룰 것(근거 record_id 동반):\n{lines}"
 
 
+def render_refine_block(instruction: str) -> str:
+    """강사 다듬기 지시를 문면으로 — **빈 경우 빈 문자열**(프롬프트 바이트 동일 보장).
+
+    ⚠ 지시는 프롬프트에 들어가되 **게이트를 이기지 못한다**(06 §1) — 결과는 매 턴 게이트
+    전체를 재통과한다. 정책 위반 지시는 여기 도달하기 전에 정적 검사가 걸러낸다(06 §3 C).
+    """
+    if not instruction:
+        return ""
+    return f"\n\n강사 다듬기 지시(위 작성 규칙을 어기지 않는 범위에서 반영):\n- {instruction}"
+
+
 def assemble_prompt(
     context: DraftContext,
     emphasis: Sequence[str] | None = None,
     gate_feedback: str = "",
+    refine_instruction: str = "",
 ) -> str:
     """조합별 상담 초안 프롬프트 — 결정론(같은 컨텍스트 → 같은 문자열).
 
@@ -116,6 +128,7 @@ def assemble_prompt(
         evidence_block=(
             render_evidence_block(context)
             + render_emphasis_block(emphasis)
+            + render_refine_block(refine_instruction)
             + render_feedback_block(gate_feedback)
         ),
     )
@@ -127,6 +140,7 @@ __all__ = [
     "assemble_prompt",
     "render_block_plan",
     "render_emphasis_block",
+    "render_refine_block",
     "render_evidence_block",
     "render_tone_rules",
     "tone_rule_for",

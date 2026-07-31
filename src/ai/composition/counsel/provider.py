@@ -143,6 +143,7 @@ class DraftWriter(Protocol):
         execution_context: ExecutionContext,
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
+        refine_instruction: str = "",
     ) -> str:
         """조립·마스킹을 마친 프롬프트로 초안 본문을 받는다.
 
@@ -172,8 +173,11 @@ class GatewayDraftWriter:
         execution_context: ExecutionContext,
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
+        refine_instruction: str = "",
     ) -> str:
-        redacted = redact(assemble_prompt(context, emphasis, gate_feedback))
+        redacted = redact(
+            assemble_prompt(context, emphasis, gate_feedback, refine_instruction)
+        )
         if redacted.uncertain:  # fail-closed — 불확실하면 LLM에 보내지 않는다
             raise RedactionBlockedError("상담 초안 프롬프트의 마스킹이 불확실하다")
         result = await self._gateway.complete(
@@ -287,8 +291,10 @@ class FakeCounselProvider:
         execution_context: ExecutionContext,
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
+        refine_instruction: str = "",
     ) -> str:
-        del emphasis  # Fake는 강조점을 소비하지 않는다 — 시나리오 순서로만 응답한다
+        # Fake는 강조점·지시를 소비하지 않는다 — 시나리오 순서로만 응답한다.
+        del emphasis, refine_instruction
         self.gate_feedbacks.append(gate_feedback)  # 소비는 안 하되 전달 여부는 관측한다
         index = len(self.write_calls)
         self.write_calls.append(context.student_ref)
