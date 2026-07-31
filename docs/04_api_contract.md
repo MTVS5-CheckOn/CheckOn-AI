@@ -150,7 +150,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 | `POST /tags/suggest` | 동기 | 과제 입력 화면 | 영역·유형 제안 + 신뢰도 + 캐시 여부 |
 | `POST /labels/suggest` | 202 | 주간 배치 | 라벨 제안 + 근거 인용(실존 검증 통과분) |
 | `POST /imports` → `GET` → `/confirm` | 202 | 타사 엑셀 업로드 | 매핑 미리보기 → 확정 후 표준 스키마 산출 |
-| `POST /agents/counsel-pack` → `GET` → `/resume` | 202 | 상담 주간 | 진행률 · 완료분 즉시 조회 · 재개 |
+| `POST /counsel/drafts` → `GET` → `/refine` | 202 | **문의 도착 즉시** | 초안 1건 자동 생성 · 근거 인용 ≥1 · 다듬기(동기) — §3.9 |
 | `GET /health` · `GET /meta/versions` | 동기 | 상시 | 헬스 · 버전 |
 
 ---
@@ -428,29 +428,71 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 
 ---
 
-### 3.9 `/v1/agents/counsel-pack` — 상담팩 에이전트 (202)
+### 3.9 `/v1/counsel/drafts` — 상담 초안 (202 · **요청 단위 = 문의 1건**)
+
+> **개정 근거:** 인박스 데이터계약 v1 §4(2026-07-31 **A 확정 통보**) · 99 D ㉛.
+> 종전 `/v1/agents/counsel-pack`(학생 묶음 pack)은 **폐기**한다 — 화면 확정으로 선제 상담 자료·반 배치 생성이 사라지고 **문의 도착 시 자동 1회 생성**이 됐다. 재생성 API는 없다(다듬기가 곧 수정).
+> 종전 절의 resume·완료분 개별 조회 규약은 **99 D ㉖에 옮겨 적었다**(정보 증발 방지).
 
 ```json
-// ① POST — 기동 (강사가 "상담 자료 일괄 생성" 실행 시. Pro 플랜 월 2회 — 횟수 차단은 백엔드 Billing)
+// ① POST /v1/counsel/drafts — 기동 (헤더: X-Tenant-Id · X-Request-Id · Idempotency-Key)
 {
-  "class_ref": "cl_a1",
-  "student_refs": ["st_8f2a", "..."],  // 대상 학생 — 처리 순서 고정 (재현성)
-  "contexts": { "...": "§4.2 구조 × 학생별 — label_snapshot·interventions·comm_history" }
-}
-// ② GET /v1/agents/{agent_run_id} — 폴링 (진행 중에도 completed의 draft는 즉시 열람 가능)
-{
-  "data": {
-    "status": "paused",                // running | paused(재개 가능) | done | failed(완료분은 보존)
-    "progress": "13/22",               // UI 진행률 표시용
-    "completed": [{ "student_ref": "st_8f2a", "draft_id": "uuid" }],   // 이미 저장된 초안 — 강사가 먼저 검토 시작 가능
-    "skipped":   [{ "student_ref": "st_c3d1", "reason": "insufficient_data" }],  // 데이터 부족 = 정상 스킵 (에러 아님)
-    "failed":    [{ "student_ref": "st_77aa", "reason": "llm_unavailable" }]     // 이 학생만 실패 — 전체는 계속됨
+  "inquiry": {
+    "inquiry_ref": "iq_884",             // BE 원본 문의 논리 참조 — AI에겐 불투명 키
+    "topic": "complaint",                // grade | schedule | complaint | counsel_request | etc
+    "urgency": "immediate",              // immediate | normal — 완충 강화 입력
+    "received_at": "2026-07-31T14:20:00+09:00",
+    "text_masked": "요즘 아이가 힘들어하는 것 같은데…"   // redaction 통과분 (불변식 3)
+  },
+  "student_ref": "st_8f2a", "parent_ref": "pa_9c1d", "class_ref": "cl_a1",  // 전부 가명
+  "labels": ["narrative", "anxiety_sensitive"],        // 확정 라벨 — 톤 게이트 입력(05 매핑)
+  "dismissed_suggestions": [{ "axis": "frequency", "value": "monthly" }],   // 재제안 억제
+  "context": {                                         // 인용 가능한 사실의 전체 우주
+    "snapshot_hash": "sha256:…",                       // 재현성 축(AI_RUN · 불변식 8)
+    "period_label": "2026년 7월",
+    "facts": [{ "record_id": "le_2041", "summary": "6월 지문 42개·312문항" }]
   }
 }
-// ③ POST /v1/agents/{agent_run_id}/resume — paused에서 체크포인트 복원, 실패 지점부터 재개 (완료분 재생성 없음)
+// → 202 { "job_id": "cj_1029", "status": "queued" }
+//   같은 Idempotency-Key + 같은 바디 = 기존 결과 재반환 · 다른 바디 = 409 IDEMPOTENCY_CONFLICT (§2.3)
+
+// ② 완료 통지 — Kafka (job_id, terminal phase) 멱등. 본문 없음 — 본문은 ③으로만 (08)
+
+// ③ GET /v1/counsel/drafts/{job_id} — 결과 회수
+{
+  "data": {
+    "job_id": "cj_1029",
+    "status": "succeeded",                  // 공통 phase 7종(error_codes §2.5)
+    "result": {
+      "draft_status": "generated",          // generated | rejected_insufficient | llm_failed | gate_exhausted
+      "text": "어머님, 먼저 세심하게…",       // 게이트 통과본만 — 미통과는 text 없음 + 사유
+      "citations": [                        // **항상 1건 이상** — 근거 없는 초안은 존재 불가(불변식 2)
+        { "cite_id": "L1", "record_id": "le_2041", "summary": "6월 지문 42개·312문항" }
+      ],
+      "labels_applied": ["narrative", "anxiety_sensitive"],
+      "label_suggestions": [],              // ⚠ v1 상수 [] — 생성기 미구현(99 D ㊲)
+      "status_reason": null,                // 거부·실패 사유 코드(error_codes §2.1)
+      "generated_at": "2026-07-31T14:24:11+09:00"
+    }
+  },
+  "error": null,
+  "meta": { "execution_id": "…", "versions": { "…§2.2…": "…" } }
+}
+
+// ④ POST /v1/counsel/drafts/{draft_id}/refine — 다듬기 (동기 · 매 턴 게이트 전체 재통과)
+// 요청  { "instruction": "정답률이 오르고 있다고 강조해서 써줘", "turn_no": 3 }
+// 반영  { "applied": true,  "text": "…", "citations": [ … ] }
+// 차단  { "applied": false, "blocked_reason": "comparison_exposure", "message": "…" }
 ```
 
-**규약:** 완료 draft는 전체 종료 전에도 개별 조회 가능(강사가 먼저 검토 시작 가능) · 장애 시 완료분 보존·재개는 실패 지점부터.
+**규약**
+
+- **잡 성공 ≠ 초안 존재.** `status="succeeded"` + `result.draft_status="rejected_insufficient"`는 **정상 조합**이다(데이터 부족은 에러가 아니다 — 불변식 4). 화면은 "아직 데이터를 모으는 중이에요"를 그린다.
+- **`citations[]`는 ≥1이 타입 계약**이다. 인용 가능한 근거(`record_id`가 있는 fact)가 0건이면 **LLM 호출 전에** `rejected_insufficient`로 끊는다 — 게이트를 통과한 초안을 만들어 놓고 근거가 없어 버리는 낭비를 만들지 않는다.
+- **`refine` 차단도 200**이다(`applied:false` + `blocked_reason` + `message`). `GateRejected`를 5xx로 올리면 리뷰 반려(불변식 4 · error_codes §4).
+- **refine 대상 키는 `draft_id`**다. FE 계약 §3-③은 `inquiry_id` 기준이므로 **BE가 `inquiry_id → draft_id` 매핑을 중계**한다(AI는 원본 문의에 접근하지 않는다). 
+- **턴 상한은 AI가 판정하지 않는다.** `turn_no`는 로그·이력용으로 받기만 한다 — "세션 턴 상한 없음, 월 할당이 자연 상한"(`part_a/06` §1)이고 할당 집행은 전부 백엔드 Billing이다(7/15 BE-4).
+- **v1 구현 범위 정정 3건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다.
 
 ### 3.10 운영
 
@@ -498,7 +540,7 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 | `assignment_title_text` | string | 있으면 | **태깅 제안(ⓒ) 입력** | ⚠ `[Open-4b]` 제공 불가 시 기능 자체 불가 |
 | `source` | enum `trackA·trackB·studentHome` | ✅ | 품질 가중 | |
 
-### 4.2 초안 컨텍스트 (`/drafts` · `/agents/counsel-pack`)
+### 4.2 초안 컨텍스트 (`/drafts` · `/counsel/drafts`)
 
 | 필드 | 타입 | 필수 | 쓰는 곳 | 비고 |
 | --- | --- | --- | --- | --- |

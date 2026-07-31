@@ -43,7 +43,18 @@
 | `generated` | 정상 — 게이트 전체 통과 | — | 초안 표시 |
 | `template_only` | **정상** — 데이터 무관 문의(시간표 등)라 일반 템플릿만 | `no_data_topic` | "일반 안내 초안이에요 — 학습 데이터는 사용하지 않았어요" |
 | `rejected_insufficient` | **정상** — 데이터 부족으로 생성 안 함(재원 2주 미만 등) | `data_lt_2weeks` | "○○ 학생은 아직 데이터를 모으는 중이에요(다음 달부터 가능)" |
-| `failed` | 진짜 실패 | `llm_timeout` `parse_fail_exhausted` | "생성에 실패했어요 — 다시 시도" |
+| `failed` | 진짜 실패 | `llm_failed` `gate_exhausted` `llm_timeout` `parse_fail_exhausted` | "생성에 실패했어요 — 다시 시도" |
+
+**`failed`의 `status_reason` — counsel 와이어 4종과의 대응(7/31 · 인박스 계약 v1 §4-③).** 계약은 초안 판정을 `generated · rejected_insufficient · llm_failed · gate_exhausted` 4종으로 싣는다. 뒤의 둘은 **판정이 아니라 사유**라서 이 표의 `status`가 아니라 `failed`의 `status_reason`에 둔다 — 계약 자신이 둘 다 화면 `failed`("다시 시도")로 매핑하므로 화면이 구분하지 않는 것을 판정 축에 섞지 않는다.
+
+| 계약 `draft_status` | AI 내부(`DraftStatus`) | `status_reason` |
+| --- | --- | --- |
+| `generated` | `generated` | — |
+| `rejected_insufficient` | `rejected_insufficient` | 부족 사유(`context_missing` 등) |
+| `llm_failed` | `failed` | `llm_failed` |
+| `gate_exhausted` | `failed` | `gate_exhausted` |
+
+와이어 변환은 **라우터의 결정론 함수 한 곳**이 한다(내부 도메인 ≠ 와이어 표현). 내부 `DraftStatus` 전수가 그 파생표에 등재됐는지 CI가 대조하며, 미등재 값은 크래시가 아니라 `failed` + `status_reason="unmapped:{값}"`으로 **정직하게** 나간다. 어휘가 계약·코드·문서 3갈래인 사실은 99 D ㊱에 등록돼 있다.
 
 블록 레벨: `content` 비었고 `empty_reason` 있음 = 해당 섹션만 재시도 3회 소진 — 초안 전체는 유효. 문구: "이 부분은 자동 작성하지 못했어요 — 직접 채워주세요".
 
