@@ -89,15 +89,32 @@ def render_emphasis_block(emphasis: Sequence[str] | None) -> str:
     return f"\n\n이번 회차에 특히 다룰 것(근거 record_id 동반):\n{lines}"
 
 
+def render_gate_feedback_block(instruction: str) -> str:
+    """직전 시도 수정 지시를 문면으로 — **빈 경우 빈 문자열**(프롬프트 바이트 동일 보장).
+
+    문구 자체는 `composition/gate_feedback.yaml`이 소유한다(05 §6-2). 여기서는 자리와
+    머리말만 정한다 — 지시는 "상담 초안:" 직전에 놓아 마지막 지시가 되게 한다.
+    """
+    if not instruction:
+        return ""
+    return f"\n\n직전 시도 수정 지시(반드시 반영):\n- {instruction}"
+
+
 def assemble_prompt(
-    context: DraftContext, emphasis: Sequence[str] | None = None
+    context: DraftContext,
+    emphasis: Sequence[str] | None = None,
+    gate_feedback: str = "",
 ) -> str:
     """조합별 상담 초안 프롬프트 — 결정론(같은 컨텍스트 → 같은 문자열).
 
     LLM을 호출하지 않는다. 24조합 스냅숏 골든이 이 함수의 출력을 고정한다.
 
     `emphasis`는 **근거 실존 검증을 통과한** 강조점만이다(`grounding.ground_emphasis`).
-    비었거나 미지정이면 문면이 **현행과 바이트 동일**하다 — 골든 무영향.
+    `gate_feedback`은 직전 게이트 실패의 수정 지시다(`gate_feedback.instruction_for`).
+    **둘 다 비었으면 문면이 현행과 바이트 동일**하다 — 골든 무영향(1회차 프롬프트 불변).
+
+    두 블록 모두 템플릿 파일을 고치지 않고 `evidence_block` 뒤에 붙인다. 템플릿이
+    안 바뀌므로 `PROMPT_VERSION`도 그대로다(05 §6-3 — 컨텍스트 파생 문면은 버전 무관).
     """
     rule = tone_rule_for(context)
     return _template().format(
@@ -106,7 +123,11 @@ def assemble_prompt(
         sentences_per_block=rule.sentences_per_block,
         tone_key=combination_key(**context.label_snapshot.as_axes()),
         tone_rules=render_tone_rules(rule, context),
-        evidence_block=render_evidence_block(context) + render_emphasis_block(emphasis),
+        evidence_block=(
+            render_evidence_block(context)
+            + render_emphasis_block(emphasis)
+            + render_gate_feedback_block(gate_feedback)
+        ),
     )
 
 
@@ -116,6 +137,7 @@ __all__ = [
     "assemble_prompt",
     "render_block_plan",
     "render_emphasis_block",
+    "render_gate_feedback_block",
     "render_evidence_block",
     "render_tone_rules",
     "tone_rule_for",

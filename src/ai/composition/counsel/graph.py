@@ -35,6 +35,7 @@ from ai.composition.counsel.provider import (
 )
 from ai.composition.counsel.state import CounselPackState
 from ai.composition.counsel.stores import DraftRecord, DraftResultStore
+from ai.composition.gate_feedback import instruction_for
 from ai.contracts.composition import DraftContext, DraftKind, DraftStatus, StudentResult
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError
@@ -138,10 +139,14 @@ def build_counsel_graph(
         last_reason = ""
         for _ in range(regen_max):
             try:
+                # 직전 게이트 사유를 수정 지시로 넘긴다(05 §6-2) — 같은 프롬프트를 상한까지
+                # 반복하면 결정론 생성에서 같은 실패만 되풀이한다(비용 N배·개선 0).
+                # 1회차는 last_reason이 비어 지시도 비므로 프롬프트가 바이트 동일하다.
                 text = await writer.write(
                     context=context,
                     execution_context=execution_context,
                     emphasis=tuple(state.emphasis_points.get(student_ref, ())),
+                    gate_feedback=instruction_for(last_reason),
                 )
             except RedactionBlockedError:  # fail-closed — 미전송(불변식 3)
                 return _record(
