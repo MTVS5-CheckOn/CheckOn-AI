@@ -96,7 +96,8 @@ def test_ungrounded_number_is_rejected() -> None:
 
 
 def test_grounded_numbers_come_from_context() -> None:
-    assert _context().allowed_numbers() == frozenset({"62", "2"})
+    """facts·evidence_summaries·period_label 세 출처(05 §6-1 · 99 D ㉘)."""
+    assert _context().allowed_numbers() == frozenset({"62", "2", "2026", "7"})
 
 
 # ── 게이트: 금칙어(buffer_lexicon A군 단일 참조) ───────────────────
