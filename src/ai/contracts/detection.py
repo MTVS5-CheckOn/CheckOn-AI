@@ -227,6 +227,17 @@ class LearningEvent(BaseModel):
     passage_word_count: int | None = Field(default=None, ge=0)
     """지문형 문항만 — R4가 "시간 ÷ 지문 길이"로 정규화할 때 씀."""
 
+    passage_ref: str | None = Field(default=None, min_length=1)
+    """지문/자료 묶음 참조 — 기대치 입력 층의 조합 키(04 §1 · 05 [A 확정 통보 8/3]).
+
+    같은 지문·도표·〈보기〉 자료를 공유하는 문항들이 같은 값을 갖고, **재출제 시에도
+    유지**된다. 비지문 자료도 포함하므로 "지문"에만 국한되지 않는다.
+
+    **AI는 이 값을 역참조하지 않는다** — `record_id`(근거 조회용 DB PK)와 달리 조합
+    통계의 그룹 키로만 쓰는 불투명 참조다. `None`이면 그 문항은 전체 평균 폴백으로
+    떨어지며, 이는 **보정 없음과 동치**라 안전하다.
+    """
+
     area_tag: AreaTag | None = None
     subject_track: SubjectTrack | None = None
     type_tag: TypeTag | None = None
