@@ -35,15 +35,25 @@ from ai.contracts.detection import (
     RuleId,
     RuleSkipped,
     Signal,
+    StudentInput,
     StudentStatus,
 )
-from ai.detection.baseline import compute_baseline
+from ai.detection.baseline import Baseline, compute_baseline
 from ai.detection.brief import build_brief
-from ai.detection.features import WeekFeatures, extract_features, merge_weeks
+from ai.detection.features import (
+    StudentFeatures,
+    WeekFeatures,
+    extract_features,
+    merge_weeks,
+)
 from ai.detection.lifecycle import has_return_care_history, resolve_lifecycle
+from ai.detection.quantile import (
+    accuracy_drop_series,
+    resolve_drop_threshold,
+)
 from ai.detection.ranking import RankedAlert, StudentAlert, merge_student, rank_class
 from ai.detection.rules import evaluate_student
-from ai.detection.segments import resolve_segment
+from ai.detection.segments import Segment, resolve_segment
 from ai.detection.thresholds import ThresholdConfig, default_threshold_config
 
 #: signal_id 결정론 생성을 위한 네임스페이스 (고정 — 재현성).
@@ -82,6 +92,10 @@ def detect(
     skip_counter: dict[tuple[str, str], int] = defaultdict(int)
     class_alerts: dict[str, list[StudentAlert]] = defaultdict(list)
 
+    # ①' 판정 대상을 먼저 확정한다 — R1 분위 임계가 **테넌트 풀 전체**를 입력으로 쓰므로
+    #     학생별 판정보다 앞서야 한다(04 §1 발동률 목표 방식). 피처·baseline은 여기서
+    #     한 번만 만들어 판정 단계에서 재사용한다(중복 계산 없음).
+    prepared: list[tuple[StudentInput, StudentFeatures, Baseline, Segment]] = []
     for student in request.students:
         # ① 제외 — 무동의는 이벤트가 딸려 와도 폐기, paused는 판정 제외
         if student.consent != CONSENT_GRANTED or student.status is StudentStatus.PAUSED:
@@ -105,7 +119,28 @@ def detect(
             term_context,
             has_return_care_history(student.student_ref, request.alert_context),
         )
-        findings, skips = evaluate_student(student_features, baseline, config, segment)
+        prepared.append((student, student_features, baseline, segment))
+
+    # ①'' R1 임계 산출 — 풀 = 베이스라인 창 × 전 학생의 주간 하락폭(13 §4-1과 같은 모양).
+    #      표본 부족이면 고정 폴백. 순수 함수라 같은 스냅숏 = 같은 임계다(불변식 8).
+    r1_pool: list[float] = []
+    for _student, student_features, baseline, _segment in prepared:
+        r1_pool.extend(
+            accuracy_drop_series(
+                student_features.weeks[-config.baseline_window_weeks :], baseline.accuracy
+            )
+        )
+    r1_threshold_pp, r1_threshold_source = resolve_drop_threshold(
+        r1_pool,
+        target_rate=config.r1.target_alert_rate,
+        min_pool=config.r1.quantile_min_pool,
+        fallback_pp=config.r1.drop_pp,
+    )
+
+    for student, student_features, baseline, segment in prepared:
+        findings, skips = evaluate_student(
+            student_features, baseline, config, segment, r1_threshold_pp
+        )
         for skip in skips:
             skip_counter[(skip.rule_id.value, skip.reason)] += 1
         class_alerts[student.class_ref].extend(
@@ -122,6 +157,9 @@ def detect(
         signals_raised=len(signals),
         excluded_under_2w=excluded_under_2w,
         capped_out=capped_out,
+        r1_threshold_pp=round(r1_threshold_pp, 4),
+        r1_threshold_source=r1_threshold_source.value,
+        r1_pool_n=len(r1_pool),
         rules_skipped=tuple(
             RuleSkipped(rule_id=RuleId(rule_value), reason=reason, students=count)
             for (rule_value, reason), count in sorted(skip_counter.items())

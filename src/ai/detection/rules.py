@@ -57,12 +57,27 @@ def evaluate_student(
     baseline: Baseline,
     config: ThresholdConfig,
     segment: Segment,
+    r1_drop_threshold_pp: float | None = None,
 ) -> tuple[list[RuleFinding], list[RuleSkip]]:
-    """한 학생의 R1~R6 판정. 발화 목록과 skip 사유를 반환한다."""
+    """한 학생의 R1~R6 판정. 발화 목록과 skip 사유를 반환한다.
+
+    `r1_drop_threshold_pp`는 테넌트 풀에서 산출한 R1 임계다(04 §1 발동률 목표 방식).
+    미지정이면 `config.r1.drop_pp` 폴백 — 단위 테스트·단건 호출의 편의값이며, 엔진은
+    항상 명시 주입한다.
+    """
     findings: list[RuleFinding] = []
     skips: list[RuleSkip] = []
+    r1_threshold = (
+        r1_drop_threshold_pp if r1_drop_threshold_pp is not None else config.r1.drop_pp
+    )
 
-    for rule_fn in (_r1, _r2, _r3, _r4, _r6):
+    finding, skip = _r1(features, baseline, config, segment, r1_threshold)
+    if finding is not None:
+        findings.append(finding)
+    if skip is not None:
+        skips.append(skip)
+
+    for rule_fn in (_r2, _r3, _r4, _r6):
         finding, skip = rule_fn(features, baseline, config, segment)
         if finding is not None:
             findings.append(finding)
@@ -77,9 +92,17 @@ def evaluate_student(
 
 
 def _r1(
-    features: StudentFeatures, baseline: Baseline, config: ThresholdConfig, segment: Segment
+    features: StudentFeatures,
+    baseline: Baseline,
+    config: ThresholdConfig,
+    segment: Segment,
+    drop_threshold_pp: float,
 ) -> tuple[RuleFinding | None, RuleSkip | None]:
-    """R1 정답률 하락 — 최근 consecutive_weeks 각 주가 baseline 대비 drop_pp 이상 하락."""
+    """R1 정답률 하락 — 최근 consecutive_weeks 각 주가 baseline 대비 임계 이상 하락.
+
+    임계는 **주입받는다**(04 §1 발동률 목표 방식) — 테넌트 풀 분위이거나 폴백 15%p다.
+    세그먼트 완화 계수는 그대로 곱해진다(readapt ×1.3 등 — 나머지 조건 불변).
+    """
     p = config.r1
     if not is_rule_active(RuleId.R1, segment) or baseline.accuracy is None:
         return None, None
@@ -87,7 +110,7 @@ def _r1(
     if len(assess) < p.consecutive_weeks:
         return None, None
     mult = threshold_multiplier(RuleId.R1, segment, config.segments)
-    drop_threshold = p.drop_pp * mult
+    drop_threshold = drop_threshold_pp * mult
     drops: list[float] = []
     for week in assess:
         if week.accuracy is None:

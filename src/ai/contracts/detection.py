@@ -408,6 +408,19 @@ class DetectStats(BaseModel):
     상한 밖으로 합류하는 `ongoing`·R5는 세지 않는다.
     """
 
+    r1_threshold_pp: float | None = None
+    """이번 실행에 실제로 쓴 R1 하락폭 임계(%p) — 04 §1 발동률 목표 방식.
+
+    분위 임계는 스냅숏마다 값이 달라지므로 **쓴 값을 기록한다**(불변식 8 — 기록 = 실제
+    사용분). 강사의 "왜 오늘은 안 떴냐"에 답할 근거이기도 하다.
+    """
+
+    r1_threshold_source: str | None = None
+    """`quantile` | `fallback` — 표본 부족 시 고정 `drop_pp`로 폴백한 것."""
+
+    r1_pool_n: int | None = Field(default=None, ge=0)
+    """분위 산출에 쓴 표본 수(베이스라인 창 × 전 학생의 주간 하락폭)."""
+
     rules_skipped: tuple[RuleSkipped, ...] = ()
 
 

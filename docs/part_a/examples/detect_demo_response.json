@@ -245,12 +245,15 @@
       "signals_raised": 7,
       "excluded_under_2w": 1,
       "capped_out": 0,
+      "r1_threshold_pp": 15.0,
+      "r1_threshold_source": "fallback",
+      "r1_pool_n": 72,
       "rules_skipped": []
     }
   },
   "error": null,
   "meta": {
-    "execution_id": "bc037085-cf7f-4833-8fd7-33c9cf83b1e5",
+    "execution_id": "417f06ee-08d9-4714-b068-90e1f1ea99e5",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.2",

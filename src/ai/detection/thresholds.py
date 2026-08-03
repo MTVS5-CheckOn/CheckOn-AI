@@ -17,8 +17,24 @@ class R1Params(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    target_alert_rate: float = 0.05
+    """발동률 목표 — 테넌트 풀 하락폭 분포의 상위 이 비율 지점을 임계로 쓴다(04 §1).
+
+    임계값 자체가 아니라 **이 파라미터가 버전 관리 대상**이다(`cap_max` 선례).
+    """
+
+    quantile_min_pool: int = 100
+    """분위를 신뢰할 최소 표본. 미만이면 `drop_pp` 폴백.
+
+    하위 5% 꼬리에 표본이 **≥5개** 남는 수준이다 — 꼬리가 1개면 한 명이 임계를 좌우한다.
+    풀은 8주 × 전 학생이라 최소 테넌트(20명 × 8주 = 160)도 넘는다.
+    """
+
     drop_pp: float = 15.0
-    """베이스라인 대비 하락 %p 임계 (−15%p 이상)."""
+    """**폴백** 임계 %p — 풀 표본이 `quantile_min_pool` 미만일 때만 쓴다(04 §1 재정의).
+
+    종전에는 이 값이 유일한 임계였다.
+    """
 
     consecutive_weeks: int = 2
     saturation_drop_pp: float = 25.0
