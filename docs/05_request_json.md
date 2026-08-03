@@ -39,6 +39,7 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
       "correct": false,                     // solve만
       "duration_sec": 183,                  // solve만, 없으면 null (R4 미적용)
       "passage_word_count": 812,            // 지문형 문항만 — 어절 정규화용
+      "passage_ref": "ps_4471",             // ★(8/3 신설) 지문/자료 묶음 참조 — 아래 [A 확정 통보]. 없으면 null
       "area_tag": "reading",                // 있으면 — 수능 기준: reading(독서) | literature(문학) | speech(화법) | writing(작문) | language(언어/문법) | media(매체) — Open-11 확정(7/15)
       "subject_track": "common",            // 있으면: common(공통) | elective(선택과목) — 수능 공통/선택 메타
       "type_tag": "infer",                  // 있으면: fact | infer | critic | concept
@@ -58,6 +59,20 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
   ]
 }
 ```
+
+> ### `[A 확정 통보 — 2026-08-03 · 승우 합의]` `passage_ref` 신설
+>
+> **필드:** `learning_events[].passage_ref` (string, **nullable**)
+>
+> **의미:** **지문/자료 묶음 참조** — 같은 지문·도표·〈보기〉 자료를 공유하는 문항들이 **같은 값**을 갖는다. **재출제 시에도 유지**되어야 한다(백엔드 DB 기준). 비지문 자료(도표·보기)도 포함하므로 "지문"에만 국한되지 않는다.
+>
+> **null 허용:** 지문이 없는 문항(문법 단문·어휘 등)과 **묶음 개념이 없는 학원**은 비운다. **비워도 안전하다** — 그 문항은 기대치 산출에서 전체 평균 폴백으로 떨어지며, 이는 **보정 없음과 동치**다(회귀 위험 0).
+>
+> **AI는 이 값을 역참조하지 않는다** — `record_id`(근거 조회용 DB PK)와 달리 **불투명 키**이며 조합 통계의 그룹 키로만 쓴다. 그래서 `_ref` 관례를 따른다.
+>
+> **왜 필요한가:** 기대치 입력 층이 "어려운 지문이 걸린 주라 떨어진 것"과 "진짜 무너진 것"을 구분한다. 실측상 **지문 × `type_tag`가 문항 단위 효과의 66%를 회수**하고, 영역×유형 같은 속성 단위는 **3%뿐**이다(`part_a/13` §4-3). `type_tag`는 이미 오므로 **추가로 받을 값은 이 하나**다.
+>
+> **언제부터:** 기대치 층이 켜지는 시점부터. **그전에 보내도 무해**하고(무시됨), 안 보내도 전량 폴백으로 동작한다.
 
 → 응답: 신호 목록(evidence·브리핑 문장 + display_label·lifecycle 포함) + stats. **observed_only 목록은 제거(7/16)** — `stats.excluded_under_2w` 숫자만. 상세는 명세 `docs/part_a/09_detect_spec.md` §3.
 

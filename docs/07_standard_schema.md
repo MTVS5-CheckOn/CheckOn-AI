@@ -45,6 +45,7 @@
 | `score` / `max_score` | number | ⬜ | 점수/만점 | 주간 테스트용 |
 | `duration_sec` | int | ⬜ | 풀이시간(초) | 없으면 R4 미적용 — 템플릿에 "권장" 표시 |
 | `passage_word_count` | int | ⬜ | 지문 어절수 | R4 어절 정규화 핵심 — 문제 생성분은 자동 산출 |
+| `passage_ref` | string | ⬜ | 지문/자료 묶음 ID | **기대치 층 입력**(05 [A 확정 통보 8/3]). 같은 지문이면 같은 값이기만 하면 되므로 **강사가 적는 자유 문자열도 된다**(예: `6월모의_비문학3`). 비우면 전체 평균 폴백 — **보정 없음과 동치라 안전**하다 |
 | `source` | enum `trackA·trackB·studentHome` (+`paper_scan` 예약) | ✅ | (자동) | 입력 경로가 자동 기록 |
 
 ## 4. Import(②) 변환 규칙 — MappingSpec의 목적지가 바로 위 표
