@@ -3,6 +3,8 @@
 > **지위:** member-A 단독(🟡). 여기 값이 골든셋 테스트(평가 계획서 #9)의 기대값이 된다. **모든 초기값은 "보수적 시작"이 원칙** — 실데이터가 없으므로 오탐(허위 경보)보다 미탐을 감수하는 쪽으로 잡고, 섀도 모드 2주 + 캘리브레이션 루프로 조정한다.
 > DB 반영: `THRESHOLD_CONFIG(rule_id, params jsonb, version, source: default|calibrated, approved_by)` — 초기값은 `source=default, version=1`.
 
+> ⚠ **개정 예고(2026-08-01 · 합의 대기)** — 외부 대규모 로그 검증([`13_threshold_validation.md`](13_threshold_validation.md))에 따라 §1의 **R1 임계**(고정 15%p → 잔차 분위)·**R4 지위**(★핵심 → 동시 진단 보조)·**기대치 입력 층 도입**이 합의 안건으로 상정됐다. **합의 전까지 본문 수치가 코드 정본이다.**
+
 ---
 
 ## 1. R1~R6 파라미터 표
