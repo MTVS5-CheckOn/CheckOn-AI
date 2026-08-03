@@ -44,6 +44,13 @@ class GoldenScenario:
     expect_single_merged: bool = False
     """G12 — 복수 규칙이 학생당 1경보로 병합됐는지 추가 검증."""
 
+    expected_advisory: bool | None = None
+    """단일 경보 시나리오의 `advisory` 기대값 — 04 §1 R4 재정의(2026-08-03).
+
+    None이면 검사하지 않는다(다건·무신호 시나리오). **판정 기대값은 안 바뀌었고**
+    (R4는 여전히 발화한다) 소비 축의 기대가 **추가**된 것이다.
+    """
+
 
 def _monday() -> datetime:
     from datetime import date
@@ -133,7 +140,7 @@ def g5_hidden_risk() -> GoldenScenario:
     dur = (180,) * 8 + (300, 320)
     return GoldenScenario(
         case_id="G5",
-        note="정답률 유지 + 정규화 시간 급증 → R4",
+        note="정답률 유지 + 정규화 시간 급증 → R4 (advisory — 04 §1 재정의)",
         request=_req(
             [
                 StudentPlan(
@@ -148,6 +155,8 @@ def g5_hidden_risk() -> GoldenScenario:
             ]
         ),
         expected_fired=frozenset({SignalType.HIDDEN_RISK.value}),
+        # 04 §1 R4 재정의 — R4 단독 경보는 참고 표시(랭킹 비참여·슬롯 미소비).
+        expected_advisory=True,
     )
 
 
@@ -287,7 +296,7 @@ def g12_composite() -> GoldenScenario:
     dur = (180,) * 8 + (300, 320)
     return GoldenScenario(
         case_id="G12",
-        note="R1+R2+R4 동시 → 1경보 병합",
+        note="R1+R2+R4 동시 → 1경보 병합 · **정식**(R4가 섞여도 다른 규칙이 있으면 advisory 아님)",
         request=_req(
             [
                 StudentPlan(
@@ -303,6 +312,8 @@ def g12_composite() -> GoldenScenario:
             ]
         ),
         expect_single_merged=True,
+        # R4가 섞여도 R1·R2가 있으므로 **정식** 경보다 — advisory로 내리면 R1 근거가 사라진다.
+        expected_advisory=False,
     )
 
 

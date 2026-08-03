@@ -49,7 +49,8 @@ def test_success_envelope_shape(client: TestClient) -> None:
     expected_keys = {name.removesuffix("_version") for name in VersionSet.model_fields}
     assert set(body["meta"]["versions"]) == expected_keys
     # detection 실행 — threshold는 config 버전, LLM/B 전용 키는 null
-    assert body["meta"]["versions"]["threshold"] == "default-v1"
+    # v2 — R1 발동률 목표 전환(04 §1 재정의 · 2026-08-03). 거동 변경이라 config_version 인상.
+    assert body["meta"]["versions"]["threshold"] == "default-v2"
     assert body["meta"]["versions"]["prompt"] is None
     assert body["meta"]["versions"]["graph"] is None
 

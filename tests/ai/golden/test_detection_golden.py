@@ -31,6 +31,10 @@ def test_golden_scenario(scenario: GoldenScenario) -> None:
         assert len(response.signals) == 1, f"{scenario.case_id}: 복합 병합 실패"
     else:
         assert fired == scenario.expected_fired, f"{scenario.case_id}: {sorted(fired)}"
+    if scenario.expected_advisory is not None:
+        # 04 §1 R4 재정의(2026-08-03) — 판정 기대값은 그대로고 **소비 축 기대가 추가**됐다.
+        assert len(response.signals) == 1, f"{scenario.case_id}: advisory 검사는 단일 경보 전제"
+        assert response.signals[0].advisory is scenario.expected_advisory, scenario.case_id
 
 
 def test_evaluator_suite_passes() -> None:

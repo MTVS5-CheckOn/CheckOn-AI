@@ -131,7 +131,11 @@ class ThresholdConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: int = 1
+    version: int = 2
+    """v2(2026-08-03) — R1 임계가 고정 `drop_pp`에서 **발동률 목표 분위**로 바뀌었다
+    (04 §1 R1 재정의). 거동이 바뀌는 개정이라 버전을 올린다. R4 advisory 강등은 판정을
+    안 건드리므로 이 버전과 무관하다."""
+
     source: str = "default"
     baseline_window_weeks: int = 8
     """개인 베이스라인 이동 창 — 04 §1 (반 평균 아님)."""

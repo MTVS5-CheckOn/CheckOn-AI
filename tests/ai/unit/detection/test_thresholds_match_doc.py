@@ -9,6 +9,9 @@ from ai.detection.thresholds import default_threshold_config
 
 def test_r1_matches_doc() -> None:
     r1 = default_threshold_config().r1
+    # 04 §1 R1 재정의(2026-08-03) — 발동률 목표 방식. drop_pp는 **폴백** 지위다.
+    assert r1.target_alert_rate == 0.05
+    assert r1.quantile_min_pool == 100
     assert r1.drop_pp == 15.0
     assert r1.consecutive_weeks == 2
     assert r1.saturation_drop_pp == 25.0  # §3.1 보정 상한
@@ -65,6 +68,7 @@ def test_segment_coefficients_match_doc() -> None:
 
 def test_default_source_and_version() -> None:
     config = default_threshold_config()
-    assert config.version == 1
+    # v2 — R1 발동률 목표 전환(04 §1 재정의 · 거동 변경이라 버전 인상).
+    assert config.version == 2
     assert config.source == "default"
-    assert config.threshold_version == "default-v1"
+    assert config.threshold_version == "default-v2"
