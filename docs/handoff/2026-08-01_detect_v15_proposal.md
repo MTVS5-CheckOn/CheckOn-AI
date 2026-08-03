@@ -120,6 +120,8 @@
 
 **②** rollup 매핑의 버전은 **`config_version`이 아니라 `taxonomy_version`** 입니다. 매핑 **실물이 `taxonomy.py`에 있는데 버전만 config에 두면 정본이 둘**이 됩니다 — gateway A-11(판정 소스가 둘로 갈렸던 건)의 교훈입니다. `VersionSet.taxonomy_version`은 이미 재현 키이고(`contracts/execution.py:66`), **`09` §2-13의 "동시 개정 대상 5 — `taxonomy_version` 승격"** 과도 정합합니다.
 
+> **두 버전 키를 헷갈리지 않습니다.** **경계 임계값**(D의 폭 7%p 고정값)은 `threshold_config` 시트에 살아 **`config_version`**, **rollup 매핑**은 `taxonomy.py`에 살아 **`taxonomy_version`** 입니다. **값이 사는 곳이 버전을 정합니다.**
+
 **③** 부모 없는 태그는 **모수 *양쪽*(개인 baseline · 셀)에서 제외**합니다. `tag_confirmed=False`(미태깅) 경로와 동일 취급입니다.
 
 > 🔴 **셀에서만 빼면 안 됩니다(준영님 지적 · 수용).** 분자에서만 빼고 분모(baseline)에 남기면 **baseline이 오염돼 전 셀 `delta`가 계통적으로 밀립니다.** 한쪽만 빼는 것이 안 빼는 것보다 나쁩니다.

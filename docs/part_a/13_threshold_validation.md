@@ -250,6 +250,8 @@ AI Hub 국어 실측 ⓐ
 
 매핑 **실물이 `taxonomy.py`에 있는데 버전만 config에 두면 정본이 둘**이 된다 — gateway A-11(판정 소스가 둘로 갈렸던 건)의 교훈이 그대로 적용된다. `VersionSet.taxonomy_version`은 이미 재현 키이고(`contracts/execution.py:66` · 불변식 8), **`part_b/09` §2-13의 "승인 시 동시 개정 대상 **5** — `taxonomy_version` 승격 + 기축적분 혼재 정책(A+B)"** 과도 정합한다.
 
+> **두 버전 키를 헷갈리지 않는다.** **경계 임계값**(§5-3의 폭 7%p 고정값)은 `threshold_config` 시트에 살아 **`config_version`** 을 따르고, **rollup 매핑**은 `taxonomy.py`에 살아 **`taxonomy_version`** 을 따른다. **값이 사는 곳이 버전을 정한다** — 이게 이중 정본을 막는 규칙이다.
+
 **③ 부모 없는 태그는 모수 *양쪽*(개인 baseline · 셀)에서 제외한다.** `tag_confirmed=False`(미태깅) 경로와 **동일 취급**이다(`part_b/04:65` "미확정 태그는 집계 제외 — A의 '미확정 태그 피처 미반영'과 대칭").
 
 > 🔴 **셀에서만 빼면 안 된다(B 지적 · A 수용).** 분자에서만 빼고 분모(개인 baseline)에 남기면 **baseline이 오염돼 전 셀의 `delta`가 계통적으로 밀린다.** 한쪽만 빼는 것이 안 빼는 것보다 나쁘다.
