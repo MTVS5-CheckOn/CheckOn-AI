@@ -340,6 +340,17 @@ class Signal(BaseModel):
     rank: int = Field(ge=1)
     """반 내 우선순위 — 1이 최상위."""
 
+    advisory: bool = False
+    """참고 표시 전용 신호 — 알림·카드에서 빼고 학생 상세에만 보인다(04 §1 R4 재정의).
+
+    v1에서 `True`가 되는 것은 **R4 단독 경보**뿐이다(13 §3 — 조기 경보 주장 보류,
+    동시 진단 보조로 재정의). **판정·evidence는 정식 신호와 똑같이 산출되며**, 바뀌는
+    것은 소비 방식이다: TOP N 랭킹 비참여 · 상한 슬롯 미소비(`capped_out` 미산입) ·
+    상한 밖 합류(`ongoing`·R5와 같은 축).
+
+    ⚠ **R4가 다른 규칙과 병합되면 `False`다** — 그 경보는 R1 등의 근거로 정식 발화한다.
+    """
+
     lifecycle: Lifecycle
     brief: Brief
     evidence: tuple[EvidenceItem, ...] = Field(min_length=1)

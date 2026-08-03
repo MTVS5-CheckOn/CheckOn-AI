@@ -147,7 +147,8 @@ def _rank_with_lifecycle(
       존재할 수 없는 신호가 상한 슬롯을 잡으면 진짜 위험이 밀려나므로 슬롯을 소비하지 않고,
       그 결과 rank가 1..N으로 연속을 유지한다(구멍 없음). 탈락 수는 반환해
       `stats.rules_skipped`에 남긴다 — 조용한 드롭 금지.
-    - **상한 대상은 new·follow_up만**이다. ongoing(기존 카드 갱신)과 R5(정책 신호)는
+    - **상한 대상은 new·follow_up만**이다. ongoing(기존 카드 갱신)·R5(정책 신호)·
+      advisory(R4 단독 — 04 §1 재정의)는
       "오늘 새로 봐야 할 카드"가 아니므로 상한 밖에서 합류한다 — 만성 미해소가 슬롯을
       점유해 신규 위험을 가리는 것을 막는다. capped_out은 new·follow_up 후보 기준.
     - rank: 상한 통과분(new·follow_up) 다음에 상한 밖(ongoing·R5)을 student_ref순으로
@@ -185,17 +186,21 @@ def _rank_with_lifecycle(
             kept.append(alert)
             lifecycles[(alert.student_ref, alert.primary.rule_id.value)] = lifecycle
 
-        # ② 상한 대상(new·follow_up의 non-R5)과 상한 밖(ongoing·R5)을 분리
+        # ② 상한 대상(new·follow_up의 non-R5·non-advisory)과 상한 밖(ongoing·R5·advisory) 분리
+        # advisory(R4 단독)도 상한 밖이다 — ongoing·R5와 같은 축이며 슬롯을 안 쓴다.
+        # 04 §1 R4 재정의: 판정은 그대로고 랭킹·상한 참여만 빠진다.
         capped_pool = [
             a
             for a in kept
             if not a.is_auto_flag
+            and not a.is_advisory
             and lifecycles[(a.student_ref, a.primary.rule_id.value)] in capped_kinds
         ]
         free_pool = [
             a
             for a in kept
             if a.is_auto_flag
+            or a.is_advisory
             or lifecycles[(a.student_ref, a.primary.rule_id.value)] is Lifecycle.ONGOING
         ]
 
@@ -206,7 +211,7 @@ def _rank_with_lifecycle(
             key = (ranked.alert.student_ref, ranked.alert.primary.rule_id.value)
             signals.append(_build_signal(ranked, lifecycles[key], week_start, evidence_index))
 
-        # ④ ongoing·R5 상한 밖 합류 — 통과분 뒤에 student_ref순 rank 부여
+        # ④ ongoing·R5·advisory 상한 밖 합류 — 통과분 뒤에 student_ref순 rank 부여
         next_rank = len(result.ranked) + 1
         for alert in sorted(free_pool, key=lambda a: a.student_ref):
             key = (alert.student_ref, alert.primary.rule_id.value)
@@ -268,6 +273,7 @@ def _build_signal(
         display_label=DISPLAY_LABELS[signal_type],
         score=primary.score,
         rank=ranked.rank,
+        advisory=alert.is_advisory,
         lifecycle=lifecycle,
         brief=build_brief(signal_type, primary.detail),
         evidence=evidence,

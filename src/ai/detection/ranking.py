@@ -31,6 +31,13 @@ class StudentAlert:
     is_auto_flag: bool
     """R5 복귀 케어 — 상한 밖."""
 
+    is_advisory: bool = False
+    """참고 표시 전용 — 상한 밖(04 §1 R4 재정의).
+
+    **병합된 규칙이 전부 R4일 때만 True**다. R1+R4처럼 다른 규칙이 섞이면 그 경보는
+    정식이다 — advisory로 내리면 R1 근거가 알림에서 사라진다.
+    """
+
 
 @dataclass(frozen=True)
 class RankedAlert:
@@ -52,6 +59,9 @@ def merge_student(
     """한 학생의 발화들을 경보로 병합한다.
 
     R5는 상한 밖이라 별도 경보. 나머지 규칙은 1경보로 병합(대표 = max score).
+
+    병합 결과가 **R4뿐이면 advisory**(참고 표시 전용 · 04 §1 R4 재정의)로 표시한다 —
+    R4는 병합 자체는 그대로 받고 소비 단계에서만 상한 밖으로 빠진다.
     """
     alerts: list[StudentAlert] = []
     care = [f for f in findings if f.rule_id is RuleId.R5]
@@ -66,6 +76,8 @@ def merge_student(
                 primary=primary,
                 merged=tuple(sorted(risk, key=lambda f: f.score, reverse=True)),
                 is_auto_flag=False,
+                # 병합 결과가 R4뿐일 때만 참고 표시 — 다른 규칙이 하나라도 섞이면 정식이다.
+                is_advisory=all(f.rule_id is RuleId.R4 for f in risk),
             )
         )
     for care_finding in care:
