@@ -200,6 +200,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
       "signal_type": "hidden_risk",      // 09 §1의 6값
       "display_label": "숨은 위기",        // ★(7/16 신설) 화면에 그대로 쓸 한글 문구(AI 확정) — 09 §1 표
       "score": 0.78, "rank": 2,          // score는 로그용(화면 미노출) · rank = 반 내 우선순위
+      "advisory": false,                 // ★(8/3 신설) true면 알림·카드에서 빼고 학생 상세의 참고 표시로 — 아래 [A 확정 통보]
       "lifecycle": "new",                // ★(7/16 신설) new | ongoing | follow_up — AI 경보 생애 판정(09 §4)
       "brief": {                         // 브리핑에 바로 실을 한 줄 문장 (LLM 생성 + 왜곡 게이트 통과분)
         "text": "비문학 지문을 붙잡는 시간이 3주째 늘고 있어요 — 정답률은 아직 버티는 중이에요.",
@@ -216,12 +217,30 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
       "students_evaluated": 58,
       "signals_raised": 3,
       "excluded_under_2w": 4,            // ★(7/16) 재원 2주 미만 제외 수 — 구 observed_only 목록을 숫자로 대체
-      "capped_out": 2,                   // lifecycle 억제 후 new·follow_up 후보의 탈락 수만
+      "capped_out": 2,                   // lifecycle 억제 후 new·follow_up 후보의 탈락 수만 (advisory 제외)
+      "r1_threshold_pp": 17.4,           // ★(8/3 신설) 이번 실행에 실제로 쓴 R1 임계 — 아래 [A 확정 통보]
+      "r1_threshold_source": "quantile", // quantile | fallback — 표본 부족 시 고정 15%p로 폴백
+      "r1_pool_n": 384,                  // 분위 산출에 쓴 표본 수(8주 × 전 학생의 주간 하락폭)
       "rules_skipped": [{ "rule_id": "R4", "reason": "duration_missing", "students": 5 }]
     }
   }
 }
 ```
+
+> ### `[A 확정 통보 — 2026-08-03]` 감지 v1.5 ①② 반영 (BE·FE 대상)
+>
+> 외부 대규모 로그 검증([`part_a/13_threshold_validation.md`](part_a/13_threshold_validation.md)) 결과에 따른 확정분 둘이다. **이의는 회신으로.**
+>
+> **① R4(숨은 위기)를 advisory로 강등한다 — 판정은 그대로다.**
+> R4는 지금처럼 평가·기록되고 **응답에도 그대로 실린다**(evidence 포함). 바뀌는 것은 소비 방식뿐이다 — **TOP N 랭킹 비참여 · 상한 슬롯 미소비 · `capped_out` 미산입**. 응답의 **`advisory: true`** 로 구분되니 **알림·신호 카드에서 빼고 학생 상세의 참고 표시로** 보내면 된다.
+> ⚠ **`signal_type`에서 `hidden_risk`가 사라지는 게 아니다** — 값 삭제가 아니라 **주장 강도**를 내린 것이다. 그리고 **R4가 다른 규칙과 함께 발화하면 그 경보는 정식**이다(`advisory`는 병합 규칙이 전부 R4일 때만 `true`).
+> 근거: 성과 하락 선행성은 근거를 찾지 못했고, 활동 종료 연관은 방향성이 있으나 검열 분리 불가로 확정할 수 없다(13 §3). 파일럿에서 우리 데이터로 재검증한다.
+>
+> **② R1(정답률 하락) 임계를 고정 −15%p에서 발동률 목표 방식으로 바꾼다.**
+> 임계 = 테넌트 풀(8주 × 전 학생) 하락폭 분포의 **하위 5% 분위**. 표본 100 미만이면 **고정 15%p로 폴백**한다. **적중률은 고정 임계와 동등**하고, 바뀌는 것은 **알림 수가 설계값으로 고정**된다는 성질이다(13 §4-1).
+> ⚠ **BE 작업은 없다** — 요청 계약 무변경이고, AI가 스냅숏에서 산출한다. 다만 실행마다 임계가 달라지므로 **`stats.r1_threshold_pp`·`r1_threshold_source`·`r1_pool_n`** 을 함께 싣는다. 강사가 "왜 오늘은 안 떴냐"고 물을 때 답할 근거다.
+>
+> **응답 계약 변경 요약:** `signals[].advisory`(bool) 1필드 · `stats` 3필드 추가. **기존 필드는 무변경**이며 추가분은 전부 기본값이 있다.
 
 **규약:** evidence 빈 신호는 스키마상 불가 · **`observed_only` 목록은 제거(7/16)** — AI는 `stats.excluded_under_2w` 숫자만 내고, "관찰 중"(재원 14일 미만) 표시는 백엔드가 `enrolled_at`으로 직접 계산(09 §3) · **lifecycle 판정은 AI 소유**(09 §4 · 쿨다운 2주) · **Alert 생성·상태 관리는 백엔드 소유** — AI는 신호 산출까지.
 
