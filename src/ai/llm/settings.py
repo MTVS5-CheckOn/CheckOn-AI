@@ -10,9 +10,9 @@ class LlmSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    #: 설정 스키마·생성자 호환성 유지 필드. 기동 가드의 판정 정본은
-    #: ``ai.runtime.tracing.external_tracing_active()``이며, 기존 ``settings=True``
-    #: 계약을 보존하는 fail-closed 보조 트리거로만 사용한다.
+    #: ``.env``의 추적 설정을 스키마에 표기하기 위한 필드. **기동 가드는 이 값을 보지
+    #: 않는다** — 판정 정본은 ``ai.runtime.tracing.external_tracing_active()`` 단일이며
+    #: env·컨텍스트·run tree를 모두 덮는다(09 §2-16 후속 1).
     langsmith_tracing: bool = False
 
 
