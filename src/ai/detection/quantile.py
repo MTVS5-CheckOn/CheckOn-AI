@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from enum import StrEnum
 
+from ai.detection.baseline import Baseline as BaselineLike
 from ai.detection.features import WeekFeatures
 
 
@@ -62,11 +63,7 @@ def resolve_drop_threshold(
 def accuracy_drop_series(
     weeks: Sequence[WeekFeatures], baseline_accuracy: float | None
 ) -> list[float]:
-    """v1 입력 시리즈 — **원 정답률** 하락폭(%p) 목록.
-
-    🔴 **이 함수가 교체 지점이다.** 기대치 층(㊵ ⓐ)이 채택되면 잔차 시리즈
-    (실제 − 기대)를 내는 함수로 갈아끼운다 — 판정식·분위 산출은 그대로다(04 §1 R1).
-    """
+    """**원 정답률** 하락폭(%p) 목록 — 기대치 층이 꺼져 있을 때의 시리즈."""
     if baseline_accuracy is None:
         return []
     return [
@@ -76,4 +73,41 @@ def accuracy_drop_series(
     ]
 
 
-__all__ = ["ThresholdSource", "accuracy_drop_series", "resolve_drop_threshold"]
+def residual_drop_series(
+    weeks: Sequence[WeekFeatures], baseline_residual: float | None
+) -> list[float]:
+    """**잔차** 하락폭(%p) 목록 — 기대치 층이 켜진 주들만(04 §1 기대치 입력 층).
+
+    잔차 = 실제 − 기대이고, 하락폭 = 기준선 잔차 − 주간 잔차다. **판정식의 모양은
+    원 정답률 경로와 같다** — 시리즈만 갈아끼운 것이다.
+    """
+    if baseline_residual is None:
+        return []
+    return [
+        (baseline_residual - week.residual) * 100
+        for week in weeks
+        if week.residual is not None
+    ]
+
+
+def drop_series(
+    weeks: Sequence[WeekFeatures], baseline: BaselineLike
+) -> list[float]:
+    """R1 판정 시리즈 — **잔차가 있으면 잔차, 없으면 원 정답률**(04 §1).
+
+    🔴 **여기가 기대치 층의 유일한 스위치다.** 통계가 비면 잔차가 서지 않아 원 정답률
+    경로로 떨어지고, 그게 **보정 없음과 동치**라 콜드 스타트 회귀 위험이 0이다.
+    """
+    residuals = residual_drop_series(weeks, baseline.residual)
+    if residuals:
+        return residuals
+    return accuracy_drop_series(weeks, baseline.accuracy)
+
+
+__all__ = [
+    "ThresholdSource",
+    "accuracy_drop_series",
+    "drop_series",
+    "residual_drop_series",
+    "resolve_drop_threshold",
+]

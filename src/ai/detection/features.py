@@ -52,6 +52,20 @@ class WeekFeatures:
     cells: tuple[CellStat, ...]
     """태깅된 solve의 area×type 셀별 집계 (R6)."""
 
+    expected_accuracy: float | None = None
+    """그 주 푼 문항들의 **기대 정답률**(지문×유형 실측 · 폴백 포함 가중 평균).
+
+    04 §1 "기대치 입력 층". None이면 기대치 층 미적용(콜드 스타트·전량 미태깅)이며
+    R1은 원 정답률 하락폭으로 판정한다 — **보정 없음과 동치**라 회귀 위험이 0이다.
+    """
+
+    @property
+    def residual(self) -> float | None:
+        """잔차 = 실제 − 기대. 둘 중 하나라도 없으면 None(원 정답률 경로로 떨어진다)."""
+        if self.accuracy is None or self.expected_accuracy is None:
+            return None
+        return self.accuracy - self.expected_accuracy
+
 
 @dataclass(frozen=True)
 class StudentFeatures:

@@ -48,7 +48,7 @@ from ai.detection.features import (
 )
 from ai.detection.lifecycle import has_return_care_history, resolve_lifecycle
 from ai.detection.quantile import (
-    accuracy_drop_series,
+    drop_series,
     resolve_drop_threshold,
 )
 from ai.detection.ranking import RankedAlert, StudentAlert, merge_student, rank_class
@@ -126,9 +126,7 @@ def detect(
     r1_pool: list[float] = []
     for _student, student_features, baseline, _segment in prepared:
         r1_pool.extend(
-            accuracy_drop_series(
-                student_features.weeks[-config.baseline_window_weeks :], baseline.accuracy
-            )
+            drop_series(student_features.weeks[-config.baseline_window_weeks :], baseline)
         )
     r1_threshold_pp, r1_threshold_source = resolve_drop_threshold(
         r1_pool,
