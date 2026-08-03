@@ -78,6 +78,59 @@ class FeatureWeek(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ)
 
 
+class PassageTypeStat(Base):
+    """지문×유형 조합의 실측 누적 — 기대치 입력 층의 원본(04 §1 · 13 §4-3-4).
+
+    ⚠ **학생 식별자를 저장하지 않는다.** 이 행은 **조합의 속성**이지 학생 데이터가
+    아니다(개인정보 최소 수집). 누가 풀었는지는 `FEATURE_WEEK`가 갖는다.
+
+    비율이 아니라 **원시 카운트**를 든다 — 표본 수 판정(`expectation_min_n`)과 누적
+    갱신이 같은 값에서 나와야 한다.
+    """
+
+    __tablename__ = "passage_type_stat"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "passage_ref", "type_tag", name="uq_passage_type_stat_scope"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    passage_ref: Mapped[str] = mapped_column(String)  # 05 learning_events의 불투명 참조
+    type_tag: Mapped[str] = mapped_column(String)  # contracts/taxonomy.py TypeTag
+    responses: Mapped[int] = mapped_column(Integer)
+    corrects: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(_TZ)
+
+
+class ExpectationIngest(Base):
+    """기대치 통계에 반영 완료된 스냅숏 원장 — **이중 집계 방지**(결정 로그 33).
+
+    같은 스냅숏이 다른 `Idempotency-Key`로 재전송돼도(백필·정정) 통계를 두 번 더하지
+    않는다. 라우터 멱등은 같은 키에서만 막아 주므로 집계 층에 별도 원장이 필요하다 —
+    Import의 `source_fingerprint`와 같은 결이다.
+
+    재계산 근사를 쓰지 않는 이유: 기대치의 가치가 **여러 반·기수에 걸친 누적**이라
+    최근 스냅숏만 반영하면 존재 이유가 깎이고, "조용히 틀어지는" 계통 오류가 된다.
+
+    ⚠ **학생 식별자를 저장하지 않는다** — 스냅숏 단위 사실만 남긴다.
+    """
+
+    __tablename__ = "expectation_ingest"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "snapshot_hash", name="uq_expectation_ingest_scope"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    snapshot_hash: Mapped[str] = mapped_column(String)
+    events_applied: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(_TZ)
+
+
 class Baseline(Base):
     __tablename__ = "baseline"
 
