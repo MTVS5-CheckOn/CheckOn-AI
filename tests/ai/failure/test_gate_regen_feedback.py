@@ -100,8 +100,9 @@ class _FeedbackSensitiveWriter:
         execution_context: ExecutionContext,
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
+        refine_instruction: str = "",
     ) -> str:
-        del context, execution_context, emphasis
+        del context, execution_context, emphasis, refine_instruction
         self.feedbacks.append(gate_feedback)
         return _GROUNDED if gate_feedback else _UNGROUNDED
 
