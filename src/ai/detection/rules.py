@@ -111,11 +111,20 @@ def _r1(
         return None, None
     mult = threshold_multiplier(RuleId.R1, segment, config.segments)
     drop_threshold = drop_threshold_pp * mult
+    # 판정 시리즈 — 잔차가 서면 잔차, 아니면 원 정답률(04 §1 기대치 입력 층).
+    # 판정 창 **전체**에 잔차가 있어야 잔차 경로다(주마다 섞이면 의미가 흔들린다).
+    use_residual = baseline.residual is not None and all(
+        week.residual is not None for week in assess
+    )
     drops: list[float] = []
     for week in assess:
-        if week.accuracy is None:
-            return None, None
-        drop_pp = (baseline.accuracy - week.accuracy) * 100
+        if use_residual:
+            assert baseline.residual is not None and week.residual is not None
+            drop_pp = (baseline.residual - week.residual) * 100
+        else:
+            if week.accuracy is None:
+                return None, None
+            drop_pp = (baseline.accuracy - week.accuracy) * 100
         if drop_pp < drop_threshold:
             return None, None
         drops.append(drop_pp)

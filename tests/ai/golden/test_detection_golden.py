@@ -116,3 +116,33 @@ def test_evidence_record_ids_all_exist() -> None:
             assert signal.evidence, f"{scenario.case_id}: evidence 비어 있음"
             for item in signal.evidence:
                 assert item.record_id in known, f"{scenario.case_id}: {item.record_id} 미존재"
+
+
+# ── 기대치 입력 층 — 콜드 스타트 동일성 (04 §1 · 2026-08-03) ────
+
+
+def test_expectation_cold_start_matches_legacy_for_all_scenarios() -> None:
+    """🔴 **골든 전 시나리오**에서 기대치가 없으면 판정이 종전과 같다.
+
+    기대치 층의 핵심 안전장치다 — 통계가 비면 전량 폴백(전체 평균)이라
+    잔차 ≈ 기존 하락폭이 되어 회귀 위험이 0이다. 이걸 단위 테스트에만 두면
+    "골든은 통과하는데 실제로는 바뀌는" 상황을 못 잡는다.
+    """
+    from dataclasses import replace
+
+    from ai.detection.features import extract_features
+
+    for scenario in all_scenarios():
+        baseline_response = detect(scenario.request)
+        # 기대치를 명시적으로 None으로 채운 피처 — 콜드 스타트와 같은 상태다.
+        features = {
+            ref: replace(
+                sf,
+                weeks=tuple(replace(w, expected_accuracy=None) for w in sf.weeks),
+            )
+            for ref, sf in extract_features(scenario.request).items()
+        }
+        forced = detect(scenario.request, stored_features={k: v.weeks for k, v in features.items()})
+        assert {s.signal_type for s in forced.signals} == {
+            s.signal_type for s in baseline_response.signals
+        }, scenario.case_id

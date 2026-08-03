@@ -30,6 +30,13 @@ class R1Params(BaseModel):
     풀은 8주 × 전 학생이라 최소 테넌트(20명 × 8주 = 160)도 넘는다.
     """
 
+    expectation_min_n: int = 30
+    """기대치 조합(지문 × 유형)당 최소 표본 — 미만이면 전체 평균 폴백(04 §1).
+
+    `[잠정 — 파일럿 보정 대상]`. n=20이면 정답률 추정 오차가 ±11%p라 그 오차가 잔차에
+    그대로 실린다(13 §5-4가 경고한 함정을 기대치 층에서 재생산하게 된다). n=30은 ±9%p다.
+    """
+
     drop_pp: float = 15.0
     """**폴백** 임계 %p — 풀 표본이 `quantile_min_pool` 미만일 때만 쓴다(04 §1 재정의).
 
@@ -131,10 +138,11 @@ class ThresholdConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: int = 2
-    """v2(2026-08-03) — R1 임계가 고정 `drop_pp`에서 **발동률 목표 분위**로 바뀌었다
-    (04 §1 R1 재정의). 거동이 바뀌는 개정이라 버전을 올린다. R4 advisory 강등은 판정을
-    안 건드리므로 이 버전과 무관하다."""
+    version: int = 3
+    """v2(2026-08-03) — R1 임계가 고정 `drop_pp`에서 **발동률 목표 분위**로.
+    v3(2026-08-03) — R1 판정 시리즈가 원 정답률 하락폭에서 **잔차**로 교체됐다
+    (04 §1 기대치 입력 층). 둘 다 거동이 바뀌는 개정이라 버전을 올린다.
+    R4 advisory 강등은 판정을 안 건드리므로 이 버전과 무관하다."""
 
     source: str = "default"
     baseline_window_weeks: int = 8

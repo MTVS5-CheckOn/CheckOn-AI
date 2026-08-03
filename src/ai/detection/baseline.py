@@ -26,6 +26,12 @@ class Baseline:
     volume: float | None
     """평균 주간 이벤트 수."""
 
+    residual: float | None = None
+    """잔차 기준선 — 기대치 층이 켜진 주들의 (실제 − 기대) 평균(04 §1).
+
+    None이면 기대치 층 미적용이라 R1이 원 정답률 하락폭으로 판정한다.
+    """
+
 
 def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
@@ -41,7 +47,9 @@ def prior_weeks(features: StudentFeatures, window: int) -> tuple[WeekFeatures, .
 def compute_baseline(features: StudentFeatures, window: int) -> Baseline:
     """직전 window주 평균으로 기준선을 만든다."""
     prior = prior_weeks(features, window)
+    residuals = [w.residual for w in prior if w.residual is not None]
     return Baseline(
+        residual=_mean(residuals),
         weeks_used=len(prior),
         accuracy=_mean([w.accuracy for w in prior if w.accuracy is not None]),
         norm_time=_mean([w.norm_time for w in prior if w.norm_time is not None]),

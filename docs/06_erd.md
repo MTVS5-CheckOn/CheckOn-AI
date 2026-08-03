@@ -142,6 +142,22 @@ erDiagram
     varchar feature_version
     timestamptz created_at "UNIQUE(tenant·student·week·ver)"
   }
+  PASSAGE_TYPE_STAT {
+    uuid id PK
+    varchar tenant_id
+    varchar passage_ref "지문/자료 묶음 — 05 learning_events"
+    varchar type_tag "contracts/taxonomy.py TypeTag"
+    int responses "누적 응답 수"
+    int corrects "누적 정답 수"
+    timestamptz updated_at "UNIQUE(tenant·passage·type)"
+  }
+  EXPECTATION_INGEST {
+    uuid id PK
+    varchar tenant_id
+    varchar snapshot_hash "반영 완료 표시 — 이중 집계 방지"
+    int events_applied
+    timestamptz created_at "UNIQUE(tenant·snapshot_hash)"
+  }
   BASELINE {
     uuid id PK
     varchar tenant_id
