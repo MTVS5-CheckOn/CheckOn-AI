@@ -113,8 +113,12 @@ def test_forbidden_terms_are_rejected(stem: str) -> None:
 
 
 def test_gate_uses_buffer_lexicon_single_source() -> None:
-    """새 금칙어 목록을 만들지 않았다 — A군 20항을 그대로 쓴다."""
-    assert len(forbidden_terms()) == 20
+    """새 금칙어 목록을 만들지 않았다 — `buffer_lexicon.yaml` A군을 그대로 쓴다.
+
+    23항 = 금칙 20 + **불규칙 활용 3**(8/5 · 99 D ⑰ 해소). 활용형은 코드가 종성 결합으로
+    처리하고, 코드로 만들 수 없는 르·여·으탈락 불규칙만 사전에 어간으로 등재했다.
+    """
+    assert len(forbidden_terms()) == 23
 
 
 # ── 게이트: 길이·기호·토큰 ────────────────────────────────────────
