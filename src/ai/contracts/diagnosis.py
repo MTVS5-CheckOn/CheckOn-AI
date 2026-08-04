@@ -43,6 +43,17 @@ class DiagnosisEvent(BaseModel):
     item_format: ItemFormat | None = None
     """분리 리포팅용이며 약점 판정 축에는 사용하지 않는다."""
 
+    passage_ref: str | None = Field(default=None, min_length=1)
+    """지문/자료 묶음 참조 — 같은 지문·도표·〈보기〉를 공유하는 문항이 같은 값을 갖고
+    재출제 시에도 유지된다(`05_request_json.md` [A 확정 통보 2026-08-03 · 승우 합의]).
+
+    **v1 약점 판정 축에는 쓰지 않는다.** 셀 판정은 원시 정답률 기준이며, 기대치 잔차로의
+    이관은 `09` §3 W13이다. 같은 `learning_events`를 감지·진단이 함께 읽으므로
+    `extra="forbid"` 하에서 수신 자체가 깨지지 않도록 필드만 먼저 받는다.
+
+    **역참조하지 않는다** — `record_id`와 달리 불투명 키이며 조합 통계의 그룹 키다.
+    """
+
     skill_node_id: str | None = Field(default=None, min_length=1)
     correct: bool
     occurred_at: datetime

@@ -23,7 +23,7 @@ from ai.contracts.llm import (
     RedactionBlocked,
     TokenUsage,
 )
-from ai.llm.settings import LlmSettings, get_llm_settings
+from ai.llm.settings import LlmSettings
 from ai.runtime.tracing import active_tracing_env_names, external_tracing_active
 
 logger = logging.getLogger(__name__)
@@ -120,21 +120,22 @@ class LlmGateway:
         trace_masking_hook: TraceMaskingHook | None = None,
         settings: LlmSettings | None = None,
     ) -> None:
-        resolved_settings = settings if settings is not None else get_llm_settings()
-        tracing_active = external_tracing_active() or resolved_settings.langsmith_tracing
-        if tracing_active and trace_masking_hook is None:
+        #: 기동 가드 판정은 external_tracing_active() 단일 정본이다. settings는 호출
+        #: 호환을 위해 남기며 가드에 관여하지 않는다(09 §2-16 후속 1 · §1-9 A-11).
+        del settings
+        if external_tracing_active() and trace_masking_hook is None:
             detected = active_tracing_env_names()
             names = (
                 ", ".join(detected)
                 if detected
-                else "(env 이름 미감지 — Settings·컨텍스트·전역 설정)"
+                else "(env 이름 미감지 — 컨텍스트 변수·진행 중 run tree·langsmith 전역 설정)"
             )
             raise ValueError(
                 "외부 트레이싱이 활성인데 trace_masking_hook이 주입되지 않았다. "
                 f"감지된 env: {names}. "
                 "LlmGateway를 생성하는 조립부(현재 src/ai/composition/provider.py 및 "
                 "src/ai/composition/counsel/assembly.py)에서 훅을 주입하거나 "
-                "위 추적 env를 모두 끄라. "
+                "위에 감지된 추적을 끄라(목록이 비었으면 env가 아니라 컨텍스트·run tree다). "
                 "docs/part_b/09_integration_proposals.md §2-16."
             )
         self._providers = dict(providers)

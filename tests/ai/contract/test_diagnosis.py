@@ -101,6 +101,33 @@ def test_event_rejects_unknown_field() -> None:
         DiagnosisEvent.model_validate(data)
 
 
+# ── passage_ref — 05 [A 확정 통보 2026-08-03] 수신 계약 ──────────────
+
+
+def test_event_accepts_passage_ref() -> None:
+    """감지·진단이 같은 learning_events를 읽으므로 진단도 이 필드를 받아야 한다.
+
+    extra="forbid"라 필드가 없으면 백엔드가 보내는 순간 파싱이 깨진다.
+    """
+    data = _event().model_dump(mode="json")
+    data["passage_ref"] = "ps_4471"
+    assert DiagnosisEvent.model_validate(data).passage_ref == "ps_4471"
+
+
+def test_passage_ref_is_optional() -> None:
+    """지문 없는 문항·묶음 개념이 없는 학원은 비운다 — 비워도 안전하다."""
+    assert _event().passage_ref is None
+    assert DiagnosisEvent(**{**_event().model_dump(), "passage_ref": None}).passage_ref is None
+
+
+def test_passage_ref_rejects_empty_string() -> None:
+    """빈 문자열은 그룹 키가 될 수 없다 — 없으면 null이어야 한다."""
+    data = _event().model_dump(mode="json")
+    data["passage_ref"] = ""
+    with pytest.raises(ValueError, match="passage_ref"):
+        DiagnosisEvent.model_validate(data)
+
+
 def test_cell_verdict_values_frozen() -> None:
     assert {item.value for item in CellVerdict} == {"unknown", "weak", "ok"}
 

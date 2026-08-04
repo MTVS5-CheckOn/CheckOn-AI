@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from ai.llm import gateway as gateway_module
-from ai.llm.settings import LlmSettings
 from ai.runtime.tracing import TRACING_ENV_SYNONYMS
 
 _FAKES_DIR = Path(__file__).parents[2] / "fakes"
@@ -15,8 +13,10 @@ sys.path.insert(0, str(_FAKES_DIR))
 
 @pytest.fixture(autouse=True)
 def _disable_langsmith_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """문제생성 게이트웨이 테스트를 로컬 `.env`와 추적 env에서 격리한다."""
-    settings = LlmSettings(langsmith_tracing=False, _env_file=None)
-    monkeypatch.setattr(gateway_module, "get_llm_settings", lambda: settings)
+    """기동 가드가 보는 추적 env에서 문제생성 게이트웨이 테스트를 격리한다.
+
+    판정 정본이 ``external_tracing_active()``로 단일화돼(09 §2-16 후속 1)
+    ``.env``·``LlmSettings``는 가드에 관여하지 않는다 — env만 끄면 된다.
+    """
     for name in TRACING_ENV_SYNONYMS:
         monkeypatch.delenv(name, raising=False)
