@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v3.0 (2026-08-04): **§2-18 신설 — `02_ownership.md` 트리의 `problem_generation/` 하위 표기 동기화 제안.** capability 내부를 domain·application·infrastructure 3계층으로 재배치해 트리의 파일 열거가 stale해졌다. 소유는 불변(염준영 단독)이며 `src/ai/` 최상위·A 소유 경로 무접촉이다. 계층 정본은 [`13_code_layout.md`](13_code_layout.md) 신설.
 > - v2.9 (2026-08-04): **§3 W14 신설 — 골든·데모 픽스처의 셀 분포 대표성.** JSON 파싱 실측에서 진단 골든 123건이 3셀, 시드 14건이 2셀, A 감지 데모 973건이 2셀로 **24셀 중 합집합 5셀**이었다. `unknown` 라우팅·`overall_low` 분모 규칙이 골든으로 검증되지 않고, A 쪽에서는 셀이 2개일 때 `cell_error_share ≥ 0.5`가 필연 충족이라 R6 편중 판정의 작동 근거가 없다. **A 회신(2026-08-04)의 수치 정정 3건을 반영한 결과**이며, 종전 B 집계(`language 107`·`literature 0`·`8셀`)는 `grep -c`가 데이터가 아니라 코드 심볼 참조까지 센 오류였다.
 > - v2.8 (2026-08-04): **`passage_ref` 확정(`05` [A 확정 통보 8/3 · 승우 합의]) 반영 3건.** ① `DiagnosisEvent`가 이 필드를 못 받아 `extra="forbid"` 하에서 백엔드 송신 시 진단 입력이 깨지는 상태였다 — B 구현으로 해소(수신만, v1 판정 축 미사용). ② **W13 신설** — A가 `03b0397`로 R1을 잔차로 이관해 원시 정답률을 판정에 쓰는 곳이 B의 셀 판정만 남았다. `PASSAGE_TYPE_STAT`을 재료로 기대치 잔차 이관을 등록하고 선결 조건 3건을 명시했다. ③ [`12`](12_suneung_format_alignment.md) §5 FMT-2의 묶음 키를 신설하지 않고 `passage_ref` 규약을 따르기로 정리했다. 더불어 **A-3 기준 수를 정정**했다 — A의 기대치 층 2테이블(`dbafdb9`)로 현행 develop이 이미 36이므로 목표 상수는 `26 → 34`가 아니라 **`36 → 44`**다.
 > - v2.7 (2026-08-03): **§3에 W12 신설 — 난이도 밴드 비단조.** `part_a/13` §4-2 실측(AI Hub 국어 8,572건 · NORMAL 34.6% < HARD 49.2%)에서 강사 주관 난이도 라벨이 단조가 아님이 확인됐다. `DIFFICULTY_BAND_MISMATCH`는 `ReviewReason`이라 폐기가 아닌 `needs_review`이고 `difficulty_regen_enabled`도 `false`여서 현행 영향은 강사 주의 예산에 한정되지만, **그 플래그를 켜기 전 선결 조건**으로 등록했다. 같은 근거로 [`04_curriculum_graph.md`](04_curriculum_graph.md) §4에 셀 판정 `[잠정]`의 오차 근거를 명시했다 — 이항 표준오차 ±15.8%p(참값 delta 0인 셀도 허위 `weak` 약 17%)에 §4-3-3의 **문항 간 난이도 분산 84%**가 얹혀 균일 가정이 서지 않으므로, 파일럿 전까지 셀 verdict는 강사 참고용 힌트이며 자동 처방 근거가 아니다.
@@ -840,6 +841,40 @@ W 번호도 `W1`~`W10`의 실제 표기를 놓치는 하이픈 필수 grep 패�
 **부결 시 대안(③ 한정).** `.gitattributes` 없이 각자 로컬 설정에 의존한다.
 스냅숏·픽스처 비교가 개행에 민감해지는 순간 플랫폼별 결과가 갈리고, ①과 같은
 “로컬에서만 발견” 구조가 반복되는 비용을 감수한다.
+
+### 2-18. `02_ownership.md` 트리의 `problem_generation/` 하위 갱신 `[제안 · 표기 동기화]`
+
+**소유 변경이 아니다.** `problem_generation/` 전체가 염준영 단독인 것은 그대로이며, 트리에 열거된 **파일명이 실제와 달라진 것**만 정정 요청한다. 공용 문서라 B가 직접 고치지 않는다.
+
+**현행(`02_ownership.md:161-163`)**
+
+```
+├── problem_generation/                 [염준영]    문항 생성 — LangGraph
+│   ├── passage.py · generator.py · verification.py
+│   ├── cross_solver.py · workflow.py
+│   └── (P2 예약) print_layout.py       [염준영]    F17 시험지 조판 — 문항 메타 보존
+```
+
+**제안**
+
+```
+├── problem_generation/                 [염준영]    문항 생성 — LangGraph · 계층 정본 part_b/13
+│   ├── domain/                         [염준영]    순수 규칙 — policy · rules · difficulty
+│   │                                               cross_solve · identity · models
+│   ├── application/                    [염준영]    오케스트레이션 — ports · generator
+│   │                                               cross_solver · workflow
+│   ├── infrastructure/                 [염준영]    어댑터 — config(yaml) · memory_store
+│   ├── data/                           [염준영]    verify_config · pg_banned_topics yaml
+│   └── (P2 예약) print_layout.py       [염준영]    F17 시험지 조판 — 문항 메타 보존
+```
+
+**근거.** 재배치 전 `workflow.py` 920줄에 노드·재시도·중단 판정이 뭉쳐 있었고, `verification.py`는 yaml 로딩(I/O)과 R-1~R-7 판정(순수 규칙)이 한 파일이었으며, `_canonical_json`이 두 모듈에 복제돼 있었다(결정론 해시의 근거 함수 — 불변식 8). 트랙이 5종으로 늘면(§2 `05` §1) 여기부터 무너진다.
+
+**`CLAUDE.md` §2 "구조 재편 금지"와의 관계.** 이번 변경은 **capability 내부**에 한정한다 — `src/ai/` 최상위 폴더를 신설·이동하지 않았고 A 소유 경로는 건드리지 않았다. `02_ownership.md` §5 원칙("폴더는 capability 기준 그대로")은 유지된다. **capability 안쪽 배치가 오너 재량이라는 해석이 맞는지 확인 부탁드린다** — 아니라면 되돌린다.
+
+**검증.** ruff · mypy 252 files · pytest **1511 passed / 실패 0 / skip 0**(재배치 전 1500 → +11은 AST 계약 테스트가 새 파일을 스캔한 증가분이며 테스트를 추가·삭제하지 않았다). 계층 경계는 `tests/ai/contract/test_pg_layer_boundaries.py` 18케이스가 AST로 고정한다. 상세는 [`13_code_layout.md`](13_code_layout.md).
+
+---
 
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 

@@ -22,14 +22,16 @@ from ai.contracts.problem_generation import (
     TargetSource,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
-from ai.problem_generation.verification import (
-    RuleValidator,
+from ai.problem_generation.domain.cross_solve import validate_cross_solve
+from ai.problem_generation.domain.difficulty import (
     classify_t1_difficulty,
     estimate_t1_difficulty,
+    needs_difficulty_regeneration,
+)
+from ai.problem_generation.domain.rules import RuleValidator
+from ai.problem_generation.infrastructure.config import (
     load_banned_topics,
     load_verify_config,
-    needs_difficulty_regeneration,
-    validate_cross_solve,
 )
 
 

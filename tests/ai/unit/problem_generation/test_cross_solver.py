@@ -16,7 +16,7 @@ from ai.contracts.problem_generation import (
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.llm.gateway import LlmGateway
-from ai.problem_generation.cross_solver import BlindCrossSolver
+from ai.problem_generation.application.cross_solver import BlindCrossSolver
 
 
 def test_cross_solver_sends_only_blind_item() -> None:

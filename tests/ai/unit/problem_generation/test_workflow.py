@@ -41,23 +41,23 @@ from ai.contracts.problem_generation import (
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.evaluation.fake_snapshot import fixture_stable
 from ai.llm.gateway import LlmGateway
-from ai.problem_generation.cross_solver import BlindCrossSolver
-from ai.problem_generation.generator import (
-    InMemoryCandidateStore,
-    InMemoryProblemItemStore,
-    ProblemGenerator,
-    problem_item_id,
+from ai.problem_generation.application.cross_solver import BlindCrossSolver
+from ai.problem_generation.application.generator import ProblemGenerator
+from ai.problem_generation.application.workflow import (
+    ProblemGenerationWorkflow,
+    ProblemWorkflowConfigurationError,
 )
-from ai.problem_generation.verification import (
+from ai.problem_generation.domain.identity import problem_item_id
+from ai.problem_generation.domain.models import TargetPlan
+from ai.problem_generation.domain.policy import (
     DifficultyRange,
     T1DifficultyBandMap,
     VerifyConfig,
-    load_verify_config,
 )
-from ai.problem_generation.workflow import (
-    ProblemGenerationWorkflow,
-    ProblemWorkflowConfigurationError,
-    TargetPlan,
+from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.memory_store import (
+    InMemoryCandidateStore,
+    InMemoryProblemItemStore,
 )
 
 _GRAPH_VERSION = "curriculum-graph.v1"
