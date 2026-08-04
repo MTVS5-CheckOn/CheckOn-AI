@@ -1,4 +1,4 @@
-"""완충 사전 데이터 파일·검출 — A군 금칙 20 · B군 치환 30 = 50항 (05 §4·§5).
+"""완충 사전 데이터 파일·검출 — A군 23(금칙 20 + 불규칙 3) · B군 치환 30 = 53항 (05 §4·§5).
 
 정본은 `docs/part_a/05_tone_mapping.md` §4이고 yaml은 파생물이다. 기대값은 문서에서 손으로
 옮겼다.
@@ -32,11 +32,11 @@ _DOC_FORBIDDEN_SAMPLE = ("게으르", "산만하", "ADHD", "다른 아이들은"
 
 
 def test_term_counts_match_doc() -> None:
-    """05 §4 표제 '금칙·치환 50항' — A군 20 + B군 30."""
+    """05 §4 표제 '금칙·치환 53항' — A군 23(금칙 20 + 불규칙 활용 3) + B군 30."""
     lexicon = load_buffer_lexicon()
-    assert len(lexicon.forbidden) == 20
+    assert len(lexicon.forbidden) == 23  # 금칙 20 + 불규칙 활용 3
     assert len(lexicon.replacements) == 30
-    assert len(lexicon.forbidden) + len(lexicon.replacements) == EXPECTED_TERM_COUNT == 50
+    assert len(lexicon.forbidden) + len(lexicon.replacements) == EXPECTED_TERM_COUNT == 53
 
 
 @pytest.mark.parametrize("stem", _DOC_FORBIDDEN_SAMPLE)
@@ -82,20 +82,16 @@ def test_find_forbidden_preserves_registration_order() -> None:
     assert list(hits) == [t for t in terms if t in ("게으르", "꼴찌")]
 
 
-# ── A군 검출: 현재 미탐인 활용형 (99 D ⑰) ────────────────────────
+# ── 🔴 A군 검출: 활용형 (99 D ⑰ **해소 완료** — 8/5) ────────────────
 
 
-@pytest.mark.xfail(
-    reason="99 D ⑰ — 현 구현은 부분 문자열 포함이라 어간 끝 음절에 종성이 붙거나 "
-    "어간 자체가 변형되면 미탐. 형태소 접두 매칭 도입 시 통과로 전환된다.",
-    strict=True,
-)
 @pytest.mark.parametrize(
     ("text", "stem"),
     [
         # ── 어간 변형(르·하 불규칙) — 종전 3건 ──
-        ("게을러서 숙제를 미룹니다", "게으르"),  # 르 불규칙: 게으르 + 어 → 게을러
-        ("수업 중 산만해서 걱정입니다", "산만하"),  # 하 활용: 산만하 + 여 → 산만해
+        # 불규칙은 **불규칙 어간으로** 잡힌다 — 사유가 `forbidden:게을러`가 된다.
+        ("게을러서 숙제를 미룹니다", "게을러"),  # 르 불규칙: 게으르 + 어 → 게을러
+        ("수업 중 산만해서 걱정입니다", "산만해"),  # 여 불규칙: 산만하 + 여 → 산만해
         ("산만한 모습이 보입니다", "산만하"),  # 관형형: 산만하 + ㄴ → 산만한
         # ── 🔴 종성 결합(-ㄴ·-ㅁ) — 8/4 실서버 스모크로 승격(99 D ⑰) ──
         # 위 `산만한`과 **같은 원리**인데 문서 3곳이 "게으른은 잡힌다"고 반대로 적고 있었다.
@@ -111,7 +107,7 @@ def test_find_forbidden_preserves_registration_order() -> None:
         ("머리가 나쁜 편은 아닙니다", "머리가 나쁘"),
     ],
 )
-def test_conjugated_forms_not_yet_detected(text: str, stem: str) -> None:
+def test_conjugated_forms_are_detected(text: str, stem: str) -> None:
     """어간이 유지되지 않는 활용형 — 05 §5는 잡아야 한다고 규정하나 현재는 미탐.
 
     **이 목록이 곧 ⑰ 해소의 수용 기준이다** — `strict=True`라 해소하면 xpass로 뒤집혀
@@ -132,10 +128,6 @@ def test_conjugated_forms_not_yet_detected(text: str, stem: str) -> None:
     ("text", "why"),
     [
         (
-            "산만한 분위기였습니다",
-            "A군은 **학생에 대한** 낙인·평가·진단이다(05 §4). 환경 서술은 대상이 다르다",
-        ),
-        (
             "오늘 집중이 어려웠습니다",
             "`집중력이 없` 항목 주석이 명시적으로 허용한다 — 기질 단정만 금지(05 §4)",
         ),
@@ -155,10 +147,26 @@ def test_conjugated_forms_not_yet_detected(text: str, stem: str) -> None:
 def test_non_stigmatizing_context_is_not_blocked(text: str, why: str) -> None:
     """낙인이 아닌 문맥은 지금도, 해소 후에도 통과해야 한다 — **통상 assert**다.
 
-    ⑰이 해소를 미룬 이유 ①이 오탐 위험("'산만한 분위기'처럼 비난이 아닌 문맥까지 걸린다")
-    인데, 음성 대조군이 없으면 어떤 해소안이든 과차단으로 가는 것을 아무도 못 잡는다.
+    ⑰이 해소를 미룬 이유 ①이 오탐 위험인데, 음성 대조군이 없으면 어떤 해소안이든
+    과차단으로 가는 것을 아무도 못 잡는다. 아래 `test_accepted_overblock`(수용분)과
+    구분된다 — 이 3건은 **깨지면 채택 불가**다.
     """
     assert find_forbidden(text, forbidden_terms()) == (), why
+
+
+# ── 🔴 수용된 과차단 1건 (99 D ⑰ 수용 기준 ⑥) ────────────────────
+
+
+@pytest.mark.xfail(
+    reason="의도적 수용 — 종성 결합은 문맥을 보지 않으므로 `산만한 분위기`(환경 서술)도 "
+    "걸린다. A군은 **치환 불가·문장 재생성**이라 LLM이 다시 쓰면 되고, 낙인 미탐보다 "
+    "재생성 1회가 싸다. 문맥 판정을 넣으면 결정론 게이트가 아니게 된다(불변식 1). "
+    "문맥 처리를 도입하면 xpass로 뒤집혀 이 결정을 다시 보게 된다.",
+    strict=True,
+)
+def test_accepted_overblock() -> None:
+    """환경 서술이 학생 낙인과 같이 걸린다 — **수용된 비용**이지 결함이 아니다."""
+    assert find_forbidden("산만한 분위기였습니다", forbidden_terms()) == ()
 
 
 # ── fail-closed ──────────────────────────────────────────────────
@@ -177,7 +185,7 @@ def test_term_count_drift_fails_closed() -> None:
     forbidden = raw["forbidden"]
     assert isinstance(forbidden, list)
     forbidden.pop()
-    with pytest.raises(BufferLexiconError, match="50항"):
+    with pytest.raises(BufferLexiconError, match="53항"):
         parse_buffer_lexicon(raw)
 
 

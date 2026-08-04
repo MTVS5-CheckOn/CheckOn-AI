@@ -8,13 +8,11 @@ LLM을 쓰지 않는다(불변식 1). 실패 시 재생성(≤3) 또는 템플�
 ② 기호 잔존 → 실패. LaTeX·마크다운 메타문자(달러·역슬래시·백틱·별표·우물정·밑줄·물결·
    캐럿·중괄호)는 한글 브리핑에 정당하게 쓰일 일이 없다. v1 실 LLM 프리뷰에서 LaTeX
    유출을 관찰 — 프롬프트가 1차로 막고 게이트는 백스톱이다. 곱하기 '×'(U+00D7)는 허용.
-③ 금칙어(05 §4 A군 — `buffer_lexicon.yaml` 단일 참조) → 실패. 🔴 **한계(확정):** 목록이
-   어간 기반(게으르·산만하)이고 판정이 substring이라 **활용형을 놓친다**("놓칠 수 있다"가
-   아니라 실측·실증이다 — 8/4 실서버 스모크에서 refine이 `게으른`으로 뚫렸다). 어간 끝
-   음절에 종성이 없는 A군 8항 전체가 해당한다. 범위·해소안은 **99 D ⑰이 정본**이다.
-   ⚠ 종전 문구가 "활용 커버는 D-③ 단일화 때 함께"라고 적었는데 **stale**이다 — 단일화
-   (99 15-ⓒ)는 끝났고 활용 커버는 그때 함께 오지 않았다. 그리고 이 게이트는 아래 자기
-   루프로 판정하므로 `buffer_lexicon.find_forbidden`만 고쳐도 **여기는 안 고쳐진다**.
+③ 금칙어(05 §4 A군) → 실패. 🔴 **판정을 `buffer_lexicon.find_forbidden`에 위임한다**
+   (8/5 · 99 D ⑰ 해소). 어휘 단일 참조(99 #15 ⓒ)에 이어 **판정도 단일 참조**다 — 종전에는
+   여기 자기 루프가 따로 있어 "`find_forbidden`을 고쳐도 브리핑 게이트는 안 고쳐지는"
+   상태였고, 그게 ⑰ 사고의 구조적 원인이었다. 이제 활용형(`게으른`·**`산만합니다`**)도
+   잡는다. 두 게이트의 A군 판정이 동일하다는 것은 테스트가 고정한다.
 ④ 숫자·기간 EXACT 대조 — 문장 속 모든 숫자가 입력 수치 집합에 실존해야(report §3 numbers_used
    선례, 변환·반올림 불허). v2는 BriefingContext가 제공한 수치만 allowed(파생 표기 포함,
    제공 안 한 환산값 불허) — LLM이 근거 밖 숫자를 만들면 차단된다.
@@ -27,7 +25,7 @@ import re
 
 from pydantic import BaseModel, ConfigDict
 
-from ai.composition.buffer_lexicon import forbidden_terms
+from ai.composition.buffer_lexicon import find_forbidden, forbidden_terms
 
 _NUMBER_RE = re.compile(r"\d+")
 
@@ -67,9 +65,13 @@ def check_brief_gate(
     symbol = _SYMBOL_RE.search(text)
     if symbol is not None:
         return GateResult(passed=False, reason=f"symbol:{symbol.group()}")
-    for word in _forbidden():
-        if word in text:
-            return GateResult(passed=False, reason=f"forbidden:{word}")
+    # A군 판정은 `buffer_lexicon.find_forbidden` **단일 정본**에 위임한다(99 D ⑰ 해소).
+    # 종전에는 여기 자기 루프(`word in text`)가 따로 있어 어휘만 단일화되고 판정은
+    # 갈려 있었다 — 그게 ⑰ 사고의 구조적 원인이다. 등록 순서 첫 히트를 쓰는 것은
+    # 종전 루프와 동일하므로 사유 문자열도 그대로다.
+    hits = find_forbidden(text, _forbidden())
+    if hits:
+        return GateResult(passed=False, reason=f"forbidden:{hits[0]}")
     for number in _NUMBER_RE.findall(text):
         if number not in allowed_numbers:
             return GateResult(passed=False, reason=f"number_not_grounded:{number}")
