@@ -21,6 +21,7 @@ import pytest
 from ai.composition.buffer_lexicon import (
     EXPECTED_TERM_COUNT,
     BufferLexiconError,
+    conjugating_terms,
     find_forbidden,
     forbidden_terms,
     load_buffer_lexicon,
@@ -169,6 +170,47 @@ def test_accepted_overblock() -> None:
     assert find_forbidden("산만한 분위기였습니다", forbidden_terms()) == ()
 
 
+# ── 🔴 종성 결합은 **용언 어간에만** (99 D ⑰ 후속 · 8/5) ──────────
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "문제안내 드립니다",  # 🔴 실측 오탐 — `문제아`+ㄴ=`문제안` ⊂ "문제안내"
+        "문제안을 검토했습니다",
+        "이번 문제안이 확정됐습니다",
+        "학습 문제안내문을 보냈습니다",
+    ],
+)
+def test_noun_stems_do_not_conjugate(text: str) -> None:
+    """명사·구 어간은 결합형을 만들지 않는다 — 활용이 없어 **얻는 것 0·오탐만** 있다."""
+    assert find_forbidden(text, forbidden_terms()) == ()
+
+
+def test_noun_stems_still_match_directly() -> None:
+    """결합만 끄는 것이지 어간 검출을 끄는 게 아니다."""
+    assert "문제아" in find_forbidden("문제아 취급을 했습니다", forbidden_terms())
+
+
+def test_conjugating_is_a_subset_of_forbidden() -> None:
+    """사전이 두 곳에서 따로 늙지 않는다 — 로드 시 fail-closed로도 막는다."""
+    assert conjugating_terms() <= set(forbidden_terms())
+
+
+def test_conjugating_excludes_nouns() -> None:
+    """명사·구 5항은 결합 대상이 아니다(설계 의도를 고정)."""
+    nouns = {"문제아", "꼴찌", "최하위", "심리적 문제", "반에서 유일하게"}
+    assert conjugating_terms().isdisjoint(nouns)
+
+
+def test_unknown_conjugating_stem_fails_closed() -> None:
+    """forbidden에 없는 어간을 결합 대상으로 적으면 로드가 실패한다."""
+    raw = _minimal_raw()
+    raw["conjugating"] = ["없는어간"]
+    with pytest.raises(BufferLexiconError, match="forbidden 밖"):
+        parse_buffer_lexicon(raw)
+
+
 # ── fail-closed ──────────────────────────────────────────────────
 
 
@@ -177,6 +219,7 @@ def _minimal_raw() -> dict[str, object]:
         "version": "0.1",
         "forbidden": [f"금칙{i}" for i in range(20)],
         "replace": [{"from": f"원{i}", "to": f"대{i}"} for i in range(30)],
+        "conjugating": ["금칙0"],
     }
 
 

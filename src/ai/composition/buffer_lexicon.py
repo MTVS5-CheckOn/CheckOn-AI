@@ -59,6 +59,13 @@ class BufferLexicon:
     replacements: tuple[Replacement, ...]
     """B군 — 단정 → 관찰·상태 서술."""
 
+    conjugating: tuple[str, ...] = ()
+    """A군 중 **활용하는 어간(용언)** — 이것만 종성 결합을 함께 본다.
+
+    명사·구(`문제아`·`꼴찌`)는 활용이 없어 결합형이 한국어가 아니고, 그런데도 부분
+    문자열이라 정상 어절을 오탐한다(`문제안` ⊂ "문제안내"). 얻는 것 0·잃는 것만 있다.
+    """
+
 
 _HANGUL_BASE: Final = 0xAC00
 _HANGUL_LAST: Final = 0xD7A3
@@ -91,17 +98,29 @@ def _conjugated_variants(stem: str) -> tuple[str, ...]:
     return tuple(head + chr(last + final) for final in _COMBINING_FINALS)
 
 
-def _contains(text: str, stem: str) -> bool:
+def _contains(text: str, stem: str, conjugating: frozenset[str]) -> bool:
     """어간 또는 그 **종성 결합형**이 본문에 있는가.
 
-    🔴 **접두 매칭은 하지 않는다.** `문제아`를 `문제`로 줄여 찾으면 "문제 풀이 시간"·
-    "문제를 새로 시작"이 걸린다 — 8/4 실서버 코퍼스 26건 중 7건이 그렇게 오탐했다.
-    어간 끝 음절을 **버리지 않고 종성만 더한다**(`문제아` → `문제안`)는 것이 차이다.
+    🔴 **결합은 용언 어간에만 적용한다**(`conjugating`). 명사·구까지 결합시키면
+    `문제아`+ㄴ=`문제안`이 "문제안내 드립니다"를 잡는다 — 활용이 없는 항목이라
+    **잡을 대상은 없고 오탐만 생긴다**(8/5 실측 4문장 · 99 D ⑰).
+
+    🔴 **접두 매칭도 하지 않는다.** `문제아`를 `문제`로 줄여 찾으면 "문제 풀이 시간"이
+    걸린다 — 8/4 실서버 코퍼스 26건 중 7건이 그렇게 오탐했다.
     """
-    return stem in text or any(v in text for v in _conjugated_variants(stem))
+    if stem in text:
+        return True
+    if stem not in conjugating:
+        return False
+    return any(v in text for v in _conjugated_variants(stem))
 
 
-def find_forbidden(text: str, forbidden: tuple[str, ...]) -> tuple[str, ...]:
+def find_forbidden(
+    text: str,
+    forbidden: tuple[str, ...],
+    *,
+    conjugating: frozenset[str] | None = None,
+) -> tuple[str, ...]:
     """본문에서 걸린 A군 어간을 **등록 순서대로** 돌려준다 — 순수 함수(결정론).
 
     **A군 판정의 단일 정본이다**(8/5 · 99 D ⑰ 해소). 브리핑 게이트도 자기 루프를 버리고
@@ -113,12 +132,13 @@ def find_forbidden(text: str, forbidden: tuple[str, ...]) -> tuple[str, ...]:
     코드로 만들 수 없어 **yaml에 어간으로 등재**했고, 그것들도 ⓑ를 함께 탄다
     (`산만해` + ㅆ → `산만했습니다`).
     """
-    return tuple(stem for stem in forbidden if _contains(text, stem))
+    active = frozenset(conjugating) if conjugating is not None else conjugating_terms()
+    return tuple(stem for stem in forbidden if _contains(text, stem, active))
 
 
 def parse_buffer_lexicon(raw: dict[str, Any]) -> BufferLexicon:
     """원시 dict → `BufferLexicon`. 검증 실패는 `BufferLexiconError`(파일 접근 없음)."""
-    for section in ("forbidden", "replace"):
+    for section in ("forbidden", "replace", "conjugating"):
         if section not in raw:
             raise BufferLexiconError(f"buffer_lexicon.yaml에 {section} 섹션이 없다")
 
@@ -135,6 +155,15 @@ def parse_buffer_lexicon(raw: dict[str, Any]) -> BufferLexicon:
             raise BufferLexiconError("replace의 from이 비었다")
         replacements.append(Replacement(source=source, target=str(item.get("to", ""))))
 
+    conjugating = tuple(str(word) for word in raw["conjugating"])
+    if len(set(conjugating)) != len(conjugating):
+        raise BufferLexiconError("conjugating에 중복 어간이 있다")
+    unknown = [stem for stem in conjugating if stem not in set(forbidden)]
+    if unknown:
+        # 사전이 두 곳에서 따로 늙는 것을 막는다 — 결합 대상이 A군에 없으면 무의미하고,
+        # 조용히 무시하면 "결합된다고 적었는데 안 되는" 상태가 생긴다(⑰ 사고의 유형).
+        raise BufferLexiconError(f"conjugating에 forbidden 밖 어간이 있다: {unknown}")
+
     total = len(forbidden) + len(replacements)
     if total != EXPECTED_TERM_COUNT:
         raise BufferLexiconError(
@@ -144,6 +173,7 @@ def parse_buffer_lexicon(raw: dict[str, Any]) -> BufferLexicon:
         version=str(raw["version"]),
         forbidden=forbidden,
         replacements=tuple(replacements),
+        conjugating=conjugating,
     )
 
 
@@ -159,11 +189,17 @@ def forbidden_terms() -> tuple[str, ...]:
     return load_buffer_lexicon().forbidden
 
 
+def conjugating_terms() -> frozenset[str]:
+    """종성 결합을 적용할 **용언 어간** — 명사·구는 여기 없다(99 D ⑰)."""
+    return frozenset(load_buffer_lexicon().conjugating)
+
+
 __all__ = [
     "EXPECTED_TERM_COUNT",
     "BufferLexicon",
     "BufferLexiconError",
     "Replacement",
+    "conjugating_terms",
     "find_forbidden",
     "forbidden_terms",
     "load_buffer_lexicon",
