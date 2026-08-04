@@ -15,10 +15,13 @@ import pytest
 _SRC = Path(__file__).resolve().parents[3] / "src" / "ai"
 _PROBLEM_GENERATION = _SRC / "problem_generation"
 
+#: gateway를 호출해도 되는 지점의 화이트리스트. **application 계층에만 존재해야 한다** —
+#: domain은 순수 규칙이라 LLM을 부르지 않고, infrastructure는 저장·설정 어댑터다.
+#: 새 호출 지점이 생기면 이 목록을 늘리기 전에 계층이 맞는지 먼저 본다.
 _EXPECTED_GATEWAY_CALLS = frozenset(
     {
-        ("problem_generation/cross_solver.py", "solve"),
-        ("problem_generation/generator.py", "generate"),
+        ("problem_generation/application/cross_solver.py", "solve"),
+        ("problem_generation/application/generator.py", "generate"),
     }
 )
 

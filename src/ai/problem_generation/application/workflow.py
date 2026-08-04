@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Awaitable, Callable, Hashable
 from dataclasses import dataclass
 from typing import Any
@@ -11,7 +9,6 @@ from uuid import uuid5
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, ConfigDict, Field
 
 from ai.contracts.diagnosis import (
     DiagnosisResult,
@@ -49,30 +46,38 @@ from ai.contracts.problem_generation import (
     assert_problem_generation_state_transition,
 )
 from ai.contracts.taxonomy import AreaTag, TypeTag
-from ai.problem_generation.cross_solver import BlindCrossSolver
-from ai.problem_generation.generator import (
-    CandidateSnapshot,
-    CandidateStore,
+from ai.problem_generation.application.cross_solver import BlindCrossSolver
+from ai.problem_generation.application.generator import (
     ProblemGenerator,
-    ProblemItemStore,
-    RetryContext,
     build_candidate_snapshot,
-    item_stem_hash,
-    problem_item_id,
 )
-from ai.problem_generation.verification import (
-    BannedTopicsConfig,
-    RuleValidationResult,
-    RuleValidator,
-    VerifyConfig,
+from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
+from ai.problem_generation.domain.cross_solve import validate_cross_solve
+from ai.problem_generation.domain.difficulty import (
     classify_t1_difficulty,
     distance_to_requested_midpoint,
     estimate_t1_difficulty,
+    needs_difficulty_regeneration,
+)
+from ai.problem_generation.domain.identity import (
+    item_stem_hash,
+    problem_item_id,
+    request_hash,
+)
+from ai.problem_generation.domain.models import (
+    CandidateSnapshot,
+    RetryContext,
+    TargetPlan,
+)
+from ai.problem_generation.domain.policy import BannedTopicsConfig, VerifyConfig
+from ai.problem_generation.domain.rules import (
+    RuleValidationResult,
+    RuleValidator,
     has_reference_data,
+)
+from ai.problem_generation.infrastructure.config import (
     load_banned_topics,
     load_verify_config,
-    needs_difficulty_regeneration,
-    validate_cross_solve,
 )
 
 type DiagnosisCallable = Callable[[ProblemRequest], Awaitable[DiagnosisResult]]
@@ -93,14 +98,6 @@ class GraphContextError(RuntimeError):
 class GraphContextUnavailable(GraphContextError):
     """GraphRAG 기준 자료 또는 서비스가 일시적으로 없음."""
 
-
-class TargetPlan(BaseModel):
-    """슬롯이 순환 사용할 결정론 목표."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    skill_node_id: str = Field(min_length=1)
-    diagnostic_purpose: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,7 +165,7 @@ class ProblemGenerationWorkflow:
         )
         initial = ProblemGenerationState(
             request_ref=f"problem-request:{request.request_id}",
-            request_hash=_request_hash(request),
+            request_hash=request_hash(request),
             set_id=set_id,
             target_source=request.target_source,
             requested_count=request.count,
@@ -899,15 +896,6 @@ def _checked_update(
     assert_problem_generation_state_transition(state, current)
     return changes
 
-
-def _request_hash(request: ProblemRequest) -> str:
-    canonical = json.dumps(
-        request.model_dump(mode="json"),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
 __all__ = [

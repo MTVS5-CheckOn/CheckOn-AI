@@ -24,13 +24,13 @@ from pathlib import Path
 import pytest
 
 _SRC = Path(__file__).resolve().parents[3] / "src" / "ai"
-_CROSS_SOLVER = _SRC / "problem_generation" / "cross_solver.py"
+_CROSS_SOLVER = _SRC / "problem_generation" / "application" / "cross_solver.py"
 
 #: blind 페이로드를 **조립하는** 모듈만 — 여기서 ai.evidence가 보이면 blind가 깨진다.
 #: 게이트 ①(`RuleValidation` — `verification.py`의 R-1)은 **대상이 아니다.** R-1은 근거를
 #: 대조해야 하므로 evidence import가 정당하다(06 §1 GraphRAG 확장). 실측(7/30): 패키지
 #: 전체에서 `blind_item` 조립·cross-solve 프롬프트 렌더는 `cross_solver.py` 한 곳뿐이다.
-_BLIND_PAYLOAD_MODULES = ["problem_generation/cross_solver.py"]
+_BLIND_PAYLOAD_MODULES = ["problem_generation/application/cross_solver.py"]
 
 #: `blind_item`에 실려도 되는 키 **전부**(화이트리스트) — `cross_solver.py`에서 손으로 읽었다.
 #: 05 §4.3: blind = 정답·해설·근거 비공개. 목표 메타는 정렬 판정용으로 별도 전달된다

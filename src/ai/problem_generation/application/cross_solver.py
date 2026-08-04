@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import json
-
 from ai.contracts.execution import ExecutionContext, GenerationParams
 from ai.contracts.llm import LLMRequest, ModelRole, RedactionBlocked
 from ai.contracts.problem_generation import GeneratedItem, SolveResult
 from ai.llm.gateway import LlmGateway
 from ai.llm.prompts.loader import LoadedPromptTemplate, load_prompt_template
 from ai.llm.structured import parse
-from ai.problem_generation.generator import require_successful_text
+from ai.problem_generation.application.generator import require_successful_text
+from ai.problem_generation.domain.identity import canonical_json
 from ai.runtime.redaction import redact
 
 _CROSS_SOLVE_PROMPT_ID = "pg.cross_solve.v1"
@@ -59,8 +58,8 @@ class BlindCrossSolver:
         }
         prompt_text = self._prompt.render(
             {
-                "blind_item_json": _canonical_json(blind_item),
-                "target_metadata_json": _canonical_json(target_metadata),
+                "blind_item_json": canonical_json(blind_item),
+                "target_metadata_json": canonical_json(target_metadata),
             }
         )
         redacted = redact(prompt_text)
@@ -79,15 +78,6 @@ class BlindCrossSolver:
             execution_context,
         )
         return parse(require_successful_text(result), SolveResult)
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
 
 
 __all__ = ["BlindCrossSolver"]
