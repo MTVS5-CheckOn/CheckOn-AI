@@ -104,6 +104,11 @@ def test_find_forbidden_preserves_registration_order() -> None:
         ("게으름이 눈에 띕니다", "게으르"),  # 명사형: 게으르 + ㅁ → 게으름
         ("산만함이 계속됩니다", "산만하"),  # 명사형: 산만하 + ㅁ → 산만함
         ("머리가 나쁜 편입니다", "머리가 나쁘"),  # 관형형: 나쁘 + ㄴ → 나쁜
+        # ── 🔴 부정문도 **양성**이다(8/5 A 확정 · 99 D ⑰) ──
+        # A군은 치환 불가(문장 재생성)라 표현 자체를 금지한다. 부정문을 허용하면
+        # "머리가 나쁘다고 볼 수는 없겠지만…" 우회가 열리고, 부정 판정은 문맥 처리라
+        # 결정론 게이트의 결이 아니다(불변식 1).
+        ("머리가 나쁜 편은 아닙니다", "머리가 나쁘"),
     ],
 )
 def test_conjugated_forms_not_yet_detected(text: str, stem: str) -> None:
@@ -112,6 +117,10 @@ def test_conjugated_forms_not_yet_detected(text: str, stem: str) -> None:
     **이 목록이 곧 ⑰ 해소의 수용 기준이다** — `strict=True`라 해소하면 xpass로 뒤집혀
     자동으로 드러난다. 아래 `test_non_stigmatizing_context_is_not_blocked`(음성)와
     **함께** 봐야 한다: 양성만 늘리면 "다 잡으면 통과"가 되어 과차단을 아무도 못 잡는다.
+
+    🔴 **부정문("…편은 아닙니다")도 여기(양성)에 있다** — A군은 치환 불가(문장 재생성)라
+    **표현 자체를 금지**한다(05 §4). 부정문을 허용하면 "머리가 나쁘다고 볼 수는 없겠지만…"
+    우회가 열리고, 부정 판정은 문맥 처리라 **결정론 게이트의 결이 아니다**(불변식 1).
     """
     assert stem in find_forbidden(text, forbidden_terms())
 
