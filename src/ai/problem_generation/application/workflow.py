@@ -482,9 +482,13 @@ class ProblemGenerationWorkflow:
         execution_context: ExecutionContext,
     ) -> None:
         versions = execution_context.versions
+        # T1(문법 · area_tag=language · 지문 없음)만 받는다. 05 §1.2가 "게이트를
+        # T1에서 완성하고 그대로 물려받는다 — 미완성 상태로 다음 트랙을 열지 않는다"를
+        # 고정했다. 트랙이 5종으로 확정된 것(05 §1)은 문서 확정이며 코드 개방은
+        # 게이트 완성 후다. 어휘 문항은 T2 소속(area_tag=reading)이라 이 경로로 오지 않는다.
         if request.area_tag is not AreaTag.LANGUAGE or request.passage is not None:
             raise ProblemWorkflowConfigurationError(
-                "M2 문제출제 워크플로는 T1 언어 영역만 지원한다"
+                "M2 문제출제 워크플로는 T1(문법)만 지원한다 — T2~T5는 게이트 완성 후 개방"
             )
         if execution_context.capability is not Capability.PROBLEM_GENERATION:
             raise ProblemWorkflowConfigurationError(

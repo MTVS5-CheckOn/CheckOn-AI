@@ -640,7 +640,13 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
     assert not harness.generator_provider.requests
 
 
-def test_m2_workflow_does_not_open_t2_or_t3_track() -> None:
+def test_m2_workflow_opens_t1_only() -> None:
+    """T1(문법) 외 트랙은 게이트 완성 전까지 열지 않는다 — `05` §1.2.
+
+    트랙은 5종으로 확정됐지만(`05` §1) 그건 문서 확정이고, 코드 개방은
+    게이트를 T1에서 완성한 뒤다. `reading` 요청이 들어와도 LLM을 부르기 전에
+    막혀야 한다.
+    """
     harness = _WorkflowHarness(
         generator_steps=(),
         verifier_steps=(),
@@ -651,7 +657,7 @@ def test_m2_workflow_does_not_open_t2_or_t3_track() -> None:
 
     with pytest.raises(
         ProblemWorkflowConfigurationError,
-        match="T1 언어 영역",
+        match="T1\\(문법\\)만 지원한다",
     ):
         asyncio.run(harness.workflow.run(unsupported, harness.context()))
 
