@@ -48,3 +48,6 @@ briefing_preview_result.md
 .DS_Store
 
 docker-compose.yml
+
+# 외부 데이터셋 원본·분석 산출물 — 레포에 반입하지 않는다(EdNet KT1은 CC BY-NC 4.0).
+local_data/
