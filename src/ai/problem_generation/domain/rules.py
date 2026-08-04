@@ -123,7 +123,11 @@ class RuleValidator:
             > self._duplicate_similarity_max
             for previous in previous_items
         ):
-            failed.append("R-6:기출제_문항_중복")
+            # `previous_items`는 같은 세트·같은 학생의 최근 출제분이다. 평가원·EBS
+            # 기출과의 중복은 검사하지 않는다 — 외부 대조 코퍼스가 없다(09 §3 C-15).
+            # 종전 이름 "기출제_문항_중복"은 실제 검사 범위와 달라 오독을 불렀다.
+            # 외부 대조는 R-8로 예약한다(06 §1).
+            failed.append("R-6:세트내_중복")
 
         return RuleValidationResult(
             passed=not failed,

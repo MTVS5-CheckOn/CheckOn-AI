@@ -120,7 +120,11 @@ class VerifyConfig(BaseModel):
         if self.t1_light_mode:
             raise ValueError("M2에서는 t1_light_mode를 활성화할 수 없다")
         if set(self.difficulty_band_map) != {"T1"}:
-            raise ValueError("M2 난이도 밴드는 T1만 정의해야 한다")
+            # T2~T5 밴드 경계는 06 부록 'B 기본값 시트' 사안이며 아직 값이 없다.
+            # 트랙 개방(05 §1.2)과 함께 키를 늘린다 — 값 없이 키만 여는 것을 막는다.
+            raise ValueError(
+                "M2 난이도 밴드는 T1(문법)만 정의해야 한다 — T2~T5 경계는 06 부록 미확정"
+            )
         return self
 
     @property

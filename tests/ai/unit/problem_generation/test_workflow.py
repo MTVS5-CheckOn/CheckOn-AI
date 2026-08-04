@@ -640,7 +640,13 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
     assert not harness.generator_provider.requests
 
 
-def test_m2_workflow_does_not_open_t2_or_t3_track() -> None:
+def test_workflow_rejects_requests_needing_unimplemented_material_source() -> None:
+    """자료 조달 방식이 '자료 없음'인 요청만 받는다 — `05` §1.0·§1.2.
+
+    트랙 제한이 아니다. 게이트·프롬프트는 전 영역 공용이고, 막는 것은
+    "생성"·"저작물" 조달 노드가 아직 없다는 사실 하나다. 자료를 동반한 요청은
+    LLM을 부르기 전에 막혀야 한다.
+    """
     harness = _WorkflowHarness(
         generator_steps=(),
         verifier_steps=(),
@@ -651,7 +657,7 @@ def test_m2_workflow_does_not_open_t2_or_t3_track() -> None:
 
     with pytest.raises(
         ProblemWorkflowConfigurationError,
-        match="T1 언어 영역",
+        match="자료 조달 방식이",
     ):
         asyncio.run(harness.workflow.run(unsupported, harness.context()))
 

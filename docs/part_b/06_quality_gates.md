@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 명세 v1. `src/ai/problem_generation/verification.py`·`cross_solver.py`의 사양 원본. A의 threshold 시트에 대응하는 B의 판정 파라미터 문서 — `[잠정]` 값은 부록 'B 기본값 시트'와 `golden/problems/` 버전 연동으로 관리.
 >
 > **변경 이력**
+> - v1.4 (2026-08-04): **§1에 R-8(외부 기출 대조)을 번호만 예약**했다. R-6이 `previous_items`(세트 내)만 보는데 코드 실패 문자열이 `R-6:기출제_문항_중복`이라 오독을 불렀다 — `R-6:세트내_중복`으로 정정하고 외부 대조를 R-8로 분리했다. 코퍼스 확보(C-15) 전에는 열지 않는다.
 > - v1.3 (2026-08-04): 트랙 5종 재정의(`05` §1)에 따라 **§1 T1 특칙의 범위를 T1 문법 문항으로 한정**했다. T2로 이관된 어휘 문항은 T2 규칙을 따르되, 대조 트랙이므로 **기준 자료 장애 시 발행 차단은 그대로 적용**된다.
 > - v1.2 (2026-07-27): **B-M2-02·04·05 확정 반영 + GraphRAG 편입** — ① 난이도 불일치의 1회 재생성·소진 시 검토 필요(§5·부록 `difficulty_regen_enabled`·`difficulty_regen_max`·`difficulty_band_tolerance`) ② 파일럿 첫 2주 T1 전체 교차 검증(`t1_light_mode` **true → false**, §1 T1 특칙) ③ 수동 목표 세트의 "첫 성공 문항" 정의 명문화(§5) ④ **R-1·R-4 검사 재료를 GraphRAG `EvidencePack` 기준으로 확장**([`11`](11_graphrag_knowledge_layer.md) §5 — `source_content_hash`·`quote_hash`·`license_ref`·`rights_status`·`coverage`). 결정 근거는 [`10`](10_m2_problem_generation_architecture.md) §4·§4.1.
 > - v1.1 (2026-07-15): 파일 번호 이동(04→06) + 확정 반영 — ① **재시도 총 3회**(item_attempt 공통 예산, regen_max=2 — 최악 논리 콜 6·HTTP 12) ② 게이트 ②에 **약점 의미 정렬 판정** 포함 ③ **세트 조기 중단** 규칙(§6) ④ 검증 차단 문항 **수동 예외 승인 불허 확정** ⑤ 프론트 표시 라벨 매핑(§0) ⑥ v1 mcq만.
@@ -50,6 +51,7 @@
 | **R-5** | 금칙 대조 | stem·choices·rationale·지문 전체를 `pg_banned_topics.yaml` 대조 | **즉시 폐기(reject)** — 재생성 우회 금지, 지문 오염이면 세트 중단 |
 | **R-6** | 중복 억제 | stem 정규화 해시 + n-gram 유사도가 동일 세트/동일 학생 최근 출제분과 `dup_similarity_max` 초과 (**내부 중복만** — 외부 표절은 P0 OPEN, 05 §8.3) | 재생성 |
 | **R-7** | taxonomy·목표 정합(코드) | area·type·item_format·skill_node_id가 요청과 일치 + enum 유효 + 노드 area와 문항 area 일치 — **정렬 3층 중 1층(메타)** | 재생성 |
+| **R-8** `[예약 — v2]` | 외부 기출 대조 | 평가원·EBS 등 **외부 코퍼스와의 유사도**. R-6은 `previous_items`(같은 세트·같은 학생 최근 출제분)만 보므로 외부 중복은 **v1에서 검사되지 않는다** — 이름을 `R-6:세트내_중복`으로 정정해 오독을 막았다. 대조 코퍼스·수단 확보는 C-15(09 §3) | **미구현 — 번호만 예약.** 코퍼스 없이 여는 것을 금지한다 |
 
 **T1 특칙:** 파일럿 첫 2주는 `t1_light_mode=false`로 두고 T1 전 문항에 게이트 ② 전체 검증과 표준 재생성 규칙을 적용한다(B-M2-04). T1 기준 자료와 골든셋이 갖춰지고 파일럿 오류율이 기준을 충족한 뒤에만 경량 모드(1회 풀이·불일치 시 `needs_review`)를 별도 버전으로 열 수 있다. 단 **기준 자료 장애 시 T1도 발행 차단**한다(05 §1.1).
 
