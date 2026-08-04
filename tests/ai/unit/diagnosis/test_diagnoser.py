@@ -272,6 +272,31 @@ def test_direct_severity_uses_ratio_gap_not_percentage_points() -> None:
     assert result.weakness_map.propagated["lang.middle"].score == pytest.approx(0.8)
 
 
+def test_passage_ref_does_not_change_v1_verdicts() -> None:
+    """v1 판정 축은 원시 정답률뿐 — `passage_ref`는 수신만 하고 판정에 쓰지 않는다.
+
+    기대치 잔차로의 이관은 `09` §3 W13이다. 잔차를 도입하면 이 테스트가 먼저 깨지므로
+    이관 시점이 조용히 지나가지 않는다.
+    """
+    events = _events(
+        "read",
+        area_tag=AreaTag.READING,
+        type_tag=TypeTag.INFER,
+        total=12,
+        correct=4,
+    )
+    baseline = _diagnose(*events)
+    tagged = _diagnose(
+        *(
+            event.model_copy(update={"passage_ref": f"ps_{index:03d}"})
+            for index, event in enumerate(events)
+        )
+    )
+
+    assert baseline.weakness_map is not None
+    assert tagged.weakness_map == baseline.weakness_map
+
+
 def test_non_weak_cell_has_no_severity() -> None:
     result = _diagnose(*_boundary_events())
 
