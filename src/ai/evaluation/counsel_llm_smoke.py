@@ -58,6 +58,8 @@ _REPEATS = 3
 """신호당 반복 — briefing_preview.py 선례. 7신호 × 3 = 21호출로 S1의 N ≥ 10을 채운다."""
 
 _REPORT_PATH = Path("docs/handoff/2026-08-04_llm_smoke_report.md")
+"""⚠ 재실행하면 **통째로 덮어쓴다** — 발행 후 손으로 덧붙인 정정 블록은 사라진다.
+정정의 정본은 리포트가 아니라 `99_open_items.md`에 둔다(99 D ⑰ 선례)."""
 _RAW_PATH = Path("local_data/llm_smoke_raw.json")
 """원문 포함 산출 — 레포 반입 금지(local_data는 gitignore)."""
 
