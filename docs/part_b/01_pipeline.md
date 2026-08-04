@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 파이프라인 v1.2. part_a/01_pipeline과 대칭인 B의 전체 구조 문서 — 상세 시퀀스·ERD는 [`02_design.md`](02_design.md), 도메인 규격은 04~07.
 >
 > **변경 이력**
+> - v1.5 (2026-08-04): 트랙 5종 재정의(`05` §1)를 §3 출제 흐름에 반영했다 — 자료 분기를 `T1 문법` / `T2 독서·T4 화작·T5 매체`(자료 생성) / `T3 문학`(저작물 풀)로 갈랐고, P1(MVP) 범위 표기를 `T1 문법`으로 정정했다.
 > - v1.4 (2026-07-31): 서비스 전제의 잘못된 백엔드 DB 표기를 실제 스택인 PostgreSQL로 정정했다. 표기 정합화이며 기능 변경은 없다.
 > - v1.3 (2026-07-30): §5 LangSmith 마스킹 경계를 **LLM gateway 앞단 `(b)` 훅**과 **LangGraph 노드·체크포인터 경계**로 분리했다. 전자는 `llm/`(B), 후자는 `agents/`(A) 소유이며 실제 LangSmith 효과 대상은 [`09`](09_integration_proposals.md) §2-16에서 재활성화 전에 실측 확정한다.
 > - v1.2 (2026-07-27): **GraphRAG 지식 계층 채택**([`11`](11_graphrag_knowledge_layer.md)) — §0 판정표에 플랫폼 계층으로 추가(에이전트 아님·LLM 금지·판정 권한 없음), §3 출제 흐름에 `ResolveGenerationContext` 선행 단계 삽입, §7 Phase 배치에 GraphRAG P0-1~P1-5 반영. 계약(`ContextPack`·`EvidencePack`·`GraphContextService`)은 문제 생성 LangGraph보다 **앞선다**. 공용 계약을 건드리는 2건(`VersionSet` 3필드·evidence resolver)은 [`09`](09_integration_proposals.md) §2-12 제안으로 분리했다.
@@ -70,8 +71,8 @@ flowchart TB
   wm --> ctx["ResolveGenerationContext (코드)<br/>GraphRAG — ContextPack·EvidencePack 조립<br/>권리·tenant 필터는 검색 후보 단계에서"]
   ctx -->|"검색 0건·권리 만료·장애"| unavail["verification_unavailable<br/>fail-closed — LLM 미호출"]
   ctx --> br{"지문 필요? (코드)"}
-  br -->|"T1 어휘·문법"| gen
-  br -->|"T2 비문학"| ps["지문 생성 (LLM)"]
+  br -->|"T1 문법"| gen
+  br -->|"T2 독서 · T4 화작 · T5 매체"| ps["자료 생성 (LLM)<br/>지문 · 담화 · 매체 자료"]
   br -->|"T3 문학"| pool["공유 저작물 풀 선택 (코드)"]
   ps --> gen["문항 생성 (LLM)<br/>구조화 출력 · 근거 인용 강제<br/>item_attempt 예산 총 3회"]
   pool --> gen
@@ -140,7 +141,7 @@ flowchart LR
 | Phase | 내용 |
 | --- | --- |
 | **P0 (선결)** | **GraphRAG 계약** — Graph 도메인·버전(P0-1) · 권리 확인 콘텐츠 파이프라인(P0-2) · `ContextPack`/`EvidencePack`(P0-3) · `GraphContextService` 인터페이스(P0-4). **문제 생성 LangGraph보다 앞선다** — 계약 없이 워크플로를 짜면 전량 재작성([`11`](11_graphrag_knowledge_layer.md) §10) |
-| **P1 (MVP)** | T1 어휘·문법 mcq 생성 + 3단계 게이트 + 약점 정렬 + **문항 핑퐁 수정·교체·삭제·롤백·직접 수정**(확정 — Step 3가 협업형 편집 단계이므로) + Kafka 완료 통지. **T1은 사전·규칙 ID 직접 조회라 벡터 검색 백엔드 없이 완주 가능** — 계약은 선행, 검색 백엔드는 후행 |
+| **P1 (MVP)** | T1 문법 mcq 생성 + 3단계 게이트 + 약점 정렬 + **문항 핑퐁 수정·교체·삭제·롤백·직접 수정**(확정 — Step 3가 협업형 편집 단계이므로) + Kafka 완료 통지. **T1은 사전·규칙 ID 직접 조회라 벡터 검색 백엔드 없이 완주 가능** — 계약은 선행, 검색 백엔드는 후행 |
 | P1 후반 | T2 비문학(지문 생성 — 사실성 fail-closed 선결: D-04) |
 | P1.5~2 | T3 문학(공유 저작물 풀 — 풀 등재 선결) |
 | P2 | F17 시험지 PDF 조판(`print_layout.py`) · OCR 소유는 Open-12와 재론 |

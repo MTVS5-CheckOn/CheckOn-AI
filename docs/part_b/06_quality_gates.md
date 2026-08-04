@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 명세 v1. `src/ai/problem_generation/verification.py`·`cross_solver.py`의 사양 원본. A의 threshold 시트에 대응하는 B의 판정 파라미터 문서 — `[잠정]` 값은 부록 'B 기본값 시트'와 `golden/problems/` 버전 연동으로 관리.
 >
 > **변경 이력**
+> - v1.3 (2026-08-04): 트랙 5종 재정의(`05` §1)에 따라 **§1 T1 특칙의 범위를 T1 문법 문항으로 한정**했다. T2로 이관된 어휘 문항은 T2 규칙을 따르되, 대조 트랙이므로 **기준 자료 장애 시 발행 차단은 그대로 적용**된다.
 > - v1.2 (2026-07-27): **B-M2-02·04·05 확정 반영 + GraphRAG 편입** — ① 난이도 불일치의 1회 재생성·소진 시 검토 필요(§5·부록 `difficulty_regen_enabled`·`difficulty_regen_max`·`difficulty_band_tolerance`) ② 파일럿 첫 2주 T1 전체 교차 검증(`t1_light_mode` **true → false**, §1 T1 특칙) ③ 수동 목표 세트의 "첫 성공 문항" 정의 명문화(§5) ④ **R-1·R-4 검사 재료를 GraphRAG `EvidencePack` 기준으로 확장**([`11`](11_graphrag_knowledge_layer.md) §5 — `source_content_hash`·`quote_hash`·`license_ref`·`rights_status`·`coverage`). 결정 근거는 [`10`](10_m2_problem_generation_architecture.md) §4·§4.1.
 > - v1.1 (2026-07-15): 파일 번호 이동(04→06) + 확정 반영 — ① **재시도 총 3회**(item_attempt 공통 예산, regen_max=2 — 최악 논리 콜 6·HTTP 12) ② 게이트 ②에 **약점 의미 정렬 판정** 포함 ③ **세트 조기 중단** 규칙(§6) ④ 검증 차단 문항 **수동 예외 승인 불허 확정** ⑤ 프론트 표시 라벨 매핑(§0) ⑥ v1 mcq만.
 > - v1 (2026-07-15): 입력 초안 `CODEXPROMPT/(염준영)_3중_검증_게이트_명세_v0.md` 정리 — 명칭 통일(RuleValidation→BlindCrossSolve→ReleaseDecision), fail-closed, '다른 모델 패밀리', 재시도 2층 분리, "완전 증명" 표현 삭제.
@@ -51,6 +52,8 @@
 | **R-7** | taxonomy·목표 정합(코드) | area·type·item_format·skill_node_id가 요청과 일치 + enum 유효 + 노드 area와 문항 area 일치 — **정렬 3층 중 1층(메타)** | 재생성 |
 
 **T1 특칙:** 파일럿 첫 2주는 `t1_light_mode=false`로 두고 T1 전 문항에 게이트 ② 전체 검증과 표준 재생성 규칙을 적용한다(B-M2-04). T1 기준 자료와 골든셋이 갖춰지고 파일럿 오류율이 기준을 충족한 뒤에만 경량 모드(1회 풀이·불일치 시 `needs_review`)를 별도 버전으로 열 수 있다. 단 **기준 자료 장애 시 T1도 발행 차단**한다(05 §1.1).
+
+> `[2026-08-04 범위 정정]` T1에서 어휘가 T2로 이관됐다([`05`](05_problem_generation.md) §1). **`t1_light_mode`의 범위는 T1 문법 문항으로 한정**되며 T2의 어휘 문항은 T2 규칙을 따른다. 다만 **기준 자료 장애 시 발행 차단은 어휘 문항에도 적용**된다 — 대조 트랙이라 정본 없이 판정할 수 없다(05 §1.0).
 
 ## 2. 게이트 ② BlindCrossSolve — 교차 풀이 + 약점 의미 정렬 (확정)
 
