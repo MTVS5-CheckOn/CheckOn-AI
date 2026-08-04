@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v2.8 (2026-08-04): **`passage_ref` 확정(`05` [A 확정 통보 8/3 · 승우 합의]) 반영 3건.** ① `DiagnosisEvent`가 이 필드를 못 받아 `extra="forbid"` 하에서 백엔드 송신 시 진단 입력이 깨지는 상태였다 — B 구현으로 해소(수신만, v1 판정 축 미사용). ② **W13 신설** — A가 `03b0397`로 R1을 잔차로 이관해 원시 정답률을 판정에 쓰는 곳이 B의 셀 판정만 남았다. `PASSAGE_TYPE_STAT`을 재료로 기대치 잔차 이관을 등록하고 선결 조건 3건을 명시했다. ③ [`12`](12_suneung_format_alignment.md) §5 FMT-2의 묶음 키를 신설하지 않고 `passage_ref` 규약을 따르기로 정리했다. 더불어 **A-3 기준 수를 정정**했다 — A의 기대치 층 2테이블(`dbafdb9`)로 현행 develop이 이미 36이므로 목표 상수는 `26 → 34`가 아니라 **`36 → 44`**다.
 > - v2.7 (2026-08-03): **§3에 W12 신설 — 난이도 밴드 비단조.** `part_a/13` §4-2 실측(AI Hub 국어 8,572건 · NORMAL 34.6% < HARD 49.2%)에서 강사 주관 난이도 라벨이 단조가 아님이 확인됐다. `DIFFICULTY_BAND_MISMATCH`는 `ReviewReason`이라 폐기가 아닌 `needs_review`이고 `difficulty_regen_enabled`도 `false`여서 현행 영향은 강사 주의 예산에 한정되지만, **그 플래그를 켜기 전 선결 조건**으로 등록했다. 같은 근거로 [`04_curriculum_graph.md`](04_curriculum_graph.md) §4에 셀 판정 `[잠정]`의 오차 근거를 명시했다 — 이항 표준오차 ±15.8%p(참값 delta 0인 셀도 허위 `weak` 약 17%)에 §4-3-3의 **문항 간 난이도 분산 84%**가 얹혀 균일 가정이 서지 않으므로, 파일럿 전까지 셀 verdict는 강사 참고용 힌트이며 자동 처방 근거가 아니다.
 > - v2.6 (2026-08-03): **§2-16 후속 1 해소 — 추적 판정 소스 단일화.** A가 `test_trace_masking_hook.py`를 `monkeypatch.setenv` 기준으로 이관하고(PR #61) OR 제거 상태의 사전 증명을 제공해, B가 `gateway.py`의 `or resolved_settings.langsmith_tracing` 보조 트리거를 제거했다. 판정 정본은 `external_tracing_active()` 하나이며 `LlmSettings.langsmith_tracing`은 `.env` 표기용으로만 남는다. A-11을 ✅ 완료로 닫고, #59 머지로 stale이 된 B-14·§2-16의 "PR 대기·우회 가능" 문구를 현행으로 정정했다. B-14의 4단 중 P2(serde·클라이언트 은닉)만 잔여다.
 > - v2.5 (2026-07-30): **§2-14 GraphRAG 공용 계약의 A+B 승인·A 반영 완료(PR #49 · `02_ownership` v5)를 동기화**하고 B-12를 해소했다. §2-17은 경로 구분자 실제 결함과 W 번호를 과대·누락 판정한 B의 패턴 검사를 철회한 기록을 유지하면서, ① `as_posix()`·② Windows CI의 A 실행 완료(PR #50), A가 제안 밖에서 추가한 OS 무관 회귀(`b994017`), ③ `.gitattributes` 미합의 잔여를 분리해 갱신했다. §2-16은 PR #51 실측으로 `(b)` 훅의 LangSmith 기록 효력이 없음을 확정하고 briefing 제외·`emphasis_points` 우선 노출면·P2 제어점·미확인 5건을 반영했으며, 동의어 env 우회와 A PR #58 완료·B `5d8e1a4` PR 대기를 기록했다. §1-9 A-11과 B-14에는 추적 판정 소스 단일화 요청과 P1·P2 미완 상태를 동기화했다. `01_pipeline`·`02_design`의 백엔드 DB 표기도 PostgreSQL로 정정했다.
@@ -201,7 +202,7 @@ M2 문제생성 착수에 필요한 A 승인·작업을 한 표로 모았다. �
 | --- | --- | --- | --- | --- | --- |
 | **A-1** | **B 8테이블의 `docs/06_erd.md` 편입 승인** + 이 PR 한정 `06_erd.md` 편집 go-ahead `[7/27 정정: 7 → 8테이블 — KEEP-4로 ITEM_CANDIDATE 추가]` | §2-4 · §2-4.2 · §2-4.6 | 문서(A 소유) | B 저장 계층 전체. 미승인 시 `problem_generation` 영속화 불가 | ☐ **P0** |
 | **A-2** | `EVIDENCE_ITEM.owner_kind` += `problem_item` 양자 승인 | §2-3 마지막 행 | 공용 계약 | `PROBLEM_ITEM.rationale` 근거 저장. 공용 확장 14항목 중 **유일한 미승인 잔여** | ☐ **P0** |
-| **A-3** | `tests/ai/db/test_erd_model_parity.py`의 `== 26` → **`== 34`** 상수 변경 동의 `[7/27 정정: 33 → 34]` | §2-4.2 · §2-4.6 | 테스트(양자 성격) | A-1과 같은 PR. 미변경 시 CI 적색 | ☐ P0 |
+| **A-3** | `tests/ai/db/test_erd_model_parity.py` 상수 변경 동의 — **`== 36` → `== 44`** `[8/4 정정]` | §2-4.2 · §2-4.6 | 테스트(양자 성격) | A-1과 같은 PR. 미변경 시 CI 적색 | ☐ P0 |
 | **A-4** | **`VersionSet` GraphRAG 3필드 확장** 양자 승인 | §2-12 | 공용 계약 | GraphRAG 실행 재현 키. **`graph_version` 재사용 금지가 핵심** | ☐ **P0** |
 | **A-5** | **evidence resolver 주입 시그니처 확정** (기존 B-7 + GraphRAG 경유 해소 병합) | §2-12 · §3 B-7 | `evidence/`(A 소유) | 게이트 ① R-1·R-4의 Graph path·quote·license 검증 | ☐ **P0** |
 | **A-6** | ✅ **판정 완료 — 문서 표현을 현행 애플리케이션 계층 격리로 정정하고, RLS 실도입은 BE-11로 이관.** B 8테이블은 기존 26테이블과 동일한 `tenant_id` 컬럼 + 앱 계층 격리 패턴을 유지한다 | §2-4.5 · §3 BE-11 | 공용 정책 | B 저장 계층의 격리 방식 확정. RLS 실도입은 `db/session.py`·`db/store_factory.py` 연결·역할 설계와 함께 백엔드에서 재론 | ✅ 판정 완료 |
@@ -322,7 +323,7 @@ D-② ERD-parity 안전망은 `tests/ai/db/test_erd_model_parity.py`의 ERD↔`d
 
 | 파일 | 변경 | 소유 |
 | --- | --- | --- |
-| `docs/06_erd.md` | 26 → 34테이블 | A — **A-1 승인 완료, 이 PR 한정 편집 go-ahead** |
+| `docs/06_erd.md` | **36 → 44테이블** `[8/4 정정 — §2-4.6 참조]` | A — **A-1 승인 완료, 이 PR 한정 편집 go-ahead** |
 | `src/ai/db/models.py` | ORM 8클래스 추가 | 공통 계약(양자) — **A-1 승인 범위** |
 | `src/ai/db/migrations/versions/0003_*.py` | 신규 마이그레이션 | 테이블 오너(B) — 모델 diff PR에서 함께 리뷰(§4-1) |
 | `tests/ai/db/test_erd_model_parity.py` | `== 26` → `== 34`, `EXPECTED_UNIQUES`에 `weakness_map` (`tenant_id`, `student_ref`, `graph_version`, 주차 컬럼)과 `item_candidate` (`tenant_id`, `set_id`, `slot_index`, `attempt_no`) 2행 추가 | 프로덕션 대칭(양자 성격) |
@@ -362,7 +363,9 @@ D-② ERD-parity 안전망은 `tests/ai/db/test_erd_model_parity.py`의 ERD↔`d
 - 슬롯 확정 시 승자를 `PROBLEM_ITEM`으로 승격하고, **state의 `fallback_ref`는 clear하되 이 행은 보존**한다(KEEP-8 — 난이도 회귀·골든셋 증보 재료).
 - 기각한 대안: `ITEM_REVISION`(강사 수정 이력이라 화면에 오노출) · `VERIFICATION_RESULT.detail`(관측 상세지 본문 저장소 아님) · state 인라인(§2.4 위반) · `PROBLEM_ITEM` 후보 행(수량 불변식 오염).
 
-**연쇄 영향:** B 테이블 **7 → 8**, 공용 ERD **26 → 34**, `test_erd_model_parity.py` 상수 **`== 34`**. A-1·A-3에 반영했다.
+**연쇄 영향:** B 테이블 **7 → 8**, `test_erd_model_parity.py` 상수 변경. A-1·A-3에 반영했다.
+
+> **`[8/4 정정 — 기준 수가 바뀌었다]`** 종전 표기는 공용 ERD `26 → 34`였으나, A가 기대치 입력 층으로 `PASSAGE_TYPE_STAT`·`EXPECTATION_INGEST` 2개를 신설해(`dbafdb9` · `06_erd.md`) **현행 develop이 이미 36**이다. 따라서 B 8테이블 편입 시 목표 상수는 **`36 → 44`**다. B 테이블 수(8)와 A-1의 승인 범위는 그대로다.
 
 #### 2-4.4 저장소 ORM 규약 (편입 시 준수 — `db/models.py`·`db/base.py`에서 확인)
 
@@ -864,6 +867,7 @@ W 번호도 `W1`~`W10`의 실제 표기를 놓치는 하이픈 필수 grep 패�
 | **W10** `[신규]` | **롤백 재검증이 FIX-09와 충돌** — `07` 정정 | 롤백 본문 복원 후 게이트 ①②③ 전체 재검증으로 정합화 | B 단독 | `07` §1 · `10` §3 FIX-09 |
 | **W11** `[신규]` | **크로스 플랫폼 정합성** — `ci.yml`이 `ubuntu-latest` 단독이라 Windows 경로 결함을 구조적으로 잡지 못한다. 실제 결함은 `test_composition_redaction.py:46` 한 줄로 축소됐고, `.gitattributes` 부재로 개행 정규화도 미정의 | ① `.as_posix()` ✅ `17fecfb`·PR #50 ② `windows-latest` ✅ `e5cd95f`·PR #50 · A가 제안 밖에서 OS 무관 회귀 `b994017` 추가 · ③ `.gitattributes` 신설은 A+B 미합의 잔여 | A(+B) | §2-17 · `ci.yml` |
 | **W12** `[신규]` | **난이도 밴드가 실측 정답률과 단조 대응하지 않는다** — [`part_a/13`](../part_a/13_threshold_validation.md) §4-2 AI Hub 국어 8,572건 실측에서 **NORMAL 34.6% < HARD 49.2%**다. A는 "강사 입력도 같은 종류의 주관 라벨이라 같은 문제를 재생산한다"고 판정했고, `requested_difficulty`(`contracts/problem_generation.py:102`)가 바로 그 강사 입력이다. **현행 영향은 제한적이다** — `DIFFICULTY_BAND_MISMATCH`는 `ProblemFailureReason`이 아니라 **`ReviewReason`**(`:253`)이라 문항을 폐기하지 않고 `needs_review`로 보내며(`workflow.py:746`), `verify_config.yaml:11 difficulty_regen_enabled: false`라 재생성 루프도 돌지 않는다. **실제 비용은 강사 주의 예산이다** — 예측력이 검증되지 않은 기준으로 검토 요청을 만들고 있고, 이는 §1-8 경보 상한 철학과 충돌한다 | **`difficulty_regen_enabled=true`로 가기 전 선결 조건으로 둔다** — 켜는 순간 미검증 기준 위에서 재생성 루프가 돈다(B-9가 같은 플래그에 걸려 있다). ① 플래그 `false` 유지(현행) ② 파일럿에서 M2 문항의 실제 정답률을 수집해 밴드 정의를 재검토 ③ 밴드 판정을 주관 라벨이 아니라 실측 기대 정답률로 옮기는 경로 검토 — `passage_ref`(`05` [A 확정 통보 8/3]) 수신과 `PASSAGE_TYPE_STAT` 누적에 종속(`part_a/13` §4-3-4) | **B** | `part_a/13` §4-2·§4-3-4 · §3 B-9 · `05` §4 · `06_quality_gates` |
+| **W13** `[신규]` | **셀 판정만 원시 정답률에 남았다** — `diagnoser.py`의 `cell_delta_pp = cell_acc − student_overall_acc`는 문항 난이도가 균일하다고 가정하는데, [`part_a/13`](../part_a/13_threshold_validation.md) §4-3-3 실측상 **난이도 변동의 84%가 같은 영역×유형 안에서** 발생한다. 셀 정답률이 낮은 것이 약점 때문인지 어려운 지문을 뽑아서인지 구분되지 않는다([`04_curriculum_graph.md`](04_curriculum_graph.md) §4 오차 주석). A는 `03b0397`로 R1을 잔차로 이관해 **원시 정답률을 판정에 그대로 쓰는 곳은 이제 B의 셀 판정뿐**이다 | 기대치 잔차로 이관한다 — A가 만든 `PASSAGE_TYPE_STAT`(지문×유형 실측 누적, `db/models.py`)과 `passage_ref` 수신(B 구현 완료)이 재료다. **선결 조건 3**: ① 백엔드가 `passage_ref`를 실제로 보내기 시작할 것 ② 조합당 `expectation_min_n` 충족 ③ `part_a/13` §4-3-5 단서 확인 — EdNet 태그가 293종이라 국어 `type_tag` 4종에서는 회수율이 67%보다 낮을 수 있고, 재사용률이 낮으면 실효가 떨어진다. 이관 시 `config_version` 인상 + 골든 재생성 + `04` §4 오차 주석의 해제 여부 재판정 | **B** | `part_a/13` §4-3 · `04` §4 · `06_erd` PASSAGE_TYPE_STAT · `05` [A 확정 통보 8/3] |
 | D-03 | T1 기준 자료(공급처·버전·라이선스) | 버전·라이선스 명확한 자료만, 장애 시 발행 차단 | B+기획 | 05 §1.1 |
 | D-04 / C-14 `[P0]` | T2 사실성 보장 수단 | 승인 자료 기반+source_ref, 수단 없으면 `source_unverified` 차단 | B+기획 | 05 §2.1 |
 | C-15 `[P0]` | 외부 표절·유사도 + injection 코퍼스 | 05 §8.2·§8.3, 08 §8 예약 | B+기획 | 05·08 |
