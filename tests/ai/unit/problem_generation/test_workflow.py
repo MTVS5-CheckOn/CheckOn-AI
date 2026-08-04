@@ -640,12 +640,12 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
     assert not harness.generator_provider.requests
 
 
-def test_m2_workflow_opens_t1_only() -> None:
-    """T1(문법) 외 트랙은 게이트 완성 전까지 열지 않는다 — `05` §1.2.
+def test_workflow_rejects_requests_needing_unimplemented_material_source() -> None:
+    """자료 조달 방식이 '자료 없음'인 요청만 받는다 — `05` §1.0·§1.2.
 
-    트랙은 5종으로 확정됐지만(`05` §1) 그건 문서 확정이고, 코드 개방은
-    게이트를 T1에서 완성한 뒤다. `reading` 요청이 들어와도 LLM을 부르기 전에
-    막혀야 한다.
+    트랙 제한이 아니다. 게이트·프롬프트는 전 영역 공용이고, 막는 것은
+    "생성"·"저작물" 조달 노드가 아직 없다는 사실 하나다. 자료를 동반한 요청은
+    LLM을 부르기 전에 막혀야 한다.
     """
     harness = _WorkflowHarness(
         generator_steps=(),
@@ -657,7 +657,7 @@ def test_m2_workflow_opens_t1_only() -> None:
 
     with pytest.raises(
         ProblemWorkflowConfigurationError,
-        match="T1\\(문법\\)만 지원한다",
+        match="자료 조달 방식이",
     ):
         asyncio.run(harness.workflow.run(unsupported, harness.context()))
 

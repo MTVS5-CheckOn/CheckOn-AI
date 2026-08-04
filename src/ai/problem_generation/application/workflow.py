@@ -482,13 +482,15 @@ class ProblemGenerationWorkflow:
         execution_context: ExecutionContext,
     ) -> None:
         versions = execution_context.versions
-        # T1(문법 · area_tag=language · 지문 없음)만 받는다. 05 §1.2가 "게이트를
-        # T1에서 완성하고 그대로 물려받는다 — 미완성 상태로 다음 트랙을 열지 않는다"를
-        # 고정했다. 트랙이 5종으로 확정된 것(05 §1)은 문서 확정이며 코드 개방은
-        # 게이트 완성 후다. 어휘 문항은 T2 소속(area_tag=reading)이라 이 경로로 오지 않는다.
+        # **트랙 제한이 아니라 자료 조달 방식 제한이다**(05 §1.0·§1.2).
+        # 게이트·프롬프트는 전 영역 공용이고, 지금 구현된 조달 방식은 "자료 없음"뿐이다.
+        # "생성"(지문·담화·매체를 LLM이 만든다)과 "저작물"(풀에서 선택) 노드가 없어서
+        # 자료를 동반한 요청을 받을 수 없다. 생성 노드 1개가 붙으면 T2 본문·T4·T5가
+        # 함께 열린다 — 트랙마다 파이프라인을 다시 만드는 구조가 아니다.
         if request.area_tag is not AreaTag.LANGUAGE or request.passage is not None:
             raise ProblemWorkflowConfigurationError(
-                "M2 문제출제 워크플로는 T1(문법)만 지원한다 — T2~T5는 게이트 완성 후 개방"
+                "자료 조달 방식이 '자료 없음'인 요청만 처리할 수 있다 "
+                "— 생성·저작물 노드 미구현(05 §1.2)"
             )
         if execution_context.capability is not Capability.PROBLEM_GENERATION:
             raise ProblemWorkflowConfigurationError(
