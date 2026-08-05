@@ -117,6 +117,18 @@ infrastructure  application의 포트를 구현한다
 
 **테스트 경로 상수도 두 곳 바뀌었다** — `test_problem_generation_redaction.py`의 gateway 호출 화이트리스트와 `test_evidence_blind_isolation.py`의 blind 조립 지점(§7 참조).
 
+## 2.3 조립(bootstrap)
+
+`src/ai/problem_generation/bootstrap.py`는 세 계층 폴더 밖, capability 최상위에 둔다.
+
+| 구분 | 내용 |
+| --- | --- |
+| 책임 | 외부에서 받은 gateway·GraphContext·diagnosis·checkpointer·저장 포트·선택 설정을 `ProblemGenerator`·`BlindCrossSolver`·`ProblemGenerationWorkflow`로 조립한다 |
+| 호출부 책임 | 테스트 대역과 저장 어댑터의 구체 인스턴스를 만들고 bootstrap에 주입한다 |
+| 계층 밖인 이유 | 도메인 규칙·유스케이스·어댑터 구현이 아니라 의존성을 최종 연결하는 composition root이므로 세 계층 중 하나가 아니다 |
+
+bootstrap을 네 번째 계층으로 만들거나 `domain/`·`application/`·`infrastructure/` 안에 넣지 않는다. 프로덕션 코드는 테스트 대역을 알지 않으며, 테스트가 `FakeProvider`·`FakeGraphContextService`를 주입한다. `test_pg_layer_boundaries.py`는 세 계층 폴더 하위 `*.py`만 검사하므로 capability 최상위의 `bootstrap.py`는 자동으로 검사 범위 밖이다.
+
 ## 3. 새 코드를 어디에 넣는가
 
 | 질문 | 답 |
@@ -177,7 +189,7 @@ SKIPPED :83 · :112 · :125   "problem_generation/cross_solver.py 아직 없음"
 ## 8. 검증
 
 ```
-ruff · mypy 253 files · pytest 1529 passed / 실패 0 / skip 0
+ruff · mypy 253 files · pytest 1551 passed / 실패 0 / skip 0
 
 재배치 전   1500
 재배치 후   1511   (+11)  AST 계약 테스트가 새 파일을 스캔한 증가분
