@@ -140,3 +140,51 @@ def test_prediction_survives_correction(session: Session) -> None:
     assert row.topic == "grade"  # 예측 보존
     assert row.corrected_topic == "schedule"  # 정답 별도
     assert row.corrected_sentiment is None  # 안 바꾼 축은 NULL
+
+
+# ── 🔴 D-4 검토 보호 — 나중 예측이 검토된 예측을 덮지 않는다 (P2-c) ──
+
+
+def test_reviewed_row_is_not_overwritten_by_new_prediction() -> None:
+    """🔴 `reviewed_at`이 선 행은 재분류가 **예측을 덮지 않는다**.
+
+    덮으면 (예측·정답) 쌍이 어긋나 평가셋이 깨진다. 정상 경로에서는 캐시가 재분류를
+    막지만, 캐시를 우회하는 경로가 생겨도 이 규약이 마지막 방어선이다.
+    """
+    import asyncio
+    from datetime import UTC, datetime
+
+    from ai.db.repositories.inquiry_class_store import (
+        InMemoryInquiryClassStore,
+        InquiryClassRecord,
+    )
+
+    store = InMemoryInquiryClassStore()
+    first = InquiryClassRecord(
+        topic="grade",
+        sentiment="normal",
+        urgency="normal",
+        confidence_topic=Decimal("0.9"),
+        confidence_sentiment=Decimal("0.9"),
+        confidence_urgency=Decimal("0.9"),
+        reviewed_at=datetime.now(UTC),
+    )
+    asyncio.run(
+        store.insert_prediction(tenant_id="t1", inquiry_ref="iq_1", record=first)
+    )
+
+    later = first.model_copy(update={"topic": "schedule", "reviewed_at": None})
+    asyncio.run(
+        store.insert_prediction(tenant_id="t1", inquiry_ref="iq_1", record=later)
+    )
+
+    row = asyncio.run(store.get(tenant_id="t1", inquiry_ref="iq_1"))
+    assert row is not None
+    assert row.topic == "grade", "검토된 예측이 덮였다 — 평가셋 예측·정답 쌍이 깨진다"
+    assert row.reviewed_at is not None
+
+
+def test_unique_scope_is_declared() -> None:
+    """자연키 `(tenant_id, inquiry_ref)` — 캐시와 검토 보호의 전제(0006)."""
+    names = {c.name for c in _TABLE.constraints if c.name}
+    assert "uq_inquiry_class_scope" in names
