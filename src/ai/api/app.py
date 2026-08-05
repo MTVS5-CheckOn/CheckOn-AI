@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from ai.api.envelope import error_envelope
 from ai.api.routers.classify import router as classify_router
+from ai.api.routers.confirmations import router as confirmations_router
 from ai.api.routers.counsel import router as counsel_router
 from ai.api.routers.detect import detection_versions
 from ai.api.routers.detect import router as detect_router
@@ -33,6 +34,8 @@ def create_app() -> FastAPI:
     app.include_router(imports_router)  # ⚠ 양자 승인 파일 수정(라우터 등록) — detect 선례, B 리뷰
     app.include_router(counsel_router)  # ⚠ 양자 승인 파일 수정(라우터 등록) — 위와 동일, B 리뷰
     app.include_router(classify_router)  # ⚠ 양자 승인 파일 수정(라우터 등록) — 위와 동일, B 리뷰
+    # ⚠ 양자 승인 파일 수정(라우터 등록) — 위와 동일, B 리뷰
+    app.include_router(confirmations_router)
 
     @app.middleware("http")
     async def _echo_request_id(

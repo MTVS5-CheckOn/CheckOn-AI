@@ -89,13 +89,14 @@ def classify_versions() -> VersionSet:
     )
 
 
-def _unclassified(reason: str) -> ClassifyResult:
+def _unclassified(inquiry_ref: str, reason: str) -> ClassifyResult:
     """분류하지 못했다 — **정직한 미분류**다.
 
     `etc`를 확신 있는 판정처럼 내보내지 않는다. confidence 0.0 + `classified=False`가
     그 표현이고, BE는 이때 정렬을 적용하지 않는다(`error_codes` :213).
     """
     return ClassifyResult(
+        inquiry_ref=inquiry_ref,
         topic=InquiryTopic.ETC,
         sentiment=InquirySentiment.NORMAL,
         urgency=InquiryUrgency.NORMAL,
@@ -152,7 +153,7 @@ async def classify(
             # 이건 "가려지지 않은 게 남았다"는 신호라 그대로 보내면 안 된다.
             # 재시도해도 같은 프롬프트라 즉시 수렴한다(09 §1-10 ③ 재시도 대상 제외).
             logger.info("classify.tripwire_blocked inquiry_ref=%s", request.inquiry_ref)
-            return _unclassified(_FALLBACK_TRIPWIRE)
+            return _unclassified(request.inquiry_ref, _FALLBACK_TRIPWIRE)
         try:
             output = parse(result.text or "", ClassifyLlmOutput)
         except ParseFailed:
@@ -164,12 +165,13 @@ async def classify(
             )
             continue
         return ClassifyResult(
+            inquiry_ref=request.inquiry_ref,
             topic=output.topic,
             sentiment=output.sentiment,
             urgency=output.urgency,
             confidence=output.confidence,
         )
-    return _unclassified(_FALLBACK_PARSE)
+    return _unclassified(request.inquiry_ref, _FALLBACK_PARSE)
 
 
 __all__ = [
