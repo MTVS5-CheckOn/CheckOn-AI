@@ -85,16 +85,20 @@ def build_classify_provider(settings: ClassifySettings | None = None) -> LLMProv
 
 
 def build_classify_gateway(provider: LLMProvider | None = None) -> LlmGateway:
-    """분류 게이트웨이 — role은 **GENERATOR**다.
+    """분류 게이트웨이 — role은 **`ModelRole.CLASSIFIER`**다.
 
-    ⚠ **`ModelRole`에 `CLASSIFIER`가 없어서**다. 분류는 생성도 검증도 아니지만 게이트웨이가
-    role로 모델을 라우팅하므로 값이 필요하고, `contracts/llm.py`는 **양자 승인 파일**이라
-    값을 추가하지 않았다. ⇒ 지금은 **분류가 생성용 모델로 라우팅된다**(값싼 모델로 가는 게
-    맞다) — `CLASSIFIER` 신설을 제안한 상태다(99 D).
+    🔴 종전에 `GENERATOR`였고 "`ModelRole`에 `CLASSIFIER`가 없어서"라는 주석이 붙어 있었는데
+    **사실이 아니었다.** `contracts/llm.py:22`의 `ModelRole`은 6종(generator·verifier·
+    mapper·**classifier**·narrator·counselor)이고 `CLASSIFIER`("문의 분류·태깅 제안")는
+    초기 커밋부터 있다. 양자 승인 파일을 건드릴 필요조차 없었다 — 8/5 정정(99 ㊻ B-4).
+
+    role이 틀리면 조용히 두 가지가 깨진다: ① LLM_CALL.role이 실제 역할과 다르게 적재돼
+    역할별 원가 회계가 생성 비용에 섞인다 ② 역할별 모델 라우팅·전송 재시도를 분류에만
+    다르게 줄 수 없다(게이트웨이는 role로만 고른다).
     """
     return LlmGateway(
-        {ModelRole.GENERATOR: provider or build_classify_provider()},
-        transport_retry={ModelRole.GENERATOR: CLASSIFIER_TRANSPORT_RETRY},
+        {ModelRole.CLASSIFIER: provider or build_classify_provider()},
+        transport_retry={ModelRole.CLASSIFIER: CLASSIFIER_TRANSPORT_RETRY},
         trace_masking_hook=RedactionTripwireTraceHook(),
     )
 

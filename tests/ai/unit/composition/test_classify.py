@@ -60,9 +60,12 @@ class _SpyProvider:
 
 
 def _gateway(provider: _SpyProvider) -> LlmGateway:
+    # role은 registry.yaml(`classify.inquiry.v1`)의 `role: classifier`와 맞춰야 한다 —
+    # `classifier.py`가 `load_prompt_template(...).role`로 요청 role을 만들기 때문에
+    # 어긋나면 `gateway.complete`가 LookupError로 죽는다(8/5 role 정정 · 99 ㊻ B-4).
     return LlmGateway(
-        {ModelRole.GENERATOR: provider},
-        transport_retry={ModelRole.GENERATOR: 0},
+        {ModelRole.CLASSIFIER: provider},
+        transport_retry={ModelRole.CLASSIFIER: 0},
         trace_masking_hook=RedactionTripwireTraceHook(),
     )
 
