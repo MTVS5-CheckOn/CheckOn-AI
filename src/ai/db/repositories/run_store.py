@@ -49,7 +49,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai.contracts.execution import ExecutionContext, RunMetadata
 from ai.contracts.llm import CallOutcome
-from ai.db.models import AiRun, LlmCall
+from ai.db.models import AiRun, LlmCall, LlmPayload
+
+# 본문 포착·저장 직전 훅은 `llm_payload`가 소유한다 — 의존은 한 방향뿐이다
+# (run_store → llm_payload). 99 ㉝.
+from ai.db.repositories.llm_payload import (
+    CapturedBody,
+    CollectedPayload,
+    payload_orm,
+    payload_refusal_reason,
+    reset_captured,
+    take_captured,
+)
 
 # ⚠ `LlmCallRecord`는 `contracts/`가 아니라 게이트웨이가 소유한다(B 파일 — 무접촉).
 #   db가 상위 모듈 타입을 import하는 것은 `probe_stores.py`(→ import_mapping.probe.stores)·
@@ -83,10 +94,14 @@ class CollectedCall(NamedTuple):
     id를 삽입 시점이 아니라 수집 시점에 발급하는 것이 이 모듈의 핵심 결정이다. 실행
     도중에 `llm_call_id`를 참조해야 하는 소비자(`agent_step`·`inquiry_class`)가 있고,
     나중에 발급하면 그 간선을 이을 방법이 없다.
+
+    `payload`는 전송 본문이다(99 ㉝) — provider 래퍼가 포착한 것을 수집기가 **같은 id**로
+    짝지어 붙인다. 래퍼가 없는 경로(래핑 전 조립부·직결 mock)에서는 None이다.
     """
 
     id: uuid.UUID
     record: LlmCallRecord
+    payload: CollectedPayload | None = None
 
 
 def ai_run_orm(run: RunMetadata) -> AiRun:
@@ -181,9 +196,14 @@ class LlmCallCollector:
         #: 상한 초과로 버린 수 — 조용한 누락 금지. 스모크·테스트가 이 값을 읽는다.
         self.dropped_calls = 0
         self.evicted_runs = 0
+        #: 본문 상한 초과로 **본문만** 버린 수(메타는 남았다 · 99 ㉝ C-3).
+        self.dropped_payloads = 0
 
     def __call__(self, record: LlmCallRecord, context: ExecutionContext) -> None:
         execution_id = context.execution_id
+        # 🔴 슬롯은 **먼저** 비운다. 호출 상한으로 이 건을 버려도 포착된 본문이 남아 있으면
+        #    다음 호출이 남의 본문을 물려받는다(짝이 틀린 원장이 없는 원장보다 나쁘다).
+        captured = take_captured()
         bucket = self._pending.setdefault(execution_id, [])
         self._pending.move_to_end(execution_id)  # LRU — 활성 실행을 뒤로 보낸다
         if len(bucket) >= self._max_calls_per_run:
@@ -194,7 +214,10 @@ class LlmCallCollector:
                 self._max_calls_per_run,
             )
             return
-        bucket.append(CollectedCall(self._new_id(), record))
+        call_id = self._new_id()
+        bucket.append(
+            CollectedCall(call_id, record, self._payload(call_id, captured))
+        )
         while len(self._pending) > self._max_pending_runs:
             stale_id, stale_calls = self._pending.popitem(last=False)
             self.evicted_runs += 1
@@ -204,6 +227,25 @@ class LlmCallCollector:
                 stale_id,
                 len(stale_calls),
             )
+
+    def _payload(
+        self, call_id: uuid.UUID, captured: CapturedBody | None
+    ) -> CollectedPayload | None:
+        """포착된 본문을 이 호출의 id로 짝짓는다 — 없거나 상한 초과면 None."""
+        if captured is None:  # provider 래퍼가 없는 경로(직결 mock 등) — 정직한 부재
+            return None
+        if captured.oversized:
+            self.dropped_payloads += 1
+            logger.warning(
+                "LLM 본문 상한 초과 — 본문만 버린다(메타는 남는다) call_id=%s", call_id
+            )
+            return None
+        return CollectedPayload(
+            call_id=call_id,
+            request_masked=captured.request_masked,
+            response_masked=captured.response_masked,
+            response_uncertain=captured.response_uncertain,
+        )
 
     def take(self, execution_id: uuid.UUID) -> tuple[CollectedCall, ...]:
         """이 실행의 수집분을 **꺼낸다**(버킷 제거) — 영속 직전에 한 번 부른다."""
@@ -218,10 +260,12 @@ class LlmCallCollector:
         return last_success_id(self.peek(execution_id))
 
     def reset(self) -> None:
-        """테스트 격리용 — 버킷·카운터를 비운다."""
+        """테스트 격리용 — 버킷·카운터·인계 슬롯을 비운다."""
         self._pending.clear()
         self.dropped_calls = 0
         self.evicted_runs = 0
+        self.dropped_payloads = 0
+        reset_captured()
 
 
 @lru_cache
@@ -247,12 +291,43 @@ class RunStore(Protocol):
     ) -> None: ...
 
 
+def accepted_payloads(
+    calls: Sequence[CollectedCall],
+) -> tuple[tuple[CollectedPayload, ...], int]:
+    """**저장 직전 훅**(masking_redaction §3) — 통과분과 거부 건수.
+
+    거부는 구조화 로그로 남기고 요청은 성공시킨다(fail-open · ㊻과 같은 철학).
+    ⚠ §3 표의 "`AI_RUN` 오류 기록"은 문자 그대로 못 한다 — `AI_RUN`에 오류 컬럼이 없고
+    `db/models.py`는 양자 승인 파일이다. 로그 + 카운터로 남기고 컬럼 신설은 99에 등재했다.
+    """
+    accepted: list[CollectedPayload] = []
+    refused = 0
+    for call in calls:
+        if call.payload is None:
+            continue
+        reason = payload_refusal_reason(call.payload)
+        if reason is not None:
+            refused += 1
+            logger.warning(
+                "LLM_PAYLOAD 저장 거부 call_id=%s reason=%s — 호출은 성공 처리",
+                call.id,
+                reason,
+            )
+            continue
+        accepted.append(call.payload)
+    return tuple(accepted), refused
+
+
 class InMemoryRunStore:
     """프로세스 인메모리 — CI 기본. 재시작 소실·멀티워커 비공유."""
 
     def __init__(self, clock: Callable[[], datetime] = system_utc_now) -> None:
         self.runs: dict[uuid.UUID, RunMetadata] = {}
         self.calls: list[LlmCall] = []
+        #: call_id → LLM_PAYLOAD 행. PG의 1:1 PK/FK 관계를 dict로 흉내낸다.
+        self.payloads: dict[uuid.UUID, LlmPayload] = {}
+        #: 저장 직전 훅이 거부한 수 — 조용한 누락 금지.
+        self.refused_payloads = 0
         self._clock = clock
 
     async def record_run(
@@ -269,14 +344,26 @@ class InMemoryRunStore:
             llm_call_orm(call, run_id=execution_id, created_at=created_at)
             for call in calls
         )
+        payloads, refused = accepted_payloads(calls)
+        self.refused_payloads += refused
+        # LLM_CALL을 먼저 넣은 뒤 본문을 붙인다 — PG의 FK 순서와 같은 순서다.
+        self.payloads.update(
+            {payload.call_id: payload_orm(payload) for payload in payloads}
+        )
 
     def calls_of(self, execution_id: uuid.UUID) -> list[LlmCall]:
         """`execution_id` → LLM_CALL 역추적 — 불변식 8의 재현 경로다."""
         return [call for call in self.calls if call.run_id == execution_id]
 
+    def payload_of(self, call_id: uuid.UUID) -> LlmPayload | None:
+        """`call_id` → 전송 본문 — 재현 축의 마지막 칸이다(99 ㉝)."""
+        return self.payloads.get(call_id)
+
     def clear(self) -> None:
         self.runs.clear()
         self.calls.clear()
+        self.payloads.clear()
+        self.refused_payloads = 0
 
 
 class PgRunStore:
@@ -297,6 +384,8 @@ class PgRunStore:
     ) -> None:
         self._sessionmaker = sessionmaker
         self._clock = clock
+        #: 저장 직전 훅이 거부한 수 — 조용한 누락 금지.
+        self.refused_payloads = 0
 
     async def record_run(
         self, run: RunMetadata, calls: Sequence[CollectedCall]
@@ -317,6 +406,8 @@ class PgRunStore:
         calls: Sequence[CollectedCall],
     ) -> None:
         created_at = self._clock()
+        payloads, refused = accepted_payloads(calls)
+        self.refused_payloads += refused
         try:
             async with self._sessionmaker() as session, session.begin():
                 if run is not None:
@@ -325,12 +416,20 @@ class PgRunStore:
                     session.add(
                         llm_call_orm(call, run_id=execution_id, created_at=created_at)
                     )
+                # ② 🔴 본문은 **LLM_CALL 뒤**다 — `llm_payload.call_id`가 `llm_call.id`를
+                #    PK 겸 FK로 참조하므로 순서가 뒤집히면 FK 위반이다(순서가 계약이다).
+                #    한 트랜잭션이라 flush 순서는 `session.add` 순서가 아니라 의존 관계로
+                #    정해지지만, 삽입 순서를 코드로도 못 박아 의도를 남긴다.
+                for payload in payloads:
+                    session.add(payload_orm(payload))
         except SQLAlchemyError:
             logger.warning(
-                "실행 원장 적재 실패 — 요청은 성공 처리 execution_id=%s ai_run=%s calls=%d",
+                "실행 원장 적재 실패 — 요청은 성공 처리 execution_id=%s ai_run=%s "
+                "calls=%d payloads=%d",
                 execution_id,
                 run is not None,
                 len(calls),
+                len(payloads),
                 exc_info=True,
             )
 
@@ -339,6 +438,7 @@ __all__ = [
     "MAX_CALLS_PER_RUN",
     "MAX_PENDING_RUNS",
     "UNKNOWN_MODEL",
+    "accepted_payloads",
     "CollectedCall",
     "InMemoryRunStore",
     "LlmCallCollector",
