@@ -246,3 +246,58 @@ def test_blocked_turn_carries_reason_without_message() -> None:
     assert dumped["applied"] is False
     assert dumped["blocked_reason"] == "tone_violation"
     assert "message" not in dumped
+
+
+# ── 🔴 template_only — 정상 상태이지 우회로가 아니다 (03 §C 상황 2) ──
+
+
+def test_template_only_needs_no_citations() -> None:
+    """🔴 데이터 무관 문의는 근거 0건으로 **구성된다** — 정상 상태다.
+
+    ⚠ **우회로가 아니다.** `generated`의 근거 강제는 그대로이고(아래 회귀 테스트),
+    template_only는 **별도 상태**라 그 검증을 애초에 타지 않는다 —
+    "빈 근거의 '정상 통과'가 아니라 구분된 상태"(`part_a/03` §C 상황 2).
+    """
+    result = CounselDraftResult(
+        draft_status=WireDraftStatus.TEMPLATE_ONLY,
+        text=None,
+        citations=(),
+        status_reason="no_data_topic",
+        labels_applied=("narrative",),
+        generated_at=datetime(2026, 8, 5, tzinfo=UTC),
+    )
+    assert result.draft_status is WireDraftStatus.TEMPLATE_ONLY
+    assert result.citations == ()
+
+
+def test_generated_still_requires_citations() -> None:
+    """회귀 방지 — template_only 승격이 `generated`의 근거 강제를 느슨하게 하지 않았다."""
+    with pytest.raises(ValidationError):
+        CounselDraftResult(
+            draft_status=WireDraftStatus.GENERATED,
+            text="근거 없는 문장",
+            citations=(),
+            labels_applied=(),
+            generated_at=datetime(2026, 8, 5, tzinfo=UTC),
+        )
+
+
+def test_template_only_carries_no_text() -> None:
+    """표시 문구는 AI가 주지 않는다(error_codes §2.7 규칙 ③) — `text`는 null이다."""
+    result = CounselDraftResult(
+        draft_status=WireDraftStatus.TEMPLATE_ONLY,
+        status_reason="no_data_topic",
+        labels_applied=(),
+        generated_at=datetime(2026, 8, 5, tzinfo=UTC),
+    )
+    assert result.text is None
+    assert "message" not in result.model_dump()
+
+
+def test_internal_template_only_maps_to_its_own_wire_value() -> None:
+    """🔴 잠복 결함 회귀 방지 — 종전엔 `generated`로 강등돼 불변식 2 검증에 걸렸다.
+
+    생성 경로가 없어(죽은 값) 안 터지고 있었을 뿐이다.
+    """
+    wire, _reason = wire_status_for(DraftStatus.TEMPLATE_ONLY, None)
+    assert wire is WireDraftStatus.TEMPLATE_ONLY

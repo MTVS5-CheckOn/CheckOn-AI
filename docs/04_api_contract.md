@@ -557,7 +557,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
     "job_id": "cj_1029",
     "status": "succeeded",                  // 공통 phase 7종(error_codes §2.5)
     "result": {
-      "draft_status": "generated",          // generated | rejected_insufficient | llm_failed | gate_exhausted
+      "draft_status": "generated",          // generated | template_only | rejected_insufficient | llm_failed | gate_exhausted
       "text": "어머님, 먼저 세심하게…",       // 게이트 통과본만 — 미통과는 text 없음 + 사유
       "citations": [                        // **항상 1건 이상** — 근거 없는 초안은 존재 불가(불변식 2)
         { "cite_id": "L1", "record_id": "le_2041", "summary": "6월 지문 42개·312문항" }
@@ -586,6 +586,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 - 🔴 **차단 문구는 AI가 주지 않는다(8/5).** `blocked_reason` 8종에 대한 표시 문구는 `part_a/06_refine_policy.md` §4 표가 원본이며 **BE가 매핑**한다 — 초안 `draft_status`·classify 폴백과 같은 규약이다(`error_codes` §2.1 "백엔드 표시 문구" 열 · §2.7 규칙 3). ⚠ **종전 응답의 `message` 필드는 제거됐다.**
 - **refine 대상 키는 `job_id`다.** 문의 1건 = 잡 1개 = 초안 1개(pack N=1)라 별도 `draft_id`를 노출하지 않는다 — BE는 **Kafka 완료 통지가 싣는 `job_id`를 그대로** 쓰면 되고 별도 조회가 필요 없다. FE 계약 §3-③은 `inquiry_id` 기준이므로 **BE가 `inquiry_id → job_id` 매핑을 중계**한다(AI는 원본 문의에 접근하지 않는다).
   > 🔴 **정정(8/5).** 종전 표기는 `draft_id`였는데 그 값이 **어떤 응답에도 실리지 않아** BE가 refine을 호출할 계약 경로가 없었다(`CounselDraftJobView`는 `job_id`·`status`·`result` 3필드뿐 — 호출하면 404 확정). 스키마에 필드를 추가하는 대신 **키를 `job_id`로 통일**했다. 응답 스키마 무변경.
+- **`template_only`는 정상이다.** `inquiry.topic=schedule`처럼 학습 데이터가 필요 없는 문의는 **근거 유무와 무관하게** 이 상태로 수렴한다(근거 선검사보다 **앞**에서 갈린다 — 시간표 문의 + 신규생이라고 "아직 데이터를 모으는 중이에요"가 나가면 안 된다). `text`는 **null**, `citations`는 **빈 배열**이다 — 안내 문구는 **BE 소유**다(`error_codes` §2.1 표시 문구 열 · §2.7 규칙 ③). **다듬기로 되돌릴 수 없고**(refine 대상 미등록 → 404), 오분류였다면 아래 정정 경로(confirmations + 새 키 재요청)를 탄다.
 - **문의 유형(`topic`)을 정정하면 초안을 재요청한다 — 되돌리기가 계약 의무다.** `inquiry.topic`은 분류(ⓑ)의 판정값이고, 그 값이 `template_only`처럼 **초안 종류를 가른다**(§3.5). 분류가 초안을 가르는 것이 허용되는 전제가 **강사가 되돌릴 수 있다**는 것이므로(`part_a/01` §4-ⓑ), 오분류 시 경로를 계약으로 보장한다.
   - 강사가 인박스에서 문의 유형을 정정한다 → BE가 **새 `Idempotency-Key`**로 `POST /v1/counsel/drafts`를 정정된 `topic`으로 다시 호출한다 → 새 초안이 생성된다.
   - **재생성 전용 API는 없다**(이 절 서두). 같은 키 + 다른 바디는 `409 IDEMPOTENCY_CONFLICT`이므로 **반드시 새 키**여야 한다.

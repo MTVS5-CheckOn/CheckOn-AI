@@ -163,14 +163,24 @@ class CounselDraftRequest(BaseModel):
 
 
 class WireDraftStatus(StrEnum):
-    """계약 §4-③ `result.draft_status` 4종 — **와이어 어휘**다.
+    """계약 §4-③ `result.draft_status` **5종** — **와이어 어휘**다.
 
     내부 `composition.DraftStatus`와 **일부러 다르다**(99 D ㊱): 내부는 판정만 담고
     `llm_failed`·`gate_exhausted`는 사유라서 `failed`의 `status_reason`으로 산다
     (error_codes §2.1). 변환은 `wire_status_for` 한 곳이 한다.
+
+    🔴 **`template_only`는 데이터 무관 문의(시간표 등)라 학습 데이터를 쓰지 않은 정상
+    상태다**(error_codes §2.1 · `part_a/03` §C 상황 2). 근거 0건이므로 `generated`로
+    강등하면 **불변식 2 검증**(`CounselDraftResult._generated_must_be_grounded`의
+    `citations` ≥1)에 걸린다 — 그래서 **별도 값이어야 한다.**
+
+    ⚠ 종전에는 이 값이 없어 내부 `TEMPLATE_ONLY`를 `GENERATED`로 강등했는데, 그 조합은
+    **생성되는 순간 500**이었다. 지금까지 안 터진 이유는 `TEMPLATE_ONLY`를 **만드는 경로가
+    없었기** 때문이다(죽은 값). 라우터 분기(8/x)와 함께 해소했다.
     """
 
     GENERATED = "generated"
+    TEMPLATE_ONLY = "template_only"
     REJECTED_INSUFFICIENT = "rejected_insufficient"
     LLM_FAILED = "llm_failed"
     GATE_EXHAUSTED = "gate_exhausted"
@@ -180,7 +190,7 @@ class WireDraftStatus(StrEnum):
 #: `FAILED`만 사유에 따라 갈라지므로 여기서는 기본값을 두고 `wire_status_for`가 세분한다.
 _WIRE_BY_STATUS: Final[dict[DraftStatus, WireDraftStatus]] = {
     DraftStatus.GENERATED: WireDraftStatus.GENERATED,
-    DraftStatus.TEMPLATE_ONLY: WireDraftStatus.GENERATED,
+    DraftStatus.TEMPLATE_ONLY: WireDraftStatus.TEMPLATE_ONLY,
     DraftStatus.REJECTED_INSUFFICIENT: WireDraftStatus.REJECTED_INSUFFICIENT,
     DraftStatus.FAILED: WireDraftStatus.GATE_EXHAUSTED,
 }
