@@ -20,6 +20,7 @@ _REQUEST: dict[str, Any] = {
 }
 
 _RESULT_FIELDS = {
+    "inquiry_ref",
     "topic",
     "sentiment",
     "urgency",

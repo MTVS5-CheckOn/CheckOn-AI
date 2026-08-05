@@ -55,6 +55,12 @@ class ClassifyResult(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    inquiry_ref: NonEmptyStr
+    """🔴 요청값 **에코**다 — BE가 아는 값이지만 응답만 보고 다음 호출을 구성할 수 있어야
+    계약이 폐쇄 회로가 된다(P0의 교훈: `CounselDraftJobView`에 `draft_id`가 없어 refine을
+    호출할 수 없었다). 확정 회신(`04` §3.3)의 `suggestion_id`가 **이 값**이다.
+    """
+
     topic: InquiryTopic
     sentiment: InquirySentiment
     urgency: InquiryUrgency

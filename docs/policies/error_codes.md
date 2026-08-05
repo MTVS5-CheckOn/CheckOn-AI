@@ -219,6 +219,14 @@ DomainException (base)
 | `tripwire_blocked` | 전송 직전 트립와이어가 프롬프트에서 **잔여 흔적**을 발견했다 — "안 가려진 게 남았다"는 신호다 | **정렬 미적용 · 시간순 표시**(위 행과 동일) |
 | `parse_exhausted` | LLM 출력이 enum 강제 스키마를 못 채워 재시도 상한(2회)을 소진했다 | 〃 |
 
+**`POST /v1/confirmations` — 확정 회신(8/5 · P2-c).**
+
+| 상황 | 코드 | 사유 | 뜻 |
+| --- | --- | --- | --- |
+| `kind`가 `tag`·`label`·`draft_edit` | **400** | `kind_not_implemented` | 제안 **생성기가 없다** — 확정할 대상이 존재하지 않는다. 받아서 조용히 버리면 BE가 "저장됐다"고 오해하므로 정직하게 거절한다 |
+| `kind=classification` + `action=rejected` | **400** | `action_not_supported` | 3축은 값이 반드시 있어야 하는 축이라 "거절"이 정의되지 않는다 |
+| 대상 분류 없음 | **404** | — | 그 `inquiry_ref`로 분류한 적이 없거나, **폴백이라 적재되지 않았다**(`classified=false`는 행을 만들지 않는다) |
+
 ⚠ **`redact()`의 `uncertain`은 폴백 사유가 아니다**(8/5 정정) — `⟪확인필요⟫`가 남아도 **가려진 텍스트로 분류를 계속한다**. `masking_redaction`:40이 "**소비자가** fail-closed 판단"이라 규정했고, 분류는 산출물을 만들지 않고 판정만 하므로 이름이 필요 없다. ⚠ **초안 생성 경로는 그대로 중단한다** — 거긴 학부모에게 나갈 문장을 만든다.
 
 ⚠ **LLM 장애는 폴백이 아니다** — `LlmUnavailable`·`LlmTimeout`은 **503**으로 올라간다(§4). "안 하기로 판단한 것"과 "못 한 것"을 같은 상태로 뭉개지 않는다.
