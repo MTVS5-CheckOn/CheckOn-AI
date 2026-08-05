@@ -410,8 +410,8 @@ erDiagram
   }
   LLM_PAYLOAD {
     uuid call_id PK "FK llm_call"
-    text request_masked "redaction 통과본만"
-    text response_raw
+    text request_masked "redaction 통과본만 · 전송분 그대로(변형 금지)"
+    text response_raw "이름은 raw지만 마스킹 통과본 — TTL 30일"
   }
   STYLE_PROFILE {
     varchar tenant_id PK
@@ -482,5 +482,14 @@ erDiagram
 **증분 반영 메모:** ① `DRAFT.agent_run_id` · `MAPPING_SPEC.probe_agent_run` 컬럼 추가(에이전트 산출 연결, 기존 경로는 null) ② `LLM_CALL.role`에 `classifier` 추가(ⓑⓒⓓ) · **(v2.1) `narrator` 추가**(브리핑 문장화 전용 — 09 §1-10 · varchar라 마이그레이션 없음) · **(v2.2) `counselor` 추가**(상담 초안 문장화 전용 — B 동의 7/30 · varchar라 마이그레이션 없음) ③ `SOURCE_PROFILE.sheets`에 양식 시그니처 포함(재수입 매칭 키) ④ 양자 승인 대상은 기존과 동일(EVIDENCE_ITEM 구조·LLM_CALL 지표 필드) + `TAG_SUGGESTION`의 area/type enum은 B의 약점 지도와 공용 어휘이므로 **[A+B]** ⑤ **(v2.1) `DRAFT_REVISION` 추가**(핑퐁 턴 이력) · 사용량 미터링은 **일일 턴제**로 확정 — `llm_usage`를 `(tenant_id, date)` 그레인으로 변경: `usage_daily(tenant_id, date PK, interactive_turns int, batch_jobs jsonb)`. 인터랙티브 턴만 일일 한도 대상, 일괄 작업(상담팩·리포트)은 월 단위 작업 카운트(게이팅 소유는 백엔드 Billing — AI는 미터링 리포트만).
 
 **(D-② 확정 통보 · 7/22)** `IDEMPOTENCY_RECORD` 신설 — 멱등 저장소의 프로세스 인메모리(재시작 소실·멀티워커 비공유, 99 ⑨)를 영속화한다. **유니크 제약 `(tenant_id, endpoint, idempotency_key)`** — 동시 삽입 경합은 이 제약으로 원자성 보장(B 크로스체킹 스코프 제안 수용). 같은 키 + 같은 `snapshot_hash` = 저장된 `response_body` 재반환 · 다른 hash = 409. **TTL 30일**(`alert_context` 창과 정합 — 새 숫자 발명 없이 기존 시간 창 재사용). 재현·감사는 `AI_RUN`이 담당하므로 응답 본문을 무기한 보관하지 않는다.
+
+**(㉝ 해소 통보 · 8/6)** `LLM_PAYLOAD` 적재 배선 — 종전에는 정의·DDL만 있고 **기록 주체가 `src/`에 0곳**이었다(불변식 8 공회전: 같은 `prompt_id@version`이 여러 다른 문면을 보내도 사후 구분 불가). ㊻(#92)의 **수집 후 영속** 경로에 얹었고 **스키마 변경·마이그레이션 0**이다.
+
+- **기록 시점** — `LLMProvider`를 감싸는 조립부 래퍼(`capture_payloads`)가 전송된 요청·받은 응답을 포착한다. `llm/gateway.py` 무접촉.
+- **삽입 순서가 계약이다** — `llm_payload.call_id`가 `llm_call.id`를 **PK 겸 FK**로 참조하므로 `LLM_CALL` → `LLM_PAYLOAD` 순서다. 한 트랜잭션에서 넣는다.
+- **`request_masked`는 전송분 그대로** 넣고 저장 직전 검사는 검증으로만 쓴다 — `redact()`가 멱등이 아니어서(2차가 `학생의`를 인명으로 잡는다) 변형하면 보낸 적 없는 문면이 남는다. **`response_raw`는 이름과 달리 마스킹 통과본**이다(환각 실명 대비 · `masking_redaction` §3 신설 행). 컬럼명은 양자 파일이라 바꾸지 않았다.
+- **본문 길이 상한** — `llm_payload_max_chars`(기본 32,768자, Settings). 초과분은 **버린다(절단 금지)** — 잘린 프롬프트는 "재현 가능해 보이지만 아닌" 기록이라 조용히 틀린다. 본문만 버리고 호출 메타는 남긴다.
+- 🔴 **TTL 30일** — `IDEMPOTENCY_RECORD`·`alert_context` 창을 그대로 쓴다(**새 숫자 발명 없음**). `LLM_PAYLOAD`에 시각 컬럼이 없으므로 **`llm_call.created_at` 조인**으로 판정한다(컬럼 추가 없음 — 양자). 본문은 재현·감사 보조이고 원장 정본은 `AI_RUN`·`LLM_CALL`이라 무기한 보관하지 않는다.
+- ⚠ **정리 배치는 미구현이다** — 규약만 섰다. 운영 축이며 99에 등재했다.
 
 **(B-1 실행 계약 확정 · 7/27)** `AGENT_RUN`은 `contracts/agents.py`의 `WorkerJob`을 영속 투영한다. 큐 선택 인덱스는 tenant·worker·phase·priority·queued_at·id, lease 회수 인덱스는 tenant·worker·phase·lease_expires_at 순이다. `dispatch_attempt`·`lease_generation`은 lease마다 증가하고, 장애 예산은 별도 `recovery_count`만 소비하므로 정상 수동 pause/resume가 복구 상한을 깎지 않는다.

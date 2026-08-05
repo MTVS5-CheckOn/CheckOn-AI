@@ -45,6 +45,7 @@ from ai.composition.counsel.stores import (
 )
 from ai.composition.counsel.worker import CounselPackRunner
 from ai.contracts.llm import LLMProvider, ModelRole
+from ai.db.repositories.llm_payload import capture_payloads
 from ai.db.repositories.run_store import default_llm_call_collector
 from ai.db.settings import DbSettings, get_db_settings
 from ai.llm.gateway import LlmCallRecorder, LlmGateway
@@ -73,7 +74,8 @@ def build_counsel_gateway(
     수집분은 워커가 `record_run`으로 영속한다(`composition/counsel/worker.py` ④′).
     """
     return LlmGateway(
-        {ModelRole.COUNSELOR: provider},
+        # 전송 본문 포착(99 ㉝) — `build_brief_gateway`와 같은 규약이다.
+        {ModelRole.COUNSELOR: capture_payloads(provider)},
         recorder=recorder or default_llm_call_collector(),
         transport_retry={ModelRole.COUNSELOR: COUNSELOR_TRANSPORT_RETRY},
         trace_masking_hook=RedactionTripwireTraceHook(),

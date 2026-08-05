@@ -833,6 +833,10 @@ class LlmPayload(Base):
         Uuid, ForeignKey("llm_call.id"), primary_key=True
     )
     request_masked: Mapped[str] = mapped_column(Text)  # redaction 통과본만
+    # ⚠ **이름은 `raw`지만 저장 규약은 마스킹 통과본이다**(8/6 · 99 ㉝ · masking_redaction §3).
+    #   응답은 어떤 게이트도 안 거치므로 환각으로 실명을 만들 수 있어 저장 전 redact한다.
+    #   컬럼명을 바꾸지 않은 이유: 이 파일은 양자 승인 대상이고 개명은 마이그레이션을 부른다.
+    #   TTL 30일 — `llm_call.created_at` 조인으로 판정한다(이 테이블엔 시각 컬럼이 없다).
     response_raw: Mapped[str] = mapped_column(Text)
 
 
