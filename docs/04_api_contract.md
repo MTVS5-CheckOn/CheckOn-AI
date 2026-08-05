@@ -272,6 +272,35 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 
 kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 프로필 재료 — 예시는 `05_request_json.md` §3 참조). **확정 전 제안은 어디에도 반영되지 않는다**(태그는 learning_event에, 라벨은 초안 생성에 미사용) — 이 보장은 백엔드 몫.
 
+#### (8/5 · P2-c) 구현 상태와 규약
+
+🔴 **`suggestion_id`는 kind마다 다른 네임스페이스의 키다** — 단일 UUID 공간이 아니다.
+
+| `kind` | `suggestion_id` | v1 구현 |
+| --- | --- | --- |
+| `tag` | `TAG_SUGGESTION.id` | ❌ **400** `kind_not_implemented` |
+| `label` | `LABEL_SUGGESTION.id` | ❌ **400** `kind_not_implemented` |
+| **`classification`** | **`inquiry_ref`**(§3.5 응답이 에코한다) | ✅ **구현** |
+| `draft_edit` | `job_id`(§3.9) | ❌ **400** `kind_not_implemented` |
+
+**미지원 3종을 400으로 거절하는 이유** — 제안 **생성기가 없다**(`TAG_SUGGESTION`·`LABEL_SUGGESTION` 적재 0건 · `label_suggestions`는 v1 상수 `[]`). 확정할 대상이 없는데 받아서 조용히 버리면 BE가 "저장됐다"고 오해한다.
+
+**`classification`이 `inquiry_ref`인 이유** — 문의 1건 = 분류 1건이고 **BE가 이미 갖고 있는 값**이라 왕복이 없다. 응답에 새 UUID를 노출하면 BE가 관리할 식별자만 는다(§3.9 refine이 `job_id`로 통일된 것과 같은 판단).
+
+**`corrected_value`(classification)** — 3축 **전부 nullable**이다. 축이 독립이므로 **부분 정정**이 성립한다(topic만 고치고 나머지는 그대로).
+
+```json
+{ "kind": "classification", "suggestion_id": "iq_204", "action": "corrected",
+  "corrected_value": { "topic": "grade" } }   // sentiment·urgency는 안 바꿈
+```
+
+🔴 **BE가 알아야 할 규약 2건**
+
+1. **`rejected`는 `classification`에서 400이다**(`action_not_supported`). 3축은 값이 반드시 있어야 하는 축이라 "거절"이 정의되지 않는다 — tag·label은 "이 제안을 안 쓴다"가 성립하지만 분류는 아니다.
+2. **예측과 같은 값을 보내도 정정으로 세지 않는다.** 저장 층이 예측과 대조해 **다른 축만** `corrected_*`에 남긴다(P2-b 기록 규약 ①). 강사가 드롭다운을 열어 같은 값을 다시 골라도 **재분류율이 부풀려지지 않게** 하는 장치다. `reviewed_at`은 어느 경우든 기록된다.
+
+**404** — 대상 분류가 없을 때다(폴백이라 적재 안 됐거나 분류를 부른 적이 없다). **헤더**: `X-Tenant-Id`·`X-Request-Id` 필수, **`Idempotency-Key` 없음**(자연키 갱신이라 재시도가 안전하다).
+
 ---
 
 ### 3.4 `POST /v1/drafts` — 초안 생성 (202)
@@ -371,6 +400,11 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 | `urgency` | `immediate` \| `normal` | 정렬 |
 
 > 🔴 **(8/5) `complaint`가 `topic`에서 `sentiment`로 이동했다.** 상세는 `part_a/01` §4-ⓑ 참조. **BE는 `inquiry.topic`에 `complaint`를 보내면 400이다.**
+
+**응답에 `inquiry_ref`를 에코한다**(8/5) — 요청값 그대로다. BE가 아는 값이지만 **응답만 보고 다음 호출을 구성할 수 있어야** 계약이 폐쇄 회로가 된다. 확정 회신(§3.3)의 `suggestion_id`가 **이 값**이다.
+
+🔴 **캐시 규약(8/5 · P2-c)** — 같은 `(tenant_id, inquiry_ref)` 재호출은 **저장된 예측을 그대로 돌려주고 LLM을 부르지 않는다**(§1의 "분류·태깅(캐시)" 규정 · 태깅 §3.6 선례와 동형). 부수 효과로 **재시도가 멱등 키 없이 안전**해지고 같은 문의엔 항상 같은 답이 나간다.
+⚠ **`classified=false`는 캐시되지 않는다** — 적재 자체를 안 하므로(평가셋 오염 방지) 재호출하면 **다시 시도**한다. redaction·파싱 실패는 일시적일 수 있다.
 
 **헤더 규약** — `X-Tenant-Id` · `X-Request-Id` **필수**, **`Idempotency-Key` 없음**(부작용 없는 동기 호출이고 멱등 저장이 없다 — 같은 본문은 결정론 설정으로 같은 결과다).
 
