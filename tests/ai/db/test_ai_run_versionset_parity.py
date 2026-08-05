@@ -5,7 +5,7 @@ AI_RUN의 버전 컬럼 집합과 contracts/execution.VersionSet의 필드 집�
 한쪽만 버전 키가 늘거나 줄면 과거 실행을 재현할 수 없다. 이 검사가 그 드리프트를 막는다.
 
 RunMetadata(AI_RUN 적재 DTO)도 VersionSet 필드를 전부 품는지 함께 본다 — 적재 매핑
-(_ai_run_orm)이 조용히 한 컬럼을 빠뜨리지 못하게.
+(`db/repositories/run_store.ai_run_orm`)이 조용히 한 컬럼을 빠뜨리지 못하게.
 """
 
 from __future__ import annotations

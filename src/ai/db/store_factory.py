@@ -29,6 +29,11 @@ from ai.db.repositories.probe_stores import (
     PgProfileStore,
     PgSpecResultStore,
 )
+from ai.db.repositories.run_store import (
+    InMemoryRunStore,
+    PgRunStore,
+    RunStore,
+)
 from ai.db.session import get_sessionmaker
 from ai.db.settings import DbSettings, get_db_settings
 from ai.import_mapping.probe.stores import (
@@ -51,6 +56,18 @@ def build_inquiry_class_store(
     if settings.store_backend == _PG:
         return PgInquiryClassStore(sessionmaker=get_sessionmaker())
     return InMemoryInquiryClassStore()
+
+
+def build_run_store(settings: DbSettings | None = None) -> RunStore:
+    """실행 원장(AI_RUN·LLM_CALL) 저장소 — 적재 실패는 **fail-open**(run_store.py 참조).
+
+    감지 원장(`build_detection_store`, fail-closed)과 정책이 반대인 이유는 소비자가 다르기
+    때문이다 — 이쪽은 회계·추적 관측이고, 실패로 요청을 되돌리면 관측이 기능을 이긴다.
+    """
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgRunStore(sessionmaker=get_sessionmaker())
+    return InMemoryRunStore()
 
 
 def build_agent_job_store(settings: DbSettings | None = None) -> JobStore:

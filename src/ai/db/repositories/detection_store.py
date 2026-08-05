@@ -35,9 +35,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai.contracts.detection import LearningEvent, Signal
 from ai.contracts.execution import RunMetadata
-from ai.db.models import AiRun, FeatureWeek
+from ai.db.models import FeatureWeek
 from ai.db.models import Signal as SignalRow
 from ai.db.repositories.idempotency import system_utc_now
+from ai.db.repositories.run_store import ai_run_orm  # AI_RUN 매퍼 정본(불변식 8)
 from ai.runtime.errors import LedgerWriteFailed
 
 logger = logging.getLogger(__name__)
@@ -195,7 +196,7 @@ class PgDetectionStore:
         try:
             async with self._sessionmaker() as session:
                 async with session.begin():
-                    session.add(_ai_run_orm(run))
+                    session.add(ai_run_orm(run))
                     for signal in ledger.signals:
                         session.add(
                             _signal_orm(signal, run, self._new_id(), self._clock())
@@ -255,31 +256,6 @@ def _feature_week_row_from_orm(orm: FeatureWeek) -> FeatureWeekRow:
         segment=orm.segment,
         metrics=orm.metrics,
         feature_version=orm.feature_version,
-    )
-
-
-def _ai_run_orm(run: RunMetadata) -> AiRun:
-    """RunMetadata → AI_RUN 행. 버전 세트 10종을 1:1로 옮긴다(대조 테스트가 강제)."""
-    gen = run.generation_params
-    return AiRun(
-        execution_id=run.execution_id,
-        tenant_id=run.tenant_id,
-        capability=run.capability.value,
-        pipeline_version=run.pipeline_version,
-        engine_version=run.engine_version,
-        threshold_version=run.threshold_version,
-        prompt_version=run.prompt_version,
-        schema_version=run.schema_version,
-        contract_version=run.contract_version,
-        graph_version=run.graph_version,
-        taxonomy_version=run.taxonomy_version,
-        verify_config_version=run.verify_config_version,
-        difficulty_calib_version=run.difficulty_calib_version,
-        model_provider=run.model_provider,
-        model_name=run.model_name,
-        generation_params=gen.model_dump(mode="json") if gen is not None else None,
-        input_snapshot_hash=run.input_snapshot_hash,
-        created_at=run.created_at,
     )
 
 
