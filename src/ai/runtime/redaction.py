@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -60,6 +60,7 @@ class _Config:
     honorific_type: str
     honorific: tuple[re.Pattern[str], ...]
     honorific_words: frozenset[str]
+    honorific_particles: tuple[str, ...]
     phone: tuple[re.Pattern[str], ...]
     korean_digits: dict[str, str]
     bypass_candidate: re.Pattern[str]
@@ -92,15 +93,39 @@ def _dedupe_overlaps(matches: list[re.Match[str]]) -> list[re.Match[str]]:
     return kept
 
 
-def _expand_surnames(patterns: Iterable[object], surnames: Iterable[object]) -> list[str]:
-    """`$surnames` 자리에 성씨 문자 클래스를 끼워 넣는다 — **조립만** 한다.
+def _expand_placeholders(
+    patterns: Iterable[object], substitutions: Mapping[str, str]
+) -> list[str]:
+    """`$name` 자리에 목록을 끼워 넣는다 — **조립만** 한다.
 
     정규식 자체는 yaml이 원본이고(§6 어휘·패턴 하드코딩 금지) 코드는 목록을 문자
-    클래스로 잇는 일만 한다. 성씨를 유한 집합으로 고정하는 것이 일반 명사 오탐을
-    억제하는 유일한 장치라 목록이 데이터로 관리돼야 한다.
+    클래스·교대로 잇는 일만 한다. 성씨를 유한 집합으로 고정하는 것이 일반 명사 오탐을
+    억제하는 유일한 장치이고, 조사 목록은 **호칭어 필터와 공유**해야 하므로(8/6) 둘 다
+    데이터로 관리돼야 한다 — 코드가 정규식 문자열을 파싱하는 방향은 금지다.
     """
-    joined = "".join(str(name) for name in surnames)
-    return [str(pattern).replace("$surnames", joined) for pattern in patterns]
+    expanded: list[str] = []
+    for pattern in patterns:
+        text = str(pattern)
+        for key, value in substitutions.items():
+            text = text.replace(f"${key}", value)
+        expanded.append(text)
+    return expanded
+
+
+def _strip_particle(word: str, particles: Sequence[str]) -> str:
+    """어절에서 조사 하나를 벗긴다 — 호칭어 필터가 `학생의`를 `학생`으로 보게.
+
+    🔴 **`startswith` 비교를 쓰지 않는 이유**가 이 함수의 존재 이유다. 접두 비교는
+    `학생회`까지 호칭어로 보고 스킵해 **미탐 방향**으로 샌다. 조사 목록으로 정확히
+    벗기면 `학생의`만 스킵되고 `학생회`는 그대로 후보로 남는다.
+
+    긴 조사부터 본다(`한테`가 `한`보다 먼저) — 목록 순서에 판정이 의존하지 않게.
+    조사만으로 이루어진 어절은 벗기지 않는다(빈 문자열이 호칭어 목록에 걸릴 여지 제거).
+    """
+    for particle in sorted(particles, key=len, reverse=True):
+        if len(word) > len(particle) and word.endswith(particle):
+            return word[: -len(particle)]
+    return word
 
 
 def _compile_all(raw: Iterable[object]) -> tuple[re.Pattern[str], ...]:
@@ -133,6 +158,8 @@ def _config() -> _Config:
     bypass = raw["bypass"]
     scoring = raw["scoring"]
     context_risk = raw["context_risk"]
+    particles: dict[str, list[str]] = raw["particles"]
+    korean_particles = tuple(str(word) for word in particles["korean"])
     return _Config(
         tokens={str(k): str(v) for k, v in raw["tokens"].items()},
         batch=tuple(batch),
@@ -141,6 +168,7 @@ def _config() -> _Config:
         honorific_words=frozenset(
             str(word) for word in raw["name_honorific"].get("words", [])
         ),
+        honorific_particles=korean_particles,
         phone=phone,
         korean_digits={str(k): str(v) for k, v in bypass["korean_digits"].items()},
         bypass_candidate=re.compile(str(bypass["candidate"])),
@@ -148,7 +176,18 @@ def _config() -> _Config:
         residual=re.compile(str(bypass["residual_hangul_digits"])),
         contact_context=tuple(bypass["contact_context"]),
         name_candidates=_compile_all(
-            _expand_surnames(scoring["name_candidates"], scoring.get("surnames", []))
+            _expand_placeholders(
+                scoring["name_candidates"],
+                {
+                    "surnames": "".join(
+                        str(name) for name in scoring.get("surnames", [])
+                    ),
+                    "particles_korean": "|".join(korean_particles),
+                    "particles_latin": "|".join(
+                        str(word) for word in particles["latin"]
+                    ),
+                },
+            )
         ),
         density_threshold=int(scoring["density_threshold"]),
         sentence_split=re.compile(f"({scoring['sentence_split']})"),
@@ -212,15 +251,44 @@ class _Redactor:
     # ── 2) 통계 인명 (P1ⓑ 호칭 결합) ───────────────────────
     def _mask_honorific(self, text: str) -> str:
         for pattern in self.cfg.honorific:
-            def repl(match: re.Match[str]) -> str:
-                # 🔴 그룹1이 호칭어 자신이면 이름이 아니다 — "⟪이름1⟫ 학생 어머니"의
-                # `학생`. 치환하면 호칭이 사라지고 잔여가 새 인명 후보가 된다.
-                if match.group(1) in self.cfg.honorific_words:
-                    return match.group(0)
-                return self._token(self.cfg.honorific_type, match.group(1)) + match.group(2)
-
-            text = pattern.sub(repl, text)
+            text = self._sub_honorific(pattern, text)
         return text
+
+    def _sub_honorific(self, pattern: re.Pattern[str], source: str) -> str:
+        """호칭 결합 패턴 1개 적용.
+
+        🔴 **여기에 `_follows_token`을 걸지 않는다 — 걸면 미탐이 난다.** 실측(8/6)::
+
+            "010-1234-5678 서연 어머니"
+              토큰 인접 스킵 있음 → "⟪연락처1⟫ 서연 어머니"      ← `서연`이 남는다(미탐)
+              토큰 인접 스킵 없음 → "⟪연락처1⟫ ⟪이름1⟫ 어머니"   ← 올바름
+
+        `_name_candidates`(스코어링)에서는 같은 스킵이 **맞다** — 스코어링은 파이프라인
+        **마지막** 단계라 직전 토큰은 "이 패스에서 이미 처리된 자리"를 뜻한다. 반면 호칭
+        단계는 `_mask_batch`(연락처·학교·주소) **직후**라 직전 토큰이 남의 유형이고, 그
+        뒤 어절은 **아직 마스킹되지 않은 실제 이름**일 수 있다. 같은 함수라도 단계에 따라
+        전제가 다르다. 미탐은 오탐보다 나쁘다(불변식 3 fail-closed · 코퍼스 게이트).
+
+        `source`를 명시 인자로 받는 것은 클로저가 루프 변수를 붙잡지 않게 하기 위함이다
+        (ruff B023 — 지금은 맞게 도는 코드지만 패턴을 추가하는 다음 사람이 틀리기 쉽다).
+        """
+
+        def repl(match: re.Match[str]) -> str:
+            # 🔴 그룹1이 호칭어 자신이면 이름이 아니다 — "⟪이름1⟫ 학생 어머니"의
+            # `학생`. 치환하면 호칭이 사라지고 잔여가 새 인명 후보가 된다.
+            #
+            # 🔴 (8/6) 비교 전에 **조사를 벗긴다.** 종전 정확 일치라 `학생의`·`학생을`은
+            # 목록에 없어 우회했고, 그 결과 "○○ 학생의 어머니입니다"가 2차 redact에서
+            # 새 finding을 만들어 트립와이어가 전송을 막았다(불필요한 폴백).
+            # 학부모 문의의 전형 문면이라 실제로 터진 형태다.
+            if (
+                _strip_particle(match.group(1), self.cfg.honorific_particles)
+                in self.cfg.honorific_words
+            ):
+                return match.group(0)
+            return self._token(self.cfg.honorific_type, match.group(1)) + match.group(2)
+
+        return pattern.sub(repl, source)
 
     # ── 3) 우회 휴리스틱 (P8) ──────────────────────────────
     def _mask_bypass(self, text: str) -> str:
