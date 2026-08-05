@@ -474,7 +474,7 @@ erDiagram
 >
 > 판정 해석 — ① `reviewed_at IS NULL` → **평가셋 미편입**(분모 제외) ② `reviewed_at NOT NULL` + `corrected_topic IS NULL` → topic 축 **AI 정답** ③ `corrected_topic IS NOT NULL` → topic 축 **AI 오답**(정답 = `corrected_topic`). `reviewed_at`이 없으면 "안 고쳤다"와 "안 봤다"가 뭉개져 **정확도가 과대평가된다**.
 >
-> CHECK `ck_inquiry_class_corrected_requires_review` — 정정이 있으면 `reviewed_at`도 있어야 한다. ⚠ **적재는 아직 없다**(P2-c) · 유니크·인덱스는 재분류 멱등성과 함께 P2-c에서 정한다.
+> CHECK `ck_inquiry_class_corrected_requires_review` — 정정이 있으면 `reviewed_at`도 있어야 한다. ✅ **적재·정정 수신 구현 완료(P2-c)** — `POST /v1/classify`가 예측을 적재하고(같은 문의 재호출은 캐시 히트 · LLM 0회) `POST /v1/confirmations`가 정정을 받는다. 자연키 `uq_inquiry_class_scope`(0006)가 그 전제다. ⚠ `llm_call_id`는 아직 NULL이다(99 ⓕ·㊻ 선행 의존).
 
 
 > ✅ **A+BE 확인 완료(2026-07-30) — SIGNAL.rank.** `rank`는 **반 내 최종 표시 순번**이다 — `new`·`follow_up` 통과분(1..N) 뒤에 `ongoing`·R5가 이어붙어 **`cap_max`(5)를 초과할 수 있다**. **백엔드 DTO에 `rank` ≤ `cap_max` 제약이 없음을 2026-07-30 확인**했다. `capped_out`은 lifecycle 억제 후 `new`·`follow_up` 후보의 탈락 수만 센다. 정본: 04 §3 · 09 §4 · 99 #14.

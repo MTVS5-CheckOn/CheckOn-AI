@@ -281,6 +281,8 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 | `tag` | `TAG_SUGGESTION.id` | ❌ **400** `kind_not_implemented` |
 | `label` | `LABEL_SUGGESTION.id` | ❌ **400** `kind_not_implemented` |
 | **`classification`** | **`inquiry_ref`**(§3.5 응답이 에코한다) | ✅ **구현** |
+
+🔴 **`classification`은 초안 재생성과 짝이다** — 강사가 문의 유형을 정정하면 BE는 **이 API(평가셋 기록)와 `POST /v1/counsel/drafts`(새 키 + 정정된 `topic` · §3.9)를 둘 다** 호출한다. **하나만 하면 초안이 안 바뀌거나 평가셋이 빈다**(상세는 §3.9 재요청 규약).
 | `draft_edit` | `job_id`(§3.9) | ❌ **400** `kind_not_implemented` |
 
 **미지원 3종을 400으로 거절하는 이유** — 제안 **생성기가 없다**(`TAG_SUGGESTION`·`LABEL_SUGGESTION` 적재 0건 · `label_suggestions`는 v1 상수 `[]`). 확정할 대상이 없는데 받아서 조용히 버리면 BE가 "저장됐다"고 오해한다.
@@ -420,13 +422,15 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 **confidence에 따른 자동화 강등 — Salesforce Einstein 3단 패턴.** 낮은 확신은 "`etc`로 넣기"가 아니라 **자동화 수준을 한 단계 내리는 것**으로 처리한다.
 
+🔴 **강등 판단의 주체는 BE다.** `confidence`는 **이 응답에만** 실리고 `POST /v1/counsel/drafts` 요청에는 **없다**(`inquiry`는 `inquiry_ref`·`topic`·`urgency`·`received_at`·`text_masked` 5필드뿐) — **AI는 받은 `topic`을 확정값으로 신뢰하며 확신도를 재평가하지 않는다.** 분류는 이 절에서 끝나고 초안 생성은 확정값을 받는다. BE가 임계값 미만이면 `topic`을 초안 요청에 싣지 않거나(`etc`로 보내거나) **강사 확인을 먼저 받는다**.
+
 | `confidence.topic` | 처리 |
 | --- | --- |
 | 임계값 이상 | `topic`을 확정값으로 사용 — `template_only` 분기 포함 |
 | 임계값 미만 | `topic`은 **표시·정렬에만**. 초안은 **일반 경로로 생성**하고 강사에게 "일정 문의로 보입니다" 배지만 표시 |
 
 이 방향이 fail-safe다 — 확신이 낮을 때 정상 초안을 만들어두면 강사가 안 쓰면 그만이지만, 반대(확신 낮은데 `template_only`)는 근거가 있는데도 초안이 사라진다.
-⚠ **임계값 숫자는 여기서 정하지 않는다** — 실측 데이터가 없다. `/v1/classify` 구현(P2) 후 재분류율(강사가 예측을 뒤집은 비율)을 관측해 정한다. Salesforce 권고도 "Start in recommendation mode, and monitor accuracy... before setting up auto-triage"다.
+⚠ **임계값 숫자는 여전히 미정이다**(99 ⓐ) — 실측 데이터가 없다. P2-c(#88)로 **관측 경로는 열렸지만**(적재 + 확정 회신) 파일럿 전이라 평가셋 크기가 0이다. `reviewed_at IS NOT NULL`인 행이 쌓여야 confidence 구간별 실제 정확도를 그릴 수 있다. 🔴 **그때까지 BE는 `classified`만 보고 `confidence`로 분기하지 않는다** — 이게 현행 규약이다. 재분류율은 §3.9 ⓐ(confirmations) 호출에서 나오므로 **BE가 정정 시 그 API를 부르지 않으면 임계값을 영원히 못 정한다**. Salesforce 권고도 "Start in recommendation mode, and monitor accuracy... before setting up auto-triage"다.
 
 ### 3.6 `POST /v1/tags/suggest` — 태그 제안 (동기·캐시)
 
@@ -586,7 +590,20 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
   - 강사가 인박스에서 문의 유형을 정정한다 → BE가 **새 `Idempotency-Key`**로 `POST /v1/counsel/drafts`를 정정된 `topic`으로 다시 호출한다 → 새 초안이 생성된다.
   - **재생성 전용 API는 없다**(이 절 서두). 같은 키 + 다른 바디는 `409 IDEMPOTENCY_CONFLICT`이므로 **반드시 새 키**여야 한다.
   - **다듬기(refine)로는 되돌릴 수 없다.** `template_only`는 `text`가 `null`이고 refine 대상으로 등록되지 않는다 — 다듬을 원본이 없다.
-  - 정정 이력은 분류 품질 평가셋으로 `INQUIRY_CLASS`에 축적한다(`part_a/03` §C7). 축별 정정은 `corrected_topic`·`corrected_sentiment`·`corrected_urgency`에 남고 `corrected_by_teacher`는 그 셋의 NULL 여부에서 나오는 **파생값**이다. ⚠ **적재는 아직 없다**(99 ⓑ) — 스키마만 섰고 쓰기 경로는 BE와 정해야 한다(P2-c).
+  - 정정 이력은 **`POST /v1/confirmations`**(§3.3 · `kind: "classification"`)로 받아 `INQUIRY_CLASS`에 축적한다(`part_a/03` §C7). 축별 정정은 `corrected_topic`·`corrected_sentiment`·`corrected_urgency`에 남고 `corrected_by_teacher`는 그 셋의 NULL 여부에서 나오는 **파생값**이다. ⚠ `llm_call_id`는 아직 NULL이다(99 ⓕ·㊻ 선행 의존).
+  - 🔴 **BE는 정정 시 두 API를 모두 호출한다.** 하나는 기록, 하나는 생성이라 **서로를 대체하지 않는다.**
+
+    | | 호출 | 무엇을 하는가 |
+    | --- | --- | --- |
+    | **ⓐ** | `POST /v1/confirmations` — `kind: "classification"` · `action: "corrected"` · `suggestion_id`는 **`inquiry_ref`** · `corrected_value`에 **바뀐 축만** | **평가셋 기록.** 99 ⓐ 임계값을 정할 **재분류율의 원천**이다 |
+    | **ⓑ** | `POST /v1/counsel/drafts` — **새 `Idempotency-Key`** + 정정된 `topic` | **새 초안 생성.** 같은 키 + 다른 바디는 `409` |
+
+    - **순서는 무관**하다 — ⓐ는 기록, ⓑ는 생성으로 서로 독립이다.
+    - 🔴 **하나만 하면 안 된다** — **ⓐ만 하면 초안이 안 바뀌고**, **ⓑ만 하면 평가셋이 비어 99 ⓐ의 재분류율을 영원히 못 잰다**(임계값을 못 정한다).
+    - ⓐ는 **멱등**이다(자연키 `(tenant_id, inquiry_ref)` upsert) — 재시도해도 안전하고 **LLM을 부르지 않는다**.
+  - 🔴 **정정 후 유효한 `topic`의 소유는 BE다.** 정정은 BE 화면(인박스)에서 일어나므로 원본도 BE가 갖는다. AI가 보관하는 `corrected_*`는 **평가셋용 사본**이고 **조회 API가 없다**.
+    - ⚠ **정정값을 얻으려고 `POST /v1/classify`를 다시 부르지 말 것.** classify는 `(tenant_id, inquiry_ref)` 캐시가 있어 **저장된 예측**을 그대로 돌려준다(§3.5) — 이는 **예측 고정 원칙**(예측이 소실되면 평가셋의 (입력·예측·정답) 3요소가 깨진다)의 결과이지 버그가 아니다.
+    - ⇒ 이후 `POST /v1/counsel/drafts`에 싣는 `inquiry.topic`은 **BE가 보관한 정정값**이다.
 - **턴 상한은 AI가 판정하지 않는다.** `turn_no`는 로그·이력용으로 받기만 한다 — "세션 턴 상한 없음, 월 할당이 자연 상한"(`part_a/06` §1)이고 할당 집행은 전부 백엔드 Billing이다(7/15 BE-4).
 - **v1 구현 범위 정정 3건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다.
 
