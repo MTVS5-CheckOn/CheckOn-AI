@@ -302,8 +302,11 @@ class RefineRequest(BaseModel):
 class RefineResponse(BaseModel):
     """§4-④ 응답 — 반영·차단 모두 **200**이다(게이트 거부는 에러가 아니다 · 불변식 4).
 
-    차단 문구(`message`)의 원본은 `part_a/06_refine_policy.md` §4 표다 — 여기서 문구를
-    중복 정의하지 않는다.
+    🔴 **표시 문구는 AI가 주지 않는다**(8/5 · error_codes §2.6 규칙 3). 종전에는 이 응답에
+    `message`가 실렸는데, 그건 역사적 우연이지 설계 판단이 아니었다 — 초안 `draft_status`도
+    classify 폴백도 전부 **BE가 `error_codes` §2.1 "백엔드 표시 문구" 열로 매핑**한다.
+    refine만 AI가 문구를 주면 **다국어·톤 조정·A/B가 AI 배포에 묶인다.**
+    `blocked_reason` → 문구 매핑의 원본은 `part_a/06_refine_policy.md` §4 표이며 BE 소유다.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -312,7 +315,6 @@ class RefineResponse(BaseModel):
     text: str | None = None
     citations: tuple[Citation, ...] = ()
     blocked_reason: BlockedReason | None = None
-    message: str | None = None
 
     @model_validator(mode="after")
     def _blocked_needs_reason(self) -> Self:

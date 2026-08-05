@@ -20,12 +20,14 @@ from pydantic import ValidationError
 
 from ai.contracts.composition import DraftStatus
 from ai.contracts.counsel import (
+    BlockedReason,
     Citation,
     CounselDraftRequest,
     CounselDraftResult,
     InquirySentiment,
     InquiryTopic,
     InquiryUrgency,
+    RefineResponse,
     WireDraftStatus,
     wire_status_for,
 )
@@ -209,3 +211,38 @@ def test_unknown_status_degrades_honestly() -> None:
     wire, reason = wire_status_for("brand_new_status", None)  # type: ignore[arg-type]
     assert wire is WireDraftStatus.GATE_EXHAUSTED or wire is WireDraftStatus.LLM_FAILED
     assert reason == "unmapped:brand_new_status"
+
+
+# ── 🔴 상태 표기 규약 — "판정 불리언 + 사유 코드" (error_codes §2.6) ──
+
+
+def test_refine_response_has_no_message_field() -> None:
+    """🔴 **표시 문구는 AI가 주지 않는다**(8/5 · 규칙 3).
+
+    문구가 응답에 실리면 다국어·톤 조정·A/B가 **AI 배포에 묶인다**. 초안 `draft_status`도
+    classify 폴백도 전부 BE가 매핑하는데 refine만 예외였던 것은 역사적 우연이었다.
+    """
+    assert "message" not in RefineResponse.model_fields
+
+
+def test_refine_block_messages_table_is_kept_for_backend() -> None:
+    """표 자체는 남는다 — 응답에서 빼는 것과 삭제는 다르다.
+
+    `part_a/06` §4의 투영이고 BE 매핑의 기대값이라 골든이 참조한다.
+    """
+    from ai.api.routers.counsel import REFINE_BLOCK_MESSAGES
+
+    assert set(REFINE_BLOCK_MESSAGES) <= set(BlockedReason)
+    assert REFINE_BLOCK_MESSAGES, "표가 비면 BE가 붙일 문구가 없다"
+
+
+def test_blocked_turn_carries_reason_without_message() -> None:
+    """차단 응답은 `applied:false` + `blocked_reason`만 싣는다."""
+    response = RefineResponse(
+        applied=False, blocked_reason=BlockedReason.TONE_VIOLATION
+    )
+    dumped = response.model_dump(mode="json")
+
+    assert dumped["applied"] is False
+    assert dumped["blocked_reason"] == "tone_violation"
+    assert "message" not in dumped

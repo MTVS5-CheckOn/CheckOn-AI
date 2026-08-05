@@ -159,6 +159,26 @@ B 계약 기준. 모두 HTTP 에러나 `WorkerJob.phase`가 아니라 성공 응
 
 > B 규칙 원본은 `part_b/05_problem_generation.md` §6 · `part_b/06_quality_gates.md` · `07_refine_policy.md`. 이 표는 정본 편입만이며 값 정의는 B 소유.
 
+### 2.7 상태 표기 규약 — "판정 불리언 + 사유 코드" (8/5 정립)
+
+AI가 **안 하기로 판단한 것**은 200으로 내려간다(§2 서두). 그 표기는 전 엔드포인트가 **같은 모양**을 쓴다.
+
+| 엔드포인트 | 판정 | 사유 |
+| --- | --- | --- |
+| `POST /v1/counsel/drafts/{job_id}/refine` | `applied: bool` | `blocked_reason`(`BlockedReason` 8종 enum) |
+| `POST /v1/classify` | `classified: bool` | `fallback_reason`(`ClassifyFallbackReason` **2종** enum) |
+| `GET /v1/counsel/drafts/{job_id}` | `draft_status`(5종 enum) | `status_reason` |
+
+**규칙 3가지**
+
+1. **사유는 닫힌 집합(enum)이다.** 자유 문자열은 오타·미등재 값을 조용히 흘린다. `fallback_reason`이 `str`이었던 것을 8/5에 enum으로 봉쇄했다.
+2. **판정과 사유는 짝이다.** 정상 판정에 사유가 실리거나 그 반대는 **타입 차원에서 막는다**(`model_validator`). 어긋나면 BE가 두 필드로 상태를 추측하게 된다.
+3. **표시 문구는 AI가 주지 않는다.** 문구는 이 문서의 "백엔드 표시 문구" 열과 `part_a/06` §4 표가 원본이고 **BE가 매핑**한다 — 문구 수정이 AI 배포에 묶이지 않게 한다. 8/5에 `RefineResponse.message`를 제거해 이 규칙을 전 엔드포인트에 맞췄다(종전에 refine만 예외였던 것은 역사적 우연이다).
+
+⚠ 이름이 엔드포인트마다 다른 것(`applied` / `classified`)은 **의도적으로 통일하지 않았다** — 통일하면 계약·apidog·BE를 동시에 고쳐야 하는데 얻는 게 가독성뿐이다. **축이 같다는 사실은 이 표가 보증한다.**
+
+⚠ `data.code`/`data.message` 형태로 바꾸지 않은 이유도 같은 결이다 — 실질이 이미 이 구조이고, `data.code`는 HTTP 층 `error.code`(§1)와 **이름이 겹쳐 축 혼선**을 만든다.
+
 ## 3. LLM_CALL.outcome (내부 관측 — API 미노출)
 
 `ok | parse_fail | field_missing | bad_ref(근거 ID 실존 실패) | timeout | provider_error | redaction_blocked(전송 전 차단 — 마스킹 정의서 §3 fail-closed)`. 재시도 정책: parse_fail·field_missing은 블록 단위 ≤3회, bad_ref는 즉시 해당 문장 폐기(재시도 무의미 — 환각), redaction_blocked는 재시도 금지+알럿.

@@ -200,7 +200,11 @@ def test_static_attack_over_http_is_200(
     data = response.json()["data"]
     assert data["applied"] is False, case
     assert data["blocked_reason"] == expected.value, case
-    assert data["message"] == REFINE_BLOCK_MESSAGES[expected]
+    # 🔴 **응답에 문구가 없다**(8/5) — 표시 문구는 BE 소유다(error_codes §2.6 규칙 3).
+    # AI는 사유 코드만 주고, BE가 그 코드로 `part_a/06` §4 표를 조회해 문구를 붙인다.
+    assert "message" not in data, "AI가 표시 문구를 다시 실어 보내고 있다"
+    # 표는 남아 있다 — BE 매핑의 기대값이다(전 사유가 등재됐는지 여기서 고정한다).
+    assert expected in REFINE_BLOCK_MESSAGES
 
 
 # ── A1·A4 — 생성 후 게이트 차단 ──────────────────────────────────
