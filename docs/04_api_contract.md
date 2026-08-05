@@ -354,7 +354,12 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 { "inquiry_ref": "iq_204", "body_text": "여름방학 특강 시간표가 궁금합니다" }
 // Response 200 (동기 — 수 초 내)
 { "data": { "topic": "schedule", "sentiment": "normal", "urgency": "normal",
-            "confidence": { "topic": 0.95, "sentiment": 0.88, "urgency": 0.91 } } }
+            "confidence": { "topic": 0.95, "sentiment": 0.88, "urgency": 0.91 },
+            "classified": true, "fallback_reason": null } }
+// Response 200 — 분류하지 못한 경우(500이 아니다 · error_codes §2.5)
+{ "data": { "topic": "etc", "sentiment": "normal", "urgency": "normal",
+            "confidence": { "topic": 0.0, "sentiment": 0.0, "urgency": 0.0 },
+            "classified": false, "fallback_reason": "redaction_uncertain" } }
 ```
 
 **3축 독립 분류다** — 축마다 값 집합도 용도도 다르고, 한 축의 오분류가 다른 축을 오염시키지 않는다(Zendesk intelligent triage와 같은 구조). ⚠ `confidence`는 **축별 객체**다 — 3축이 독립이므로 확신도도 축마다 다르다(Zendesk는 필드마다 별도 confidence를 단다).
@@ -366,6 +371,14 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 | `urgency` | `immediate` \| `normal` | 정렬 |
 
 > 🔴 **(8/5) `complaint`가 `topic`에서 `sentiment`로 이동했다.** 상세는 `part_a/01` §4-ⓑ 참조. **BE는 `inquiry.topic`에 `complaint`를 보내면 400이다.**
+
+**헤더 규약** — `X-Tenant-Id` · `X-Request-Id` **필수**, **`Idempotency-Key` 없음**(부작용 없는 동기 호출이고 멱등 저장이 없다 — 같은 본문은 결정론 설정으로 같은 결과다).
+
+🔴 **`body_text`는 원문이다**(counsel의 `text_masked`와 다르다). **AI가 2차 redaction을 적용한 뒤 LLM에 보내며**(masking_redaction §3·§4), ⟪확인필요⟫가 남거나 전송 직전 잔여 흔적이 발견되면 **LLM을 호출하지 않고** `classified: false`로 응답한다. 원문은 로그·에러 detail 어디에도 남지 않는다(§2.3).
+
+**`classified` · `fallback_reason`** — 분류 실패는 **200**이다. `classified: false`면 `etc`를 확신 있는 판정으로 읽지 말고 **정렬을 적용하지 않은 채 시간순으로** 둔다(`error_codes` §2.5). 사유는 `redaction_uncertain` | `parse_exhausted` 2종이며, **LLM 장애는 폴백이 아니라 503**이다.
+
+⚠ **`confidence`는 LLM 자기보고이며 캘리브레이션되지 않았다** — 확률로 읽지 말 것. 임계값을 아직 정하지 않은 이유가 이것이다(아래).
 
 **사용 범위 — 되돌릴 수 있는 것까지다**(`part_a/01` §4-ⓑ). 학부모에게 나가는 자동 응답에는 쓰지 않는다(승인·발송은 전부 HITL — 백엔드도 준수). 되돌리기 경로는 §3.9 재요청 규약이 보장한다.
 
