@@ -273,4 +273,7 @@ def test_counsel_routes_are_registered_in_the_app() -> None:
     paths = set(create_app().openapi()["paths"])
     assert "/v1/counsel/drafts" in paths
     assert "/v1/counsel/drafts/{job_id}" in paths
-    assert "/v1/counsel/drafts/{draft_id}/refine" in paths
+    assert "/v1/counsel/drafts/{job_id}/refine" in paths
+    assert not any("{draft_id}" in path for path in paths), (
+        "refine 대상 키는 job_id다 — draft_id는 어떤 응답에도 실리지 않는다(04 §3.9)"
+    )

@@ -100,7 +100,7 @@ _views: dict[tuple[str, str], CounselDraftJobView] = {}
 
 @dataclass
 class _DraftState:
-    """refine 대상 초안의 현재 상태 — `(tenant_id, draft_id)`로 찾는다.
+    """refine 대상 초안의 현재 상태 — `(tenant_id, job_id)`로 찾는다.
 
     `context`는 게이트 재통과에 필요하고(허용 숫자·금칙·길이 상한이 전부 여기서 나온다),
     `citations`는 반영 턴 응답에 다시 실린다. **영속은 후속**이다 — v1은 `_views`와 같은
@@ -112,7 +112,9 @@ class _DraftState:
     text: str
 
 
-#: refine 읽기 모델 — `(tenant_id, draft_id) → 초안 상태`.
+#: refine 읽기 모델 — `(tenant_id, job_id) → 초안 상태`. 키가 job_id인 이유는
+#: 문의 1건 = 잡 1개 = 초안 1개(pack N=1 · 99 D ㉛)라 별도 draft_id를 노출할 필요가
+#: 없고, BE가 Kafka 완료 통지로 이미 받은 값을 그대로 쓸 수 있어서다(04 §3.9).
 _drafts: dict[tuple[str, str], _DraftState] = {}
 
 #: LLM 접점 — CI 기본은 결정론 Fake다(실 호출 0). 실 경로는 주입으로 교체한다.
@@ -300,9 +302,15 @@ async def _generate(
         now=_clock,
     )
     ran = await runner.run_next(tenant_id=tenant_id) or job
-    result = await _wire_result(runner, ran, request, applied)
+    # 🔴 뷰가 싣는 job_id와 refine 등록 키는 **같은 값이어야 한다** — 그래서 한 곳에서
+    # 만들어 양쪽에 넘긴다. `ran`은 `run_next`가 집어온 잡이라 `job`과 다를 수 있으므로
+    # `ran.job_id`를 쓰면 응답의 job_id로 refine을 못 찾는 조합이 생긴다.
+    view_job_id = str(job.job_id)
+    result = await _wire_result(
+        runner, ran, request, applied, job_id=view_job_id, tenant_id=tenant_id
+    )
     return CounselDraftJobView(
-        job_id=str(job.job_id), status=ran.phase.value, result=result
+        job_id=view_job_id, status=ran.phase.value, result=result
     )
 
 
@@ -311,6 +319,9 @@ async def _wire_result(
     job: WorkerJob,
     request: CounselDraftRequest,
     applied: tuple[str, ...],
+    *,
+    job_id: str,
+    tenant_id: str,
 ) -> CounselDraftResult:
     """잡 결과 → 계약 `result`. 판정 파생은 `wire_status_for` 한 곳이 한다.
 
@@ -352,8 +363,10 @@ async def _wire_result(
     )
     citations = _citations_of(request)
     if record is not None:
-        # refine 대상 등록 — 게이트 재통과에 필요한 컨텍스트를 draft_id로 찾을 수 있게 한다.
-        _drafts[(job.tenant_id, str(record.id))] = _DraftState(
+        # refine 대상 등록 — 키는 **응답이 싣는 job_id**다(04 §3.9). 종전에는 내부
+        # `record.id`로 등록했는데 그 값은 어떤 응답에도 실리지 않아, BE가 refine 대상
+        # 키를 얻을 계약 경로가 없었다(호출하면 404 확정 · 99 D).
+        _drafts[(tenant_id, job_id)] = _DraftState(
             context=_draft_context(request), citations=citations, text=record.content
         )
     return CounselDraftResult(
@@ -439,14 +452,15 @@ async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
     )
 
 
-@router.post("/v1/counsel/drafts/{draft_id}/refine")
-async def post_counsel_refine(draft_id: str, request: Request) -> dict[str, Any]:
+@router.post("/v1/counsel/drafts/{job_id}/refine")
+async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
     """다듬기 1턴 — 동기 · **매 턴 게이트 전체 재통과**(06 §1).
 
     🔴 **차단도 200이다**(`applied:false` + 사유 + 문구) — 게이트 거부는 에러가 아니다
     (불변식 4 · error_codes §4 "GateRejected를 5xx로 올리는 코드는 리뷰 반려").
 
-    대상 키는 `draft_id`다 — FE 계약 §3-③의 `inquiry_id`는 BE가 중계 매핑한다(04 §3.9).
+    대상 키는 `job_id`다 — POST 202 응답·Kafka 완료 통지가 싣는 그 값이다.
+    FE 계약 §3-③의 `inquiry_id`는 BE가 중계 매핑한다(04 §3.9).
     턴 상한을 판정하지 않는다: `turn_no`는 받아서 로그로만 쓴다(쿼터는 전부 백엔드).
     """
     tenant_id = request.headers.get("X-Tenant-Id")
@@ -464,9 +478,9 @@ async def post_counsel_refine(draft_id: str, request: Request) -> dict[str, Any]
             "요청 바디 스키마 위반", _format_validation_error(exc)
         ) from exc
 
-    state = _drafts.get((tenant_id, draft_id))
-    if state is None:  # 존재 은닉 — 다른 테넌트의 draft_id도 여기로 떨어진다
-        raise NotFound("draft_id 부재", {"draft_id": draft_id})
+    state = _drafts.get((tenant_id, job_id))
+    if state is None:  # 존재 은닉 — 다른 테넌트의 job_id도 여기로 떨어진다
+        raise NotFound("job_id 부재", {"job_id": job_id})
 
     execution_id = uuid.uuid4()
     outcome = await refine_draft(

@@ -498,7 +498,7 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
   "meta": { "execution_id": "…", "versions": { "…§2.2…": "…" } }
 }
 
-// ④ POST /v1/counsel/drafts/{draft_id}/refine — 다듬기 (동기 · 매 턴 게이트 전체 재통과)
+// ④ POST /v1/counsel/drafts/{job_id}/refine — 다듬기 (대상 키 = ①이 돌려준 job_id · 동기 · 매 턴 게이트 전체 재통과)
 // 요청  { "instruction": "정답률이 오르고 있다고 강조해서 써줘", "turn_no": 3 }
 // 반영  { "applied": true,  "text": "…", "citations": [ … ] }
 // 차단  { "applied": false, "blocked_reason": "comparison_exposure", "message": "…" }
@@ -509,7 +509,8 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 - **잡 성공 ≠ 초안 존재.** `status="succeeded"` + `result.draft_status="rejected_insufficient"`는 **정상 조합**이다(데이터 부족은 에러가 아니다 — 불변식 4). 화면은 "아직 데이터를 모으는 중이에요"를 그린다.
 - **`citations[]`는 ≥1이 타입 계약**이다. 인용 가능한 근거(`record_id`가 있는 fact)가 0건이면 **LLM 호출 전에** `rejected_insufficient`로 끊는다 — 게이트를 통과한 초안을 만들어 놓고 근거가 없어 버리는 낭비를 만들지 않는다.
 - **`refine` 차단도 200**이다(`applied:false` + `blocked_reason` + `message`). `GateRejected`를 5xx로 올리면 리뷰 반려(불변식 4 · error_codes §4).
-- **refine 대상 키는 `draft_id`**다. FE 계약 §3-③은 `inquiry_id` 기준이므로 **BE가 `inquiry_id → draft_id` 매핑을 중계**한다(AI는 원본 문의에 접근하지 않는다). 
+- **refine 대상 키는 `job_id`다.** 문의 1건 = 잡 1개 = 초안 1개(pack N=1)라 별도 `draft_id`를 노출하지 않는다 — BE는 **Kafka 완료 통지가 싣는 `job_id`를 그대로** 쓰면 되고 별도 조회가 필요 없다. FE 계약 §3-③은 `inquiry_id` 기준이므로 **BE가 `inquiry_id → job_id` 매핑을 중계**한다(AI는 원본 문의에 접근하지 않는다).
+  > 🔴 **정정(8/5).** 종전 표기는 `draft_id`였는데 그 값이 **어떤 응답에도 실리지 않아** BE가 refine을 호출할 계약 경로가 없었다(`CounselDraftJobView`는 `job_id`·`status`·`result` 3필드뿐 — 호출하면 404 확정). 스키마에 필드를 추가하는 대신 **키를 `job_id`로 통일**했다. 응답 스키마 무변경.
 - **턴 상한은 AI가 판정하지 않는다.** `turn_no`는 로그·이력용으로 받기만 한다 — "세션 턴 상한 없음, 월 할당이 자연 상한"(`part_a/06` §1)이고 할당 집행은 전부 백엔드 Billing이다(7/15 BE-4).
 - **v1 구현 범위 정정 3건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다.
 
