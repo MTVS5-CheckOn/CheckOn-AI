@@ -110,9 +110,14 @@ class OpenAICompatProvider:
     def __init__(
         self,
         *,
+        name: str = PROVIDER_NAME,
         settings: LocalLlmSettings | None = None,
         client: AsyncOpenAI | None = None,
     ) -> None:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("provider name은 비어 있을 수 없다")
+        self._name = normalized_name
         self._settings = settings or get_llm_settings()
         self._client = client or AsyncOpenAI(
             base_url=self._settings.local_llm_base_url,
@@ -123,7 +128,7 @@ class OpenAICompatProvider:
 
     @property
     def name(self) -> str:
-        return PROVIDER_NAME
+        return self._name
 
     def _build_kwargs(self, request: LLMRequest) -> dict[str, Any]:
         """계약 인터페이스(GenerationParams)가 정의한 경로로만 파라미터를 받는다."""
@@ -188,7 +193,7 @@ class OpenAICompatProvider:
         # 본문 금지 — 메타만 로깅(PII·비용).
         logger.debug(
             "llm.complete provider=%s model=%s tokens_in=%d tokens_out=%d latency_ms=%d",
-            PROVIDER_NAME,
+            self.name,
             self._settings.local_llm_model,
             token_usage.tokens_in,
             token_usage.tokens_out,
@@ -197,7 +202,7 @@ class OpenAICompatProvider:
         return LLMResult(
             outcome=CallOutcome.OK,
             text=content,
-            provider=PROVIDER_NAME,
+            provider=self.name,
             model=self._settings.local_llm_model,
             usage=token_usage,
             latency_ms=latency_ms,

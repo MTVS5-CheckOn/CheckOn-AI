@@ -46,10 +46,12 @@ def _run[T](coro: Coroutine[object, object, T]) -> T:
 
 
 def _settings() -> LocalLlmSettings:
-    return LocalLlmSettings(
-        local_llm_base_url="http://local/v1",
-        local_llm_api_key="k",
-        local_llm_model="gemma-test",
+    return LocalLlmSettings.model_validate(
+        {
+            "local_llm_base_url": "http://local/v1",
+            "local_llm_api_key": "k",
+            "local_llm_model": "gemma-test",
+        }
     )
 
 
@@ -125,6 +127,28 @@ def test_happy_path_returns_ok_result() -> None:
     assert result.usage.tokens_in == 12
     assert result.usage.tokens_out == 7
     assert result.usage.cost_usd == 0.0  # 로컬 서버 원가 없음
+
+
+def test_injected_name_identifies_provider_and_result() -> None:
+    provider = OpenAICompatProvider(
+        name="openai-verifier",
+        settings=_settings(),
+        client=_FakeClient(result=_ok_response("검증 결과")),  # type: ignore[arg-type]
+    )
+
+    result = _run(provider.complete(_request(), _context()))
+
+    assert provider.name == "openai-verifier"
+    assert result.provider == "openai-verifier"
+
+
+def test_blank_injected_name_is_rejected() -> None:
+    with pytest.raises(ValueError, match="provider name"):
+        OpenAICompatProvider(
+            name="  ",
+            settings=_settings(),
+            client=_FakeClient(result=_ok_response("검증 결과")),  # type: ignore[arg-type]
+        )
 
 
 def test_timeout_maps_to_llm_timeout() -> None:
@@ -205,11 +229,13 @@ def test_thinking_disabled_by_default_via_extra_body() -> None:
 
 def test_thinking_toggle_off_omits_extra_body() -> None:
     """env로 추론을 켜면(disable=False) extra_body를 보내지 않는다(추론 필요 용도 대비)."""
-    settings = LocalLlmSettings(
-        local_llm_base_url="http://local/v1",
-        local_llm_api_key="k",
-        local_llm_model="gemma-test",
-        local_llm_disable_thinking=False,
+    settings = LocalLlmSettings.model_validate(
+        {
+            "local_llm_base_url": "http://local/v1",
+            "local_llm_api_key": "k",
+            "local_llm_model": "gemma-test",
+            "local_llm_disable_thinking": False,
+        }
     )
     client = _FakeClient(result=_ok_response("ok"))
     provider = OpenAICompatProvider(settings=settings, client=client)  # type: ignore[arg-type]
@@ -238,11 +264,13 @@ class _SlowCompletions:
 
 def test_total_timeout_maps_to_llm_timeout() -> None:
     """호출이 전체 상한을 넘기면 asyncio.timeout이 끊어 LlmTimeout으로 매핑된다."""
-    settings = LocalLlmSettings(
-        local_llm_base_url="http://local/v1",
-        local_llm_api_key="k",
-        local_llm_model="gemma-test",
-        local_llm_timeout_s=0.05,
+    settings = LocalLlmSettings.model_validate(
+        {
+            "local_llm_base_url": "http://local/v1",
+            "local_llm_api_key": "k",
+            "local_llm_model": "gemma-test",
+            "local_llm_timeout_s": 0.05,
+        }
     )
     client = SimpleNamespace(chat=SimpleNamespace(completions=_SlowCompletions()))
     provider = OpenAICompatProvider(settings=settings, client=client)  # type: ignore[arg-type]

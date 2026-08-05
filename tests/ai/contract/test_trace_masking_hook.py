@@ -60,6 +60,7 @@ _ALLOWED_GATEWAY_BUILDERS: frozenset[str] = frozenset(
     {
         "composition/provider.py",
         "composition/counsel/assembly.py",
+        "problem_generation/provider.py",
     }
 )
 
@@ -136,7 +137,7 @@ def test_no_gateway_construction_outside_whitelist() -> None:
     )
 
 
-# ── ② 기동 — TRACING=true에서 두 조립부가 성공한다 (P1′ 완료 정의) ──
+# ── ② 기동 — TRACING=true에서 훅 주입은 성공하고 미주입은 실패한다 ──
 
 
 def _tracing_off_settings() -> LlmSettings:
