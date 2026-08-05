@@ -59,6 +59,7 @@ class _Config:
     batch: tuple[_Batch, ...]
     honorific_type: str
     honorific: tuple[re.Pattern[str], ...]
+    honorific_words: frozenset[str]
     phone: tuple[re.Pattern[str], ...]
     korean_digits: dict[str, str]
     bypass_candidate: re.Pattern[str]
@@ -69,10 +70,37 @@ class _Config:
     density_threshold: int
     sentence_split: re.Pattern[str]
     literary_names: frozenset[str]
+    name_exclude: frozenset[str]
     p9_kakao: re.Pattern[str]
     p9_org: re.Pattern[str]
     p9_filename: re.Pattern[str]
     p9_filename_hangul: re.Pattern[str]
+
+
+def _dedupe_overlaps(matches: list[re.Match[str]]) -> list[re.Match[str]]:
+    """그룹1 구간이 겹치는 후보를 하나로 본다 — **밀도 오계산 방지**.
+
+    같은 이름이 여러 패턴에 걸릴 수 있다(`서연이`는 별명형 패턴과 성씨 패턴 양쪽에
+    매칭된다 — `서`가 성씨다). 겹침을 따로 세면 후보 1개짜리 문장이 밀도 2로 올라가
+    **문장 통째가 ⟪확인필요⟫로** 바뀐다. 한 사람은 한 번만 센다.
+    """
+    kept: list[re.Match[str]] = []
+    for match in matches:
+        if kept and match.start(1) < kept[-1].end(1):
+            continue
+        kept.append(match)
+    return kept
+
+
+def _expand_surnames(patterns: Iterable[object], surnames: Iterable[object]) -> list[str]:
+    """`$surnames` 자리에 성씨 문자 클래스를 끼워 넣는다 — **조립만** 한다.
+
+    정규식 자체는 yaml이 원본이고(§6 어휘·패턴 하드코딩 금지) 코드는 목록을 문자
+    클래스로 잇는 일만 한다. 성씨를 유한 집합으로 고정하는 것이 일반 명사 오탐을
+    억제하는 유일한 장치라 목록이 데이터로 관리돼야 한다.
+    """
+    joined = "".join(str(name) for name in surnames)
+    return [str(pattern).replace("$surnames", joined) for pattern in patterns]
 
 
 def _compile_all(raw: Iterable[object]) -> tuple[re.Pattern[str], ...]:
@@ -110,16 +138,22 @@ def _config() -> _Config:
         batch=tuple(batch),
         honorific_type=str(raw["name_honorific"]["type"]),
         honorific=_compile_all(raw["name_honorific"]["patterns"]),
+        honorific_words=frozenset(
+            str(word) for word in raw["name_honorific"].get("words", [])
+        ),
         phone=phone,
         korean_digits={str(k): str(v) for k, v in bypass["korean_digits"].items()},
         bypass_candidate=re.compile(str(bypass["candidate"])),
         separators=re.compile(str(bypass["separators"])),
         residual=re.compile(str(bypass["residual_hangul_digits"])),
         contact_context=tuple(bypass["contact_context"]),
-        name_candidates=_compile_all(scoring["name_candidates"]),
+        name_candidates=_compile_all(
+            _expand_surnames(scoring["name_candidates"], scoring.get("surnames", []))
+        ),
         density_threshold=int(scoring["density_threshold"]),
         sentence_split=re.compile(f"({scoring['sentence_split']})"),
         literary_names=frozenset(whitelists.get("literary_names", [])),
+        name_exclude=frozenset(whitelists.get("name_exclude", [])),
         p9_kakao=re.compile(str(context_risk["kakao"])),
         p9_org=re.compile(str(context_risk["org"])),
         p9_filename=re.compile(str(context_risk["filename"])),
@@ -179,6 +213,10 @@ class _Redactor:
     def _mask_honorific(self, text: str) -> str:
         for pattern in self.cfg.honorific:
             def repl(match: re.Match[str]) -> str:
+                # 🔴 그룹1이 호칭어 자신이면 이름이 아니다 — "⟪이름1⟫ 학생 어머니"의
+                # `학생`. 치환하면 호칭이 사라지고 잔여가 새 인명 후보가 된다.
+                if match.group(1) in self.cfg.honorific_words:
+                    return match.group(0)
                 return self._token(self.cfg.honorific_type, match.group(1)) + match.group(2)
 
             text = pattern.sub(repl, text)
@@ -255,8 +293,21 @@ class _Redactor:
                 stem = base[:-1] if base.endswith("이") else base
                 if stem in self.cfg.literary_names or base in self.cfg.literary_names:
                     continue
+                if base in self.cfg.name_exclude or stem in self.cfg.name_exclude:
+                    continue  # 성씨와 첫 글자가 겹치는 학원 도메인 어휘(성적·문의…)
+                if self._follows_token(sentence, match):
+                    continue  # 이미 마스킹된 자리 옆 잔여 어절 — 재검출 금지(B-3)
                 found.append(match)
-        return sorted(found, key=lambda m: m.start())
+        return _dedupe_overlaps(sorted(found, key=lambda m: m.start(1)))
+
+    def _follows_token(self, sentence: str, match: re.Match[str]) -> bool:
+        """직전 어절이 `⟪…⟫` 토큰인가 — 그러면 이 어절은 후보가 아니다.
+
+        마스킹이 이름을 지우고 나면 **남은 어절이 새 후보로 보인다**(`⟪이름1⟫ 학생
+        어머니입니다`의 `학생`). 그 자리는 이미 처리된 자리이므로 다시 세지 않는다.
+        """
+        head = sentence[: match.start(1)].rstrip()
+        return head.endswith("⟫")
 
     def run(self, text: str) -> RedactionResult:
         text = self._mask_batch(text)
