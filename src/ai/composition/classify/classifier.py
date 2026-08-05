@@ -8,8 +8,13 @@
 
 🔴 **redaction이 이 모듈의 안전 축이다.** 요청의 `body_text`는 **원문**이라(counsel의
 `text_masked`와 다르다) LLM에 그대로 갈 수 없다. `redact()`를 통과한 `masked_text`만
-프롬프트에 들어가고, `uncertain`이면 **LLM을 호출하지 않고** 폴백한다 — 프롬프트 지시가
-아니라 **경로 자체**로 막는다(masking_redaction §4).
+프롬프트에 들어간다 — 프롬프트 지시가 아니라 **경로 자체**로 막는다(masking_redaction §4).
+
+⚠ **`uncertain`이어도 중단하지 않는다 — 소비자마다 fail-closed 기준이 다르다.**
+`masking_redaction`:40은 "**소비자가** fail-closed 판단"이라 규정한다. 초안 생성은
+학부모에게 나갈 문장을 만드니 중단이 맞지만, **분류는 산출물을 만들지 않고 판정만 한다**
+— 이름은 분류에 필요 없고 `⟪확인필요⟫`가 든 텍스트는 이미 가려진 상태다. 다음 소비자
+(리포트 등)를 만들 때 이 판단을 그대로 베끼지 말고 **자기 산출물 기준으로 다시 정하라.**
 
 **분류 실패는 500이 아니다.** `error_codes` §2.5(:213)가 "분류 실패 | 인박스 | 정렬 없이
 시간순 표시"로 이미 정의했다 — `classified=False`로 정직하게 응답한다(서두 원칙:
@@ -54,14 +59,9 @@ MAX_PARSE_RETRY: Final = 2
 #: 다른 출력이 나올 수 있다. 99 D ㊼가 이미 열려 있는 항목이다.
 _GEN_PARAMS: Final = GenerationParams(temperature=0.0, seed=20260805, max_tokens=256)
 
-#: 마스킹 경계가 전송을 막았다 — **두 지점을 같은 사유로 묶는다**.
-#: ① 우리 쪽 `redact()`가 `uncertain`을 세운 경우(불확실)
-#: ② 게이트웨이의 `RedactionTripwireTraceHook`이 전송 직전 프롬프트에서 **잔여 흔적**을
-#:    발견한 경우 — 실명이 마스킹된 뒤 남은 어절이 인명 후보에 다시 걸리는 일이 있다
-#:    (`⟪이름1⟫ 학생 어머니입니다` → `학생`이 관계어 인접으로 재검출). 트립와이어는
-#:    문맥을 모르므로 보수적으로 막는 게 맞고, 우리는 그걸 **장애가 아니라 미분류**로 받는다.
-#: 둘 다 "마스킹 때문에 LLM에 못 보냈다"는 같은 사건이라 BE 처리도 같다(정렬 미적용).
-_FALLBACK_REDACTION: Final = "redaction_uncertain"
+#: 전송 직전 트립와이어가 잔여 흔적을 발견해 막았다 — **장애가 아니라 미분류**다.
+#: ⚠ `uncertain`은 여기 없다(아래 `classify()` 참조) — 성격이 다르다.
+_FALLBACK_TRIPWIRE: Final = "tripwire_blocked"
 _FALLBACK_PARSE: Final = "parse_exhausted"
 
 
@@ -119,13 +119,19 @@ async def classify(
     # ① 🔴 전송 전 redaction — 원문은 이 줄 뒤로 넘어가지 않는다.
     redacted = redact(request.body_text)
     if redacted.uncertain:
-        # fail-closed — 마스킹이 불확실하면 **LLM을 호출하지 않는다**(불변식 3).
+        # 🔴 **여기서 중단하지 않는다**(8/5 판단 · C). `⟪확인필요⟫`가 든 텍스트는
+        # **이미 가려진 상태**라 원문이 새지 않는다. `masking_redaction`:40이
+        # "**소비자가** fail-closed 판단"이라 규정한 대로, 판단은 소비자마다 다르다:
+        #   · 초안 생성 — 학부모에게 나갈 **문장을 만든다** ⇒ 중단이 맞다(그 경로는 그대로)
+        #   · 분류      — 산출물을 만들지 않고 **판정만** 한다. 이름은 분류에 필요 없고
+        #                 "⟪확인필요⟫ 요즘 힘들어합니다"로도 topic이 나온다 ⇒ 계속한다
+        # 중단을 유지하면 인명 검출을 강화할수록(성씨 패턴) classify가 대부분 폴백으로
+        # 떨어져 **기능 자체가 사라진다**. 가려진 텍스트로 계속하는 편이 안전하고 유용하다.
         logger.info(
-            "classify.redaction_uncertain inquiry_ref=%s findings=%d",
+            "classify.redaction_uncertain_continue inquiry_ref=%s findings=%d",
             request.inquiry_ref,
             len(redacted.findings),
         )
-        return _unclassified(_FALLBACK_REDACTION)
 
     prompt = render_prompt(redacted.masked_text)
     llm_request = LLMRequest(
@@ -142,10 +148,11 @@ async def classify(
         try:
             result: LLMResult = await gateway.complete(llm_request, context)  # type: ignore[attr-defined]
         except RedactionBlocked:
-            # 🔴 전송 직전 트립와이어 차단 — **장애가 아니다.** 재시도해도 같은 프롬프트라
-            # 같은 결과이므로 즉시 미분류로 수렴한다(09 §1-10 ③ 전송 재시도 대상 제외).
-            logger.info("classify.redaction_blocked inquiry_ref=%s", request.inquiry_ref)
-            return _unclassified(_FALLBACK_REDACTION)
+            # 🔴 트립와이어 차단은 **폴백을 유지한다** — `uncertain`과 성격이 다르다.
+            # 이건 "가려지지 않은 게 남았다"는 신호라 그대로 보내면 안 된다.
+            # 재시도해도 같은 프롬프트라 즉시 수렴한다(09 §1-10 ③ 재시도 대상 제외).
+            logger.info("classify.tripwire_blocked inquiry_ref=%s", request.inquiry_ref)
+            return _unclassified(_FALLBACK_TRIPWIRE)
         try:
             output = parse(result.text or "", ClassifyLlmOutput)
         except ParseFailed:

@@ -376,7 +376,9 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 🔴 **`body_text`는 원문이다**(counsel의 `text_masked`와 다르다). **AI가 2차 redaction을 적용한 뒤 LLM에 보내며**(masking_redaction §3·§4), ⟪확인필요⟫가 남거나 전송 직전 잔여 흔적이 발견되면 **LLM을 호출하지 않고** `classified: false`로 응답한다. 원문은 로그·에러 detail 어디에도 남지 않는다(§2.3).
 
-**`classified` · `fallback_reason`** — 분류 실패는 **200**이다. `classified: false`면 `etc`를 확신 있는 판정으로 읽지 말고 **정렬을 적용하지 않은 채 시간순으로** 둔다(`error_codes` §2.5). 사유는 `redaction_uncertain` | `parse_exhausted` 2종이며, **LLM 장애는 폴백이 아니라 503**이다.
+**`classified` · `fallback_reason`** — 분류 실패는 **200**이다. `classified: false`면 `etc`를 확신 있는 판정으로 읽지 말고 **정렬을 적용하지 않은 채 시간순으로** 둔다(`error_codes` §2.5). 사유는 `tripwire_blocked` | `parse_exhausted` 2종이며, **LLM 장애는 폴백이 아니라 503**이다.
+
+⚠ **`⟪확인필요⟫`가 남아도 분류를 계속한다**(8/5 정정) — 가려진 텍스트는 이미 안전하고 분류에 이름은 필요 없다. 종전 `redaction_uncertain` 사유는 없어졌다. 전송 직전 트립와이어가 **잔여 흔적**을 발견한 경우만 `tripwire_blocked`로 폴백한다(그건 '안 가려진 게 남았다'는 신호라 성격이 다르다).
 
 ⚠ **`confidence`는 LLM 자기보고이며 캘리브레이션되지 않았다** — 확률로 읽지 말 것. 임계값을 아직 정하지 않은 이유가 이것이다(아래).
 

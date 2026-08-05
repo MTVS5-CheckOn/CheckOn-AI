@@ -17,9 +17,13 @@ _FALSE_POSITIVE_BUDGET = 2
 
 
 def test_corpus_has_expected_cases() -> None:
-    """§5 원형 30 + 누적 변형 31~33 + 동-단어 함정 34 = 34 (코퍼스는 누적만, §6)."""
-    assert len(CORPUS) == 34
-    assert len({case.id for case in CORPUS}) == 34
+    """§5 원형 30 + 누적 31~34 + **성명형/잔여/성씨함정 35~49(43 제외)** = 48 (누적만, §6).
+
+    🔴 35~49는 8/5 미탐 실측분이다 — 종전 코퍼스가 별명형에 편중돼 "미탐 0" 게이트가
+    통과하는 동안 성명형이 통째로 새고 있었다. 형태 커버리지 표는 코퍼스 상단에 있다.
+    """
+    assert len(CORPUS) == 48
+    assert len({case.id for case in CORPUS}) == 48  # id 중복 없음
 
 
 def test_no_miss_across_corpus() -> None:
