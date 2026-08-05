@@ -371,10 +371,16 @@ erDiagram
     uuid id PK
     varchar tenant_id
     varchar inquiry_ref "백엔드 문의 ID(논리)"
-    varchar topic "grade|schedule|complaint|counsel_request|etc"
-    varchar urgency "immediate|normal"
-    numeric confidence
-    boolean corrected_by_teacher "오분류 수정 이력=평가셋"
+    varchar topic "AI 예측(고정) grade|schedule|counsel_request|etc"
+    varchar sentiment "AI 예측(고정) normal|complaint"
+    varchar urgency "AI 예측(고정) immediate|normal"
+    numeric confidence_topic
+    numeric confidence_sentiment
+    numeric confidence_urgency
+    varchar corrected_topic "NULL=그 축 안 바꿈"
+    varchar corrected_sentiment "NULL=그 축 안 바꿈"
+    varchar corrected_urgency "NULL=그 축 안 바꿈"
+    timestamptz reviewed_at "NULL=평가셋 분모 제외(미검토)"
     uuid llm_call_id FK
   }
   LABEL_SUGGESTION {
@@ -461,6 +467,15 @@ erDiagram
     uuid llm_call_id FK
   }
 ```
+
+> 🔴 **`INQUIRY_CLASS`는 평가셋 테이블이다**(`part_a/03` §C7 · 99 ⓑ · B 양자 승인). 3축은 **AI 예측 고정**이고 덮어쓰지 않는다 — 강사 정정은 `corrected_*`에 따로 쌓는다. 예측을 정정값으로 덮으면 (입력·예측·정답) 3요소가 깨져 평가셋 목적이 사라진다.
+>
+> `corrected_by_teacher`는 **컬럼이 아니라 파생값**이다: `corrected_topic IS NOT NULL OR corrected_sentiment IS NOT NULL OR corrected_urgency IS NOT NULL`.
+>
+> 판정 해석 — ① `reviewed_at IS NULL` → **평가셋 미편입**(분모 제외) ② `reviewed_at NOT NULL` + `corrected_topic IS NULL` → topic 축 **AI 정답** ③ `corrected_topic IS NOT NULL` → topic 축 **AI 오답**(정답 = `corrected_topic`). `reviewed_at`이 없으면 "안 고쳤다"와 "안 봤다"가 뭉개져 **정확도가 과대평가된다**.
+>
+> CHECK `ck_inquiry_class_corrected_requires_review` — 정정이 있으면 `reviewed_at`도 있어야 한다. ⚠ **적재는 아직 없다**(P2-c) · 유니크·인덱스는 재분류 멱등성과 함께 P2-c에서 정한다.
+
 
 > ✅ **A+BE 확인 완료(2026-07-30) — SIGNAL.rank.** `rank`는 **반 내 최종 표시 순번**이다 — `new`·`follow_up` 통과분(1..N) 뒤에 `ongoing`·R5가 이어붙어 **`cap_max`(5)를 초과할 수 있다**. **백엔드 DTO에 `rank` ≤ `cap_max` 제약이 없음을 2026-07-30 확인**했다. `capped_out`은 lifecycle 억제 후 `new`·`follow_up` 후보의 탈락 수만 센다. 정본: 04 §3 · 09 §4 · 99 #14.
 
