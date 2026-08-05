@@ -551,7 +551,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
   - 강사가 인박스에서 문의 유형을 정정한다 → BE가 **새 `Idempotency-Key`**로 `POST /v1/counsel/drafts`를 정정된 `topic`으로 다시 호출한다 → 새 초안이 생성된다.
   - **재생성 전용 API는 없다**(이 절 서두). 같은 키 + 다른 바디는 `409 IDEMPOTENCY_CONFLICT`이므로 **반드시 새 키**여야 한다.
   - **다듬기(refine)로는 되돌릴 수 없다.** `template_only`는 `text`가 `null`이고 refine 대상으로 등록되지 않는다 — 다듬을 원본이 없다.
-  - 정정 이력은 분류 품질 평가셋으로 `INQUIRY_CLASS.corrected_by_teacher`에 축적한다(`part_a/03` §C7). **적재는 `/v1/classify` 구현(P2) 때 함께 온다.**
+  - 정정 이력은 분류 품질 평가셋으로 `INQUIRY_CLASS`에 축적한다(`part_a/03` §C7). 축별 정정은 `corrected_topic`·`corrected_sentiment`·`corrected_urgency`에 남고 `corrected_by_teacher`는 그 셋의 NULL 여부에서 나오는 **파생값**이다. ⚠ **적재는 아직 없다**(99 ⓑ) — 스키마만 섰고 쓰기 경로는 BE와 정해야 한다(P2-c).
 - **턴 상한은 AI가 판정하지 않는다.** `turn_no`는 로그·이력용으로 받기만 한다 — "세션 턴 상한 없음, 월 할당이 자연 상한"(`part_a/06` §1)이고 할당 집행은 전부 백엔드 Billing이다(7/15 BE-4).
 - **v1 구현 범위 정정 3건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다.
 

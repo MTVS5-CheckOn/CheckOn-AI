@@ -177,7 +177,7 @@ sequenceDiagram
   participant PG as AI PostgreSQL
   BE->>API: POST /drafts (kind=reply, 컨텍스트 스냅숏, label_snapshot)
   API->>CMP: ⓑ 문의 분류 (LLM · enum 강제)
-  CMP->>PG: inquiry_class 저장 (topic·urgency)
+  CMP->>PG: inquiry_class 저장 (3축 예측 + 축별 confidence · 적재는 P2-c)
   Note over CMP: topic=schedule 등 → template_only 경로 (완충 강도는 라벨 4축이 결정 — 05 §199에서 topic·urgency 파생 미도입 확정)
   API->>CMP: pipeline.run(ctx, request)
   CMP->>CMP: 게이트① Consent · ② DataSufficiency
@@ -509,10 +509,16 @@ erDiagram
     uuid id PK
     varchar tenant_id
     varchar inquiry_ref "백엔드 문의 ID(논리)"
-    varchar topic "grade|schedule|complaint|counsel_request|etc"
-    varchar urgency "immediate|normal"
-    numeric confidence
-    boolean corrected_by_teacher "오분류 수정 이력=평가셋"
+    varchar topic "AI 예측(고정) grade|schedule|counsel_request|etc"
+    varchar sentiment "AI 예측(고정) normal|complaint"
+    varchar urgency "AI 예측(고정) immediate|normal"
+    numeric confidence_topic
+    numeric confidence_sentiment
+    numeric confidence_urgency
+    varchar corrected_topic "NULL=그 축 안 바꿈"
+    varchar corrected_sentiment "NULL=그 축 안 바꿈"
+    varchar corrected_urgency "NULL=그 축 안 바꿈"
+    timestamptz reviewed_at "NULL=평가셋 분모 제외(미검토)"
     uuid llm_call_id FK
   }
   LABEL_SUGGESTION {

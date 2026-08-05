@@ -83,7 +83,7 @@ golden/
   - 별도: **프롬프트 인젝션 5건**(enum 강제 파싱으로 무력화되는지) · **redaction 경계 3건**(가명 실명·연락처 — 원문이 LLM에 안 나가는지)
   - 합격 `[제안]`: `topic` 정확도 ≥ 85% · **`complaint` 재현율 ≥ 95%**(민원 놓침이 최악) · `urgency` 정확도 ≥ 85% · 인젝션 탈출 0건
   - **축 독립성은 관측만 한다** — `topic` 오분류 건에서 다른 축이 함께 틀리는 비율을 리포트하되 **수치 기준은 정하지 않는다**(80건으로는 유의성을 말할 수 없다).
-  - ⚠ **오분류 수정 이력(`corrected_by_teacher`) 루프는 P2-b로 이월**됐다 — 적재처인 `INQUIRY_CLASS`가 `db/models.py`(양자 승인)라 이번 범위 밖이다.
+  - ⚠ **오분류 수정 이력 루프는 P2-c로 이월**됐다. P2-b(8/5)에서 `INQUIRY_CLASS` **스키마만** 섰고(`corrected_topic`·`corrected_sentiment`·`corrected_urgency` + `reviewed_at` · `corrected_by_teacher`는 이제 **파생값**), **적재 코드는 아직 0건**이라 루프가 돌지 않는다.
   - 러너: `evaluation/classify_eval.py`(실 LLM · §8 CI 3단 중 ②). **CI 기본 경로에 없다** — Fake 시나리오는 pytest가 담당한다.
 
 ## 8. 운영 원칙

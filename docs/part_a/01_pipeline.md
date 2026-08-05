@@ -182,8 +182,12 @@ agent_step(id PK, agent_run_id FK, seq, node_name, tool_called, tool_args_masked
            llm_call_id FK?, outcome)                                             -- 조사·계획 이력(관측)
 signal_brief(id PK, tenant_id, signal_ref FK, text, gate_passed bool,
              fallback_used bool, llm_call_id FK)                                 -- ⓐ
-inquiry_class(id PK, tenant_id, inquiry_ref, topic enum, urgency enum,
-              confidence, corrected_by_teacher bool, llm_call_id FK)             -- ⓑ
+inquiry_class(id PK, tenant_id, inquiry_ref,
+              topic|sentiment|urgency enum,           -- AI 예측(고정 · 덮어쓰기 금지)
+              confidence_topic|_sentiment|_urgency,   -- 축별 확신도
+              corrected_topic|_sentiment|_urgency,    -- 강사 정정(NULL=그 축 안 바꿈)
+              reviewed_at,                            -- NULL=평가셋 분모 제외
+              llm_call_id FK)                                                    -- ⓑ 평가셋
 tag_suggestion(id PK, tenant_id, source_text_hash, area_tag, type_tag,
                confidence, status[suggested|confirmed|rejected], llm_call_id FK) -- ⓒ (해시 캐시 키)
 label_suggestion(id PK, tenant_id, guardian_ref, axis, value,
