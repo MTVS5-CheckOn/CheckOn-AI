@@ -32,6 +32,9 @@ _ALLOWED_GATEWAY_CALLERS: frozenset[tuple[str, str]] = frozenset(
         ("briefing.py", "make_brief"),  # 브리핑 문장화(ⓐ) — role=narrator
         ("counsel/provider.py", "write"),  # 상담 초안 — role=counselor
         ("counsel/provider.py", "plan"),  # 강조점 선정 — role=counselor (⑱)
+        # 문의 분류(ⓑ) — 🔴 **body_text가 원문**이라 redact()가 전송 전에 반드시 선다.
+        # 구조적 보장은 `tests/ai/unit/composition/test_classify.py`가 spy provider로 검증한다.
+        ("classify/classifier.py", "classify"),
     }
 )
 

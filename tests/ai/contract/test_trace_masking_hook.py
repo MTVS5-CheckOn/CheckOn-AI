@@ -60,6 +60,7 @@ _ALLOWED_GATEWAY_BUILDERS: frozenset[str] = frozenset(
     {
         "composition/provider.py",
         "composition/counsel/assembly.py",
+        "composition/classify/provider.py",  # 문의 분류(ⓑ) — role=generator(⚠ CLASSIFIER 부재)
         "problem_generation/provider.py",
     }
 )

@@ -23,7 +23,12 @@ TEMPLATES_ROOT = PROMPTS_ROOT / "templates"
 def test_problem_generation_registry_has_three_versioned_prompts() -> None:
     registry = load_prompt_registry(REGISTRY_PATH)
 
-    assert {entry.prompt_id for entry in registry.prompts} == {
+    # ⚠ registry에는 pg 외 프롬프트도 산다(classify 등) — **pg.* 만** 본다.
+    assert {
+        entry.prompt_id
+        for entry in registry.prompts
+        if entry.prompt_id.startswith("pg.")
+    } == {
         "pg.passage.v1",
         "pg.items.v1",
         "pg.cross_solve.v1",
