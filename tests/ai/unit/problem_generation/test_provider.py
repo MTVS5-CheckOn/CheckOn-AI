@@ -34,7 +34,7 @@ def _ignore_record(*_: object) -> None:
 
 def test_local_fallback_builds_distinct_role_providers() -> None:
     providers = build_problem_providers(
-        settings=ProblemProviderSettings.model_validate({}),
+        settings=ProblemProviderSettings(_env_file=None),
         local_settings=_local_settings(),
     )
 
@@ -47,13 +47,12 @@ def test_local_fallback_builds_distinct_role_providers() -> None:
 
 def test_dedicated_verifier_uses_external_settings() -> None:
     providers = build_problem_providers(
-        settings=ProblemProviderSettings.model_validate(
-            {
-                "openai_base_url": "https://api.openai.test/v1",
-                "openai_api_key": SecretStr("external-secret"),
-                "openai_model": "gpt-test",
-                "openai_timeout_s": 23.0,
-            }
+        settings=ProblemProviderSettings(
+            _env_file=None,
+            openai_base_url="https://api.openai.test/v1",
+            openai_api_key=SecretStr("external-secret"),
+            openai_model="gpt-test",
+            openai_timeout_s=23.0,
         ),
         local_settings=_local_settings(),
     )
@@ -92,11 +91,10 @@ def test_dedicated_verifier_is_selected_from_environment(
 
 def test_partial_dedicated_verifier_settings_fail_closed() -> None:
     with pytest.raises(ValidationError, match="OPENAI_MODEL"):
-        ProblemProviderSettings.model_validate(
-            {
-                "openai_base_url": "https://api.openai.test/v1",
-                "openai_api_key": SecretStr("external-secret"),
-            }
+        ProblemProviderSettings(
+            _env_file=None,
+            openai_base_url="https://api.openai.test/v1",
+            openai_api_key=SecretStr("external-secret"),
         )
 
 
@@ -108,7 +106,7 @@ def test_gateway_uses_verify_config_transport_retry(transport_retry: int) -> Non
     gateway = build_problem_gateway(
         verify_config=verify_config,
         recorder=_ignore_record,
-        provider_settings=ProblemProviderSettings.model_validate({}),
+        provider_settings=ProblemProviderSettings(_env_file=None),
         local_settings=_local_settings(),
     )
 
@@ -125,6 +123,6 @@ def test_invalid_verify_config_transport_retry_fails_during_assembly() -> None:
         build_problem_gateway(
             verify_config=invalid,
             recorder=_ignore_record,
-            provider_settings=ProblemProviderSettings.model_validate({}),
+            provider_settings=ProblemProviderSettings(_env_file=None),
             local_settings=_local_settings(),
         )

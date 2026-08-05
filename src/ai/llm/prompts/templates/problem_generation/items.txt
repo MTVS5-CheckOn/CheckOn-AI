@@ -16,6 +16,38 @@ $retry_context_json
 1. item_format은 mcq만 허용하며 선지는 정확히 5개다.
 2. 요청의 area_tag, type_tag, skill_node_id를 그대로 보존한다.
 3. 정답은 하나만 성립해야 하고 모든 오답 선지에 why_wrong을 작성한다.
+   정답 선지의 why_wrong은 null이다.
 4. rationale은 evidence의 승인된 근거만 사용한다.
 5. evidence는 최소 1개이며 ContextPack의 EvidencePack 앵커만 참조한다.
-6. GeneratedItem 스키마의 JSON 객체만 반환한다.
+6. 아래 스키마의 JSON 객체 하나만 반환한다.
+
+스키마 — 필드명을 바꾸거나 새 필드를 추가하지 않는다:
+
+{
+  "area_tag": "요청 값 그대로",
+  "type_tag": "요청 값 그대로",
+  "item_format": "mcq",
+  "skill_node_id": "요청 값 그대로 또는 null",
+  "stem": "발문 문자열",
+  "choices": [
+    {"no": 1, "text": "선지 1", "why_wrong": null},
+    {"no": 2, "text": "선지 2", "why_wrong": "오답 사유"},
+    {"no": 3, "text": "선지 3", "why_wrong": "오답 사유"},
+    {"no": 4, "text": "선지 4", "why_wrong": "오답 사유"},
+    {"no": 5, "text": "선지 5", "why_wrong": "오답 사유"}
+  ],
+  "answer": {"correct_no": 1},
+  "rationale": "해설 문자열",
+  "evidence": [
+    {"kind": "grammar_rule", "ref": "앵커 ref", "quote": null}
+  ]
+}
+
+스키마 제약:
+- choices는 정확히 5개이고 no는 1..5를 한 번씩 쓴다.
+- 정답은 answer.correct_no(1..5)로만 표시한다. 선지 안에 정답 표시를 넣지 않는다.
+- evidence[].kind는 passage_span · dict_entry · grammar_rule · work_span 중 하나다.
+- kind가 passage_span 또는 work_span이면 quote에 원문을 넣고, 그 외에는 null이다.
+- options · is_correct · evidence_refs · difficulty · confidence 같은 필드를 만들지
+  않는다. 스키마에 없는 키가 하나라도 있으면 응답 전체가 거부된다.
+- 코드 블록 표시나 설명 문장 없이 JSON 객체만 출력한다.

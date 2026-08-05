@@ -12,7 +12,26 @@ $target_metadata_json
 규칙:
 1. 제공된 stem과 choices만으로 독립 풀이한다.
 2. 정답, rationale, evidence, ContextPack을 요청하거나 추정 근거로 사용하지 않는다.
-3. chosen, reasoning, confidence, multiple_answers_possible,
-   target_skill_node_id, measured_skill_node_id, aligned,
-   alignment_confidence, alignment_reason을 갖는 SolveResult JSON 객체만 반환한다.
+3. 아래 스키마의 JSON 객체 하나만 반환한다.
 4. 확신이 낮거나 복수 정답 가능성이 있으면 값을 숨기지 않는다.
+
+스키마 — 필드명을 바꾸거나 새 필드를 추가하지 않는다:
+
+{
+  "chosen": 1,
+  "reasoning": "선택 근거 문자열",
+  "confidence": 0.0,
+  "multiple_answers_possible": false,
+  "target_skill_node_id": "목표 메타의 값 또는 null",
+  "measured_skill_node_id": "실제로 측정된다고 본 노드 또는 null",
+  "aligned": true,
+  "alignment_confidence": 0.0,
+  "alignment_reason": "정렬 판단 근거 문자열"
+}
+
+스키마 제약:
+- chosen은 1..5 정수다.
+- confidence와 alignment_confidence는 0.0 이상 1.0 이하 실수다.
+- reasoning과 alignment_reason은 빈 문자열이 될 수 없다.
+- 스키마에 없는 키가 하나라도 있으면 응답 전체가 거부된다.
+- 코드 블록 표시나 설명 문장 없이 JSON 객체만 출력한다.
