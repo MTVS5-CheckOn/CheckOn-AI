@@ -11,6 +11,7 @@ import asyncio
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 
 from ai.composition.classify.classifier import (
     MAX_PARSE_RETRY,
@@ -18,7 +19,7 @@ from ai.composition.classify.classifier import (
     classify_versions,
     render_prompt,
 )
-from ai.contracts.classify import ClassifyRequest, ClassifyResult
+from ai.contracts.classify import AxisConfidence, ClassifyRequest, ClassifyResult
 from ai.contracts.counsel import InquirySentiment, InquiryTopic, InquiryUrgency
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import CallOutcome, LLMRequest, LLMResult, ModelRole, TokenUsage
@@ -262,3 +263,64 @@ def test_injection_cannot_escape_the_enum(attack: str) -> None:
 
     assert result.topic in set(InquiryTopic)
     assert result.classified is False  # 탈출 시도는 미분류로 수렴한다
+
+
+# ── 🔴 상태 표기 규약 — 사유는 닫힌 집합이고 판정과 짝이다 (error_codes §2.6) ──
+
+
+def test_fallback_reason_is_a_closed_set() -> None:
+    """🔴 enum 밖 문자열은 거부된다 — 자유 문자열은 오타·미등재 값을 조용히 흘린다."""
+    from ai.contracts.classify import ClassifyResult
+
+    with pytest.raises(ValidationError):
+        ClassifyResult(
+            inquiry_ref="iq_1",
+            topic=InquiryTopic.ETC,
+            sentiment=InquirySentiment.NORMAL,
+            urgency=InquiryUrgency.NORMAL,
+            confidence=AxisConfidence(topic=0.0, sentiment=0.0, urgency=0.0),
+            classified=False,
+            fallback_reason="오타난_사유",
+        )
+
+
+def test_classified_result_cannot_carry_a_reason() -> None:
+    """판정과 사유는 **짝이다** — 정상 판정에 사유가 실리면 BE가 두 필드로 추측하게 된다."""
+    from ai.contracts.classify import ClassifyFallbackReason, ClassifyResult
+
+    with pytest.raises(ValidationError):
+        ClassifyResult(
+            inquiry_ref="iq_1",
+            topic=InquiryTopic.GRADE,
+            sentiment=InquirySentiment.NORMAL,
+            urgency=InquiryUrgency.NORMAL,
+            confidence=AxisConfidence(topic=0.9, sentiment=0.9, urgency=0.9),
+            classified=True,
+            fallback_reason=ClassifyFallbackReason.PARSE_EXHAUSTED,
+        )
+
+
+def test_unclassified_result_requires_a_reason() -> None:
+    from ai.contracts.classify import ClassifyResult
+
+    with pytest.raises(ValidationError):
+        ClassifyResult(
+            inquiry_ref="iq_1",
+            topic=InquiryTopic.ETC,
+            sentiment=InquirySentiment.NORMAL,
+            urgency=InquiryUrgency.NORMAL,
+            confidence=AxisConfidence(topic=0.0, sentiment=0.0, urgency=0.0),
+            classified=False,
+        )
+
+
+def test_enum_members_are_what_the_code_actually_emits() -> None:
+    """🔴 값은 **코드가 실제로 내는 것 전수**다 — 발명 금지.
+
+    `redaction_uncertain`은 #86에서 사라졌다(마스킹 불확실이어도 분류를 계속한다).
+    쓰이지 않는 값을 남기면 BE가 대비할 필요 없는 분기를 만든다.
+    """
+    from ai.composition.classify.classifier import _FALLBACK_PARSE, _FALLBACK_TRIPWIRE
+    from ai.contracts.classify import ClassifyFallbackReason
+
+    assert set(ClassifyFallbackReason) == {_FALLBACK_PARSE, _FALLBACK_TRIPWIRE}
