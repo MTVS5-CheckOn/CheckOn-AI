@@ -232,11 +232,17 @@ def test_prompt_version_is_recorded() -> None:
 
 
 def test_generation_params_are_deterministic() -> None:
-    """temperature 0.0 + seed 고정 — 서버가 seed를 존중하는지는 별개다(99 D ㊼)."""
-    from ai.composition.classify.classifier import _GEN_PARAMS
+    """temperature 0.0 + seed 고정 — 서버가 seed를 존중하는지는 별개다(99 ㊼).
 
-    assert _GEN_PARAMS.temperature == 0.0
-    assert _GEN_PARAMS.seed is not None
+    seed 리터럴은 이제 `composition/determinism.py`가 정본이다(8/5) — 경로별로 상수를
+    따로 두면 브리핑·초안·분류의 재현 조건이 갈린다. 전 경로 공유는
+    `tests/ai/integration/test_llm_observability.py`가 고정한다.
+    """
+    from ai.composition.classify.classifier import CLASSIFY_GEN_PARAMS
+    from ai.composition.determinism import LLM_SEED
+
+    assert CLASSIFY_GEN_PARAMS.temperature == 0.0
+    assert CLASSIFY_GEN_PARAMS.seed == LLM_SEED
 
 
 # ── 프롬프트 인젝션 — 방어선은 프롬프트가 아니라 파싱이다 ────────
