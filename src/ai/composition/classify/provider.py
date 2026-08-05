@@ -21,6 +21,7 @@ from ai.contracts.llm import (
     ModelRole,
     TokenUsage,
 )
+from ai.db.repositories.llm_payload import capture_payloads
 from ai.db.repositories.run_store import default_llm_call_collector
 from ai.llm.gateway import LlmCallRecorder, LlmGateway
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
@@ -104,7 +105,8 @@ def build_classify_gateway(
     `recorder`는 기본이 공용 수집기다(99 ㊻ⓐ) — `build_brief_gateway`와 같은 규약이다.
     """
     return LlmGateway(
-        {ModelRole.CLASSIFIER: provider or build_classify_provider()},
+        # 전송 본문 포착(99 ㉝) — `build_brief_gateway`와 같은 규약이다.
+        {ModelRole.CLASSIFIER: capture_payloads(provider or build_classify_provider())},
         recorder=recorder or default_llm_call_collector(),
         transport_retry={ModelRole.CLASSIFIER: CLASSIFIER_TRANSPORT_RETRY},
         trace_masking_hook=RedactionTripwireTraceHook(),

@@ -28,6 +28,7 @@ from ai.contracts.llm import (
     ModelRole,
     TokenUsage,
 )
+from ai.db.repositories.llm_payload import capture_payloads
 from ai.db.repositories.run_store import default_llm_call_collector
 from ai.detection.brief import build_brief
 from ai.llm.gateway import LlmCallRecorder, LlmGateway
@@ -129,7 +130,10 @@ def build_brief_gateway(
     게이트웨이 생성이 실패한다(09 §2-16 P1′ 기동 가드).
     """
     return LlmGateway(
-        {ModelRole.NARRATOR: provider or build_brief_provider()},
+        # `capture_payloads`가 provider를 감싸 **전송 본문**을 포착한다(99 ㉝) — 게이트웨이가
+        # 마스킹 훅을 통과시킨 요청을 그대로 provider에 넘기므로 이 자리에서 요청·응답을
+        # 둘 다 볼 수 있고 `llm/gateway.py`를 건드리지 않는다. `name`은 위임된다.
+        {ModelRole.NARRATOR: capture_payloads(provider or build_brief_provider())},
         recorder=recorder or default_llm_call_collector(),
         transport_retry={ModelRole.NARRATOR: _NARRATOR_TRANSPORT_RETRY},
         trace_masking_hook=RedactionTripwireTraceHook(),
