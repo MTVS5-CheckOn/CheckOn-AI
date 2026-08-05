@@ -24,7 +24,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
+from typing import Any, Final
 
 from fastapi import APIRouter, Request, Response
 from langgraph.checkpoint.memory import InMemorySaver
@@ -57,6 +57,7 @@ from ai.contracts.counsel import (
     CounselDraftJobView,
     CounselDraftRequest,
     CounselDraftResult,
+    InquiryTopic,
     RefineRequest,
     RefineResponse,
     WireDraftStatus,
@@ -79,6 +80,13 @@ _CONTRACT_VERSION = "0.1"
 
 _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id", "Idempotency-Key")
 _POST_ENDPOINT = "POST /v1/counsel/drafts"
+
+#: 학습 데이터가 필요 없는 문의 유형 — `template_only` 경로(error_codes §2.1 · 03 §C 상황 2).
+#: ⚠ **`schedule` 한 종만이다.** `etc`를 넣지 않는 이유는 **오분류의 비대칭**이다 —
+#: 데이터 유관 문의를 무관으로 잘못 보면 근거가 있는데도 일반 안내만 나가 **기능이 사라지고**,
+#: 반대로 무관 문의를 유관으로 보면 근거 부족 → `rejected_insufficient`(정직한 거부)로
+#: **안전하게 수렴**한다. 넓히려면 이 상수만 고치면 된다.
+_NO_DATA_TOPICS: Final[frozenset[InquiryTopic]] = frozenset({InquiryTopic.SCHEDULE})
 
 #: 게이트 실패 재생성 상한 — ERD DRAFT_BLOCK "≤3"(불변식 6).
 _REGEN_MAX = 3
@@ -268,6 +276,37 @@ async def _generate(
     **호출 전에** `rejected_insufficient`로 끊는다(04 §3.9 규약 · 불변식 2).
     """
     _snapshot, applied = snapshot_from_labels(request.labels)
+
+    # ① 🔴 데이터 무관 문의 — **근거 선검사보다 앞**이다(순서가 계약이다).
+    #    시간표 문의 + 신규생(근거 0건)이면 뒤에 두었을 때 "아직 데이터를 모으는
+    #    중이에요"가 나가는데, **시간표 답변에 학습 데이터는 애초에 필요 없다.**
+    #    근거 유무와 무관하게 template_only여야 한다(03 §C 상황 2).
+    #
+    #    ⚠ `text`를 비운다 — **안내 문구는 AI가 만들지 않는다.** 근거 3겹:
+    #      ⓐ LLM이 문장을 지어내면 **근거 0건 산출물**이라 불변식 2 위반이고, 통과시킬
+    #        근거가 없어 게이트를 세울 수 없다
+    #      ⓑ `error_codes` §2.1의 **"백엔드 표시 문구"** 열이 원본이라 BE 소유다
+    #      ⓒ §2.7 **규칙 ③ "표시 문구는 AI가 주지 않는다"** — 8/5에 `RefineResponse.message`를
+    #        제거해 세운 전 엔드포인트 규약이다. 여기 문구를 실으면 그걸 되돌리게 된다
+    #
+    #    ⚠ **`confidence`를 보지 않는다** — 강등 판단의 주체는 **BE**다(04 §3.5).
+    #    요청의 `inquiry`에 `confidence` 필드 자체가 없고, AI는 받은 `topic`을
+    #    **확정값으로 신뢰**한다. 오분류였다면 정정 경로(§3.9)가 되돌린다.
+    #
+    #    LLM 0회 · 잡 적재 없음 · `_drafts` 미등록(초안이 없으니 refine 대상이 아니다).
+    if request.inquiry.topic in _NO_DATA_TOPICS:
+        return CounselDraftJobView(
+            job_id=str(uuid.uuid4()),
+            status=JobPhase.SUCCEEDED.value,
+            result=CounselDraftResult(
+                draft_status=WireDraftStatus.TEMPLATE_ONLY,
+                status_reason="no_data_topic",  # error_codes §2.1 정본
+                labels_applied=applied,
+                generated_at=_clock(),
+            ),
+        )
+
+    # ② 근거 0건 — 여기부터는 **데이터 유관 문의**다.
     if not request.context.citable_facts():
         return CounselDraftJobView(
             job_id=str(uuid.uuid4()),
