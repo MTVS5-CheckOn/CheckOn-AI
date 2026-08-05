@@ -28,8 +28,9 @@ from ai.contracts.llm import (
     ModelRole,
     TokenUsage,
 )
+from ai.db.repositories.run_store import default_llm_call_collector
 from ai.detection.brief import build_brief
-from ai.llm.gateway import LlmGateway
+from ai.llm.gateway import LlmCallRecorder, LlmGateway
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
 
 #: 브리핑 전송 재시도 = 0 — LLM 실패 시 결정론 템플릿으로 즉시 폴백(재시도 없음).
@@ -103,12 +104,20 @@ def build_brief_provider(settings: BriefingSettings | None = None) -> LLMProvide
     return FakeBriefProvider()
 
 
-def build_brief_gateway(provider: LLMProvider | None = None) -> LlmGateway:
+def build_brief_gateway(
+    provider: LLMProvider | None = None,
+    *,
+    recorder: LlmCallRecorder | None = None,
+) -> LlmGateway:
     """브리핑 문장화 게이트웨이(조립부) — narrator role로 provider를 감싼다(gateway 경유).
 
     모든 LLM 호출은 gateway 경유(03_coding_rules §2 · 01 §5) — 어댑터 직결을 종료한다.
-    전송 재시도는 narrator=0으로 등록(재시도 값은 여기서 주입 — 하드코딩 금지). 원가 기록
-    recorder는 기본 no-op(LLM_CALL DB 적재는 후속 — 99 등록).
+    전송 재시도는 narrator=0으로 등록(재시도 값은 여기서 주입 — 하드코딩 금지).
+
+    **`recorder`는 기본이 공용 수집기다**(8/5 · 99 ㊻ⓐ 해소). 종전에는 기본 no-op이라
+    실 LLM 스모크 1회의 호출 34건·토큰 19,814가 전량 폐기됐다 — "조립부가 recorder를
+    넘기는 것을 잊었다"가 사고의 형태였으므로 **기본값을 뒤집었다.** 수집분은 소비자가
+    `record_calls`로 영속한다(수집 후 영속 — `db/repositories/run_store.py`).
 
     ⚠ **㉒-a 추적 가드를 여기 걸지 않는다** — 실측상 briefing은 span 0건이라 위험 표면이
     아니다(`part_a/11` §3: 그래프도 Runnable도 아니고 `openai_compat`이 `wrap_openai`를
@@ -121,6 +130,7 @@ def build_brief_gateway(provider: LLMProvider | None = None) -> LlmGateway:
     """
     return LlmGateway(
         {ModelRole.NARRATOR: provider or build_brief_provider()},
+        recorder=recorder or default_llm_call_collector(),
         transport_retry={ModelRole.NARRATOR: _NARRATOR_TRANSPORT_RETRY},
         trace_masking_hook=RedactionTripwireTraceHook(),
     )

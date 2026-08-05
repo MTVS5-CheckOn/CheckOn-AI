@@ -34,7 +34,7 @@ from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.labels import LabelVocabularyError, snapshot_from_labels
-from ai.composition.counsel.provider import FakeCounselProvider
+from ai.composition.counsel.provider import COUNSEL_GEN_PARAMS, FakeCounselProvider
 from ai.composition.counsel.refine import refine_draft
 from ai.composition.counsel.settings import get_counsel_settings
 from ai.composition.counsel.stores import (
@@ -66,7 +66,15 @@ from ai.contracts.counsel import (
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.gates import BlockedReason
 from ai.db.repositories.idempotency import IdempotencyStore
-from ai.db.store_factory import build_agent_job_store, build_idempotency_store
+from ai.db.repositories.run_store import (
+    RunStore,
+    default_llm_call_collector,
+)
+from ai.db.store_factory import (
+    build_agent_job_store,
+    build_idempotency_store,
+    build_run_store,
+)
 from ai.runtime.errors import IdempotencyConflict, NotFound, SnapshotInvalid
 
 logger = logging.getLogger(__name__)
@@ -96,6 +104,9 @@ _LEASE_OWNER = "counsel-router"
 _clock = system_utc_now
 
 _idempotency_store: IdempotencyStore = build_idempotency_store()
+#: 실행 원장(AI_RUN·LLM_CALL) — refine 턴이 직접 쓴다. POST 경로는 워커가 쓴다
+#: (LLM 호출이 `job.execution_id` 아래에서 일어나므로 그 실행의 주인이 워커다).
+_run_store: RunStore = build_run_store()
 _context_store: ContextStore = InMemoryContextStore()
 _draft_store: DraftResultStore = InMemoryDraftResultStore()
 _pack_store: PackResultStore = InMemoryPackResultStore()
@@ -157,9 +168,18 @@ def set_counsel_stores(
         _step_sink = step_sink
 
 
+def set_counsel_run_store(store: RunStore) -> None:
+    """실행 원장 주입 — 테스트가 AI_RUN·LLM_CALL 적재를 관측하는 seam."""
+    global _run_store
+    _run_store = store
+
+
 def reset_counsel_stores() -> None:
     """테스트 격리용 — 저장소·읽기 모델·provider를 기본값으로 되돌린다."""
     global _idempotency_store, _context_store, _draft_store, _pack_store, _step_sink
+    global _run_store
+    _run_store = build_run_store()
+    default_llm_call_collector().reset()
     _idempotency_store = build_idempotency_store()
     _context_store = InMemoryContextStore()
     _draft_store = InMemoryDraftResultStore()
@@ -340,6 +360,9 @@ async def _generate(
         regen_max=_REGEN_MAX,
         lease_owner=_LEASE_OWNER,
         now=_clock,
+        # 실행 원장은 라우터와 **같은 인스턴스**를 쓴다 — 워커가 기본 팩토리로 따로 만들면
+        # 테스트가 주입한 저장소를 우회해 적재를 관측할 수 없다.
+        run_store=_run_store,
     )
     ran = await runner.run_next(tenant_id=tenant_id) or job
     # 🔴 뷰가 싣는 job_id와 refine 등록 키는 **같은 값이어야 한다** — 그래서 한 곳에서
@@ -523,12 +546,27 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
         raise NotFound("job_id 부재", {"job_id": job_id})
 
     execution_id = uuid.uuid4()
+    refine_context = _refine_execution_context(execution_id, tenant_id)
     outcome = await refine_draft(
         context=state.context,
         instruction=refine_request.instruction,
         writer=_provider,
-        execution_context=_refine_execution_context(execution_id, tenant_id),
+        execution_context=refine_context,
         regen_max=_REGEN_MAX,
+    )
+    # 실행 원장 — refine 턴도 하나의 실행이다(불변식 8). 차단 턴도 남긴다: 차단은 에러가
+    # 아니고(불변식 4) 어떤 호출이 무엇을 냈길래 게이트가 걸렸는지가 정확히 추적 대상이다.
+    # ⚠ `quota_consumed`(pack state)에는 들어가지 않는다 — 이 경로는 그래프 밖이다.
+    refine_calls = default_llm_call_collector().take(execution_id)
+    refine_last = refine_calls[-1].record if refine_calls else None
+    await _run_store.record_run(
+        refine_context.to_run_metadata(
+            created_at=_clock(),
+            model_provider=refine_last.provider if refine_last is not None else None,
+            model_name=refine_last.model if refine_last is not None else None,
+            generation_params=COUNSEL_GEN_PARAMS,
+        ),
+        refine_calls,
     )
     if outcome.applied and outcome.text:
         state.text = outcome.text  # 반영분만 승격 — 차단 턴은 직전 버전 유지(계약 §6)
@@ -556,6 +594,7 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
 
 __all__ = [
     "counsel_versions",
+    "set_counsel_run_store",
     "reset_counsel_stores",
     "router",
     "set_counsel_provider",

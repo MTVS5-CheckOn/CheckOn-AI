@@ -25,8 +25,9 @@ from ai.composition.counsel.prompt import (
     assemble_prompt,
     tone_rule_for,
 )
+from ai.composition.determinism import deterministic_params
 from ai.contracts.composition import DraftContext
-from ai.contracts.execution import ExecutionContext, GenerationParams
+from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import (
     CallOutcome,
     LlmError,
@@ -41,6 +42,10 @@ from ai.runtime.redaction import redact
 #: 초안 블록은 문단 단위라 브리핑(한 줄)보다 길다. 문장당 상한 × 문장 수로 산출한다 —
 #: 값을 게이트에 박지 않고 tone_map의 sentences_per_block에서 파생시킨다(03 §1).
 CHARS_PER_SENTENCE = 120
+
+#: 초안·plan 생성 파라미터 — 재현 축(temperature·seed)은 `composition/determinism.py`가
+#: 정본이다(99 ㊼). 워커가 AI_RUN.generation_params에 이 값을 적재한다.
+COUNSEL_GEN_PARAMS: Final = deterministic_params()
 
 
 def max_chars_for(context: DraftContext) -> int:
@@ -186,7 +191,7 @@ class GatewayDraftWriter:
                 prompt=redacted.masked_text,
                 prompt_id=PROMPT_ID,
                 prompt_version=PROMPT_VERSION,
-                generation_params=GenerationParams(temperature=0.0),
+                generation_params=COUNSEL_GEN_PARAMS,
             ),
             execution_context,
         )
@@ -236,7 +241,7 @@ class GatewayPlanner:
                 prompt=redacted.masked_text,
                 prompt_id=PLAN_PROMPT_ID,
                 prompt_version=PLAN_PROMPT_VERSION,
-                generation_params=GenerationParams(temperature=0.0),
+                generation_params=COUNSEL_GEN_PARAMS,
             ),
             execution_context,
         )
@@ -336,6 +341,7 @@ class FakeCounselLlmProvider:
 
 
 __all__ = [
+    "COUNSEL_GEN_PARAMS",
     "PLAN_PROMPT_ID",
     "PLAN_PROMPT_VERSION",
     "GatewayPlanner",

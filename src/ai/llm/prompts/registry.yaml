@@ -16,11 +16,11 @@ prompts:
     template: problem_generation/cross_solve.txt
     response_schema_name: SolveResult
   # 문의 분류(ⓑ) — 04 §3.5 · part_a/01 §4-ⓑ.
-  # ⚠ role이 generator인 것은 **ModelRole에 CLASSIFIER가 없어서**다(contracts/llm.py는 양자
-  #   승인 파일이라 값을 추가하지 않았다). 분류는 값싼 모델로 라우팅되는 게 맞으므로
-  #   CLASSIFIER 신설을 제안한 상태다(99 D).
+  # role=classifier는 `contracts/llm.py`의 `ModelRole.CLASSIFIER`("문의 분류·태깅 제안")다 —
+  # 초기 커밋부터 있던 값이다. 종전 generator였고 "CLASSIFIER가 없어서"라는 주석이 붙어
+  # 있었는데 **사실이 아니었다**(8/5 정정 · 99 ㊻ B-4).
   - prompt_id: classify.inquiry.v1
     version: v1
-    role: generator
+    role: classifier
     template: classify/inquiry.txt
     response_schema_name: ClassifyLlmOutput

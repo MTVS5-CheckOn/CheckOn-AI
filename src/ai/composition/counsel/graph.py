@@ -17,7 +17,7 @@ prod=PostgresSaver). LLM 접점(plan·generate_draft)은 Protocol 뒤에 있고 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -39,6 +39,7 @@ from ai.composition.gate_feedback import instruction_for
 from ai.contracts.composition import DraftContext, DraftKind, DraftStatus, StudentResult
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError
+from ai.db.repositories.run_store import LlmCallCollector, default_llm_call_collector
 
 logger = logging.getLogger(__name__)
 
@@ -78,16 +79,27 @@ def build_counsel_graph(
     new_draft_id: Callable[[], UUID],
     now: Callable[[], datetime],
     interrupt_before: tuple[str, ...] = (),
+    call_log: LlmCallCollector | None = None,
+    student_call_ids: MutableMapping[str, UUID] | None = None,
 ) -> Any:  # noqa: ANN401 — LangGraph 컴파일 그래프 제네릭이 버전별로 달라 Any
     """의존성을 클로저로 묶어 컴파일된 그래프를 반환한다.
 
     `contexts`는 워커가 `context_ref`를 역참조해 넘긴다 — **state에 담기지 않는다**(§1.2 ⑨).
     `new_draft_id`·`now`는 주입한다(시계·난수 금지 03 §3). `draft_store`는 게이트 통과 본문의
     영속 경계다 — 기본 카운터(`UUID(int=n)`)는 잡 간 충돌하므로 두지 않는다.
+
+    `call_log`·`student_call_ids`는 관측 배선이다(99 ㊻ⓒ) — 학생별로 "이 초안을 만든 LLM
+    호출"의 행 id를 워커가 준 맵에 적어 준다. **state가 아니라 맵인 이유**는 §1.2 필드
+    집합이 문서와 1:1로 고정돼 있어서다(대조 테스트가 강제). `consecutive` 카운터와 같은
+    성격의 클로저 밖 가변 상태다.
     """
 
     #: 연속 LLM 실패 카운터 — 클로저 상태(그래프 인스턴스 = 잡 1건).
     consecutive = {"llm_failed": 0}
+    log = call_log or default_llm_call_collector()
+    call_ids: MutableMapping[str, UUID] = (
+        student_call_ids if student_call_ids is not None else {}
+    )
 
     async def plan(state: CounselPackState) -> dict[str, Any]:
         """강조점을 고르고 **근거 실존을 검증**한다. plan은 부가정보다.
@@ -132,11 +144,17 @@ def build_counsel_graph(
                     status=DraftStatus.REJECTED_INSUFFICIENT,
                     fail_reason="context_missing",
                 ),
+                llm_sent=False,  # 호출 자체가 없다 — 원가 0
             )
 
         # ②③ generate_draft → gate_check (게이트 실패 시 재생성 ≤ regen_max)
         max_chars = max_chars_for(context)
         last_reason = ""
+        #: 이 학생에 대해 전송이 한 번이라도 있었나 — `quota_consumed`의 판정 근거다.
+        #: 🔴 **단위는 "인터랙티브 생성 1건"이지 호출 수가 아니다.** 게이트 재생성으로 3번
+        #: 불러도 1이다: 호출 수는 LLM_CALL 행수로 이미 정확히 남고(변경 B), 여기서 또
+        #: 세면 두 지표가 갈려 어느 쪽이 원장인지 알 수 없게 된다.
+        llm_sent = False
         for _ in range(regen_max):
             try:
                 # 직전 게이트 사유를 수정 지시로 넘긴다(05 §6-2) — 같은 프롬프트를 상한까지
@@ -156,6 +174,9 @@ def build_counsel_graph(
                         status=DraftStatus.FAILED,
                         fail_reason="redaction_blocked",
                     ),
+                    # 🔴 **전송 전** 차단이다 — 원가가 발생하지 않았으므로 세지 않는다.
+                    # 앞 시도에서 전송이 있었다면 llm_sent가 이미 True다.
+                    llm_sent=llm_sent,
                 )
             except LlmError as exc:  # 재시도 없이 실패 기록 — 루프는 계속(불변식 ③)
                 # §1.3 서킷 — 연속 실패가 임계에 달하면 전면 장애로 보고 협력 중단한다.
@@ -172,8 +193,17 @@ def build_counsel_graph(
                         status=DraftStatus.FAILED,
                         fail_reason=f"llm_failed:{type(exc).__name__}",
                     ),
+                    # 전송은 시도됐다(타임아웃·벤더 오류) — 원가가 발생할 수 있으므로 센다.
+                    llm_sent=True,
                 )
             consecutive["llm_failed"] = 0  # 성공 전송 — 연속 카운터 초기화
+            llm_sent = True
+            # 🔴 방금 성공한 호출이 **이 학생의** 호출이다 — 여기서 잡아야 정확하다.
+            #    루프 밖에서 읽으면 다음 학생의 호출을 가리키고, plan 노드 호출과도 섞인다.
+            #    재생성했다면 매 시도 갱신되어 **최종본을 낸 호출**이 남는다.
+            call_id = log.last_success_id(execution_context.execution_id)
+            if call_id is not None:
+                call_ids[student_ref] = call_id
             gate = check_counsel_gate(text, context, max_chars=max_chars)
             if gate.passed:
                 # ④ record — **게이트 통과 직후** 본문을 영속한다. 순서가 곧 불변식 1이다
@@ -207,6 +237,7 @@ def build_counsel_graph(
                         draft_id=draft_id,
                         status=DraftStatus.GENERATED,
                     ),
+                    llm_sent=True,
                 )
             last_reason = gate.reason
 
@@ -217,11 +248,31 @@ def build_counsel_graph(
                 status=DraftStatus.FAILED,
                 fail_reason=f"gate_exhausted:{last_reason}",
             ),
+            # 산출물은 없지만 전송 3회의 원가는 실제로 발생했다 — 0으로 기록하면
+            # "원가가 있었는데 흔적이 없다"가 된다(㊻ⓑ가 막으려는 바로 그 상태).
+            llm_sent=True,
         )
 
-    def _record(state: CounselPackState, result: StudentResult) -> dict[str, Any]:
-        """cursor·results를 함께 전진시킨다 — 불변식 ②(cursor == len(results))."""
-        return {"cursor": state.cursor + 1, "results": [*state.results, result]}
+    def _record(
+        state: CounselPackState, result: StudentResult, *, llm_sent: bool
+    ) -> dict[str, Any]:
+        """cursor·results·quota_consumed를 함께 전진시킨다.
+
+        불변식 ②(cursor == len(results))를 지키는 유일한 관문이라 미터링 증가도 여기 둔다 —
+        경로마다 따로 올리면 어느 경로가 빠졌는지 알 수 없다(㊻ⓑ의 형태가 정확히 그것이다).
+
+        🔴 `quota_consumed`의 단위는 **인터랙티브 생성 1건**이다(CLAUDE.md §7 — 차단·카운트·
+        표시는 전부 백엔드이고 AI에 남는 건 원가 기록뿐). 전송이 한 번이라도 있었으면 1,
+        없었으면 0이다.
+
+        ⚠ **refine 턴은 이 카운터에 안 들어간다** — pack state 밖에서 도는 별도 경로다
+        (라우터가 턴마다 AI_RUN을 남기고 호출은 LLM_CALL 행으로 남는다).
+        """
+        return {
+            "cursor": state.cursor + 1,
+            "results": [*state.results, result],
+            "quota_consumed": state.quota_consumed + (1 if llm_sent else 0),
+        }
 
     def summarize_node(state: CounselPackState) -> dict[str, Any]:
         return {"summary": summarize(state.results)}

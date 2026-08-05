@@ -26,9 +26,10 @@ from pathlib import Path
 
 from ai.composition.briefing_context import BriefingContext, render_evidence_block
 from ai.composition.briefing_gate import MAX_BRIEF_LENGTH, check_brief_gate
+from ai.composition.determinism import deterministic_params
 from ai.composition.gate_feedback import instruction_for, render_feedback_block
 from ai.contracts.detection import Brief
-from ai.contracts.execution import ExecutionContext, GenerationParams
+from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import (
     LlmError,
     LLMProvider,
@@ -56,7 +57,11 @@ PROMPT_VERSION = "0.2"
 #: 브리핑은 한 문장(≤MAX_BRIEF_LENGTH자)이라 생성 토큰 상한을 좁게 준다 — 서버 기본값의
 #: 과생성·지연을 막는다(v2 프리뷰 지연 개선). 게이트 길이 상한과 별개의 성능 제어.
 _BRIEF_MAX_TOKENS = 128
-_GEN_PARAMS = GenerationParams(max_tokens=_BRIEF_MAX_TOKENS)
+
+#: 🔴 종전에는 `max_tokens`만 있어 **temperature·seed가 둘 다 미지정**이었다 — 어댑터
+#: 기본 temperature(0.7)로 나가 같은 신호가 매번 다른 문장을 냈다(99 ㊼). 재현 축의
+#: 정본은 `composition/determinism.py`다.
+BRIEF_GEN_PARAMS = deterministic_params(max_tokens=_BRIEF_MAX_TOKENS)
 
 
 @lru_cache
@@ -125,7 +130,7 @@ async def make_brief(
             prompt=redacted.masked_text,
             prompt_id=PROMPT_ID,
             prompt_version=PROMPT_VERSION,
-            generation_params=_GEN_PARAMS,
+            generation_params=BRIEF_GEN_PARAMS,
         )
         try:
             result = await completer.complete(request, context)

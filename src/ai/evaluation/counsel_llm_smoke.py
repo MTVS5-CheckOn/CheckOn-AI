@@ -422,23 +422,49 @@ async def _run_s3(observers: list[_CountingProvider]) -> dict[str, Any]:
 
 
 def _run_s4(observers: list[_CountingProvider], s2: dict[str, Any]) -> dict[str, Any]:
-    """B-5 3종 + 기록 실재. 전부 memory 백엔드로 관측 가능하다."""
+    """B-5 3종 + 기록 실재. 전부 memory 백엔드로 관측 가능하다.
+
+    ⚠ 8/5 개정 — 종전에는 3종의 판정을 **리터럴로 박아** 리포트에 "🔴 결함 확정"을 찍었다.
+    ㊻ 배선 후에는 그게 거짓 보고가 되므로 **측정으로 바꿨다.** 값이 코드 상태를 따라간다.
+    """
     from ai.composition.counsel.state import CounselPackState  # noqa: PLC0415
+    from ai.db.repositories.run_store import (  # noqa: PLC0415
+        LlmCallCollector,
+        default_llm_call_collector,
+    )
+    from ai.llm.gateway import _ignore_record  # noqa: PLC0415
 
     calls = [call for provider in observers for call in provider.observed]
     outcomes = Counter(call.outcome for call in calls)
+    # ⓐ 조립부가 recorder를 넘기는지 — 프로덕션 조립부를 그대로 만들어 확인한다.
+    #   기본 recorder가 `_ignore_record`면 배선이 없는 것이고, 수집기면 있는 것이다.
+    probe = build_brief_gateway()
+    wired_recorder = probe._recorder  # noqa: SLF001 — 관측 목적(배선 여부 판정)
     return {
-        # ⓐ 재료는 전부 있는데 적재 경로가 없다 — 조립부가 recorder를 넘기지 않는다.
         "records_captured": len(calls),
         "tokens_total": sum(call.tokens_in + call.tokens_out for call in calls),
         "record_outcomes": dict(outcomes),
-        "production_recorder_wired": False,
-        # ⓑ quota_consumed — 선언만 있고 증가 지점이 src에 없다.
+        "production_recorder_wired": wired_recorder is not _ignore_record,
+        "production_recorder_is_collector": isinstance(
+            wired_recorder, LlmCallCollector
+        ),
+        "collector_dropped_calls": default_llm_call_collector().dropped_calls,
+        # ⓑ quota_consumed — 기본값(0)과 **증가 지점 존재 여부**는 다르다. 후자는 그래프
+        #   단위 테스트가 고정하고(`test_llm_observability.py`), 여기선 기본값만 남긴다.
         "quota_consumed_default": CounselPackState.model_fields["quota_consumed"].default,
-        # ⓒ llm_call_id — worker.py가 상수 None을 넣는다(역추적 불가).
-        "llm_call_id_is_constant_none": True,
+        # ⓒ llm_call_id — 워커가 상수 None을 넣는지. 시그니처가 아니라 소스에 남은
+        #   리터럴 여부로 본다(값 자체는 실행별로 달라 리포트에 싣지 않는다).
+        "llm_call_id_is_constant_none": _worker_pins_llm_call_id_to_none(),
         "s2_jobs": len(s2["rows"]),
     }
+
+
+def _worker_pins_llm_call_id_to_none() -> bool:
+    """워커가 `llm_call_id=None`을 리터럴로 박고 있는지 — ㊻ⓒ 회귀 감지."""
+    from ai.composition.counsel import worker  # noqa: PLC0415
+
+    source = Path(worker.__file__).read_text(encoding="utf-8")
+    return "llm_call_id=None" in source
 
 
 def _run_s5(observers: list[_CountingProvider]) -> dict[str, Any]:
@@ -652,15 +678,24 @@ def _render(data: dict[str, Any]) -> str:
             [
                 ["ⓐ `LlmCallRecord` 적재(recorder 배선)",
                  f"실 호출 **{s4['records_captured']}건**(토큰 {s4['tokens_total']:,}) 발생 · "
-                 "역할·프롬프트·지연·토큰 **재료가 전부 있는데** 조립부가 `recorder`를 "
-                 "넘기지 않아 기본 `_ignore_record`로 **전량 폐기**된다",
-                 "🔴 **결함 확정**"],
+                 + (
+                     "조립부 기본 recorder가 **공용 수집기**다 — 수집분은 "
+                     f"`record_run`/`record_calls`가 영속한다(버린 호출 "
+                     f"{s4['collector_dropped_calls']}건)"
+                     if s4["production_recorder_wired"]
+                     else "조립부가 `recorder`를 넘기지 않아 기본 `_ignore_record`로 "
+                          "**전량 폐기**된다"
+                 ),
+                 "✅ 배선됨" if s4["production_recorder_wired"] else "🔴 **결함 확정**"],
                 ["ⓑ `quota_consumed` 증가",
-                 f"기본값 {s4['quota_consumed_default']} 유지 · src에 증가 지점 0",
-                 "🔴 **결함 확정**"],
+                 f"기본값 {s4['quota_consumed_default']} · 증가 지점은 그래프 `_record` "
+                 "1곳(단위 테스트가 고정 — 이 러너는 그래프 state를 읽지 않는다)",
+                 "참고"],
                 ["ⓒ `llm_call_id` 역추적",
-                 "`worker.py:211`이 상수 `None` — AI_RUN에서 LLM 호출 도달 불가",
-                 "🔴 **결함 확정**"],
+                 "워커가 상수 `None`을 박고 있다 — AI_RUN에서 LLM 호출 도달 불가"
+                 if s4["llm_call_id_is_constant_none"]
+                 else "워커가 학생별 **마지막 성공 호출**을 연결한다",
+                 "🔴 **결함 확정**" if s4["llm_call_id_is_constant_none"] else "✅ 연결됨"],
                 ["호출 outcome 분포",
                  ", ".join(f"`{k}` {v}" for k, v in s4["record_outcomes"].items()) or "—",
                  "참고"],
@@ -722,16 +757,20 @@ def _render(data: dict[str, Any]) -> str:
                  "fake(`게으르다는`)는 잡히고 실서버(`게으른`)는 안 잡힌 것이 정확히 "
                  "지시서가 경계한 \"fake 통과와 실서버 통과는 다른 문제\"다",
                  "**높음(신규·안전)**"],
-                ["D1", "`LlmCallRecord`가 **어디에도 적재되지 않는다**",
-                 "`build_brief_gateway`·`build_counsel_gateway` 둘 다 `recorder`를 주입하지 "
-                 f"않아 기본 `_ignore_record`. 러너가 직접 꽂으니 {s4['records_captured']}건이 "
-                 "포착됐다 — **재료는 있고 배선만 없다**", "높음(B-5 ⓐ)"],
-                ["D2", "`quota_consumed`가 증가하지 않는다",
-                 "`state.py:88` 선언뿐이고 **증가 지점이 `src/` 전체에 0개**. LLM 원가 기록이 "
-                 "AI에 남는 유일한 쿼터 흔적인데(CLAUDE.md §7) 항상 0이다", "높음(B-5 ⓑ)"],
-                ["D3", "`llm_call_id`가 상수 `None` — LLM 호출 역추적 불가",
-                 "`counsel/worker.py:211`. `agent_step`에서 `LLM_CALL`로 갈 간선이 끊겨 "
-                 "`execution_id`로 도달할 수 없다", "높음(B-5 ⓒ)"],
+                ["D1", "`LlmCallRecord` 적재 배선",
+                 (f"조립부 기본 recorder가 공용 수집기다 — 실 호출 "
+                  f"{s4['records_captured']}건이 `AI_RUN`·`LLM_CALL`로 영속된다"
+                  if s4["production_recorder_wired"]
+                  else "`build_brief_gateway`·`build_counsel_gateway` 둘 다 `recorder`를 "
+                       f"주입하지 않아 기본 `_ignore_record`. 러너가 직접 꽂으니 "
+                       f"{s4['records_captured']}건이 포착됐다 — **재료는 있고 배선만 없다**"),
+                 "해소(8/5)" if s4["production_recorder_wired"] else "높음(B-5 ⓐ)"],
+                ["D3", "`llm_call_id` 역추적",
+                 ("워커가 학생별 마지막 성공 호출을 `agent_step.llm_call_id`에 연결한다"
+                  if not s4["llm_call_id_is_constant_none"]
+                  else "`counsel/worker.py`가 상수 `None`. `agent_step`에서 `LLM_CALL`로 갈 "
+                       "간선이 끊겨 `execution_id`로 도달할 수 없다"),
+                 "높음(B-5 ⓒ)" if s4["llm_call_id_is_constant_none"] else "해소(8/5)"],
                 ["D4", "redaction이 일반 어휘를 오탐한다",
                  "`재기동` → `⟪주소1⟫`(행정동 패턴) · `반 평균이랑` → **uncertain=True**"
                  "(인명 후보). 후자는 fail-closed라 **정상 지시가 전송 자체를 못 한다**",

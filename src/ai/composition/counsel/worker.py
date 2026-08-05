@@ -27,7 +27,12 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.composition.counsel.graph import LlmCircuitOpenError, build_counsel_graph
-from ai.composition.counsel.provider import CounselPlanner, DraftWriter
+from ai.composition.counsel.prompt import PROMPT_VERSION
+from ai.composition.counsel.provider import (
+    COUNSEL_GEN_PARAMS,
+    CounselPlanner,
+    DraftWriter,
+)
 from ai.composition.counsel.settings import get_counsel_settings
 from ai.composition.counsel.state import CounselPackState
 from ai.composition.counsel.stores import (
@@ -41,6 +46,12 @@ from ai.composition.counsel.stores import (
 )
 from ai.contracts.agents import WorkerJob, WorkerKind
 from ai.contracts.execution import ExecutionContext
+from ai.db.repositories.run_store import (
+    LlmCallCollector,
+    RunStore,
+    default_llm_call_collector,
+)
+from ai.db.store_factory import build_run_store
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +97,8 @@ class CounselPackRunner:
         new_id: Callable[[], UUID] = uuid4,
         now: Callable[[], datetime] = system_utc_now,
         llm_failure_circuit: int | None = None,
+        run_store: RunStore | None = None,
+        call_log: LlmCallCollector | None = None,
     ) -> None:
         self._sv = supervisor
         self._contexts = context_store
@@ -99,6 +112,11 @@ class CounselPackRunner:
         self._lease_owner = lease_owner
         self._new_id = new_id
         self._now = now
+        #: 실행 원장(AI_RUN·LLM_CALL) — 적재 실패는 fail-open이다(관측이지 게이트 아님).
+        self._runs = run_store or build_run_store()
+        #: LLM 호출 수집기 — 게이트웨이 조립부 recorder의 기본값과 **같은 인스턴스**여야
+        #: 한다(공용 싱글턴). 다른 걸 꽂으면 버킷이 갈려 수집분이 영속되지 않는다.
+        self._call_log = call_log or default_llm_call_collector()
         #: 연속 LLM 실패 학생 수 임계 — §1.3 "LLM 연속 실패 3학생(서킷)". 하드코딩하지 않고
         #: settings에서 읽되 생성자 주입이 이긴다(테스트 결정론).
         self._circuit = (
@@ -174,12 +192,19 @@ class CounselPackRunner:
         )
 
         # ③ 그래프 실행 — 학생 경계마다 체크포인트(§1.3).
+        context = _execution_context(job)
+        #: student_ref → 그 학생의 초안을 만든 LLM_CALL 행 id. 그래프가 채우고 ④가 읽는다.
+        #: state에 싣지 않는 이유: §1.2 필드 집합이 문서와 1:1로 고정돼 있고(대조 테스트),
+        #: 재개 시엔 이미 기록된 seq를 건너뛰므로 이 맵이 비어도 정확성이 유지된다.
+        student_call_ids: dict[str, UUID] = {}
         graph = build_counsel_graph(
             planner=self._planner,
             writer=self._writer,
             contexts=bundle.contexts,
-            execution_context=_execution_context(job),
+            execution_context=context,
             checkpointer=self._checkpointer,
+            call_log=self._call_log,
+            student_call_ids=student_call_ids,
             regen_max=self._regen_max,
             llm_failure_circuit=self._circuit,
             draft_store=self._drafts,
@@ -191,6 +216,23 @@ class CounselPackRunner:
         config = {"configurable": {"thread_id": thread_id}}
         graph_input = await self._resume_input(graph, config, job, bundle)
         final = await graph.ainvoke(graph_input, config=config)
+
+        # ④′ 실행 원장 — AI_RUN + LLM_CALL. 🔴 **agent_step보다 먼저**다: agent_step의
+        #    `llm_call_id`가 가리킬 LLM_CALL 행이 먼저 서야 참조가 실존한다(99 ⓒ).
+        #    AI_RUN은 호출 0건이어도 남긴다 — 불변식 8은 "모든 실행"을 기록하며, CI 기본
+        #    `FakeCounselProvider`는 게이트웨이를 타지 않아 호출이 실제로 0건이다.
+        calls = self._call_log.take(context.execution_id)
+        last = calls[-1].record if calls else None
+        await self._runs.record_run(
+            context.to_run_metadata(
+                created_at=self._now(),
+                # 실측값을 옮긴다 — 조립부 설정을 여기서 재선언하면 두 값이 갈린다.
+                model_provider=last.provider if last is not None else None,
+                model_name=last.model if last is not None else None,
+                generation_params=COUNSEL_GEN_PARAMS,
+            ),
+            calls,
+        )
 
         # ④ agent_step 영속 — 학생 처리 이력(AGENT_STEP 1:1, 마스킹 통과분만).
         # agent_run_id = job_id (AGENT_STEP.agent_run_id → AGENT_RUN.id, §5 1:1 투영).
@@ -208,7 +250,12 @@ class CounselPackRunner:
                     node_name="student",
                     tool_called=None,
                     tool_args_masked={"student_ref": result.student_ref},
-                    llm_call_id=None,
+                    # 🔴 종전 상수 `None` — `execution_id`에서 LLM 호출로 갈 간선이 끊겨
+                    # 재현 추적(불변식 8)이 절반만 섰다(99 ㊻ⓒ). 값은 그 학생의 **마지막
+                    # 성공 호출**이다: 게이트 재생성 3회 중 최종본을 낸 호출을 가리킨다
+                    # (버려진 시도가 아니라 산출물을 만든 호출). 전송이 없었던 학생
+                    # (컨텍스트 부재·마스킹 차단)은 None이 정답이다.
+                    llm_call_id=student_call_ids.get(result.student_ref),
                     outcome=result.status.value,
                 )
             )
@@ -283,7 +330,15 @@ class CounselPackRunner:
 
 
 def _execution_context(job: WorkerJob) -> ExecutionContext:
-    """워커 실행의 ExecutionContext — LLM 호출 기록(recorder)이 함께 받는다."""
+    """워커 실행의 ExecutionContext — LLM 호출 기록(recorder)·AI_RUN이 함께 받는다.
+
+    `prompt_version`은 **프롬프트 모듈이 소유한다**(`counsel/prompt.PROMPT_VERSION`).
+    AI_RUN.prompt_version이 null이면 "어떤 프롬프트가 이 초안을 냈는가"를 되짚을 수 없어
+    재현성이 반쪽이 된다(불변식 8) — 그래서 리터럴을 새로 만들지 않고 정본을 참조한다.
+
+    ⚠ pipeline·engine·schema·contract 버전은 아직 이 함수의 리터럴이다 — 버전 소유
+    (라우터 상수 vs 워커)를 정하는 것은 99 ㉗ⓒ의 남은 절반이고 여기서 섞지 않는다.
+    """
     from ai.contracts.execution import Capability, VersionSet
 
     return ExecutionContext(
@@ -294,6 +349,7 @@ def _execution_context(job: WorkerJob) -> ExecutionContext:
         versions=VersionSet(
             pipeline_version="0.1",
             engine_version="counsel-pack-0.1",
+            prompt_version=PROMPT_VERSION,
             schema_version="0.1",
             contract_version="0.1",
         ),

@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 from typing import Final
 
+from ai.composition.determinism import deterministic_params
 from ai.contracts.classify import (
     AxisConfidence,
     ClassifyFallbackReason,
@@ -34,7 +35,7 @@ from ai.contracts.classify import (
     ClassifyResult,
 )
 from ai.contracts.counsel import InquirySentiment, InquiryTopic, InquiryUrgency
-from ai.contracts.execution import ExecutionContext, GenerationParams, VersionSet
+from ai.contracts.execution import ExecutionContext, VersionSet
 from ai.contracts.llm import (
     LLMRequest,
     LLMResult,
@@ -54,11 +55,16 @@ PROMPT_VERSION: Final = "v1"
 #: 이미 하므로 여기서 중복하지 않는다(`transport_retry`).
 MAX_PARSE_RETRY: Final = 2
 
-#: 결정론 설정 — 불변식 8. `temperature=0.0`으로 샘플링을 끄고 `seed`를 고정한다.
+#: 분류 응답은 짧은 JSON 1개라 생성 토큰 상한을 좁게 준다(성능 제어).
+_CLASSIFY_MAX_TOKENS: Final = 256
+
+#: 결정론 설정 — 불변식 8. 재현 축(temperature·seed)의 정본은 `composition/determinism.py`다.
+#: 종전에는 이 파일이 seed 리터럴을 직접 들고 있었는데, 브리핑·초안이 seed 없이 도는 동안
+#: 분류만 고정돼 있어 **경로마다 재현 조건이 달랐다** — 상수를 한 곳으로 모았다(8/5).
 #: ⚠ **서버가 seed를 존중하는지는 프로바이더에 달렸다** — 어댑터는 값을 그대로 넘기지만
 #: (`llm/providers/openai_compat.py`의 `_build_kwargs`), 로컬 서버가 무시하면 같은 입력에
-#: 다른 출력이 나올 수 있다. 99 D ㊼가 이미 열려 있는 항목이다.
-_GEN_PARAMS: Final = GenerationParams(temperature=0.0, seed=20260805, max_tokens=256)
+#: 다른 출력이 나올 수 있다. 99 ㊼가 그 실측을 기다리는 항목이다.
+CLASSIFY_GEN_PARAMS: Final = deterministic_params(max_tokens=_CLASSIFY_MAX_TOKENS)
 
 #: 전송 직전 트립와이어가 잔여 흔적을 발견해 막았다 — **장애가 아니라 미분류**다.
 #: ⚠ `uncertain`은 여기 없다(아래 `classify()` 참조) — 성격이 다르다.
@@ -143,7 +149,7 @@ async def classify(
         prompt=prompt,
         prompt_id=PROMPT_ID,
         prompt_version=PROMPT_VERSION,
-        generation_params=_GEN_PARAMS,
+        generation_params=CLASSIFY_GEN_PARAMS,
     )
 
     # ② 파싱 실패만 재시도한다(≤2). 같은 요청을 다시 보내는 것이고, 전송 재시도는
@@ -178,6 +184,7 @@ async def classify(
 
 
 __all__ = [
+    "CLASSIFY_GEN_PARAMS",
     "MAX_PARSE_RETRY",
     "PROMPT_ID",
     "PROMPT_VERSION",

@@ -60,9 +60,12 @@ class _SpyProvider:
 
 
 def _gateway(provider: _SpyProvider) -> LlmGateway:
+    # role은 registry.yaml(`classify.inquiry.v1`)의 `role: classifier`와 맞춰야 한다 —
+    # `classifier.py`가 `load_prompt_template(...).role`로 요청 role을 만들기 때문에
+    # 어긋나면 `gateway.complete`가 LookupError로 죽는다(8/5 role 정정 · 99 ㊻ B-4).
     return LlmGateway(
-        {ModelRole.GENERATOR: provider},
-        transport_retry={ModelRole.GENERATOR: 0},
+        {ModelRole.CLASSIFIER: provider},
+        transport_retry={ModelRole.CLASSIFIER: 0},
         trace_masking_hook=RedactionTripwireTraceHook(),
     )
 
@@ -229,11 +232,17 @@ def test_prompt_version_is_recorded() -> None:
 
 
 def test_generation_params_are_deterministic() -> None:
-    """temperature 0.0 + seed 고정 — 서버가 seed를 존중하는지는 별개다(99 D ㊼)."""
-    from ai.composition.classify.classifier import _GEN_PARAMS
+    """temperature 0.0 + seed 고정 — 서버가 seed를 존중하는지는 별개다(99 ㊼).
 
-    assert _GEN_PARAMS.temperature == 0.0
-    assert _GEN_PARAMS.seed is not None
+    seed 리터럴은 이제 `composition/determinism.py`가 정본이다(8/5) — 경로별로 상수를
+    따로 두면 브리핑·초안·분류의 재현 조건이 갈린다. 전 경로 공유는
+    `tests/ai/integration/test_llm_observability.py`가 고정한다.
+    """
+    from ai.composition.classify.classifier import CLASSIFY_GEN_PARAMS
+    from ai.composition.determinism import LLM_SEED
+
+    assert CLASSIFY_GEN_PARAMS.temperature == 0.0
+    assert CLASSIFY_GEN_PARAMS.seed == LLM_SEED
 
 
 # ── 프롬프트 인젝션 — 방어선은 프롬프트가 아니라 파싱이다 ────────
