@@ -104,38 +104,53 @@ def test_raw_body_never_reaches_the_provider() -> None:
     assert "⟪" in sent, "마스킹 토큰이 남아야 정상(치환됐다는 증거)"
 
 
-def test_tripwire_block_falls_back_not_500() -> None:
-    """🔴 전송 직전 트립와이어 차단은 **장애가 아니라 미분류**다.
+def test_honorific_sentence_now_passes_the_tripwire() -> None:
+    """🔴 **호칭어 자기검출을 고쳐 이 문장이 전송된다**(8/5 · 변경 B).
 
-    실명이 마스킹된 뒤 남은 어절이 인명 후보에 다시 걸리는 경우가 있다
-    (`⟪이름1⟫ 학생 어머니입니다` → `학생`이 관계어 인접으로 재검출). 트립와이어는
-    문맥을 모르니 보수적으로 막는 게 맞고, 우리는 그걸 200 + `classified=false`로 받는다.
+    종전에는 `⟪이름1⟫ 학생 어머니입니다`에서 남은 `학생`이 호칭 패턴의 그룹1로 잡혀
+    이름처럼 마스킹됐고, 그 잔여가 다시 후보가 돼 **트립와이어가 전송을 막았다**.
+    분류가 불필요하게 폴백하던 자리다 — 이제 통과한다.
     """
     provider = _SpyProvider()
     result = _run("김민준 학생 어머니입니다. 010-1234-5678로 연락 주세요.", provider)
 
-    assert result.classified is False
-    assert result.fallback_reason == "redaction_uncertain"
+    assert provider.prompts, "트립와이어가 아직 막고 있다"
+    assert result.classified is True
+    sent = "\n".join(provider.prompts)
+    assert "김민준" not in sent and "1234-5678" not in sent
+    assert "학생" in sent, "호칭어는 유지돼야 한다(자기검출 스킵)"
 
 
-def test_redaction_uncertain_calls_no_llm() -> None:
-    """마스킹 불확실이면 **호출 수 0** — fail-closed다(불변식 3).
+def test_redaction_uncertain_still_classifies() -> None:
+    """🔴 **마스킹 불확실이어도 분류를 계속한다**(8/5 · C). 종전과 반대다.
 
-    확신 없는 마스킹분을 "일단 보내고 본다"가 되면 경계가 무의미해진다.
+    `⟪확인필요⟫`가 든 텍스트는 **이미 가려진 상태**라 원문이 새지 않는다.
+    `masking_redaction`:40의 "소비자가 fail-closed 판단"을 분류 기준으로 다시 읽은 결과다
+    — 분류는 산출물을 만들지 않고 판정만 하므로 이름이 필요 없다.
+    중단을 유지하면 인명 검출을 강화할수록 classify가 대부분 폴백으로 떨어져 기능이 사라진다.
     """
     provider = _SpyProvider()
-    # 인명 후보가 확정 마스킹되지 않는 문면 — redact가 uncertain을 세운다.
     result = _run("반 평균이랑 비교해서 알려주세요", provider)
 
-    assert provider.prompts == [], "uncertain인데 LLM을 불렀다"
-    assert result.classified is False
-    assert result.fallback_reason == "redaction_uncertain"
+    assert len(provider.prompts) >= 1, "uncertain에서 LLM을 안 불렀다(종전 동작)"
+    assert result.classified is True
+    sent = provider.prompts[0]
+    assert "⟪확인필요⟫" in sent, "가려진 텍스트로 보내야 한다"
+
+
+def test_uncertain_sends_only_masked_text() -> None:
+    """계속 보내되 **가려진 것만** 보낸다 — 완화가 경계를 뚫은 게 아니다."""
+    provider = _SpyProvider()
+    _run("김민준이 요즘 힘들어합니다", provider)
+
+    assert "김민준" not in provider.prompts[0]
 
 
 def test_unclassified_is_honest_not_a_guess() -> None:
     """미분류는 `etc`를 확신 있게 내보내는 게 아니라 confidence 0.0 + classified=False다."""
-    result = _run("반 평균이랑 비교해서 알려주세요", _SpyProvider())
+    result = _run("성적이 궁금합니다", _SpyProvider("깨진 출력"))
 
+    assert result.classified is False
     assert result.topic is InquiryTopic.ETC
     assert result.confidence.topic == 0.0
     assert result.confidence.sentiment == 0.0
