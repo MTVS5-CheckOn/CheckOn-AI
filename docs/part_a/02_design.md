@@ -128,7 +128,7 @@ flowchart TB
 | | 입력(코드 확정) | LLM 역할 | 게이트/확정 | 산출 테이블 |
 | --- | --- | --- | --- | --- |
 | ⓐ 브리핑 문장화 | signal+evidence | 한 줄 문장화만 | 왜곡 게이트(수치·방향·라벨 일치) → 실패 시 템플릿 폴백 | SIGNAL_BRIEF |
-| ⓑ 문의 분류 | 문의 원문 | topic·urgency 분류(enum 강제) | 표시·정렬에만 사용 — 차단·자동응답 금지 | INQUIRY_CLASS |
+| ⓑ 문의 분류 | 문의 원문 | **3축 독립** topic·sentiment·urgency 분류(enum 강제) + 축별 confidence | 표시·정렬·완충 강도·**초안 종류** — 되돌릴 수 있는 것까지(자동응답 금지 · 01 §4-ⓑ) | INQUIRY_CLASS |
 | ⓒ 태깅 제안 | 과제명 텍스트(해시 캐시) | AreaTag·TypeTag 제안 | **강사 확정 전 피처 미반영** | TAG_SUGGESTION |
 | ⓓ 라벨 제안 | 소통 이력 5건+(마스킹) | 4축 라벨 제안 + **근거 인용 강제** | 인용 실존 게이트 → ai_suggested(초안 미사용) | LABEL_SUGGESTION |
 
@@ -178,7 +178,7 @@ sequenceDiagram
   BE->>API: POST /drafts (kind=reply, 컨텍스트 스냅숏, label_snapshot)
   API->>CMP: ⓑ 문의 분류 (LLM · enum 강제)
   CMP->>PG: inquiry_class 저장 (topic·urgency)
-  Note over CMP: complaint → 완충 강도 상향 · schedule 등 → template_only 경로
+  Note over CMP: topic=schedule 등 → template_only 경로 (완충 강도는 라벨 4축이 결정 — 05 §199에서 topic·urgency 파생 미도입 확정)
   API->>CMP: pipeline.run(ctx, request)
   CMP->>CMP: 게이트① Consent · ② DataSufficiency
   alt 데이터 부족

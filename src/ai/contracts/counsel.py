@@ -28,13 +28,51 @@ type NonEmptyStr = Annotated[str, Field(min_length=1)]
 
 
 class InquiryTopic(StrEnum):
-    """문의 유형 — 계약 [확정 enum]. 톤 입력이며 판정에는 쓰지 않는다."""
+    """문의 유형 — 계약 [확정 enum] 4종. **"무엇에 대한 문의인가"만 담는다.**
+
+    문체(`composition/tone.py`의 4축 `tone_key`)에는 쓰지 않는다 — `part_a/05` §199에서
+    `urgency`·`topic`에서 `sensitivity`를 파생하지 않기로 확정했다(기본값이 이미 최대 완충인
+    `anxious`라 어느 입력에서 파생해도 값이 안 바뀐다).
+
+    쓰이는 곳은 **데이터 무관 문의 판정**(`template_only` · `policies/error_codes` §2.1)과
+    인박스 정렬이다. 분류가 초안 종류를 가르는 것이 허용되는 근거는 **강사가 되돌릴 수
+    있다**는 것이며(`part_a/01` §4-ⓑ), 되돌리기 경로는 `04` §3.9가 계약으로 보장한다.
+
+    ⚠ **(8/5) `complaint`를 뺐다** — 그건 "무엇에 대한 문의인가"가 아니라 "어떤 감정으로
+    쓴 문의인가"라 `InquirySentiment` 축으로 옮겼다. 축 분리가 업계 표준이고(Zendesk는
+    Intent·Sentiment를 독립 필드로 둔다), 학부모가 스스로 고를 수 없는 값이기도 하다
+    (영국 FCA는 complaint를 "expression of dissatisfaction, whether justified or not"으로
+    정의해 **고객의 자가 명명에 의존하지 못하게** 한다 — 본문에서 추론할 값이다).
+
+    ⚠ **`etc`는 남긴다.** 업계 가이드는 catch-all 제거를 권하지만, 우리는 미분류를
+    **low-confidence 강등**으로 처리하기로 했으므로(`04` §3.5) `etc`가 "분류 실패의 쓰레기통"이
+    되지 않는다 — "정말 기타"만 남는다.
+    """
 
     GRADE = "grade"
     SCHEDULE = "schedule"
-    COMPLAINT = "complaint"
     COUNSEL_REQUEST = "counsel_request"
     ETC = "etc"
+
+
+class InquirySentiment(StrEnum):
+    """문의 성향 — 계약 [확정 enum] 2종. **`POST /v1/classify` 응답 전용**(04 §3.5).
+
+    `InquiryTopic`과 **독립 축**이다 — 같은 `topic=grade`라도 담담한 질문과 항의는 다르게
+    다뤄야 하고, 그 구분이 인박스 최상단 정렬과 완충 강도의 입력이다.
+
+    ⚠ **이름이 `tone`이 아닌 이유**: `composition/tone.py`의 `ToneRule`·`tone_key`가 이미
+    "톤"을 **라벨 4축 → 문체 파라미터**(24조합)로 점유하고 있다. 같은 말을 쓰면 두 축이
+    섞인다. `sentiment`는 업계 표준 용어다(Zendesk intelligent triage).
+
+    ⚠ **v1에서 `POST /v1/counsel/drafts` 요청에는 싣지 않는다.** `part_a/05` §199에서
+    완충 강도 파생을 도입하지 않기로 확정했으므로 초안 생성에 영향이 없다 — 쓰이는 곳이
+    인박스 정렬(BE·FE 소유)뿐이라 AI에 되돌려 받을 이유가 없다. 근거 없이 필드부터
+    만들지 않는다.
+    """
+
+    NORMAL = "normal"
+    COMPLAINT = "complaint"
 
 
 class InquiryUrgency(StrEnum):
@@ -300,6 +338,7 @@ __all__ = [
     "CounselDraftResult",
     "DismissedSuggestion",
     "InquiryPayload",
+    "InquirySentiment",
     "InquiryTopic",
     "InquiryUrgency",
     "LabelSuggestion",

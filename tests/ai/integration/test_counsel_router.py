@@ -30,7 +30,7 @@ _HEADERS = {
 _REQUEST: dict[str, Any] = {
     "inquiry": {
         "inquiry_ref": "iq_884",
-        "topic": "complaint",
+        "topic": "grade",
         "urgency": "immediate",
         "received_at": "2026-07-31T14:20:00+09:00",
         "text_masked": "요즘 아이가 힘들어하는 것 같은데…",
