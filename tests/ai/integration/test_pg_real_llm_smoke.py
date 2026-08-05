@@ -197,13 +197,13 @@ def _provider_endpoints(
             local.local_llm_base_url,
             local.local_llm_model,
         )
-    assert settings.verifier_llm_base_url is not None
-    assert settings.verifier_llm_model is not None
+    assert settings.openai_base_url is not None
+    assert settings.openai_model is not None
     return (
         local.local_llm_base_url,
         local.local_llm_model,
-        settings.verifier_llm_base_url,
-        settings.verifier_llm_model,
+        settings.openai_base_url,
+        settings.openai_model,
     )
 
 

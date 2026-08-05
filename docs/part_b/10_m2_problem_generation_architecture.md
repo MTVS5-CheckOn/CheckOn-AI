@@ -344,10 +344,10 @@ LOCAL_LLM_DISABLE_THINKING=
 M2 역할 분리 시 추가할 후보 이름. 아직 코드는 읽지 않으며 공통 LLM 오너 합의가 필요하다.
 
 ```dotenv
-VERIFIER_LLM_BASE_URL=
-VERIFIER_LLM_API_KEY=
-VERIFIER_LLM_MODEL=
-VERIFIER_LLM_TIMEOUT_S=
+OPENAI_BASE_URL=
+OPENAI_API_KEY=
+OPENAI_MODEL=
+OPENAI_TIMEOUT_S=
 ```
 
 채택한 외부 자료·고도화 기능에만 추가할 후보 이름:

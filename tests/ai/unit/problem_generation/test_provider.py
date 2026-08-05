@@ -49,10 +49,10 @@ def test_dedicated_verifier_uses_external_settings() -> None:
     providers = build_problem_providers(
         settings=ProblemProviderSettings.model_validate(
             {
-                "verifier_llm_base_url": "https://api.openai.test/v1",
-                "verifier_llm_api_key": SecretStr("external-secret"),
-                "verifier_llm_model": "gpt-test",
-                "verifier_llm_timeout_s": 23.0,
+                "openai_base_url": "https://api.openai.test/v1",
+                "openai_api_key": SecretStr("external-secret"),
+                "openai_model": "gpt-test",
+                "openai_timeout_s": 23.0,
             }
         ),
         local_settings=_local_settings(),
@@ -71,10 +71,10 @@ def test_dedicated_verifier_uses_external_settings() -> None:
 def test_dedicated_verifier_is_selected_from_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("VERIFIER_LLM_BASE_URL", "https://api.openai.test/v1")
-    monkeypatch.setenv("VERIFIER_LLM_API_KEY", "external-secret")
-    monkeypatch.setenv("VERIFIER_LLM_MODEL", "gpt-env-test")
-    monkeypatch.setenv("VERIFIER_LLM_TIMEOUT_S", "19")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "external-secret")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-env-test")
+    monkeypatch.setenv("OPENAI_TIMEOUT_S", "19")
 
     settings = ProblemProviderSettings(_env_file=None)
     providers = build_problem_providers(
@@ -91,11 +91,11 @@ def test_dedicated_verifier_is_selected_from_environment(
 
 
 def test_partial_dedicated_verifier_settings_fail_closed() -> None:
-    with pytest.raises(ValidationError, match="VERIFIER_LLM_MODEL"):
+    with pytest.raises(ValidationError, match="OPENAI_MODEL"):
         ProblemProviderSettings.model_validate(
             {
-                "verifier_llm_base_url": "https://api.openai.test/v1",
-                "verifier_llm_api_key": SecretStr("external-secret"),
+                "openai_base_url": "https://api.openai.test/v1",
+                "openai_api_key": SecretStr("external-secret"),
             }
         )
 

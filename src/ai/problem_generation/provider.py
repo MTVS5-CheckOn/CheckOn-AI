@@ -30,15 +30,15 @@ class ProblemProviderSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    verifier_llm_base_url: str | None = None
-    verifier_llm_api_key: SecretStr | None = None
-    verifier_llm_model: str | None = None
-    verifier_llm_timeout_s: float = Field(default=15.0, gt=0)
+    openai_base_url: str | None = None
+    openai_api_key: SecretStr | None = None
+    openai_model: str | None = None
+    openai_timeout_s: float = Field(default=15.0, gt=0)
 
     @field_validator(
-        "verifier_llm_base_url",
-        "verifier_llm_api_key",
-        "verifier_llm_model",
+        "openai_base_url",
+        "openai_api_key",
+        "openai_model",
         mode="before",
     )
     @classmethod
@@ -50,9 +50,9 @@ class ProblemProviderSettings(BaseSettings):
     @model_validator(mode="after")
     def validate_dedicated_verifier(self) -> Self:
         required = {
-            "VERIFIER_LLM_BASE_URL": self.verifier_llm_base_url,
-            "VERIFIER_LLM_API_KEY": self.verifier_llm_api_key,
-            "VERIFIER_LLM_MODEL": self.verifier_llm_model,
+            "OPENAI_BASE_URL": self.openai_base_url,
+            "OPENAI_API_KEY": self.openai_api_key,
+            "OPENAI_MODEL": self.openai_model,
         }
         configured = {name for name, value in required.items() if value is not None}
         if configured and len(configured) != len(required):
@@ -62,7 +62,7 @@ class ProblemProviderSettings(BaseSettings):
 
     @property
     def has_dedicated_verifier(self) -> bool:
-        return self.verifier_llm_base_url is not None
+        return self.openai_base_url is not None
 
 
 @lru_cache
@@ -108,14 +108,14 @@ def build_problem_providers(
             has_dedicated_verifier=False,
         )
 
-    assert resolved.verifier_llm_base_url is not None
-    assert resolved.verifier_llm_api_key is not None
-    assert resolved.verifier_llm_model is not None
+    assert resolved.openai_base_url is not None
+    assert resolved.openai_api_key is not None
+    assert resolved.openai_model is not None
     verifier_settings = LocalLlmSettings(
-        local_llm_base_url=resolved.verifier_llm_base_url,
-        local_llm_api_key=resolved.verifier_llm_api_key.get_secret_value(),
-        local_llm_model=resolved.verifier_llm_model,
-        local_llm_timeout_s=resolved.verifier_llm_timeout_s,
+        local_llm_base_url=resolved.openai_base_url,
+        local_llm_api_key=resolved.openai_api_key.get_secret_value(),
+        local_llm_model=resolved.openai_model,
+        local_llm_timeout_s=resolved.openai_timeout_s,
         local_llm_disable_thinking=False,
         _env_file=None,
     )

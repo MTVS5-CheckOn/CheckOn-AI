@@ -115,12 +115,12 @@ model은 양쪽 모두 동일하다. 따라서 verifier가 호출됐더라도 �
 코드 변경 없이 `.env`의 **필수 3줄**을 채우면 별도 verifier가 선택된다.
 
 ```dotenv
-VERIFIER_LLM_BASE_URL = https://api.openai.com/v1
-VERIFIER_LLM_API_KEY = <비밀값>
-VERIFIER_LLM_MODEL = gpt-5.4-mini
+OPENAI_BASE_URL = https://api.openai.com/v1
+OPENAI_API_KEY = <비밀값>
+OPENAI_MODEL = gpt-5.4-mini
 ```
 
-`VERIFIER_LLM_TIMEOUT_S`는 기본 15초를 바꿀 때만 추가하는 선택 1줄이다. 세 필수값 중
+`OPENAI_TIMEOUT_S`는 기본 15초를 바꿀 때만 추가하는 선택 1줄이다. 세 필수값 중
 일부만 설정하면 조립 단계에서 실패하도록 구성했다. 설정 getter가 프로세스 안에서
 캐시되므로 `.env`를 채운 뒤 프로세스를 재시작해야 하며 코드 변경은 없다.
 
