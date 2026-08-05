@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -22,6 +23,7 @@ from ai.contracts.counsel import (
     Citation,
     CounselDraftRequest,
     CounselDraftResult,
+    InquirySentiment,
     InquiryTopic,
     InquiryUrgency,
     WireDraftStatus,
@@ -32,7 +34,7 @@ from ai.contracts.counsel import (
 _REQUEST_EXAMPLE = {
     "inquiry": {
         "inquiry_ref": "iq_884",
-        "topic": "complaint",
+        "topic": "grade",
         "urgency": "immediate",
         "received_at": "2026-07-31T14:20:00+09:00",
         "text_masked": "요즘 아이가 힘들어하는 것 같은데…",
@@ -70,21 +72,41 @@ _RESULT_FIELDS = {
 def test_contract_example_parses() -> None:
     request = CounselDraftRequest.model_validate(_REQUEST_EXAMPLE)
     assert request.inquiry.inquiry_ref == "iq_884"
-    assert request.inquiry.topic is InquiryTopic.COMPLAINT
+    assert request.inquiry.topic is InquiryTopic.GRADE
     assert request.inquiry.urgency is InquiryUrgency.IMMEDIATE
     assert request.context.period_label == "2026년 7월"
     assert len(request.context.facts) == 2
 
 
 def test_topic_enum_matches_contract() -> None:
-    """계약 [확정 enum] 5종 — 임의 확장 금지."""
+    """계약 [확정 enum] 4종 — `complaint`는 `InquirySentiment`로 이동(8/5). 임의 확장 금지."""
     assert {t.value for t in InquiryTopic} == {
         "grade",
         "schedule",
-        "complaint",
         "counsel_request",
         "etc",
     }
+
+
+def test_sentiment_enum_matches_contract() -> None:
+    """계약 [확정 enum] 2종 — `/v1/classify` 응답 전용 축(04 §3.5)."""
+    assert {s.value for s in InquirySentiment} == {"normal", "complaint"}
+
+
+def test_topic_and_sentiment_are_disjoint() -> None:
+    """같은 값이 두 축에 살면 축 분리가 무의미하다 — 8/5 이전 상태의 회귀 방지."""
+    assert not ({t.value for t in InquiryTopic} & {s.value for s in InquirySentiment})
+
+
+def test_complaint_is_rejected_as_topic() -> None:
+    """🔴 파괴적 변경의 계약면 — BE가 `topic="complaint"`를 보내면 거부된다.
+
+    `test_unknown_field_is_rejected`(필드 거부)와 별개로 **enum 값 거부**를 고정한다.
+    """
+    body = json.loads(json.dumps(_REQUEST_EXAMPLE))
+    body["inquiry"]["topic"] = "complaint"
+    with pytest.raises(ValidationError):
+        CounselDraftRequest.model_validate(body)
 
 
 def test_urgency_enum_matches_contract() -> None:

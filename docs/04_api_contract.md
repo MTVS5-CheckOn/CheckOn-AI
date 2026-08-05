@@ -146,7 +146,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 | `POST /confirmations` | 동기 | 태그·라벨·분류·초안수정 확정 시 | ack (품질 평가셋 재료) |
 | `POST /drafts` → `GET /drafts/{id}` | 202 | 문의 도착 즉시 · 리포트 주기 | 블록별 초안 + 근거 + 게이트 + status |
 | `POST /drafts/{id}/refine` | 202 | 채팅형 다듬기(자유 지시 · 핑퐁) | 지시 반영 리비전 — 매 턴 게이트 재통과, 1턴 = 초안 할당 1 |
-| `POST /classify` | 동기 | 문의 도착 즉시 | topic + urgency (표시·정렬 전용) |
+| `POST /classify` | 동기 | 문의 도착 즉시 | topic + sentiment + urgency 3축 + 축별 confidence |
 | `POST /tags/suggest` | 동기 | 과제 입력 화면 | 영역·유형 제안 + 신뢰도 + 캐시 여부 |
 | `POST /labels/suggest` | 202 | 주간 배치 | 라벨 제안 + 근거 인용(실존 검증 통과분) |
 | `POST /imports` → `GET` → `/confirm` | 202 | 타사 엑셀 업로드 | 매핑 미리보기 → 확정 후 표준 스키마 산출 |
@@ -310,7 +310,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
     "draft_id": "uuid",
     "status": "generated",             // generated | template_only | rejected_insufficient | failed — 아래 status 값 설명 참조
     "status_reason": null,             // 미생성/실패 시 사유 코드 (화면 문구 번역은 백엔드)
-    "classification": { "topic": "complaint", "urgency": "immediate" },   // 분류ⓑ 결과 동봉 — 인박스 정렬용
+    "classification": { "topic": "grade", "sentiment": "complaint", "urgency": "immediate" },   // 분류ⓑ 3축 동봉 — 인박스 정렬용
     "blocks": [{                       // 초안은 블록 단위 — 강사가 블록별로 수정 가능하게
       "seq": 1,
       "block_type": "fact",            // greeting | fact | suggestion | closing | chart_analysis(리포트)
@@ -353,10 +353,31 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 // Request — 학부모 문의 도착 즉시 (초안 생성과 별도로 먼저 호출해도 됨 — 인박스 정렬용)
 { "inquiry_ref": "iq_204", "body_text": "여름방학 특강 시간표가 궁금합니다" }
 // Response 200 (동기 — 수 초 내)
-{ "data": { "topic": "schedule", "urgency": "normal", "confidence": 0.95 } }
+{ "data": { "topic": "schedule", "sentiment": "normal", "urgency": "normal",
+            "confidence": { "topic": 0.95, "sentiment": 0.88, "urgency": 0.91 } } }
 ```
 
-topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — 이 5개 외 값은 나올 수 없음). **표시·정렬·완충 강도에만 사용** — 오분류가 나도 피해가 '정렬 순서'에 그치도록, 차단·자동응답에는 쓰지 않는다(백엔드도 준수).
+**3축 독립 분류다** — 축마다 값 집합도 용도도 다르고, 한 축의 오분류가 다른 축을 오염시키지 않는다(Zendesk intelligent triage와 같은 구조). ⚠ `confidence`는 **축별 객체**다 — 3축이 독립이므로 확신도도 축마다 다르다(Zendesk는 필드마다 별도 confidence를 단다).
+
+| 축 | 값(enum 강제 — 목록 밖 값은 나올 수 없음) | 쓰이는 곳 |
+| --- | --- | --- |
+| `topic` | `grade` \| `schedule` \| `counsel_request` \| `etc` | 초안 종류(§3.9 `template_only`) · 정렬 |
+| `sentiment` | `normal` \| `complaint` | 인박스 최상단 정렬 · 완충 강도 |
+| `urgency` | `immediate` \| `normal` | 정렬 |
+
+> 🔴 **(8/5) `complaint`가 `topic`에서 `sentiment`로 이동했다.** 상세는 `part_a/01` §4-ⓑ 참조. **BE는 `inquiry.topic`에 `complaint`를 보내면 400이다.**
+
+**사용 범위 — 되돌릴 수 있는 것까지다**(`part_a/01` §4-ⓑ). 학부모에게 나가는 자동 응답에는 쓰지 않는다(승인·발송은 전부 HITL — 백엔드도 준수). 되돌리기 경로는 §3.9 재요청 규약이 보장한다.
+
+**confidence에 따른 자동화 강등 — Salesforce Einstein 3단 패턴.** 낮은 확신은 "`etc`로 넣기"가 아니라 **자동화 수준을 한 단계 내리는 것**으로 처리한다.
+
+| `confidence.topic` | 처리 |
+| --- | --- |
+| 임계값 이상 | `topic`을 확정값으로 사용 — `template_only` 분기 포함 |
+| 임계값 미만 | `topic`은 **표시·정렬에만**. 초안은 **일반 경로로 생성**하고 강사에게 "일정 문의로 보입니다" 배지만 표시 |
+
+이 방향이 fail-safe다 — 확신이 낮을 때 정상 초안을 만들어두면 강사가 안 쓰면 그만이지만, 반대(확신 낮은데 `template_only`)는 근거가 있는데도 초안이 사라진다.
+⚠ **임계값 숫자는 여기서 정하지 않는다** — 실측 데이터가 없다. `/v1/classify` 구현(P2) 후 재분류율(강사가 예측을 뒤집은 비율)을 관측해 정한다. Salesforce 권고도 "Start in recommendation mode, and monitor accuracy... before setting up auto-triage"다.
 
 ### 3.6 `POST /v1/tags/suggest` — 태그 제안 (동기·캐시)
 
@@ -458,7 +479,7 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 {
   "inquiry": {
     "inquiry_ref": "iq_884",             // BE 원본 문의 논리 참조 — AI에겐 불투명 키
-    "topic": "complaint",                // grade | schedule | complaint | counsel_request | etc
+    "topic": "grade",                    // grade | schedule | counsel_request | etc — 🔴 8/5 complaint 제거(§3.5)
     "urgency": "immediate",              // immediate | normal — 완충 강화 입력
     "received_at": "2026-07-31T14:20:00+09:00",
     "text_masked": "요즘 아이가 힘들어하는 것 같은데…"   // redaction 통과분 (불변식 3)
@@ -511,6 +532,11 @@ topic: `grade | schedule | complaint | counsel_request | etc` (enum 강제 — �
 - **`refine` 차단도 200**이다(`applied:false` + `blocked_reason` + `message`). `GateRejected`를 5xx로 올리면 리뷰 반려(불변식 4 · error_codes §4).
 - **refine 대상 키는 `job_id`다.** 문의 1건 = 잡 1개 = 초안 1개(pack N=1)라 별도 `draft_id`를 노출하지 않는다 — BE는 **Kafka 완료 통지가 싣는 `job_id`를 그대로** 쓰면 되고 별도 조회가 필요 없다. FE 계약 §3-③은 `inquiry_id` 기준이므로 **BE가 `inquiry_id → job_id` 매핑을 중계**한다(AI는 원본 문의에 접근하지 않는다).
   > 🔴 **정정(8/5).** 종전 표기는 `draft_id`였는데 그 값이 **어떤 응답에도 실리지 않아** BE가 refine을 호출할 계약 경로가 없었다(`CounselDraftJobView`는 `job_id`·`status`·`result` 3필드뿐 — 호출하면 404 확정). 스키마에 필드를 추가하는 대신 **키를 `job_id`로 통일**했다. 응답 스키마 무변경.
+- **문의 유형(`topic`)을 정정하면 초안을 재요청한다 — 되돌리기가 계약 의무다.** `inquiry.topic`은 분류(ⓑ)의 판정값이고, 그 값이 `template_only`처럼 **초안 종류를 가른다**(§3.5). 분류가 초안을 가르는 것이 허용되는 전제가 **강사가 되돌릴 수 있다**는 것이므로(`part_a/01` §4-ⓑ), 오분류 시 경로를 계약으로 보장한다.
+  - 강사가 인박스에서 문의 유형을 정정한다 → BE가 **새 `Idempotency-Key`**로 `POST /v1/counsel/drafts`를 정정된 `topic`으로 다시 호출한다 → 새 초안이 생성된다.
+  - **재생성 전용 API는 없다**(이 절 서두). 같은 키 + 다른 바디는 `409 IDEMPOTENCY_CONFLICT`이므로 **반드시 새 키**여야 한다.
+  - **다듬기(refine)로는 되돌릴 수 없다.** `template_only`는 `text`가 `null`이고 refine 대상으로 등록되지 않는다 — 다듬을 원본이 없다.
+  - 정정 이력은 분류 품질 평가셋으로 `INQUIRY_CLASS.corrected_by_teacher`에 축적한다(`part_a/03` §C7). **적재는 `/v1/classify` 구현(P2) 때 함께 온다.**
 - **턴 상한은 AI가 판정하지 않는다.** `turn_no`는 로그·이력용으로 받기만 한다 — "세션 턴 상한 없음, 월 할당이 자연 상한"(`part_a/06` §1)이고 할당 집행은 전부 백엔드 Billing이다(7/15 BE-4).
 - **v1 구현 범위 정정 3건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다.
 
