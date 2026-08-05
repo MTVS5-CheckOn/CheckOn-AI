@@ -140,17 +140,18 @@ def client() -> Iterator[TestClient]:
         yield test_client
 
 
-def _generated_draft_id(client: TestClient) -> str:
-    """생성된 초안의 draft_id — refine 대상 키(04 §3.9)."""
-    from ai.api.routers.counsel import _drafts  # 읽기 모델(테스트 전용 관찰)
+def _generated_job_id(client: TestClient) -> str:
+    """생성된 초안의 refine 대상 키 = POST 202가 돌려준 job_id (04 §3.9).
 
+    🔴 **내부 읽기 모델을 들여다보지 않는다 — BE가 할 수 있는 것만 한다.**
+    종전에는 `from ai.api.routers.counsel import _drafts`로 프로세스 내부 dict를
+    스캔해 키를 얻었는데, 그건 테스트만 가능한 경로였다. 그래서 이 테스트가 통과하는
+    방식 자체가 **BE는 refine을 호출할 수 없다**는 증거였다(99 D · 404 확정).
+    """
     post = client.post("/v1/counsel/drafts", json=_REQUEST, headers=_HEADERS)
     assert post.status_code == 202, post.text
-    job_id = post.json()["data"]["job_id"]
-    client.get(f"/v1/counsel/drafts/{job_id}", headers=_HEADERS)
-    keys = [key for key in _drafts if key[0] == "t1"]
-    assert keys, "생성된 초안이 refine 대상으로 등록되지 않았다"
-    return keys[0][1]
+    job_id: str = post.json()["data"]["job_id"]
+    return job_id
 
 
 # ── A2·A3·A5·A6·A7 — 사전 정적 차단(LLM 미호출) ──────────────────
@@ -189,9 +190,9 @@ def test_static_attack_over_http_is_200(
     client: TestClient, case: str, instruction: str, expected: BlockedReason
 ) -> None:
     """🔴 차단도 200이다 — `GateRejected`를 5xx로 올리면 리뷰 반려(불변식 4)."""
-    draft_id = _generated_draft_id(client)
+    job_id = _generated_job_id(client)
     response = client.post(
-        f"/v1/counsel/drafts/{draft_id}/refine",
+        f"/v1/counsel/drafts/{job_id}/refine",
         json={"instruction": instruction, "turn_no": 2},
         headers=_HEADERS,
     )
@@ -275,9 +276,9 @@ def test_style_instruction_is_applied() -> None:
 def test_applied_turn_over_http_carries_citations(client: TestClient) -> None:
     """반영 턴도 근거를 다시 싣는다(불변식 2 — 계약 §4-④)."""
     set_counsel_provider(_EchoWriter("이번 기간 정답률은 62%였습니다."))
-    draft_id = _generated_draft_id(client)
+    job_id = _generated_job_id(client)
     response = client.post(
-        f"/v1/counsel/drafts/{draft_id}/refine",
+        f"/v1/counsel/drafts/{job_id}/refine",
         json={"instruction": "더 짧게 써줘", "turn_no": 2},
         headers=_HEADERS,
     )
@@ -287,7 +288,8 @@ def test_applied_turn_over_http_carries_citations(client: TestClient) -> None:
     assert len(data["citations"]) >= 1
 
 
-def test_unknown_draft_is_404(client: TestClient) -> None:
+def test_unknown_job_is_404(client: TestClient) -> None:
+    """존재 은닉 — 없는 키도, 다른 테넌트의 job_id도 똑같이 404다."""
     response = client.post(
         "/v1/counsel/drafts/does-not-exist/refine",
         json={"instruction": "더 짧게"},
@@ -299,13 +301,41 @@ def test_unknown_draft_is_404(client: TestClient) -> None:
 def test_turn_no_does_not_gate_anything(client: TestClient) -> None:
     """AI는 턴 상한을 판정하지 않는다 — 쿼터는 전부 백엔드다(7/15 BE-4)."""
     set_counsel_provider(_EchoWriter("이번 기간 정답률은 62%였습니다."))
-    draft_id = _generated_draft_id(client)
+    job_id = _generated_job_id(client)
     for turn in (1, 50, 999):
         response = client.post(
-            f"/v1/counsel/drafts/{draft_id}/refine",
+            f"/v1/counsel/drafts/{job_id}/refine",
             json={"instruction": "더 짧게 써줘", "turn_no": turn},
             headers=_HEADERS,
         )
         assert response.status_code == 200
         assert response.json()["data"]["applied"] is True
     assert "quota" not in response.text
+
+
+def test_refine_target_key_is_reachable_from_contract_only(client: TestClient) -> None:
+    """🔴 **계약만으로 폐쇄 회로가 성립한다** — 이 테스트가 이번 수정의 증명이다.
+
+    종전에는 refine 대상 키(`draft_id`)가 **어떤 응답에도 실리지 않아** BE가 호출할
+    경로가 없었다(`CounselDraftJobView`는 job_id·status·result 3필드뿐). 그래서 골든
+    테스트조차 프로세스 내부 `_drafts` dict를 import해 키를 얻고 있었고, **테스트가
+    통과하는 방식이 곧 BE가 못 하는 이유**였다.
+
+    이 테스트는 **private 심볼을 일절 import하지 않고** POST → GET → refine을 돈다.
+    BE가 실제로 할 수 있는 것만 하며, 통과하면 계약이 닫혀 있다는 뜻이다(04 §3.9).
+    """
+    post = client.post("/v1/counsel/drafts", json=_REQUEST, headers=_HEADERS)
+    assert post.status_code == 202, post.text
+    job_id = post.json()["data"]["job_id"]
+
+    got = client.get(f"/v1/counsel/drafts/{job_id}", headers=_HEADERS)
+    assert got.status_code == 200, got.text
+    assert got.json()["data"]["result"]["draft_status"] == "generated"
+
+    refined = client.post(
+        f"/v1/counsel/drafts/{job_id}/refine",
+        json={"instruction": "조금 더 부드럽게 써주세요"},
+        headers=_HEADERS,
+    )
+    assert refined.status_code == 200, refined.text
+    assert refined.json()["data"]["applied"] is True
