@@ -45,16 +45,19 @@
 | `rejected_insufficient` | **정상** — 데이터 부족으로 생성 안 함(재원 2주 미만 등) | `data_lt_2weeks` | "○○ 학생은 아직 데이터를 모으는 중이에요(다음 달부터 가능)" |
 | `failed` | 진짜 실패 | `llm_failed` `gate_exhausted` `llm_timeout` `parse_fail_exhausted` | "생성에 실패했어요 — 다시 시도" |
 
-**`failed`의 `status_reason` — counsel 와이어 4종과의 대응(7/31 · 인박스 계약 v1 §4-③).** 계약은 초안 판정을 `generated · rejected_insufficient · llm_failed · gate_exhausted` 4종으로 싣는다. 뒤의 둘은 **판정이 아니라 사유**라서 이 표의 `status`가 아니라 `failed`의 `status_reason`에 둔다 — 계약 자신이 둘 다 화면 `failed`("다시 시도")로 매핑하므로 화면이 구분하지 않는 것을 판정 축에 섞지 않는다.
+**`failed`의 `status_reason` — counsel 와이어 5종과의 대응(7/31 · 인박스 계약 v1 §4-③ · 8/x `template_only` 승격).** 계약은 초안 판정을 `generated · template_only · rejected_insufficient · llm_failed · gate_exhausted` 5종으로 싣는다. 뒤의 둘은 **판정이 아니라 사유**라서 이 표의 `status`가 아니라 `failed`의 `status_reason`에 둔다 — 계약 자신이 둘 다 화면 `failed`("다시 시도")로 매핑하므로 화면이 구분하지 않는 것을 판정 축에 섞지 않는다.
 
 | 계약 `draft_status` | AI 내부(`DraftStatus`) | `status_reason` |
 | --- | --- | --- |
 | `generated` | `generated` | — |
+| `template_only` | `template_only` | `no_data_topic` |
 | `rejected_insufficient` | `rejected_insufficient` | 부족 사유(`context_missing` 등) |
 | `llm_failed` | `failed` | `llm_failed` |
 | `gate_exhausted` | `failed` | `gate_exhausted` |
 
 와이어 변환은 **라우터의 결정론 함수 한 곳**이 한다(내부 도메인 ≠ 와이어 표현). 내부 `DraftStatus` 전수가 그 파생표에 등재됐는지 CI가 대조하며, 미등재 값은 크래시가 아니라 `failed` + `status_reason="unmapped:{값}"`으로 **정직하게** 나간다. 어휘가 계약·코드·문서 3갈래인 사실은 99 D ㊱에 등록돼 있다.
+
+🔴 **`template_only` 승격(8/x).** 종전에는 계약에 이 값이 없어 내부 `TEMPLATE_ONLY`를 **`generated`로 강등**했는데, 그 조합은 **불변식 2 검증**(`CounselDraftResult`의 `citations` ≥1)에 걸린다 — 데이터 무관 문의는 근거가 0건이기 때문이다. **그 값을 만드는 경로가 없어서**(죽은 값) 지금까지 안 터졌을 뿐이고, 라우터 분기를 넣는 순간 500이 났을 잠복 결함이었다. 와이어 5종 승격으로 해소했다.
 
 블록 레벨: `content` 비었고 `empty_reason` 있음 = 해당 섹션만 재시도 3회 소진 — 초안 전체는 유효. 문구: "이 부분은 자동 작성하지 못했어요 — 직접 채워주세요".
 
@@ -168,6 +171,8 @@ AI가 **안 하기로 판단한 것**은 200으로 내려간다(§2 서두). 그
 | `POST /v1/counsel/drafts/{job_id}/refine` | `applied: bool` | `blocked_reason`(`BlockedReason` 8종 enum) |
 | `POST /v1/classify` | `classified: bool` | `fallback_reason`(`ClassifyFallbackReason` **2종** enum) |
 | `GET /v1/counsel/drafts/{job_id}` | `draft_status`(5종 enum) | `status_reason` |
+
+⚠ 이 표의 "5종"은 8/5(P3) 시점에 **실제로는 4종이던 것을 잘못 적은 값**이었고, `template_only` 승격(8/x)으로 **사실이 됐다** — 다음 사람이 "왜 5종이지?"에서 멈추지 않게 남긴다.
 
 **규칙 3가지**
 
