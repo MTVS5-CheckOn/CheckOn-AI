@@ -21,7 +21,11 @@ from fastapi import APIRouter, Request
 from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
-from ai.composition.classify.classifier import classify, classify_versions
+from ai.composition.classify.classifier import (
+    CLASSIFY_GEN_PARAMS,
+    classify,
+    classify_versions,
+)
 from ai.composition.classify.provider import build_classify_gateway
 from ai.contracts.classify import AxisConfidence, ClassifyRequest, ClassifyResult
 from ai.contracts.counsel import InquirySentiment, InquiryTopic, InquiryUrgency
@@ -30,7 +34,13 @@ from ai.db.repositories.inquiry_class_store import (
     InquiryClassRecord,
     InquiryClassStore,
 )
-from ai.db.store_factory import build_inquiry_class_store
+from ai.db.repositories.run_store import (
+    RunStore,
+    default_llm_call_collector,
+    last_success_id,
+    system_utc_now,
+)
+from ai.db.store_factory import build_inquiry_class_store, build_run_store
 from ai.runtime.errors import SnapshotInvalid
 
 logger = logging.getLogger(__name__)
@@ -40,7 +50,11 @@ router = APIRouter()
 #: ⚠ `Idempotency-Key`는 **없다**(위 모듈 docstring 참조).
 _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id")
 
+#: 시계 주입점 — `datetime.now()` 직접 호출 금지(03 §3).
+_clock = system_utc_now
+
 _store: InquiryClassStore = build_inquiry_class_store()
+_run_store: RunStore = build_run_store()
 
 
 def set_inquiry_class_store(store: InquiryClassStore) -> None:
@@ -49,9 +63,17 @@ def set_inquiry_class_store(store: InquiryClassStore) -> None:
     _store = store
 
 
+def set_classify_run_store(store: RunStore) -> None:
+    """실행 원장 주입 — 테스트가 AI_RUN·LLM_CALL 적재를 관측하는 seam."""
+    global _run_store
+    _run_store = store
+
+
 def reset_inquiry_class_store() -> None:
-    global _store
+    global _store, _run_store
     _store = build_inquiry_class_store()
+    _run_store = build_run_store()
+    default_llm_call_collector().reset()
 
 
 def _to_result(inquiry_ref: str, record: InquiryClassRecord) -> ClassifyResult:
@@ -129,7 +151,22 @@ async def post_classify(request: Request) -> dict[str, Any]:
     result = await classify(
         classify_request, build_classify_gateway(), context=context
     )
-    # ② 적재 — **판정이 선 건만**(불변식 2 · P2-b 조건 4). 폴백 건은 행을 만들지 않으므로
+    # ② 실행 원장 — AI_RUN + LLM_CALL. 🔴 **INQUIRY_CLASS보다 먼저**다:
+    #    `inquiry_class.llm_call_id`가 `llm_call.id`를 참조하는 **실 FK**라 순서가 뒤집히면
+    #    FK 위반으로 죽는다. AI_RUN은 폴백 건에도 남긴다 — 불변식 8은 판정 성공 여부와
+    #    무관하게 "모든 실행"을 기록하고, 폴백 원인 추적에 호출 기록이 정확히 필요하다.
+    calls = default_llm_call_collector().take(execution_id)
+    last = calls[-1].record if calls else None
+    await _run_store.record_run(
+        context.to_run_metadata(
+            created_at=_clock(),
+            model_provider=last.provider if last is not None else None,
+            model_name=last.model if last is not None else None,
+            generation_params=CLASSIFY_GEN_PARAMS,
+        ),
+        calls,
+    )
+    # ③ 적재 — **판정이 선 건만**(불변식 2 · P2-b 조건 4). 폴백 건은 행을 만들지 않으므로
     #    캐시도 되지 않고, 재호출하면 다시 시도한다(redaction·파싱 실패는 일시적일 수 있다).
     #    ⚠ 적재 실패는 **삼키지 않는다** — 저장이 이 경로의 목적이고, 실패를 숨기면
     #    "평가셋이 쌓이는 줄 알았는데 비어 있다"가 된다. 캐시 덕에 재시도 비용이 0이다.
@@ -144,6 +181,9 @@ async def post_classify(request: Request) -> dict[str, Any]:
                 confidence_topic=Decimal(str(result.confidence.topic)),
                 confidence_sentiment=Decimal(str(result.confidence.sentiment)),
                 confidence_urgency=Decimal(str(result.confidence.urgency)),
+                # 판정을 만든 마지막 성공 호출 — 파싱 재시도의 앞 시도는 버려진 것이다
+                # (99 ㊻ⓕ 해소). 수집이 비면 None이고 그건 정직한 부재다.
+                llm_call_id=last_success_id(calls),
             ),
         )
     return success_envelope(
@@ -153,4 +193,4 @@ async def post_classify(request: Request) -> dict[str, Any]:
     )
 
 
-__all__ = ["router"]
+__all__ = ["router", "set_classify_run_store"]

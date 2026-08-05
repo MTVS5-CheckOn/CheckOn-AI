@@ -21,7 +21,8 @@ from ai.contracts.llm import (
     ModelRole,
     TokenUsage,
 )
-from ai.llm.gateway import LlmGateway
+from ai.db.repositories.run_store import default_llm_call_collector
+from ai.llm.gateway import LlmCallRecorder, LlmGateway
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
 
 _FAKE: Final = "fake"
@@ -84,7 +85,11 @@ def build_classify_provider(settings: ClassifySettings | None = None) -> LLMProv
     return FakeClassifyProvider()
 
 
-def build_classify_gateway(provider: LLMProvider | None = None) -> LlmGateway:
+def build_classify_gateway(
+    provider: LLMProvider | None = None,
+    *,
+    recorder: LlmCallRecorder | None = None,
+) -> LlmGateway:
     """분류 게이트웨이 — role은 **`ModelRole.CLASSIFIER`**다.
 
     🔴 종전에 `GENERATOR`였고 "`ModelRole`에 `CLASSIFIER`가 없어서"라는 주석이 붙어 있었는데
@@ -95,9 +100,12 @@ def build_classify_gateway(provider: LLMProvider | None = None) -> LlmGateway:
     role이 틀리면 조용히 두 가지가 깨진다: ① LLM_CALL.role이 실제 역할과 다르게 적재돼
     역할별 원가 회계가 생성 비용에 섞인다 ② 역할별 모델 라우팅·전송 재시도를 분류에만
     다르게 줄 수 없다(게이트웨이는 role로만 고른다).
+
+    `recorder`는 기본이 공용 수집기다(99 ㊻ⓐ) — `build_brief_gateway`와 같은 규약이다.
     """
     return LlmGateway(
         {ModelRole.CLASSIFIER: provider or build_classify_provider()},
+        recorder=recorder or default_llm_call_collector(),
         transport_retry={ModelRole.CLASSIFIER: CLASSIFIER_TRANSPORT_RETRY},
         trace_masking_hook=RedactionTripwireTraceHook(),
     )

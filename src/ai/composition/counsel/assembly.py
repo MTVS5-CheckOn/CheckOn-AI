@@ -45,8 +45,9 @@ from ai.composition.counsel.stores import (
 )
 from ai.composition.counsel.worker import CounselPackRunner
 from ai.contracts.llm import LLMProvider, ModelRole
+from ai.db.repositories.run_store import default_llm_call_collector
 from ai.db.settings import DbSettings, get_db_settings
-from ai.llm.gateway import LlmGateway
+from ai.llm.gateway import LlmCallRecorder, LlmGateway
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
 from ai.runtime.tracing import require_tracing_disabled
 
@@ -59,15 +60,21 @@ COUNSELOR_TRANSPORT_RETRY = 0
 DEFAULT_REGEN_MAX = 3
 
 
-def build_counsel_gateway(provider: LLMProvider) -> LlmGateway:
+def build_counsel_gateway(
+    provider: LLMProvider, *, recorder: LlmCallRecorder | None = None
+) -> LlmGateway:
     """counselor role provider를 등록한 게이트웨이 — **머지 조건 ②**.
 
     등록이 빠지면 `gateway.complete`가 role 조회에 실패한다. 전송 재시도와
     `trace_masking_hook`은 여기서 주입한다(09 §2-16 P1′ 기동 가드 — 미주입이면
     `LANGSMITH_TRACING=true`에서 생성이 실패한다).
+
+    `recorder`는 기본이 공용 수집기다(99 ㊻ⓐ) — `build_brief_gateway`와 같은 규약이다.
+    수집분은 워커가 `record_run`으로 영속한다(`composition/counsel/worker.py` ④′).
     """
     return LlmGateway(
         {ModelRole.COUNSELOR: provider},
+        recorder=recorder or default_llm_call_collector(),
         transport_retry={ModelRole.COUNSELOR: COUNSELOR_TRANSPORT_RETRY},
         trace_masking_hook=RedactionTripwireTraceHook(),
     )
@@ -131,9 +138,11 @@ async def open_counsel_pack_runner(
         )
 
 
-def build_gateway_writer(provider: LLMProvider) -> GatewayDraftWriter:
-    """실 LLM 경로 조립 — provider 등록 + 재시도 주입을 한 곳에서 끝낸다."""
-    return GatewayDraftWriter(build_counsel_gateway(provider))
+def build_gateway_writer(
+    provider: LLMProvider, *, recorder: LlmCallRecorder | None = None
+) -> GatewayDraftWriter:
+    """실 LLM 경로 조립 — provider 등록 + 재시도·recorder 주입을 한 곳에서 끝낸다."""
+    return GatewayDraftWriter(build_counsel_gateway(provider, recorder=recorder))
 
 
 __all__ = [

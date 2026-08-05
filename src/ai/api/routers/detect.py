@@ -22,13 +22,14 @@ import asyncio
 import logging
 import time
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
-from ai.composition.briefing import make_brief
+from ai.composition.briefing import BRIEF_GEN_PARAMS, make_brief
 from ai.composition.briefing_context import build_contexts
 from ai.composition.provider import build_brief_gateway, build_brief_provider
 from ai.contracts.detection import (
@@ -49,7 +50,16 @@ from ai.db.repositories.detection_store import (
     dedupe_learning_events,
 )
 from ai.db.repositories.idempotency import IdempotencyStore, system_utc_now
-from ai.db.store_factory import build_detection_store, build_idempotency_store
+from ai.db.repositories.run_store import (
+    CollectedCall,
+    RunStore,
+    default_llm_call_collector,
+)
+from ai.db.store_factory import (
+    build_detection_store,
+    build_idempotency_store,
+    build_run_store,
+)
 from ai.detection.engine import detect
 from ai.detection.features import (
     WeekFeatures,
@@ -87,6 +97,10 @@ _clock = system_utc_now
 #: 저장소 — settings.store_backend로 InMemory↔PG. 캐시=fail-open, 원장=fail-closed.
 _idempotency_store: IdempotencyStore = build_idempotency_store()
 _detection_store: DetectionStore = build_detection_store()
+#: LLM_CALL 적재용 — 브리핑 호출은 **감지 AI_RUN에 매달린다**(별 AI_RUN을 만들지 않는다).
+#: 같은 실행이므로 `execution_id`를 공유하며, 그래서 `record_calls`(AI_RUN 없이 호출만)를
+#: 쓴다. 적재 실패는 fail-open — 관측이 감지 응답을 되돌리지 않는다.
+_run_store: RunStore = build_run_store()
 
 #: 브리핑 문장화(ⓐ) — provider는 settings로 fake↔openai_compat(기본 fake). 총 예산 45s.
 #: LLM 호출은 gateway(role=narrator, 전송 재시도 0) 경유 — 어댑터 직결 종료(03_coding_rules §2).
@@ -125,9 +139,18 @@ def set_detection_store(store: DetectionStore) -> None:
     _detection_store = store
 
 
+def set_detect_run_store(store: RunStore) -> None:
+    """실행 원장 주입 — 테스트가 LLM_CALL 적재를 관측하는 seam."""
+    global _run_store
+    _run_store = store
+
+
 def reset_detection_store() -> None:
     """테스트 격리용 — 원장 저장소를 재빌드한다(기본 백엔드)."""
+    global _run_store
     set_detection_store(build_detection_store())
+    _run_store = build_run_store()
+    default_llm_call_collector().reset()
 
 
 def reset_idempotency_store() -> None:
@@ -213,15 +236,28 @@ def _build_ledger(
     request: DetectRequest,
     response: DetectResponse,
     config: ThresholdConfig,
+    *,
+    calls: Sequence[CollectedCall] = (),
 ) -> LedgerWrite:
-    """원장 적재 묶음 조립 — AI_RUN(RunMetadata)·SIGNAL·FEATURE_WEEK."""
+    """원장 적재 묶음 조립 — AI_RUN(RunMetadata)·SIGNAL·FEATURE_WEEK.
+
+    `calls`는 이 실행의 브리핑 LLM 호출이다 — AI_RUN의 `model_provider`·`model_name`을
+    **실측값으로** 채우기 위해 받는다. 조립부 설정을 여기서 재선언하면 두 값이 갈린다.
+    문장화가 없었거나 전량 폴백이면 비고, 그때 model_*은 None이 정직한 값이다.
+    """
+    last = calls[-1].record if calls else None
     run: RunMetadata = ExecutionContext(
         execution_id=execution_id,
         tenant_id=tenant_id,
         capability=Capability.DETECTION,
         input_snapshot_hash=snapshot_hash,
         versions=detection_versions(config),
-    ).to_run_metadata(created_at=_clock())
+    ).to_run_metadata(
+        created_at=_clock(),
+        model_provider=last.provider if last is not None else None,
+        model_name=last.model if last is not None else None,
+        generation_params=BRIEF_GEN_PARAMS,
+    )
     return LedgerWrite(
         run=run,
         signals=response.signals,
@@ -357,10 +393,24 @@ async def post_detect(request: Request) -> dict[str, Any]:
         versions=detection_versions(config),
     )
 
+    # 브리핑 LLM 호출 수집분 — 원장 적재 **전에** 꺼내 AI_RUN 메타(model_*)에 싣는다.
+    brief_calls = default_llm_call_collector().take(execution_id)
+
     # 원장 적재 (fail-closed) — 실패 시 LedgerWriteFailed(500), 응답 전에 막는다.
     await _detection_store.persist_ledger(
-        _build_ledger(execution_id, tenant_id, snapshot_hash, merged, response, config)
+        _build_ledger(
+            execution_id,
+            tenant_id,
+            snapshot_hash,
+            merged,
+            response,
+            config,
+            calls=brief_calls,
+        )
     )
+    # LLM_CALL 적재 — 🔴 **persist_ledger 뒤**다: `llm_call.run_id`가 `ai_run.execution_id`를
+    # NOT NULL FK로 참조하므로 AI_RUN 행이 먼저 서야 한다. 실패는 fail-open(관측).
+    await _run_store.record_calls(execution_id=execution_id, calls=brief_calls)
 
     # 멱등 저장 (fail-open) — 실패해도 요청은 성공.
     await _idempotency_store.put(

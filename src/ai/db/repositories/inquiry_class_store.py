@@ -23,8 +23,11 @@
 저장이 이 기능의 목적인데 실패를 삼키면 "평가셋이 쌓이는 줄 알았는데 비어 있다"가 된다.
 캐시 덕에 재시도가 LLM 0회라 500 후 재시도 비용도 없다.
 
-⚠ `llm_call_id`는 **NULL로 둔다** — `LlmCallRecord`가 어디에도 적재되지 않아(99 ㊻)
-참조할 값이 없다. 임의로 UUID를 만들면 없는 행을 가리키는 FK가 된다.
+🔴 `llm_call_id`는 **호출부가 넘긴다**(8/5 · 99 ㊻ⓕ 해소). 종전에는 `LlmCallRecord`가
+어디에도 적재되지 않아 참조할 값이 없어 NULL 고정이었다 — 이제 LLM_CALL이 적재되므로
+**그 판정을 만든 마지막 성공 호출**을 가리킨다. `inquiry_class.llm_call_id`는 실제 FK라
+호출부가 **LLM_CALL을 먼저 적재한 뒤** 이 저장소를 불러야 한다(순서가 계약이다).
+값이 없으면(캐시 히트·수집 실패) None을 넘긴다 — 없는 행을 가리키는 FK보다 NULL이 낫다.
 """
 
 from __future__ import annotations
@@ -71,6 +74,12 @@ class InquiryClassRecord(BaseModel):
     corrected_sentiment: str | None = None
     corrected_urgency: str | None = None
     reviewed_at: datetime | None = None
+    llm_call_id: uuid.UUID | None = None
+    """이 판정을 만든 **마지막 성공 LLM 호출**(LLM_CALL 행). 재현 추적의 간선(불변식 8).
+
+    파싱 재시도로 3번 불렀다면 앞의 둘은 버려진 시도이고 판정을 낸 것은 마지막 성공
+    호출이다. 시도 전량은 LLM_CALL 행으로 따로 남으니 정보가 사라지지 않는다.
+    """
 
 
 @runtime_checkable
@@ -212,7 +221,8 @@ class PgInquiryClassStore:
                         id=self._new_id(),
                         tenant_id=tenant_id,
                         inquiry_ref=inquiry_ref,
-                        # ⚠ `llm_call_id`는 NULL이다 — 99 ㊻(LlmCallRecord 미적재).
+                        # `llm_call_id`는 record가 들고 온다 — 호출부가 LLM_CALL을 먼저
+                        # 적재했다는 전제다(FK · 모듈 docstring 참조).
                         **record.model_dump(),
                     )
                 )
@@ -262,6 +272,7 @@ def _to_record(row: InquiryClass) -> InquiryClassRecord:
         corrected_sentiment=row.corrected_sentiment,
         corrected_urgency=row.corrected_urgency,
         reviewed_at=row.reviewed_at,
+        llm_call_id=row.llm_call_id,
     )
 
 
