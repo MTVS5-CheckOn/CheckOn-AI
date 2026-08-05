@@ -437,15 +437,72 @@ class ItemCandidate(Base):
 
 
 class InquiryClass(Base):
+    """ⓑ 문의 분류 결과 — **평가셋 테이블**이다(`part_a/03` §C7 · `08` §7).
+
+    3축 컬럼은 **AI 예측 고정**이며 절대 덮어쓰지 않는다. 강사 정정은 `corrected_*`에
+    별도 보관한다 — 예측이 소실되면 (입력·예측·정답) 3요소가 깨져 평가셋 목적이
+    사라진다(B 승인 조건 1).
+
+    `corrected_by_teacher`는 **컬럼이 아니라 파생값**이다(조건 2)::
+
+        corrected_by_teacher := (corrected_topic IS NOT NULL
+                              OR corrected_sentiment IS NOT NULL
+                              OR corrected_urgency IS NOT NULL)
+
+    판정 해석::
+
+        reviewed_at IS NULL                            → 평가셋 미편입(분모 제외)
+        reviewed_at NOT NULL, corrected_topic IS NULL  → topic 축 AI 정답
+        corrected_topic IS NOT NULL                    → topic 축 AI 오답(정답=corrected_topic)
+
+    🔴 **기록 규약 2건 — 적재 코드가 반드시 지킨다(조건 4).**
+
+    ① **예측과 같은 값으로 "정정"된 경우 `corrected_*`는 NULL을 유지한다.** 강사가
+       드롭다운을 열어 같은 값을 다시 골라도 값을 쓰지 않는다 — 쓰면 그게 오답으로
+       집계돼 재분류율이 부풀려지고, `reviewed_at`으로 분리한 의미가 무너진다.
+    ② **재검토 시 `reviewed_at`은 마지막 검토 시각으로 갱신하고 이력은 남기지 않는다.**
+       검토 이력이 필요해지면 별도 테이블 안건으로 연다.
+
+    ⚠ **폴백 건(`classified=False`)은 적재하지 않는다**(조건 4). 판정이 없는 건에 enum
+    값을 채우면 불변식 2 위반이고 평가셋이 오염된다. **폴백률은 이 테이블에서 세지
+    말 것** — 관측은 구조화 로그로 하고, `runtime/metrics` 이벤트는 모듈 자체가 아직
+    없어 별도 양자 승인 대상이다(99 등재).
+
+    값 어휘 정본은 `contracts/counsel.py`의 `InquiryTopic`·`InquirySentiment`·
+    `InquiryUrgency`다. DB enum 타입을 만들지 않고 String + 주석으로 두는 것은 기존
+    `topic`·`urgency`와의 대칭이다(조건 3).
+    """
+
     __tablename__ = "inquiry_class"
+    __table_args__ = (
+        CheckConstraint(
+            "(corrected_topic IS NULL AND corrected_sentiment IS NULL "
+            "AND corrected_urgency IS NULL) OR reviewed_at IS NOT NULL",
+            name="corrected_requires_review",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String)
     inquiry_ref: Mapped[str] = mapped_column(String)  # 백엔드 문의 ID(논리)
-    topic: Mapped[str] = mapped_column(String)
-    urgency: Mapped[str] = mapped_column(String)
-    confidence: Mapped[Decimal] = mapped_column(Numeric)
-    corrected_by_teacher: Mapped[bool] = mapped_column(Boolean)  # 오분류 수정=평가셋
+
+    # ── AI 예측 (고정 — 덮어쓰기 금지) ──────────────────────
+    topic: Mapped[str] = mapped_column(String)  # grade|schedule|counsel_request|etc
+    sentiment: Mapped[str] = mapped_column(String)  # normal|complaint
+    urgency: Mapped[str] = mapped_column(String)  # immediate|normal
+    confidence_topic: Mapped[Decimal] = mapped_column(Numeric)
+    confidence_sentiment: Mapped[Decimal] = mapped_column(Numeric)
+    confidence_urgency: Mapped[Decimal] = mapped_column(Numeric)
+
+    # ── 강사 정정 (NULL = 그 축은 안 바꿈) ──────────────────
+    corrected_topic: Mapped[str | None] = mapped_column(String, nullable=True)
+    corrected_sentiment: Mapped[str | None] = mapped_column(String, nullable=True)
+    corrected_urgency: Mapped[str | None] = mapped_column(String, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(_TZ, nullable=True)
+    """강사가 이 건을 검토한 시각. NULL이면 **평가셋 분모에서 제외**한다 — 정정 안 함
+    (AI 정답)과 미검토를 구분하지 못하면 정확도가 과대평가된다. 시각으로 두는 이유는
+    검토 지연(분류 시점 → 검토 시점) 자체가 파일럿 관측치이기 때문이다."""
+
     llm_call_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("llm_call.id"), nullable=True
     )
