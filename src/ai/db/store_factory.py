@@ -19,6 +19,11 @@ from ai.db.repositories.idempotency import (
     InMemoryIdempotencyStore,
     PgIdempotencyStore,
 )
+from ai.db.repositories.inquiry_class_store import (
+    InMemoryInquiryClassStore,
+    InquiryClassStore,
+    PgInquiryClassStore,
+)
 from ai.db.repositories.probe_stores import (
     PgAgentStepSink,
     PgProfileStore,
@@ -36,6 +41,16 @@ from ai.import_mapping.probe.stores import (
 )
 
 _PG = "pg"
+
+
+def build_inquiry_class_store(
+    settings: DbSettings | None = None,
+) -> InquiryClassStore:
+    """분류 평가셋 저장소 — 적재 실패는 **fail-closed**(inquiry_class_store.py 참조)."""
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgInquiryClassStore(sessionmaker=get_sessionmaker())
+    return InMemoryInquiryClassStore()
 
 
 def build_agent_job_store(settings: DbSettings | None = None) -> JobStore:

@@ -480,6 +480,11 @@ class InquiryClass(Base):
             "AND corrected_urgency IS NULL) OR reviewed_at IS NOT NULL",
             name="corrected_requires_review",
         ),
+        # 🔴 자연키 — 문의 1건 = 분류 1건(P2-c). **캐시와 검토 보호의 전제**다:
+        # ① 같은 `(tenant_id, inquiry_ref)` 재호출은 저장분을 돌려주고 LLM을 안 부른다
+        # ② `reviewed_at`이 선 행을 나중 예측이 덮지 않는다(평가셋 예측·정답 쌍 보존)
+        # 새 UUID를 응답에 노출하지 않고 BE가 이미 아는 값을 참조 키로 쓴다.
+        UniqueConstraint("tenant_id", "inquiry_ref", name="uq_inquiry_class_scope"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
