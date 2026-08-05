@@ -28,6 +28,7 @@ from typing import Final
 
 from ai.contracts.classify import (
     AxisConfidence,
+    ClassifyFallbackReason,
     ClassifyLlmOutput,
     ClassifyRequest,
     ClassifyResult,
@@ -61,8 +62,8 @@ _GEN_PARAMS: Final = GenerationParams(temperature=0.0, seed=20260805, max_tokens
 
 #: 전송 직전 트립와이어가 잔여 흔적을 발견해 막았다 — **장애가 아니라 미분류**다.
 #: ⚠ `uncertain`은 여기 없다(아래 `classify()` 참조) — 성격이 다르다.
-_FALLBACK_TRIPWIRE: Final = "tripwire_blocked"
-_FALLBACK_PARSE: Final = "parse_exhausted"
+_FALLBACK_TRIPWIRE: Final = ClassifyFallbackReason.TRIPWIRE_BLOCKED
+_FALLBACK_PARSE: Final = ClassifyFallbackReason.PARSE_EXHAUSTED
 
 
 def render_prompt(masked_text: str) -> str:
@@ -89,7 +90,9 @@ def classify_versions() -> VersionSet:
     )
 
 
-def _unclassified(inquiry_ref: str, reason: str) -> ClassifyResult:
+def _unclassified(
+    inquiry_ref: str, reason: ClassifyFallbackReason
+) -> ClassifyResult:
     """분류하지 못했다 — **정직한 미분류**다.
 
     `etc`를 확신 있는 판정처럼 내보내지 않는다. confidence 0.0 + `classified=False`가

@@ -9,13 +9,34 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from enum import StrEnum
+from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ai.contracts.counsel import InquirySentiment, InquiryTopic, InquiryUrgency
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
+
+
+class ClassifyFallbackReason(StrEnum):
+    """`classified=False`의 사유 — **200 안의 상태 코드**다(에러가 아니다 · error_codes §2).
+
+    `counsel`의 `BlockedReason`과 **같은 축**이다: 판정 불리언 + 사유 코드. 자유 문자열이
+    아니라 **닫힌 집합**이어야 오타·미등재 값이 조용히 나가지 않는다(error_codes §2.6 규칙 1).
+
+    ⚠ **값은 코드가 실제로 내는 것 전수다**(8/5 grep 실측 — `classifier._unclassified`의
+    호출부 2곳). 종전 문서·docstring이 적고 있던 `redaction_uncertain`은 **#86에서
+    사라졌다** — 마스킹 불확실이어도 분류를 계속하기로 바뀌면서(소비자별 fail-closed
+    판단) 그 폴백 경로 자체가 없어졌다. 쓰이지 않는 값을 enum에 남기면 BE가 대비할 필요
+    없는 분기를 만든다.
+    """
+
+    PARSE_EXHAUSTED = "parse_exhausted"
+    """LLM 출력이 enum 강제 스키마를 못 채워 재시도 상한(2회)을 소진했다."""
+
+    TRIPWIRE_BLOCKED = "tripwire_blocked"
+    """전송 직전 트립와이어가 프롬프트에서 잔여 흔적을 발견했다 — "안 가려진 게 남았다"."""
 
 
 class AxisConfidence(BaseModel):
@@ -71,8 +92,21 @@ class ClassifyResult(BaseModel):
     않는다. BE는 이때 정렬을 적용하지 않고 시간순으로 둔다(`error_codes` §2.5 :213).
     """
 
-    fallback_reason: str | None = None
-    """`classified=False`일 때의 사유 — `redaction_uncertain` | `parse_exhausted`."""
+    fallback_reason: ClassifyFallbackReason | None = None
+    """`classified=False`일 때의 사유 — 닫힌 집합이다(위 enum)."""
+
+    @model_validator(mode="after")
+    def _unclassified_needs_reason(self) -> Self:
+        """판정과 사유는 **짝이다** — 어긋난 조합을 타입 차원에서 막는다.
+
+        `RefineResponse._blocked_needs_reason`과 같은 형태다(error_codes §2.6 규칙 2).
+        정상 판정에 사유가 실리면 BE가 "실패했나?"를 두 필드로 추측해야 한다.
+        """
+        if self.classified and self.fallback_reason is not None:
+            raise ValueError("분류된 결과에는 fallback_reason을 싣지 않는다")
+        if not self.classified and self.fallback_reason is None:
+            raise ValueError("미분류 결과에는 fallback_reason이 반드시 있다")
+        return self
 
 
 class ClassifyLlmOutput(BaseModel):
