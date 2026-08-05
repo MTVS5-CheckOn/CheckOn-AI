@@ -388,7 +388,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 // Response 200 — 분류하지 못한 경우(500이 아니다 · error_codes §2.5)
 { "data": { "topic": "etc", "sentiment": "normal", "urgency": "normal",
             "confidence": { "topic": 0.0, "sentiment": 0.0, "urgency": 0.0 },
-            "classified": false, "fallback_reason": "redaction_uncertain" } }
+            "classified": false, "fallback_reason": "tripwire_blocked" } }
 ```
 
 **3축 독립 분류다** — 축마다 값 집합도 용도도 다르고, 한 축의 오분류가 다른 축을 오염시키지 않는다(Zendesk intelligent triage와 같은 구조). ⚠ `confidence`는 **축별 객체**다 — 3축이 독립이므로 확신도도 축마다 다르다(Zendesk는 필드마다 별도 confidence를 단다).
@@ -410,7 +410,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 🔴 **`body_text`는 원문이다**(counsel의 `text_masked`와 다르다). **AI가 2차 redaction을 적용한 뒤 LLM에 보내며**(masking_redaction §3·§4), ⟪확인필요⟫가 남거나 전송 직전 잔여 흔적이 발견되면 **LLM을 호출하지 않고** `classified: false`로 응답한다. 원문은 로그·에러 detail 어디에도 남지 않는다(§2.3).
 
-**`classified` · `fallback_reason`** — 분류 실패는 **200**이다. `classified: false`면 `etc`를 확신 있는 판정으로 읽지 말고 **정렬을 적용하지 않은 채 시간순으로** 둔다(`error_codes` §2.5). 사유는 `tripwire_blocked` | `parse_exhausted` 2종이며, **LLM 장애는 폴백이 아니라 503**이다.
+**`classified` · `fallback_reason`** — 분류 실패는 **200**이다. `classified: false`면 `etc`를 확신 있는 판정으로 읽지 말고 **정렬을 적용하지 않은 채 시간순으로** 둔다(`error_codes` §2.5). 사유는 **enum 2종**(`tripwire_blocked` | `parse_exhausted`)이며 자유 문자열이 아니다(`error_codes` §2.7 규칙 1). `classified=true`면 `fallback_reason`은 반드시 `null`이고 그 반대도 마찬가지다 — 짝이 어긋나면 스키마가 거부한다(규칙 2). **LLM 장애는 폴백이 아니라 503**이다.
 
 ⚠ **`⟪확인필요⟫`가 남아도 분류를 계속한다**(8/5 정정) — 가려진 텍스트는 이미 안전하고 분류에 이름은 필요 없다. 종전 `redaction_uncertain` 사유는 없어졌다. 전송 직전 트립와이어가 **잔여 흔적**을 발견한 경우만 `tripwire_blocked`로 폴백한다(그건 '안 가려진 게 남았다'는 신호라 성격이 다르다).
 
@@ -578,7 +578,8 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 - **잡 성공 ≠ 초안 존재.** `status="succeeded"` + `result.draft_status="rejected_insufficient"`는 **정상 조합**이다(데이터 부족은 에러가 아니다 — 불변식 4). 화면은 "아직 데이터를 모으는 중이에요"를 그린다.
 - **`citations[]`는 ≥1이 타입 계약**이다. 인용 가능한 근거(`record_id`가 있는 fact)가 0건이면 **LLM 호출 전에** `rejected_insufficient`로 끊는다 — 게이트를 통과한 초안을 만들어 놓고 근거가 없어 버리는 낭비를 만들지 않는다.
-- **`refine` 차단도 200**이다(`applied:false` + `blocked_reason` + `message`). `GateRejected`를 5xx로 올리면 리뷰 반려(불변식 4 · error_codes §4).
+- **`refine` 차단도 200**이다(`applied:false` + `blocked_reason`). `GateRejected`를 5xx로 올리면 리뷰 반려(불변식 4 · error_codes §4).
+- 🔴 **차단 문구는 AI가 주지 않는다(8/5).** `blocked_reason` 8종에 대한 표시 문구는 `part_a/06_refine_policy.md` §4 표가 원본이며 **BE가 매핑**한다 — 초안 `draft_status`·classify 폴백과 같은 규약이다(`error_codes` §2.1 "백엔드 표시 문구" 열 · §2.7 규칙 3). ⚠ **종전 응답의 `message` 필드는 제거됐다.**
 - **refine 대상 키는 `job_id`다.** 문의 1건 = 잡 1개 = 초안 1개(pack N=1)라 별도 `draft_id`를 노출하지 않는다 — BE는 **Kafka 완료 통지가 싣는 `job_id`를 그대로** 쓰면 되고 별도 조회가 필요 없다. FE 계약 §3-③은 `inquiry_id` 기준이므로 **BE가 `inquiry_id → job_id` 매핑을 중계**한다(AI는 원본 문의에 접근하지 않는다).
   > 🔴 **정정(8/5).** 종전 표기는 `draft_id`였는데 그 값이 **어떤 응답에도 실리지 않아** BE가 refine을 호출할 계약 경로가 없었다(`CounselDraftJobView`는 `job_id`·`status`·`result` 3필드뿐 — 호출하면 404 확정). 스키마에 필드를 추가하는 대신 **키를 `job_id`로 통일**했다. 응답 스키마 무변경.
 - **문의 유형(`topic`)을 정정하면 초안을 재요청한다 — 되돌리기가 계약 의무다.** `inquiry.topic`은 분류(ⓑ)의 판정값이고, 그 값이 `template_only`처럼 **초안 종류를 가른다**(§3.5). 분류가 초안을 가르는 것이 허용되는 전제가 **강사가 되돌릴 수 있다**는 것이므로(`part_a/01` §4-ⓑ), 오분류 시 경로를 계약으로 보장한다.
