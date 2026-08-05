@@ -224,7 +224,8 @@ def _draft_context(request: CounselDraftRequest) -> DraftContext:
 
 
 #: 차단 사유별 강사 문구 — 원본은 `part_a/06_refine_policy.md` §4 표다(여기서 새로 만들지
-#: 않는다). BE는 이 문구를 그대로 중계한다(계약 §4-④ `message`).
+#: 않는다). 🔴 **응답에는 싣지 않는다**(8/5) — BE가 `blocked_reason`으로 이 표를 조회해
+#: 문구를 붙인다. 여기 남겨 둔 것은 골든 테스트가 그 매핑의 기대값으로 쓰기 때문이다.
 REFINE_BLOCK_MESSAGES: dict[BlockedReason, str] = {
     BlockedReason.EVIDENCE_MISSING: "요청하신 내용은 기록에서 확인되지 않아 반영하지 못했어요",
     BlockedReason.COMPARISON_EXPOSURE: "반 평균·석차는 학부모 문서에 포함할 수 없어요(내부 지표)",
@@ -501,12 +502,11 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
             refine_request.turn_no,
             outcome.blocked_reason.value if outcome.blocked_reason else "unknown",
         )
+        # ⚠ 문구(`REFINE_BLOCK_MESSAGES`)는 **응답에 싣지 않는다**(8/5) — 표시 문구는
+        # BE 소유다(error_codes §2.6 규칙 3). 표 자체는 `part_a/06` §4의 투영이라
+        # 남겨 둔다(골든 테스트가 BE 매핑의 기대값으로 참조한다).
         response = RefineResponse(
-            applied=False,
-            blocked_reason=outcome.blocked_reason,
-            message=REFINE_BLOCK_MESSAGES[outcome.blocked_reason]
-            if outcome.blocked_reason
-            else None,
+            applied=False, blocked_reason=outcome.blocked_reason
         )
     return success_envelope(
         data=response.model_dump(mode="json"),
