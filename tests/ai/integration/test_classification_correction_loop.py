@@ -304,3 +304,155 @@ def test_outcome_is_not_a_truthy_tuple() -> None:
     from ai.db.repositories.inquiry_class_store import ConfirmationOutcome
 
     assert not isinstance(ConfirmationOutcome(found=False), tuple)
+
+
+# ── C 정정 되돌리기 ──────────────────────────────────────────────
+
+
+def test_correcting_back_to_the_prediction_clears_the_correction(
+    client: TestClient,
+) -> None:
+    """🔴 강사가 실수를 알아채고 원래 값으로 회신하면 `corrected_*`가 NULL로 돌아온다.
+
+    종전 실측:
+        예측 etc → schedule로 정정 → corrected_topic='schedule'
+        → etc(=예측)로 회신 → corrected_topic='schedule'  ← 영구히 남았다
+    """
+    predicted = _classify(client, "iq_undo")["topic"]
+
+    _confirm(
+        client,
+        {
+            "kind": "classification",
+            "suggestion_id": "iq_undo",
+            "action": "corrected",
+            "corrected_value": {"topic": "schedule"},
+        },
+    )
+    row = _row("iq_undo")
+    assert row is not None and row.corrected_topic == "schedule"
+
+    response = _confirm(
+        client,
+        {
+            "kind": "classification",
+            "suggestion_id": "iq_undo",
+            "action": "corrected",
+            "corrected_value": {"topic": predicted},
+        },
+    )
+    assert response.status_code == 200, response.text
+    row = _row("iq_undo")
+    assert row is not None and row.corrected_topic is None, "정정이 되돌려지지 않았다"
+
+
+def test_same_value_without_a_previous_correction_is_still_ignored(
+    client: TestClient,
+) -> None:
+    """⚠ **규약 ②는 그대로다** — 이전 정정이 없으면 같은 값 회신은 여전히 무시된다.
+
+    되돌리기를 허용하면서 ②를 깨면 재분류율이 다시 부풀려진다.
+    """
+    predicted = _classify(client, "iq_noop")["topic"]
+    _confirm(
+        client,
+        {
+            "kind": "classification",
+            "suggestion_id": "iq_noop",
+            "action": "corrected",
+            "corrected_value": {"topic": predicted},
+        },
+    )
+    row = _row("iq_noop")
+    assert row is not None
+    assert row.corrected_topic is None
+    assert row.reviewed_at is not None  # 검토는 했다
+
+
+def test_undo_only_touches_the_axis_that_came_back(client: TestClient) -> None:
+    """축은 독립이다 — 한 축을 되돌려도 다른 축의 정정은 남는다."""
+    predicted = _classify(client, "iq_axes")
+    _confirm(
+        client,
+        {
+            "kind": "classification",
+            "suggestion_id": "iq_axes",
+            "action": "corrected",
+            "corrected_value": {"topic": "schedule", "sentiment": "complaint"},
+        },
+    )
+    _confirm(
+        client,
+        {
+            "kind": "classification",
+            "suggestion_id": "iq_axes",
+            "action": "corrected",
+            "corrected_value": {"topic": predicted["topic"]},  # topic만 되돌린다
+        },
+    )
+    row = _row("iq_axes")
+    assert row is not None
+    assert row.corrected_topic is None
+    assert row.corrected_sentiment == "complaint"
+
+
+@pytest.mark.parametrize(
+    ("predicted", "current", "value", "expect_applied", "expect_cleared"),
+    [
+        ("grade", None, "grade", False, False),  # 규약 ② — 무시
+        ("grade", "schedule", "grade", False, True),  # 🔴 되돌리기
+        ("grade", None, "schedule", True, False),  # 새 정정
+        ("grade", "schedule", "etc", True, False),  # 정정 변경
+        ("grade", "schedule", "schedule", True, False),  # 같은 정정 재전송(멱등)
+    ],
+)
+def test_three_states_are_distinguished(
+    predicted: str,
+    current: str | None,
+    value: str,
+    expect_applied: bool,
+    expect_cleared: bool,
+) -> None:
+    """🔴 세 상태를 가르는 순수 판정 — **InMemory·Pg가 같은 함수를 쓴다.**
+
+    비교 기준이 예측 하나면 2행이 1행에 흡수된다(그게 이번 결함이다).
+    """
+    from ai.db.repositories.inquiry_class_store import _plan_corrections
+
+    record = InquiryClassRecord(
+        topic=predicted,
+        sentiment="normal",
+        urgency="normal",
+        confidence_topic=Decimal("0.9"),
+        confidence_sentiment=Decimal("0.9"),
+        confidence_urgency=Decimal("0.9"),
+        corrected_topic=current,
+    )
+    outcome = _plan_corrections(record, {"topic": value})
+    assert bool(outcome.applied) is expect_applied
+    assert ("topic" in outcome.cleared) is expect_cleared
+
+
+def test_both_backends_share_the_decision_and_write_nulls() -> None:
+    """🔴 InMemory·Pg 동작 동일 — 판정은 **같은 순수 함수**이고 둘 다 `cleared`를 쓴다.
+
+    ⚠ Pg 왕복은 DB가 있어야 돌아 기본 실행에서 빠진다(`integration` 마커 선례). 그래서
+    "같은 판정을 쓰는가 + 되돌리기를 실제로 NULL로 쓰는가"를 소스로 고정한다 — 한쪽만
+    고치면 두 백엔드가 갈리는데 CI가 못 잡는 자리다.
+    """
+    import ast
+    import inspect
+    from pathlib import Path
+
+    from ai.db.repositories import inquiry_class_store as module
+
+    tree = ast.parse(Path(inspect.getfile(module)).read_text(encoding="utf-8"))
+    for name in ("InMemoryInquiryClassStore", "PgInquiryClassStore"):
+        cls = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name == name
+        )
+        body = ast.dump(cls)
+        assert "_plan_corrections" in body, f"{name}이 공용 판정을 안 쓴다"
+        assert "cleared" in body, f"{name}이 되돌리기를 반영하지 않는다"
