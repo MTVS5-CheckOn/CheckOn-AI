@@ -201,8 +201,27 @@ DomainException (base)
 ├─ EvidenceUnresolvable   → 200 + 블록 empty_reason=bad_ref
 ├─ LlmUpstreamDown        → 503 LLM_UPSTREAM_DOWN
 ├─ LlmUpstreamTimeout     → 504 TIMEOUT
-└─ RedactionUncertain     → 500 INTERNAL (원문 노출 위험 — 상세 사유 응답에 미포함)
+├─ RedactionUncertain     → 500 INTERNAL (원문 노출 위험 — 상세 사유 응답에 미포함)
+│
+│  ── problem_generation (B 구현 · 8/7 등재) ────────────────────────
+├─ ProblemWorkflowConfigurationError → 400 INVALID_SCHEMA
+├─ ProblemTenantMismatch            → 403 TENANT_MISMATCH
+├─ ProblemSourceUnsupported         → 400 INVALID_SCHEMA
+│                                     + 사유 source_procurement_not_implemented (§6)
+└─ (problem_generation 실행 컨텍스트 오류 — 이름 미정) → 500 INTERNAL
+                                      `problem_generation/workflow.py:496`
 ```
+
+🔴 **마지막 줄을 4xx로 내리지 마라 — B의 판단이 정본이다.** 인용:
+
+> *"라우터가 `ExecutionContext`를 잘못 조립한 **우리 버그**라 BE가 고칠 수 없다. 우리 조립
+> 실수를 400으로 내면 또 하나의 거짓말이 된다."*
+
+주체 3분할 그대로다 — **아무도 못 바꾸는 것은 5xx**다. 4xx는 *"BE가 요청을 고치면 된다"* 를
+뜻하는데, 조립 실수는 BE가 무엇을 고쳐도 같은 응답이 나온다.
+
+⚠ **이 줄에만 예외 이름이 없다** — B가 `DomainException`을 그대로 쓴다고 회신했다. 트리는
+이름 자리라 우선 위치만 잡아 뒀다(99 ㊕ — 이름을 붙일지 B 판정 대기).
 
 🔴 **(8/6) 트리의 이름은 runtime 매핑 예외다.** `contracts.llm`의 `LlmUnavailable`·
 `LlmTimeout`은 이 경계가 **받아 변환하는 입력**이며(아래 7/22 A 판정), **이름을 갈라 둔
@@ -277,6 +296,18 @@ DomainException (base)
 | `action=corrected`인데 정정할 축이 0건 | **400** | `corrected_value_missing` | `corrected_value`가 없거나 3축이 전부 null이다. 🔴 **종전에는 200 `accepted:true`로 나갔다** — `reviewed_at`만 찍히고 그 행은 규약 ①에 의해 **이후 재예측이 영구 차단**된다("검토함"으로 굳는다). BE는 정정이 저장됐다고 믿는다 |
 | `action=confirmed`인데 `corrected_value`가 실림 | **400** | `corrected_value_not_allowed` | 값이 통째로 버려지던 조합이다. 버릴 거면 받지 않는다 — 위 두 행과 같은 원칙 |
 | 대상 분류 없음 | **404** | — | 그 `inquiry_ref`로 분류한 적이 없거나, **폴백이라 적재되지 않았다**(`classified=false`는 행을 만들지 않는다) |
+
+**`POST /v1/problems` — 문항 생성 요청(8/7 · B 3단계).**
+
+| 상황 | 코드 | 사유 | 뜻 |
+| --- | --- | --- | --- |
+| `area_tag`가 v1 범위 밖이거나 요청에 `passage`가 실렸다 | **400** | `source_procurement_not_implemented` | **자료 조달 노드가 없다** — 지문을 생성하거나 저작물을 조달할 대상이 존재하지 않는다. 받아서 조용히 버리면 BE가 "처리됐다"고 오해하므로 정직하게 거절한다. `detail`에 요청된 `area_tag`와 `passage` 유무를 실어 BE가 **무엇을 고칠지** 알게 한다 |
+
+⚠ 위 `kind_not_implemented`와 **같은 원칙의 두 사례**다 — *"생성기가 없다 / 조용히 버리면
+오해한다"*. 없는 기능을 200으로 받아 주는 것이 이 사전이 가장 경계하는 형태다.
+
+⚠ **v1 제약의 상세(어떤 `area_tag`가 되는지)는 여기 적지 않는다** — 정본은 B의
+`part_b/09_integration_proposals.md`다. 두 곳에 같은 목록을 두면 갈린다.
 
 🔴 **정정 되돌리기(8/6).** 이미 정정된 축에 **예측값이 다시 오면 취소**로 보고 `corrected_*`를 NULL로 되돌린다. 종전에는 예측하고만 비교해서 이 회신이 "같은 값 정정"으로 무시됐고, 강사가 실수를 알아채고 원래 값으로 회신해도 정정이 **영구히 남았다** — 재분류율이 과대계상된다. ⚠ 규약 "같은 값 정정은 정정이 아니다"는 그대로다(이전 정정이 없으면 여전히 무시). 두 규칙은 같은 방향이다 — 분자에서 가짜 정정을 뺀다. **응답은 바뀌지 않는다**(200 `accepted:true`).
 
