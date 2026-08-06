@@ -167,9 +167,14 @@ def test_pii_in_the_instruction_stays_a_judgement() -> None:
     """강사가 지시문에 실명을 썼다 → **강사가 고칠 수 있다** → 200 `pii_exposure`.
 
     ⚠ LLM 호출보다 앞에서 걸러야 원가가 0이다(06 §3·§5 사전 정적 검사와 같은 자리).
+
+    ⚠ **"불확실"이지 "실명이 있다"가 아니다.** `박서연 어머니`는 호칭 결합으로 **확신 있게**
+    마스킹돼(`⟪이름1⟫`) 그대로 전송된다 — 마스킹이 성공했으니 막을 이유가 없다. 여기서
+    막는 건 `서연이가`처럼 **명부 없이 확정 불가**해 `⟪확인필요⟫`가 남는 경우다.
+    (이 테스트를 처음 쓸 때 전자를 넣어 헛돌았다 — 실측으로 정정했다.)
     """
     writer = _Boom(LlmError("호출되면 안 된다"))
-    outcome = _refine(writer, instruction="박서연 어머니께 이렇게 써줘")
+    outcome = _refine(writer, instruction="서연이가 힘들대요 라고 써줘")
     assert outcome.applied is False
     assert outcome.blocked_reason is not None
     assert outcome.blocked_reason.value == "pii_exposure"

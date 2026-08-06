@@ -30,7 +30,8 @@ from ai.composition.gate_feedback import instruction_for
 from ai.contracts.composition import DraftContext
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.gates import BlockedReason
-from ai.contracts.llm import LlmError
+from ai.runtime.errors import RedactionUncertain
+from ai.runtime.redaction import redact
 
 _RULES_PATH: Final = Path(__file__).parent / "refine_rules.yaml"
 
@@ -129,6 +130,18 @@ async def refine_draft(
        (05 §6-2 — 같은 상한 ≤3 안에서만. 불변식 6).
     ③ 상한까지 통과 못 하면 차단으로 수렴하고 **초안은 직전 버전 유지**(호출자 책임).
 
+    🔴 **LLM 장애는 잡지 않는다 — 밖으로 나간다.** 종전에는 `except LlmError`가
+    `blocked_reason=TONE_VIOLATION`으로 바꿔 라우터가 200을 냈고, 화면에는 06 §4 표의
+    *"해당 표현은 안전 기준에 걸려…"* 가 떴다 — **벤더가 죽었을 때 강사에게 말투가
+    문제라고 말하고 있었다.** `error_codes.md`:261이 이미 정해 놨다: *"LLM 장애는 폴백이
+    아니다 — `LlmUnavailable`·`LlmTimeout`은 503으로 올라간다(§4). '안 하기로 판단한 것'과
+    '못 한 것'을 같은 상태로 뭉개지 않는다."* **계약이 예정하고 있었고 코드만 안 따랐다.**
+    변환은 라우터가 `domain_error_for`로 한다(경계 한 곳).
+
+    ⚠ `RefineOutcome`에 실패 필드를 만들지 않았다 — 만들면 호출자가 또 "실패인데 200"을
+    조립할 수 있는 자리가 생긴다. **예외로 나가는 것이 요지다.**
+    ⚠ 게이트 소진은 여전히 200이다(`_GATE_REASON_TO_BLOCK`) — 그건 진짜 판단이다.
+
     🔴 `previous_text`는 **직전 턴의 본문**이다. 없으면 매 턴 원본 근거에서 새로 쓰므로
     턴1의 "짧게"가 턴2에서 되살아난다 — 다듬기가 누적되지 않는다. 기본값이 빈 문자열인
     이유는 호출자(라우터)가 아직 초안을 모를 수 있어서가 아니라, **이 파라미터가 없던
@@ -150,6 +163,14 @@ async def refine_draft(
     if blocked is not None:
         return RefineOutcome(applied=False, blocked_reason=blocked)
 
+    # 🔴 **마스킹 불확실의 주체를 여기서 가른다.** 조립된 프롬프트 전체를 한 번에 검사하면
+    #   "강사가 지시문에 실명을 썼다"와 "BE가 준 컨텍스트가 불확실하다"가 같은 결과로
+    #   수렴한다 — 전자는 강사가 고칠 수 있고(200) 후자는 아무것도 못 한다(5xx).
+    #   지시문만 따로 먼저 본다. **LLM 호출보다 앞이라 원가가 0이다**(06 §3·§5의 사전 정적
+    #   검사와 같은 자리). 여기를 통과했는데 아래에서 걸리면 그건 컨텍스트 쪽이다.
+    if redact(instruction).uncertain:
+        return RefineOutcome(applied=False, blocked_reason=BlockedReason.PII_EXPOSURE)
+
     max_chars = max_chars_for(context)
     last_reason = ""
     # 🔴 **재생성 N회 = 시도 N+1회.** 초안 경로(`graph.py`)와 **같은 `_REGEN_MAX`를 받으므로
@@ -165,10 +186,12 @@ async def refine_draft(
                 refine_instruction=instruction,
                 previous_text=previous_text,
             )
-        except RedactionBlockedError:  # fail-closed — 미전송(불변식 3)
-            return RefineOutcome(applied=False, blocked_reason=BlockedReason.PII_EXPOSURE)
-        except LlmError:
-            return RefineOutcome(applied=False, blocked_reason=BlockedReason.TONE_VIOLATION)
+        except RedactionBlockedError as exc:  # fail-closed — 미전송(불변식 3)
+            # 🔴 여기 도달했다는 건 **컨텍스트 쪽**이 불확실하다는 뜻이다 — 지시문은 위에서
+            # 이미 걸렀다. 강사는 아무것도 못 바꾼다(지시를 백 번 고쳐도 같은 화면) ⇒ 실패다.
+            # ⚠ `except` 절 순서가 계약이다 — `RedactionBlockedError`도 `LlmError` 하위라
+            # 아래보다 먼저 와야 한다.
+            raise RedactionUncertain("컨텍스트 마스킹 불확실 — 전송하지 않았다") from exc
         gate = check_counsel_gate(text, context, max_chars=max_chars)
         if gate.passed:
             return RefineOutcome(applied=True, text=text)
