@@ -39,9 +39,20 @@ from ai.contracts.llm import (
 from ai.llm.gateway import LlmGateway
 from ai.runtime.redaction import redact
 
-#: 초안 블록은 문단 단위라 브리핑(한 줄)보다 길다. 문장당 상한 × 문장 수로 산출한다 —
-#: 값을 게이트에 박지 않고 tone_map의 sentences_per_block에서 파생시킨다(03 §1).
-CHARS_PER_SENTENCE = 120
+#: 문장 하나의 글자 예산 — **실측에서 역산했다**(8/6 3차 산출 4건).
+#:
+#: | 산출 | 길이 | 문장 | 문장당 |
+#: | --- | --- | --- | --- |
+#: | S2-③ 초안 | 329자 | 7 | **47.0자** |
+#: | S3-A1 | 243자 | 8 | 30.4자 |
+#: | S3-A4 | 254자 | 9 | 28.2자 |
+#: | S3-A1(1차) | 253자 | 8 | 31.6자 |
+#:
+#: 실측 최대 47.0자에 여유 계수 ≈1.3을 얹었다. ⚠ 종전 값 120은 실측 최대의 **2.6배**라
+#: 상한이 사실상 없는 값이었는데, 그게 안 드러난 이유는 **문장 수 쪽에서 반대로 3배를
+#: 깎고 있었기 때문**이다(아래 `max_chars_for` 참조) — 두 오차가 서로를 가렸다.
+#: ⚠ 표본 4건이고 그중 초안 경로는 1건이다. 회차가 쌓이면 재역산한다.
+CHARS_PER_SENTENCE = 60
 
 #: 초안·plan 생성 파라미터 — 재현 축(temperature·seed)은 `composition/determinism.py`가
 #: 정본이다(99 ㊼). 워커가 AI_RUN.generation_params에 이 값을 적재한다.
@@ -49,8 +60,21 @@ COUNSEL_GEN_PARAMS: Final = deterministic_params()
 
 
 def max_chars_for(context: DraftContext) -> int:
-    """이 조합의 블록 길이 상한 — tone_map의 문장 수에서 파생."""
-    return tone_rule_for(context).sentences_per_block * CHARS_PER_SENTENCE
+    """이 조합의 **초안 전체** 글자 상한 — tone_map에서 파생(03 §1).
+
+    🔴 **종전에는 블록 하나분만 냈다**(`sentences_per_block × 120`). 그런데 게이트는
+    `check_counsel_gate(text, …)`로 **본문 전체**를 받는다 — 프롬프트가 "블록 3개 ×
+    블록당 3문장"을 지시하는 조합에서 상한은 **3문장분**이었다. 지시대로 쓰면 막힌다.
+
+    **재현(8/6):** `narrative.anxious.attitude.frequent`(3블록 × 3문장 = 9문장 요구)에서
+    실측 문장 길이(46.8자)로 9문장을 쓰면 421자 → `too_long:421>360`. 3차에 통과한 유일한
+    초안은 LLM이 **지시를 덜 따라 7문장(329자)** 만 쓴 것이었다(99 ㉤).
+
+    ⚠ 블록 단위로 쪼개는 쪽이 아니라 **상한을 전체 기준으로 맞추는 쪽**을 골랐다 —
+    쪼개기는 `DraftBlock`·`BlockType`을 살리는 별건이고 99 ㊱에 미결로 있다.
+    """
+    rule = tone_rule_for(context)
+    return len(rule.blocks) * rule.sentences_per_block * CHARS_PER_SENTENCE
 
 
 PLAN_PROMPT_ID: Final = "composition/counsel_plan"

@@ -15,6 +15,7 @@ from ai.composition.buffer_lexicon import forbidden_terms
 from ai.composition.counsel.gate import check_counsel_gate
 from ai.composition.counsel.prompt import assemble_prompt, tone_rule_for
 from ai.composition.counsel.provider import (
+    CHARS_PER_SENTENCE,
     CounselPlanner,
     DraftWriter,
     FakeCounselProvider,
@@ -226,3 +227,97 @@ def test_fake_write_falls_back_to_context_template() -> None:
         fake.write(context=_context(), execution_context=_execution_context())
     )
     assert text == _context().fallback_text
+
+
+# ── 길이 상한: 전체 본문 기준 (99 ㉤) ────────────────────────────
+
+#: 8/6 3차 실측 산출 4건의 **최대** 문장 길이(47.0자)를 올림한 값. 아래 회귀 테스트가
+#: "지시대로 쓴 초안"을 이 길이로 합성한다 — 임의로 고른 숫자가 아니다.
+_MEASURED_CHARS_PER_SENTENCE = 47
+
+
+def _sentence(length: int) -> str:
+    """숫자·금칙어·기호가 없는 지정 길이 문장 — 길이 검사만 남긴다."""
+    return "가" * (length - 1) + "."
+
+
+def test_limit_covers_the_whole_body_not_one_block() -> None:
+    """🔴 ㉤의 본체 — 게이트가 본문 전체를 받으므로 상한도 전체 기준이어야 한다.
+
+    종전엔 `sentences_per_block × 120`이라 **블록 하나분**이었다. 3블록 조합에서
+    프롬프트는 9문장을 지시하는데 상한은 3문장분이었다.
+    """
+    context = _context()
+    rule = tone_rule_for(context)
+    assert max_chars_for(context) == (
+        len(rule.blocks) * rule.sentences_per_block * CHARS_PER_SENTENCE
+    )
+
+
+@pytest.mark.parametrize(
+    ("comm", "sensitivity", "interest", "frequency"),
+    [
+        (CommStyle.DATA, Sensitivity.ANXIOUS, Interest.GRADE, Frequency.FREQUENT),
+        (CommStyle.NARRATIVE, Sensitivity.ANXIOUS, Interest.ATTITUDE, Frequency.FREQUENT),
+        (CommStyle.DATA, Sensitivity.DIRECT, Interest.ADMISSION, Frequency.MONTHLY),
+        (CommStyle.NARRATIVE, Sensitivity.DIRECT, Interest.GRADE, Frequency.MONTHLY),
+    ],
+)
+def test_a_draft_written_as_instructed_fits(
+    comm: CommStyle,
+    sensitivity: Sensitivity,
+    interest: Interest,
+    frequency: Frequency,
+) -> None:
+    """🔴 **프롬프트가 지시한 만큼 쓰면 통과해야 한다** — 이게 안 되면 게이트가 프롬프트와 싸운다.
+
+    실측 재현(8/6): `narrative.anxious.attitude.frequent`에서 9문장 421자가
+    `too_long:421>360`으로 막혔고, 통과한 유일한 초안은 LLM이 **덜 따라 7문장만** 쓴 것이었다.
+    """
+    context = _context(
+        comm=comm, sensitivity=sensitivity, interest=interest, frequency=frequency
+    )
+    rule = tone_rule_for(context)
+    as_instructed = " ".join(
+        _sentence(_MEASURED_CHARS_PER_SENTENCE)
+        for _ in range(len(rule.blocks) * rule.sentences_per_block)
+    )
+    result = check_counsel_gate(as_instructed, context, max_chars=max_chars_for(context))
+    assert result.passed, (
+        f"{len(rule.blocks)}블록×{rule.sentences_per_block}문장 지시인데 "
+        f"{len(as_instructed)}자가 막혔다: {result.reason}"
+    )
+
+
+def test_the_limit_is_not_toothless() -> None:
+    """⚠ 상한을 넓히면서 무력해지지 않았는지 — 폭주는 여전히 막힌다.
+
+    실측 문장 길이의 **2배**로 쓰면(문장 수는 지시대로) 걸려야 한다. 안 걸리면
+    `too_long`이 영영 안 뜨는 죽은 검사가 된다.
+    """
+    context = _context()
+    rule = tone_rule_for(context)
+    bloated = " ".join(
+        _sentence(_MEASURED_CHARS_PER_SENTENCE * 2)
+        for _ in range(len(rule.blocks) * rule.sentences_per_block)
+    )
+    result = check_counsel_gate(bloated, context, max_chars=max_chars_for(context))
+    assert not result.passed
+    assert result.reason.startswith("too_long:")
+
+
+def test_no_combination_got_a_narrower_limit() -> None:
+    """⚠ 24조합 어디도 좁아지지 않았다 — 넓히는 변경이 어딘가를 조이면 회귀다."""
+    for comm in CommStyle:
+        for sensitivity in Sensitivity:
+            for interest in Interest:
+                for frequency in Frequency:
+                    context = _context(
+                        comm=comm,
+                        sensitivity=sensitivity,
+                        interest=interest,
+                        frequency=frequency,
+                    )
+                    rule = tone_rule_for(context)
+                    previous = rule.sentences_per_block * 120  # 구 공식
+                    assert max_chars_for(context) >= previous
