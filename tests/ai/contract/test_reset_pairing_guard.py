@@ -39,7 +39,11 @@ from pathlib import Path
 from typing import Final
 
 #: 검사 대상 — 테스트 트리 전체.
-_TESTS_ROOT: Final = Path("tests")
+#: ⚠ **레포 관용구다**(`Path(__file__).resolve().parents[3]`) — 계약 가드 12개가 전부 이 형태를
+#: 쓴다. 상대 경로 `Path("tests")`로 두면 **CWD가 레포 루트가 아닐 때 `rglob`이 0건**이 되고,
+#: 아래 `test_the_scan_finds_something`이 *"검사가 끊겼다"* 로 **거짓 red**를 낸다. 위반이 없는데
+#: 실패하는 가드는 신뢰를 깎아 결국 지워진다 — `dc43208`(Windows 경로)과 같은 계열의 실수다.
+_TESTS_ROOT: Final = Path(__file__).resolve().parents[2]
 
 _COUNSEL_RESET: Final = "reset_counsel_stores"
 _SHARED_RESET: Final = "reset_shared_agent_runtime"
