@@ -213,3 +213,140 @@ completion_tokens_details: {'reasoning_tokens': 0, 'accepted_prediction_tokens':
 2. **1회차**다. confidence 구간의 얇은 표본(1·3·7·10건)은 회차를 더 쌓아야 한다.
 3. **모델 1종**(`gpt-5.4-mini`)·**시점 1회**다.
 4. **원가 미측정** — 계정 접근 불가.
+
+---
+---
+
+# 부록 A — 혼동행렬 후속 분석 (러너 `70901ef` · 추가 호출 0회 · 8/6)
+
+2차 본문 §1이 `complaint` 재현율 미달(93.3%)을 냈지만 **어느 방향으로 틀렸는지** 몰랐다
+(99 ㉠). #102가 러너에 혼동행렬을 넣었으므로 **이미 있는 산출을 재계산**하면 답이 나온다 —
+🔴 **실 LLM 호출 0회**다. 40회짜리 3차를 태우기 전에 이것부터 닫는다.
+
+⚠ **본문 실측 수치는 한 글자도 바꾸지 않았다.** 2차 회차의 기록이고, 바뀌는 게 아니라
+같은 데이터에서 파생된 것이 붙는 것이다.
+
+## A-0. 재현 명령
+
+```bash
+uv run python - <<'PY'
+import json, pathlib
+from ai.evaluation.classify_eval import AXES, AXIS_LABELS, confusion_matrix, render_confusion
+d = json.loads(pathlib.Path("local_data/classify_eval_result.json").read_text())
+rows = [r for r in d["rows"] if r["classified"]]   # 폴백 제외(2차엔 0건)
+M = {ax: confusion_matrix([(r["expected"][i], r["actual"][i]) for r in rows], AXIS_LABELS[ax])
+     for i, ax in enumerate(AXES)}
+for ax in AXES:
+    print("\n".join(render_confusion(ax, M[ax])))
+s = M["sentiment"]
+print("complaint FN", s.false_negatives("complaint"), "· FP", s.false_positives("complaint"))
+PY
+```
+
+🔴 **스크립트를 커밋하지 않았다.** 테스트 없는 분석 코드를 레포에 들이면 관리 대상이 하나
+늘고 ㊷와 같은 자리가 생긴다 — 재현은 위 명령으로 충분하다. 집계 함수 자체는
+`evaluation/classify_eval.py`에 있고 단위 테스트 17건이 붙어 있다(#102).
+
+## A-1. 🔴 자기 검산 — 본문과 일치하는지 먼저 본다
+
+같은 `rows`에서 나온 값이므로 **어긋나면 재계산이 틀린 것**이다. 특히 행/열을 반대로
+잡으면 **FN과 FP가 정확히 뒤바뀌어** 결론이 반대가 된다.
+
+| 검산 | 재계산 | 2차 본문 | |
+| --- | --- | --- | --- |
+| topic 적중 | 75/80 | 75/80 | ✅ |
+| sentiment 적중 | 78/80 | 78/80 | ✅ |
+| urgency 적중 | 70/80 | 70/80 | ✅ |
+| complaint 재현율 | 28/30 | 28/30 | ✅ |
+
+축 순서도 대조했다 — 산출 행의 `axes` 필드가 러너 `AXES`(`topic·sentiment·urgency`)와 같다.
+폴백 제외 규약을 적용했고 2차의 `classified=false`는 **0건**이라 실제 제외분은 없다.
+
+## A-2. 🔴 결론 — `complaint` 미달은 **전부 놓침 방향**이다
+
+| | 건수 | 뜻 |
+| --- | --- | --- |
+| **FN**(complaint → normal) | **2건** | **실제 민원을 놓쳤다.** §7이 이 축만 재현율 95%로 잡은 이유가 정확히 이 방향이다 |
+| **FP**(normal → complaint) | **0건** | 재현율 정의상 무관. 있었다면 강사에게 불필요한 긴장을 준다 |
+
+```text
+sentiment (행=정답 · 열=예측)
+              normal  complaint
+normal            50          0
+complaint          2         28
+```
+
+⇒ **오검 없이 놓치기만 한다.** 모델이 민원 판정에 보수적인 쪽으로 치우쳐 있다.
+
+## A-3. 3축 혼동행렬
+
+```text
+[topic] 총 80건 · 적중 75건
+  정답 grade           → 예측 etc             : 2건
+  정답 counsel_request → 예측 etc             : 1건
+  정답 etc             → 예측 counsel_request : 1건
+  정답 etc             → 예측 schedule        : 1건
+
+[sentiment] 총 80건 · 적중 78건
+  정답 complaint → 예측 normal : 2건
+
+[urgency] 총 80건 · 적중 70건
+  정답 immediate → 예측 normal : 10건
+```
+
+**topic** — 오분류 5건 **전부** `etc`가 관여한다(흡수처 겸 발신처). 판정 자체는 통과.
+
+## A-4. 🔴 다수 클래스 baseline 대조 — `urgency` 기준은 **검증력이 없다**
+
+"전부 다수 클래스로 답하는 상수 분류기"의 정확도와 실측을 나란히 둔다. 코퍼스 정답 분포는
+재계산으로 실측했다(가정 아님).
+
+| 축 | 정답 분포 | 다수 클래스 baseline | 실측 정확도 | **baseline 대비** | H-3 기준 | 기준의 baseline 대비 |
+| --- | --- | --- | --- | --- | --- | --- |
+| topic | 20·20·20·20 | 25.00% (균등과 동일) | 93.75% | **+68.75%p** | ≥85% | +60.00%p |
+| sentiment | normal 50 · complaint 30 | 62.50% | 97.50% | **+35.00%p** | (정확도 기준 없음) | — |
+| **urgency** | **immediate 15 · normal 65** | **81.25%** | 87.50% | 🔴 **+6.25%p** | ≥85% | 🔴 **+3.75%p** |
+
+🔴 **아무것도 안 하는 분류기가 81.25%를 내는데 합격선이 85%다.** 기준이 모델을 거의 검증하지
+못한다. topic·sentiment를 나란히 놓아야 **urgency만 그렇다는 것**이 보인다.
+
+⇒ *"정확도가 통과하는 동안 긴급의 2/3를 놓쳤다"* 는 **우연이 아니라 구조적으로 예정된
+결과**다. 다수 클래스(`normal` 65건)만 맞혀도 기준 근처에 닿는다.
+
+## A-5. 🔴 `urgency` — 오분류 10건이 **전부 한 방향**이다
+
+| | 값 |
+| --- | --- |
+| `immediate` 재현율 | **5/15 = 33.3%** |
+| `immediate` FN(→ normal) | **10건** |
+| `immediate` FP(normal →) | **0건** |
+
+```text
+urgency (행=정답 · 열=예측)
+             immediate  normal
+immediate            5      10
+normal               0      65
+```
+
+🔴 **10건 전부 같은 방향이고 반대 방향은 0건이다 — 랜덤 노이즈가 아니라 계통 편향이다.**
+노이즈라면 양방향으로 흩어진다. 프롬프트 축의 문제일 가능성이 크다.
+
+⚠ **§7이 `sentiment`에만 재현율 기준을 둔 것이 공백이다.** 근거가 "민원 놓침이 최악"이었는데
+**긴급 놓침도 같은 종류의 실패**다 — 인박스에서 긴급을 못 올린다. 99 ㉡.
+
+## A-6. ⚠ 대응책은 여기서 정하지 않는다
+
+- **표본이 얇다.** complaint 30건 중 2건 · immediate 15건 중 10건이다. 후자는 비율이 크지만
+  절대 표본이 15건이라 기준을 세울 근거로는 부족하다.
+- **프롬프트를 고치면 `prompt_version`이 올라가 2차 수치와 비교가 끊긴다.** 29/30이 나와도
+  개선인지 노이즈인지 구분이 안 된다.
+- ⇒ **관측만 적고 회차를 더 쌓은 뒤 판단한다.** 등재는 99 ㉡(기준 검증력)·㉢(complaint 미달)
+  **두 건으로 나눴다** — 대응이 다르기 때문이다(urgency는 **기준 자체가 없고**, sentiment는
+  **기준이 있고 값이 미달**이다).
+
+## A-7. ⚠ 보고 시 표현
+
+이번 회차를 "H-3 통과"로 쓰지 않는다. 정확한 서술은 이것이다:
+
+> 3축 중 topic·urgency **정확도** 통과 · `complaint` **재현율 미달**(FN 2 · FP 0) ·
+> **`urgency` 기준은 다수 클래스 baseline과 3.75%p 차이라 검증력 부족**(㉡)
