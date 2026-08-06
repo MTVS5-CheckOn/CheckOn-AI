@@ -73,7 +73,8 @@ def _exception_classes() -> dict[str, list[str]]:
                 break
             local_exceptions |= grew
         for name in sorted(local_exceptions):
-            found[name].append(str(path.relative_to(_SRC.parent)))
+            # ⚠ `.as_posix()` — `str(Path)`는 Windows에서 백슬래시를 낸다(CI가 win32다).
+            found[name].append(path.relative_to(_SRC.parent).as_posix())
     return found
 
 

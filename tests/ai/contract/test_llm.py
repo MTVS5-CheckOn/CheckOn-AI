@@ -5,6 +5,7 @@ FakeProvider(B 소유, llm/providers/)가 이 Protocol을 구현할 수 있는 �
 """
 
 import asyncio
+from pathlib import Path, PurePath, PureWindowsPath
 from uuid import UUID
 
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
@@ -176,6 +177,17 @@ def test_determinism_reexport_is_the_same_object() -> None:
     assert composition.DETERMINISTIC_TEMPERATURE is canonical.DETERMINISTIC_TEMPERATURE
 
 
+def _posix_rel(path: PurePath, base: PurePath) -> str:
+    """base 기준 상대경로를 항상 `/` 표기로 — 비교 키.
+
+    선례: `test_composition_redaction._posix_rel`. `str(Path)`는 Windows에서 백슬래시를
+    내서 `/` 표기 기대값과 안 맞는다 — CI가 win32라 실제로 빨갰다(8/7).
+    🔴 **가드와 회귀 단정이 이 함수를 함께 쓴다** — 인라인으로 두면 되돌림을 잡는 테스트를
+    쓸 수 없다(순수 경로 연산만 남아 헛돈다).
+    """
+    return path.relative_to(base).as_posix()
+
+
 def test_determinism_is_defined_in_exactly_one_file() -> None:
     """재현 키의 **정의**가 한 파일에만 있다 — 병존이 다시 생기면 red.
 
@@ -188,14 +200,17 @@ def test_determinism_is_defined_in_exactly_one_file() -> None:
     `__all__` 문자열을 전부 걸러 준다.
 
     🔴 **0건이면 통과가 아니라 실패다**(검사 경로 절단 검출 · `test_scan_finds_*` 선례).
+
+    ⚠ **경로는 `_posix_rel`로 정규화한다** — `str(Path)`는 Windows에서 백슬래시를 내서
+    기대값과 안 맞는다. CI가 win32라 실제로 빨갰다(8/7). 레포에 같은 선례가 이미 있었고
+    (`test_composition_redaction`), **그걸 안 쓴 게 이번 실수다.**
     """
     import re
-    from pathlib import Path
 
     src = Path(__file__).resolve().parents[3] / "src" / "ai"
     pattern = re.compile(r"^(LLM_SEED|DETERMINISTIC_TEMPERATURE)\b", re.MULTILINE)
     defining = sorted(
-        str(path.relative_to(src.parent))
+        _posix_rel(path, src.parent)
         for path in src.rglob("*.py")
         if "__pycache__" not in path.parts and pattern.search(path.read_text("utf-8"))
     )
@@ -203,3 +218,20 @@ def test_determinism_is_defined_in_exactly_one_file() -> None:
         f"재현 키 정의가 1파일이 아니다: {defining} — 0건이면 검사 경로가 끊긴 것이고, "
         "2건 이상이면 병존이 되살아난 것이다(둘 다 red)"
     )
+
+
+def test_determinism_guard_key_is_posix_on_windows() -> None:
+    """Windows 시맨틱을 맥에서 재현 — 🔴 **가드가 쓰는 `_posix_rel`을 직접 부른다.**
+
+    선례: `test_composition_redaction.test_posix_rel_normalizes_windows_separator`.
+    ⚠ 첫 판에서 `PureWindowsPath` **산술만** 단정했다가 헛돌았다 — 가드가 `.as_posix()`를
+    잃어도 그 단정은 통과한다. 헬퍼를 빼서 **같은 함수**를 부르게 고쳤다.
+    ⚠ 두 인자를 **모두** `PureWindowsPath`로 준다(flavour 혼합은 파이썬 버전마다 갈린다).
+    """
+    base = PureWindowsPath("C:/repo/src")
+    target = base / "ai" / "llm" / "determinism.py"
+
+    assert _posix_rel(target, base) == "ai/llm/determinism.py"
+    assert "\\" not in _posix_rel(target, base)
+    # `str()`이면 이 값이 나온다 — 기대값(`/` 표기)과 불일치하는 그 값.
+    assert str(target.relative_to(base)) == "ai\\llm\\determinism.py"
