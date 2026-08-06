@@ -85,7 +85,9 @@
 
 **[PART_A+PART_B] 승인 확장:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이며, `AI_RUN` 컬럼·`meta.versions`와 1:1이다. 현재 정식 키 집합은 공통 6종(`pipeline`·`engine`·`threshold`·`prompt`·`schema`·`contract`) + [PART_B] 실행 전용 nullable 4종(`graph`·`taxonomy`·`verify_config`·`difficulty_calib`)인 **총 10종**이다. 위 JSON은 특정 capability의 예시이며, nullable 값은 실행 종류에 따라 달라진다.
 
-nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 LLM 미사용 실행(감지·진단)에서 null · `graph`·`taxonomy`·`verify_config`는 관련 [PART_B] 실행 외에는 null · `difficulty_calib`은 `problem_generation` 외에는 null.
+nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 **LLM 미사용 실행**에서 null · `graph`·`taxonomy`·`verify_config`는 관련 [PART_B] 실행 외에는 null · `difficulty_calib`은 `problem_generation` 외에는 null.
+
+> 🔴 **(8/8 정정) 위 괄호가 `(감지·진단)`이었는데 감지는 LLM을 쓴다.** 경보 브리핑 문장화(ⓐ)가 **선형 LLM 1콜**이고(위 §1 표 · `part_a/01_pipeline.md` ⓐ) 이 문서 자신도 `brief`를 *"LLM 생성 + 왜곡 게이트 통과분"* 이라고 적는다. 그 괄호는 **브리핑이 붙기 전**에 쓰였고, 그동안 `/v1/detect`의 응답과 `AI_RUN`이 **둘 다 `prompt=null`** 인 채로 프롬프트 `0.2`를 쓰고 있었다 — *"그때 어떤 프롬프트로 브리핑을 만들었나"* 를 원장에서 못 읽었다(불변식 8). 지금은 `briefing.PROMPT_VERSION`을 싣는다. ⚠ **브리핑이 폴백으로 LLM을 안 탄 실행에서도 싣는다** — 버전 세트는 *"이 실행이 어떤 버전으로 조립됐나"* 이고, 실제 사용 여부는 신호별 `brief.fallback_used`가 따로 말한다.
 
 > **[PART_B 크로스체킹 요청 · 미확정 — capability별 version 조건]** 위 null 조건은 문서에는 있으나 현재 공용 모델이 capability별 필수·금지 조합을 강제하지 않아 B 실행의 B 버전 누락이나 A 실행의 B 버전 혼입이 통과할 수 있다. **제안 해결안:** `ExecutionContext` 조립 경계에서 capability별 VersionSet 불변식을 validator와 음수 테스트로 고정한다. A·B가 공용 계약의 강제 수준을 확인해 달라.
 >

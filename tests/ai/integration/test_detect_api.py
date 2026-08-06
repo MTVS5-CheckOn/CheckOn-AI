@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
 from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
+from ai.composition.briefing import PROMPT_VERSION as BRIEF_PROMPT_VERSION
 from ai.contracts.execution import VersionSet
 from ai.evaluation.fake_snapshot import fixture_composite_risk, to_payload
 
@@ -48,10 +49,16 @@ def test_success_envelope_shape(client: TestClient) -> None:
     # meta.versions 키 = VersionSet 필드에서 _version 뗀 집합
     expected_keys = {name.removesuffix("_version") for name in VersionSet.model_fields}
     assert set(body["meta"]["versions"]) == expected_keys
-    # detection 실행 — threshold는 config 버전, LLM/B 전용 키는 null
+    # detection 실행 — threshold는 config 버전, B 전용 키는 null
     # v2 — R1 발동률 목표 전환(04 §1 재정의 · 2026-08-03). 거동 변경이라 config_version 인상.
     assert body["meta"]["versions"]["threshold"] == "default-v3"
-    assert body["meta"]["versions"]["prompt"] is None
+    # 🔴 **기대값이 8/8에 바뀌었다 — 종전 `is None`은 낡은 계약을 굳히고 있었다.**
+    #    04 §2.2가 `prompt`를 "LLM 미사용 실행(감지·진단)에서 null"이라고 적었는데 **감지는
+    #    LLM을 쓴다** — 브리핑 문장화(ⓐ)가 선형 LLM 1콜이고 같은 문서 §1·`brief` 설명이
+    #    그렇게 적고 있다. 그 괄호는 브리핑이 붙기 전에 쓰였다. 결과로 응답도 `AI_RUN`도
+    #    `prompt=null`인 채 프롬프트 0.2를 쓰고 있었다(불변식 8 — 원장에서 못 읽는다).
+    #    ⚠ 값은 `briefing.PROMPT_VERSION`이 정본이다. 여기 리터럴을 적지 않는다(#118).
+    assert body["meta"]["versions"]["prompt"] == BRIEF_PROMPT_VERSION
     assert body["meta"]["versions"]["graph"] is None
 
 
