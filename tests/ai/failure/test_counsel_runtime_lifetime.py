@@ -14,7 +14,7 @@
   ⓑ 그 분기 안의 **불변식 ④ `context_hash` 대조**(체크포인트 손상 검출)
   ⓒ `paused` → `resume()` → 재lease
   ⓓ `run_next`의 lease 만료 recovery
-  ⓔ ㉩ `_views` 갱신 — 잡이 나중에 끝나도 GET이 볼 원본이 없다
+  ⓔ ㉩ `_view_cache` 갱신 — 잡이 나중에 끝나도 GET이 볼 원본이 없다
 
 🔴 **선례가 이미 있다.** `build_inquiry_class_store`(㉫)가 같은 결함을 닫으면서
 *"인메모리도 프로세스 공용 1개다"* 라고 적어 뒀다. 같은 형태로 간다.
@@ -73,6 +73,7 @@ from ai.contracts.composition import (
     LabelSnapshot,
     Sensitivity,
 )
+from ai.contracts.counsel import CounselDraftJobView
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmUnavailable
 from ai.db.settings import DbSettings
@@ -560,3 +561,118 @@ def test_lease_recovery_still_works_across_requests() -> None:
         "다음 요청이 만료 lease를 회수하지 못했다 — 큐가 요청과 함께 죽어 recovery 경로가 "
         "돌 대상을 잃는다(㉦)"
     )
+
+
+# ── ㉩ GET이 현재 phase를 다시 읽는다 ───────────────────────────────
+
+
+def test_get_reflects_the_phase_the_job_has_now() -> None:
+    """🔴 ㉩ — 잡이 **나중에** 끝나면 GET이 그 사실을 보여야 한다.
+
+    `_views`는 POST가 **한 번만** 쓰고 GET이 읽는다 — 갱신 경로가 **0개**였다. 그래서 잡이
+    `queued`인 채로 응답이 나간 뒤 다음 요청의 `run_next`가 그 잡을 끝내도, GET은 영원히
+    `queued`를 돌려준다. BE는 스피너를 계속 그리고 강사는 다시 누른다(초안 2개).
+
+    ⚠ 작업 3(수명)이 **선행**이다 — 잡 원장이 요청과 함께 죽으면 GET이 다시 읽을 원본
+    자체가 없다. 둘은 같은 뿌리의 두 증상이다.
+    """
+    client_headers = {
+        "X-Tenant-Id": "t1",
+        "X-Request-Id": "rq-view-1",
+        "Idempotency-Key": "t1:view:1",
+    }
+    contexts = InMemoryContextStore()
+
+    async def scenario() -> tuple[str, str]:
+        job = await CounselPackEnqueuer(
+            supervisor=counsel_router._build_supervisor(),  # noqa: SLF001
+            context_store=contexts,
+            now=counsel_router._clock,  # noqa: SLF001
+        ).enqueue(
+            tenant_id="t1", class_ref="cl_a1", contexts={"st_1": _context("st_1")}
+        )
+        # POST가 캐시에 남긴 것 — 아직 안 돌아 queued다.
+        cached = CounselDraftJobView(
+            job_id=str(job.job_id), status=JobPhase.QUEUED.value, result=None
+        )
+        counsel_router._view_cache[("t1", str(job.job_id))] = cached  # noqa: SLF001
+        # 그 뒤에 잡이 끝난다(다음 요청의 워커가 돌렸다고 하자).
+        sv = counsel_router._build_supervisor()  # noqa: SLF001
+        leased = await sv.lease_next(
+            tenant_id="t1", worker_kind=job.worker_kind, lease_owner="w"
+        )
+        assert leased is not None
+        await sv.start(
+            tenant_id="t1",
+            job_id=job.job_id,
+            lease_owner="w",
+            lease_generation=leased.lease_generation,
+            checkpoint_ref=str(job.job_id),
+        )
+        await sv.succeed(
+            tenant_id="t1",
+            job_id=job.job_id,
+            lease_owner="w",
+            lease_generation=leased.lease_generation,
+            result_ref="pack://done",
+        )
+        return str(job.job_id), cached.status
+
+    job_id, cached_status = _run(scenario())
+    assert cached_status == JobPhase.QUEUED.value
+
+    from fastapi.testclient import TestClient
+
+    from ai.api.app import create_app
+
+    with TestClient(create_app()) as client:
+        body = client.get(
+            f"/v1/counsel/drafts/{job_id}", headers=client_headers
+        ).json()
+
+    assert body["data"]["status"] == JobPhase.SUCCEEDED.value, (
+        "GET이 POST 당시의 phase를 그대로 돌려준다 — _view_cache에 갱신 경로가 없다(㉩). "
+        "BE는 스피너를 계속 그리고 강사는 다시 눌러 초안을 2개 만든다"
+    )
+
+
+def test_get_hides_other_tenants_jobs_even_after_refresh() -> None:
+    """🔴 존재 은닉은 그대로다 — 다른 테넌트의 `job_id`는 **404**다.
+
+    ⚠ 갱신을 넣으면서 슈퍼바이저 조회에 `tenant_id`를 안 실으면, 남의 잡 phase가 새어
+    "그 job_id는 존재한다"가 응답으로 드러난다. 캐시 키가 `(tenant_id, job_id)`라 캐시
+    적중은 애초에 안 되지만, **조회를 거치는 새 경로**가 생겼으므로 다시 못 박는다.
+    """
+    from fastapi.testclient import TestClient
+
+    from ai.api.app import create_app
+
+    view = CounselDraftJobView(
+        job_id="11111111-1111-4111-8111-111111111111",
+        status=JobPhase.SUCCEEDED.value,
+        result=None,
+    )
+    counsel_router._view_cache[("t-other", view.job_id)] = view  # noqa: SLF001
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            f"/v1/counsel/drafts/{view.job_id}", headers={"X-Tenant-Id": "t1"}
+        )
+    assert response.status_code == 404
+
+
+def test_get_and_post_share_one_reportable_judgement() -> None:
+    """⚠ 두 경로가 **같은 함수**로 "결과를 실을 수 있는가"를 판정한다.
+
+    이 시리즈가 다섯 번 겪은 형태다 — 같은 판정이 두 곳에 복제되면 한쪽만 고쳐진다
+    (#108·#111·#114·#116·#119). GET이 자기 판정을 새로 쓰지 않았는지 소스로 못 박는다.
+    """
+    import inspect
+
+    post_path = inspect.getsource(counsel_router._generate)  # noqa: SLF001
+    get_path = inspect.getsource(counsel_router._refresh_view)  # noqa: SLF001
+    for name, source in (("POST(_generate)", post_path), ("GET(_refresh_view)", get_path)):
+        assert "_can_report_result(" in source, (
+            f"{name}이 공유 판정 함수를 안 쓴다 — 같은 판정이 두 곳에 복제되면 한쪽만 "
+            "고쳐진다(#108·#111·#114·#116·#119에서 다섯 번 겪었다)"
+        )
