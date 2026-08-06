@@ -81,6 +81,7 @@ from ai.contracts.counsel import (
 )
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.gates import BlockedReason
+from ai.contracts.llm import LlmError
 from ai.db.repositories.idempotency import IdempotencyStore
 from ai.db.repositories.run_store import (
     RunStore,
@@ -91,7 +92,12 @@ from ai.db.store_factory import (
     build_idempotency_store,
     build_run_store,
 )
-from ai.runtime.errors import IdempotencyConflict, NotFound, SnapshotInvalid
+from ai.runtime.errors import (
+    IdempotencyConflict,
+    NotFound,
+    SnapshotInvalid,
+    domain_error_for,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -645,6 +651,38 @@ async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
     )
 
 
+async def _record_refine_run(
+    refine_context: ExecutionContext,
+    execution_id: uuid.UUID,
+    *,
+    swallow_errors: bool = False,
+) -> None:
+    """refine 턴 1회를 원장에 남긴다 — 성공·차단·**장애** 전부.
+
+    ⚠ `take(execution_id)`는 **어느 경로에서도 반드시** 불려야 한다. 안 부르면 수집기에
+    레코드가 남아 다음 실행에 섞인다(누수).
+
+    `swallow_errors`는 장애 경로 전용이다 — 적재 실패가 원인 예외를 덮으면 진단이
+    뒤집힌다("LLM이 죽었다" → "원장이 죽었다"). 정상 경로에서는 fail-closed 그대로 올린다.
+    """
+    calls = default_llm_call_collector().take(execution_id)
+    last = calls[-1].record if calls else None
+    try:
+        await _run_store.record_run(
+            refine_context.to_run_metadata(
+                created_at=_clock(),
+                model_provider=last.provider if last is not None else None,
+                model_name=last.model if last is not None else None,
+                generation_params=COUNSEL_GEN_PARAMS,
+            ),
+            calls,
+        )
+    except Exception:  # noqa: BLE001 — 원인 예외를 덮지 않는다(위 docstring)
+        if not swallow_errors:
+            raise
+        logger.exception("refine 장애 턴의 원장 적재 실패 — 원인 예외를 유지한다")
+
+
 @router.post("/v1/counsel/drafts/{job_id}/refine")
 async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
     """다듬기 1턴 — 동기 · **매 턴 게이트 전체 재통과**(06 §1).
@@ -677,31 +715,33 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
 
     execution_id = uuid.uuid4()
     refine_context = _refine_execution_context(execution_id, tenant_id)
-    outcome = await refine_draft(
-        context=state.context,
-        instruction=refine_request.instruction,
-        writer=_provider,
-        execution_context=refine_context,
-        regen_max=_REGEN_MAX,
-        # 🔴 **누적의 배선.** `state.text`는 종전에 write-only였다(읽는 코드 0곳) —
-        # 매 턴 원본에서 새로 써서 턴1의 반영이 턴2에서 되살아났다. 팀 공유본
-        # (와이어프레임 v3.5·프로토타입·데이터계약)이 전부 누적을 전제로 만들어져 있다.
-        previous_text=state.text,
-    )
+    try:
+        outcome = await refine_draft(
+            context=state.context,
+            instruction=refine_request.instruction,
+            # 🔴 전역 `_provider`를 직접 읽지 않는다. POST 경로는 이미 이걸 쓰는데
+            # **refine만 우회**하고 있었다 — #108이 "조용한 Fake 금지"를 세웠는데 이 한 줄이
+            # 빠져 CI는 초록이었다(같은 패턴 5번째). 가드는 `test_provider_access_guard`.
+            writer=require_counsel_provider(),
+            execution_context=refine_context,
+            regen_max=_REGEN_MAX,
+            # 🔴 **누적의 배선.** `state.text`는 종전에 write-only였다(읽는 코드 0곳) —
+            # 매 턴 원본에서 새로 써서 턴1의 반영이 턴2에서 되살아났다. 팀 공유본
+            # (와이어프레임 v3.5·프로토타입·데이터계약)이 전부 누적을 전제로 만들어져 있다.
+            previous_text=state.text,
+        )
+    except LlmError as exc:
+        # 🔴 **실패 턴이야말로 원장에 남아야 한다.** refine_draft가 예외를 던지기 시작하면서
+        # (작업 3) 장애 턴이 원장에서 사라질 자리가 생겼다 — 불변식 8 위반이고, 하필 가장
+        # 알고 싶은 턴이 사라진다. 차단 턴을 남기는 이유(아래 주석)가 여기 더 강하게 든다.
+        # ⚠ 적재가 또 실패해도 **원인 예외를 덮지 않는다** — `LedgerWriteFailed`가 위로
+        #   올라가면 "LLM이 죽었다"가 "원장이 죽었다"로 바뀌어 진단이 뒤집힌다.
+        await _record_refine_run(refine_context, execution_id, swallow_errors=True)
+        raise domain_error_for(exc) from exc
     # 실행 원장 — refine 턴도 하나의 실행이다(불변식 8). 차단 턴도 남긴다: 차단은 에러가
     # 아니고(불변식 4) 어떤 호출이 무엇을 냈길래 게이트가 걸렸는지가 정확히 추적 대상이다.
     # ⚠ `quota_consumed`(pack state)에는 들어가지 않는다 — 이 경로는 그래프 밖이다.
-    refine_calls = default_llm_call_collector().take(execution_id)
-    refine_last = refine_calls[-1].record if refine_calls else None
-    await _run_store.record_run(
-        refine_context.to_run_metadata(
-            created_at=_clock(),
-            model_provider=refine_last.provider if refine_last is not None else None,
-            model_name=refine_last.model if refine_last is not None else None,
-            generation_params=COUNSEL_GEN_PARAMS,
-        ),
-        refine_calls,
-    )
+    await _record_refine_run(refine_context, execution_id)
     if outcome.applied and outcome.text:
         state.text = outcome.text  # 반영분만 승격 — 차단 턴은 직전 버전 유지(계약 §6)
         response = RefineResponse(
