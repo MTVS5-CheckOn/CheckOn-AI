@@ -35,6 +35,7 @@ from ai.api.routers.classify import reset_inquiry_class_store
 from ai.api.routers.counsel import reset_counsel_stores
 from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
 from ai.api.routers.imports import reset_import_stores
+from ai.db.store_factory import reset_shared_agent_runtime
 
 
 def _headers(key: str) -> dict[str, str]:
@@ -86,6 +87,7 @@ def _reset_all() -> None:
     reset_idempotency_store()  # 🔴 네 축이 **같은 멱등 저장소**를 쓴다 — 키가 새면 재반환이 섞인다
     reset_detection_store()
     reset_inquiry_class_store()
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     reset_import_stores()
 

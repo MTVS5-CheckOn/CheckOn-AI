@@ -78,7 +78,10 @@ from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmUnavailable
 from ai.db.repositories.run_store import MAX_PENDING_RUNS
 from ai.db.settings import DbSettings
-from ai.db.store_factory import build_agent_job_store
+from ai.db.store_factory import (
+    build_agent_job_store,
+    reset_shared_agent_runtime,  # noqa: F401
+)
 
 _NOW = datetime(2026, 8, 7, 3, 0, tzinfo=UTC)
 _DRAFT_TEXT = "정답률은 62%였습니다."
@@ -118,8 +121,10 @@ def _context(ref: str) -> DraftContext:
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     yield
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
 
 

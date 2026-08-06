@@ -26,6 +26,7 @@ from ai.api.routers.counsel import (
     reset_counsel_stores,
     set_counsel_provider,
 )
+from ai.db.store_factory import reset_shared_agent_runtime
 
 
 class _SpyProvider:
@@ -47,8 +48,10 @@ class _SpyProvider:
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     yield
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
 
 

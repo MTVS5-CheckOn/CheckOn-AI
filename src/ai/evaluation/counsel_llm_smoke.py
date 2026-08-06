@@ -52,6 +52,7 @@ from ai.composition.counsel.refine import refine_draft
 from ai.composition.provider import build_brief_gateway
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LlmError, LLMProvider, LLMRequest, LLMResult
+from ai.db.store_factory import reset_shared_agent_runtime
 from ai.detection.engine import detect
 from ai.detection.thresholds import default_threshold_config
 from ai.evaluation.demo_snapshot import build_demo_request
@@ -422,6 +423,7 @@ def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -
 
     rows: list[dict[str, Any]] = []
     for index, (name, note, body) in enumerate(cases):
+        reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
         reset_counsel_stores()
         set_counsel_provider(real)
         headers = dict(_golden("tests.ai.integration.test_counsel_router")._HEADERS)
@@ -460,6 +462,7 @@ def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -
                 "text": text,
             }
         )
+        reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
         reset_counsel_stores()
     return {"rows": rows}
 

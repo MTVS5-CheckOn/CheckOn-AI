@@ -93,7 +93,6 @@ from ai.db.store_factory import (
     build_agent_job_store,
     build_idempotency_store,
     build_run_store,
-    reset_default_agent_job_store,
 )
 from ai.runtime.errors import (
     IdempotencyConflict,
@@ -367,20 +366,18 @@ def set_counsel_run_store(store: RunStore) -> None:
 def reset_counsel_stores() -> None:
     """테스트 격리용 — 저장소·읽기 모델·provider를 기본값으로 되돌린다.
 
-    🔴 **잡 원장과 체크포인터도 함께 버린다**(8/7 · 99 ㉦). 둘은 프로세스 공용 싱글턴이라
-    비우지 않으면 테스트 간에 잡·체크포인트가 샌다 — 앞 테스트의 queued 잡을 다음
-    테스트의 `run_next`가 집어가고, 같은 `thread_id`의 죽은 체크포인트가 재개로 되살아난다.
-    ⚠ **둘은 짝이다** — 한쪽만 지우면 잡 없는 체크포인트(또는 그 반대)가 남는다.
+    🔴 **체크포인터도 함께 버린다**(8/7 · 99 ㉦) — 프로세스 공용 싱글턴이라 비우지 않으면
+    같은 `thread_id`의 죽은 체크포인트가 다음 테스트의 재개로 되살아난다.
 
-    🔴 **이름이 범위를 속인다(8/8 · 99 ㊒).** 그 두 저장소는 B가 pg 워커에서 같은 팩토리를
-    쓰기로 하면서 **A·B 공용**이 됐다 — 즉 이 함수는 **counsel 밖도 지운다.** 지금은 pg
-    워커가 없어 무해하지만, 다음 사람이 *"counsel 것만 지우겠지"* 로 읽으면 틀린다.
-    ⚠ **이 PR에서 바꾸지 않았다** — 분리할지 개명할지는 B의 pg 테스트가 무엇을 리셋할지에
-    달렸다(㊒ · B 통보 대상).
+    🔴 **잡 원장은 여기서 안 지운다(8/7 · 99 ㊒ 해소).** 그건 **A·B 공용**이라
+    (B가 pg 워커에서 같은 팩토리를 쓴다) counsel 이름을 단 함수가 지우면 counsel 밖을
+    지우는 것이 된다. 잡을 적재하는 테스트는 `reset_shared_agent_runtime()`을 **명시적으로**
+    부른다 — 이름이 범위를 말하게 하는 것이 요점이다.
+    ⚠ **둘을 함께 불러야 하는 자리가 있다** — 잡과 체크포인트는 `thread_id`(=`job_id`)로
+    엮여 있어 한쪽만 지우면 짝 없는 것이 남는다. 그 자리에서는 두 함수를 나란히 부른다.
     """
     global _idempotency_store, _context_store, _draft_store, _pack_store, _step_sink
     global _run_store
-    reset_default_agent_job_store()
     reset_default_memory_checkpointer()
     _run_store = build_run_store()
     default_llm_call_collector().reset()

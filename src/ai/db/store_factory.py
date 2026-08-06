@@ -127,6 +127,25 @@ def reset_default_agent_job_store() -> None:
     _default_agent_job_store.cache_clear()
 
 
+def reset_shared_agent_runtime() -> None:
+    """**A·B 공용** 잡 원장을 비운다 — 테스트 격리 전용(99 ㊒).
+
+    🔴 **이 저장소는 counsel 것이 아니다.** B가 pg 워커에서 `build_agent_job_store()`를
+    그대로 쓰기로 확정하면서(8/7) `store_backend=memory`에서 **counsel 잡과
+    problem_generation 잡이 같은 싱글턴에 산다.** lease는 `worker_kind`로 격리되지만
+    (`job_store.py` · `test_counsel_runtime_lifetime`가 잠근다) **리셋에는 격리가 없다** —
+    비우면 둘 다 사라진다.
+
+    ⚠ 그래서 `reset_counsel_stores()`에서 **떼어 냈다.** 종전에는 counsel 이름을 단 함수가
+    counsel 밖을 지웠고, 다음 사람이 *"counsel 것만 지우겠지"* 로 읽으면 틀린다.
+    잡을 적재하는 테스트는 이 함수를 **명시적으로** 부른다.
+
+    ⚠ 체크포인터는 여기 없다 — `_default_memory_checkpointer`는 **counsel 소유**이고
+    (`composition/counsel/assembly.py`), probe는 자기 `InMemorySaver()`를 따로 만든다.
+    """
+    _default_agent_job_store.cache_clear()
+
+
 def build_agent_job_store(settings: DbSettings | None = None) -> JobStore:
     """슈퍼바이저 실행 원장 — PG 선택 시 재시작·멀티워커 안전 저장소.
 

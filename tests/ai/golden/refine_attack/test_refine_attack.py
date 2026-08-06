@@ -31,6 +31,7 @@ from ai.contracts.composition import (
 )
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.gates import BlockedReason
+from ai.db.store_factory import reset_shared_agent_runtime
 
 _HEADERS = {
     "X-Tenant-Id": "t1",
@@ -130,8 +131,10 @@ class _EchoWriter:
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     yield
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
 
 
