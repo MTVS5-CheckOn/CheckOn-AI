@@ -15,9 +15,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict
 
 from ai.composition.buffer_lexicon import find_forbidden, forbidden_terms
-from ai.contracts.composition import DraftContext
-
-_NUMBER_RE: Final = re.compile(r"\d+")
+from ai.contracts.composition import DraftContext, extract_numbers
 
 #: LaTeX·마크다운 메타문자 — 한글 상담 초안엔 안 나오는 게 정상(× U+00D7은 정상 문자).
 _SYMBOL_RE: Final = re.compile(r"[$\\`*#_~^{}]")
@@ -41,11 +39,15 @@ def check_counsel_gate(
     *,
     max_chars: int,
 ) -> GateResult:
-    """초안 블록 하나를 판정한다. 순수 함수(계산·I/O 분리, 03 §2).
+    """**초안 본문 전체**를 판정한다. 순수 함수(계산·I/O 분리, 03 §2).
+
+    ⚠ 종전 서술은 *"초안 블록 하나를 판정한다"* 였는데 **사실이 아니었다** — 호출부
+    (`graph.py`·`refine.py`)는 처음부터 본문 전체를 넘긴다. 그 거짓 서술 때문에 상한이
+    블록 하나분으로 계산되는 것이 오래 안 보였다(99 ㉤). 블록 단위 판정은 별건이다(㊱).
 
     검사 순서는 고정이라 같은 입력에 같은 사유가 나온다(결정론).
-    `max_chars`는 호출자가 tone_map의 `sentences_per_block`에서 산출해 주입한다 —
-    임계값을 이 모듈에 박지 않는다(03 §1).
+    `max_chars`는 호출자가 tone_map에서 산출해 주입한다(`max_chars_for` — 블록 수 ×
+    블록당 문장 수 × 문장당 글자) — 임계값을 이 모듈에 박지 않는다(03 §1).
     """
     body = text.strip()
     if not body:
@@ -62,7 +64,9 @@ def check_counsel_gate(
         return GateResult(passed=False, reason=f"forbidden:{hits[0]}")
 
     allowed = context.allowed_numbers()
-    ungrounded = sorted(set(_NUMBER_RE.findall(body)) - allowed)
+    # 🔴 추출은 허용집합과 **같은 함수**여야 한다 — 한쪽만 정규화하면 표기 방향이
+    # 반대일 때 그대로 뚫린다(`1,240` ↔ `1240`). 검사 순서·사유 코드는 그대로다.
+    ungrounded = sorted(extract_numbers(body) - allowed)
     if ungrounded:  # 근거에 없는 수치 — 불변식 1·2(LLM이 수치를 만들지 않는다)
         return GateResult(passed=False, reason=f"ungrounded_number:{ungrounded[0]}")
 

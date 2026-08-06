@@ -94,6 +94,16 @@ def build_counsel_graph(
     성격의 클로저 밖 가변 상태다.
     """
 
+    # 🔴 `regen_max=0`은 루프를 0회 돌려 **LLM 호출 0건인데 `gate_exhausted:`(사유 빈칸)**로
+    # 내보낸다 — 게이트가 막은 것처럼 보이지만 아무것도 생성하지 않았고, 그런데도
+    # `llm_sent`가 아니라 quota만 흐려진다. 배선 실수를 조립 시점에 잡는다
+    # (`gateway.py`가 `transport_retry`에 "0..1 밖이면 기동 실패"를 건 선례 · 불변식 6).
+    if regen_max < 1:
+        raise ValueError(
+            f"regen_max는 1 이상이어야 한다(받은 값: {regen_max}) — 0이면 생성 시도가 "
+            "0회인데 gate_exhausted로 나간다"
+        )
+
     #: 연속 LLM 실패 카운터 — 클로저 상태(그래프 인스턴스 = 잡 1건).
     consecutive = {"llm_failed": 0}
     log = call_log or default_llm_call_collector()
@@ -155,7 +165,11 @@ def build_counsel_graph(
         #: 불러도 1이다: 호출 수는 LLM_CALL 행수로 이미 정확히 남고(변경 B), 여기서 또
         #: 세면 두 지표가 갈려 어느 쪽이 원장인지 알 수 없게 된다.
         llm_sent = False
-        for _ in range(regen_max):
+        # 🔴 **재생성 N회 = 시도 N+1회.** 종전 `range(regen_max)`는 총 시도가 N회라
+        # 재생성이 N−1회였다 — 예산을 1회 깎았고 ERD `DRAFT_BLOCK.regen_count`(le=3)의
+        # 3은 도달 불가능한 값이었다. `classify/classifier.py`의
+        # `range(MAX_PARSE_RETRY + 1)`과 같은 관례로 맞춘다.
+        for _ in range(regen_max + 1):
             try:
                 # 직전 게이트 사유를 수정 지시로 넘긴다(05 §6-2) — 같은 프롬프트를 상한까지
                 # 반복하면 결정론 생성에서 같은 실패만 되풀이한다(비용 N배·개선 0).

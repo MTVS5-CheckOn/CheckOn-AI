@@ -500,7 +500,8 @@ def test_quota_counts_one_even_when_gate_retries_three_times() -> None:
     provider = FakeCounselProvider(drafts=["정답률이 88%까지 올랐습니다."])
     final = _invoke_graph({r: _context(r) for r in refs}, refs, provider=provider)
 
-    assert len(provider.write_calls) == DEFAULT_REGEN_MAX  # 실제로 3회 불렀다
+    # 재생성 3회 = 시도 4회(`range(regen_max + 1)`) — 호출 수가 몇이든 quota는 1이다.
+    assert len(provider.write_calls) == DEFAULT_REGEN_MAX + 1
     assert final["quota_consumed"] == 1  # 그래도 1
 
 

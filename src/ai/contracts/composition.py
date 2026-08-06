@@ -20,8 +20,32 @@ from pydantic import BaseModel, ConfigDict, Field
 
 type NonEmptyStr = Annotated[str, Field(min_length=1)]
 
-#: 표기값에서 수치를 뽑는 정규식 — 게이트 EXACT 대조의 허용집합 산출용.
+#: 표기값에서 수치를 뽑는 정규식 — 게이트 EXACT 대조용.
 _NUMBER_RE: Final = _re_compile(r"\d+")
+
+#: 자릿수 구분 기호 — `1,240`의 쉼표만 지운다(**숫자 사이**에 낀 것만).
+#: ⚠ 모든 쉼표를 지우면 `"62%, 71%"`가 `6271`로 붙어 **없던 수치가 생긴다.**
+_DIGIT_SEPARATOR_RE: Final = _re_compile(r"(?<=\d),(?=\d)")
+
+
+def extract_numbers(text: str) -> set[str]:
+    """표기에서 수치를 뽑는다 — **게이트와 허용집합이 같은 함수를 쓴다.**
+
+    🔴 정규화를 한쪽에만 걸면 방향이 반대일 때 그대로 뚫린다. `\\d+`는 쉼표에서 끊기므로
+    종전에는 같은 값이 표기만 달라도 막혔다:
+
+    | 근거 | 본문 | 종전 |
+    | --- | --- | --- |
+    | `출석 1,240회` → `{1, 240}` | `1240회` → `{1240}` | ❌ `ungrounded_number:1240` |
+    | `1240` → `{1240}` | `1,240` → `{1, 240}` | ❌ `ungrounded_number:1` |
+
+    허용집합 쪽만 넓히면 두 번째 방향을 못 고치고(본문 조각을 허용해야 해서 **창작 수치가
+    새는** 방향으로 느슨해진다), 그래서 **추출 자체**를 양쪽에서 같게 만든다.
+
+    ⚠ 소수점(`3.5`)은 그대로 두 조각으로 남는다 — 지금 동작과 같고, 양쪽이 같은 규칙이라
+    비대칭이 생기지 않는다.
+    """
+    return set(_NUMBER_RE.findall(_DIGIT_SEPARATOR_RE.sub("", text)))
 
 
 # ───────────────────────── 4축 라벨 (05 §1) ─────────────────────────
@@ -152,15 +176,22 @@ class DraftContext(BaseModel):
         정상 문장을 막는다(99 D ㉘). `period_label`은 스냅숏 대상 기간의 결정론
         파생이라 `facts`의 수치와 같은 지위이지 LLM이 만든 숫자가 아니다.
 
+        ⚠ **`fact.label`도 본다.** 프롬프트가 `- {label}: {value}` 형태로 label을 그대로
+        싣기 때문이다(`prompt.render_evidence_block`) — `period_label`을 넣은 것과 **같은
+        근거**다. label이 `"7월 3주차 정답률"`이면 지시대로 쓴 문장이
+        `ungrounded_number:3`으로 막힌다. label은 백엔드 스냅숏의 결정론 파생이지 LLM이
+        만든 숫자가 아니다.
+
         어느 출처에도 없는 숫자는 그대로 거부된다 — 환산·창작 수치 차단(불변식 1·2)은
         불변이다.
         """
         nums: set[str] = set()
         for fact in self.facts:
-            nums.update(_NUMBER_RE.findall(fact.value))
+            nums |= extract_numbers(fact.label)
+            nums |= extract_numbers(fact.value)
         for summary in self.evidence_summaries:
-            nums.update(_NUMBER_RE.findall(summary))
-        nums.update(_NUMBER_RE.findall(self.period_label))
+            nums |= extract_numbers(summary)
+        nums |= extract_numbers(self.period_label)
         return frozenset(nums)
 
 
@@ -228,6 +259,7 @@ __all__ = [
     "DraftKind",
     "DraftStatus",
     "EvidenceFact",
+    "extract_numbers",
     "Frequency",
     "Interest",
     "LabelSnapshot",
