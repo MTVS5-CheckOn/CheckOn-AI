@@ -100,12 +100,43 @@ def build_run_store(settings: DbSettings | None = None) -> RunStore:
     return InMemoryRunStore()
 
 
+@lru_cache
+def _default_agent_job_store() -> InMemoryJobStore:
+    """프로세스 공용 잡 원장 — `_default_inquiry_class_store()`와 같은 규약.
+
+    🔴 **호출마다 새 인스턴스를 주면 잡이 요청과 함께 죽는다.** POST가 적재한 잡을 다음
+    요청이 못 보므로 ⓐ `paused` 잡을 재개할 주체가 없고 ⓑ `lease` 만료 recovery가 회수할
+    대상을 잃고 ⓒ GET이 현재 phase를 다시 읽을 원본이 없다(㉩). 실제로 counsel의 재개
+    경로는 **한 번도 실행된 적이 없었다** — 그 위에 지은 ⑰의 종단 신뢰성이 인메모리
+    백엔드에서는 서 있지 않았다(99 ㉦).
+
+    ⚠ **멀티 워커에서는 여전히 갈린다** — "프로세스 공용"은 한 프로세스 안에서만 참이다
+    (99 ㉬와 같은 한계). 진짜 답은 PG 백엔드를 기본으로 올리는 것이고 그건 배포 축이다.
+    """
+    return InMemoryJobStore()
+
+
+def reset_default_agent_job_store() -> None:
+    """공용 잡 원장을 비운다 — **테스트 격리 전용**(`reset_counsel_stores`가 부른다).
+
+    캐시를 버려 다음 호출이 새 인스턴스를 받게 한다 — `reset_default_inquiry_class_store`와
+    같은 방식이다(공유 인스턴스를 비우는 대신 캐시를 버린다 · 그쪽 docstring 참조).
+    ⚠ 체크포인터도 함께 버려야 짝이 맞는다(`reset_default_memory_checkpointer`) — 잡만
+    지우면 죽은 잡의 체크포인트가 다음 테스트의 같은 thread_id로 되살아난다.
+    """
+    _default_agent_job_store.cache_clear()
+
+
 def build_agent_job_store(settings: DbSettings | None = None) -> JobStore:
-    """슈퍼바이저 실행 원장 — PG 선택 시 재시작·멀티워커 안전 저장소."""
+    """슈퍼바이저 실행 원장 — PG 선택 시 재시작·멀티워커 안전 저장소.
+
+    🔴 인메모리도 **프로세스 공용 1개**다(㉫ `build_inquiry_class_store`와 같은 판단) —
+    잡의 수명이 요청보다 길어야 재개·recovery·GET 갱신이 성립한다. 위 docstring 참조.
+    """
     settings = settings or get_db_settings()
     if settings.store_backend == _PG:
         return PgJobStore(sessionmaker=get_sessionmaker())
-    return InMemoryJobStore()
+    return _default_agent_job_store()
 
 
 def build_idempotency_store(settings: DbSettings | None = None) -> IdempotencyStore:

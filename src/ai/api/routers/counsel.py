@@ -42,6 +42,7 @@ from ai.composition.counsel.assembly import (
     build_counsel_llm_provider,
     build_counsel_provider,
     open_counsel_pack_runner,
+    reset_default_memory_checkpointer,
 )
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.labels import LabelVocabularyError, snapshot_from_labels
@@ -91,6 +92,7 @@ from ai.db.store_factory import (
     build_agent_job_store,
     build_idempotency_store,
     build_run_store,
+    reset_default_agent_job_store,
 )
 from ai.runtime.errors import (
     IdempotencyConflict,
@@ -131,6 +133,15 @@ _REPORTABLE_PHASES: Final[frozenset[JobPhase]] = frozenset(
     {JobPhase.SUCCEEDED, JobPhase.FAILED}
 )
 
+
+def _can_report_result(phase: JobPhase) -> bool:
+    """`result`를 실을 수 있는 phase인가 — **POST·GET이 같은 함수를 쓴다**.
+
+    🔴 이 판정을 두 곳에 복제하면 한쪽만 고쳐진다. 이 시리즈가 다섯 번 겪은 형태다
+    (#108·#111·#114·#116·#119) — 그래서 상수 참조가 아니라 **함수 하나**로 못 박는다.
+    """
+    return phase in _REPORTABLE_PHASES
+
 #: 시계 주입점 — `datetime.now()` 직접 호출 금지(03 §3).
 _clock = system_utc_now
 
@@ -143,9 +154,16 @@ _draft_store: DraftResultStore = InMemoryDraftResultStore()
 _pack_store: PackResultStore = InMemoryPackResultStore()
 _step_sink: AgentStepSink = InMemoryAgentStepSink()
 
-#: 와이어 읽기 모델 — `(tenant_id, job_id) → 계약 뷰`. GET의 **유일한 출처**다.
-#: 잡 원장(`WorkerJob`)은 phase·lease·재개용 내부 상태이고, 계약 응답은 그 투영이다.
-_views: dict[tuple[str, str], CounselDraftJobView] = {}
+#: 와이어 읽기 모델 — `(tenant_id, job_id) → 계약 뷰`. 🔴 **캐시다, 정본이 아니다.**
+#:
+#: 정본은 **잡 원장**(`WorkerJob`)이고 이건 그 투영을 담아 두는 자리다. 종전에는 쓰기가
+#: POST 1곳뿐이라 **갱신 경로가 0개**였고, 그래서 잡이 나중에 끝나도 GET은 영원히 POST
+#: 당시의 phase를 돌려줬다(㉩) — BE는 스피너를 계속 그리고 강사는 다시 눌러 초안을 2개
+#: 만든다. 지금은 GET이 원장에서 현재 phase를 **다시 읽어** 이 캐시를 갱신한다.
+#:
+#: ⚠ **영속은 이 PR이 아니다**(`_DraftState` docstring과 같은 판정) — 프로세스 공용
+#: 캐시까지가 v1이고, PG 이관 시 자리를 넘긴다.
+_view_cache: dict[tuple[str, str], CounselDraftJobView] = {}
 
 
 @dataclass
@@ -153,7 +171,7 @@ class _DraftState:
     """refine 대상 초안의 현재 상태 — `(tenant_id, job_id)`로 찾는다.
 
     `context`는 게이트 재통과에 필요하고(허용 숫자·금칙·길이 상한이 전부 여기서 나온다),
-    `citations`는 반영 턴 응답에 다시 실린다. **영속은 후속**이다 — v1은 `_views`와 같은
+    `citations`는 반영 턴 응답에 다시 실린다. **영속은 후속**이다 — v1은 `_view_cache`와 같은
     인메모리 읽기 모델이며 PG 이관 시 DRAFT_REVISION(ERD)이 자리를 받는다(06 §7).
     """
 
@@ -286,9 +304,17 @@ def set_counsel_run_store(store: RunStore) -> None:
 
 
 def reset_counsel_stores() -> None:
-    """테스트 격리용 — 저장소·읽기 모델·provider를 기본값으로 되돌린다."""
+    """테스트 격리용 — 저장소·읽기 모델·provider를 기본값으로 되돌린다.
+
+    🔴 **잡 원장과 체크포인터도 함께 버린다**(8/7 · 99 ㉦). 둘은 프로세스 공용 싱글턴이라
+    비우지 않으면 테스트 간에 잡·체크포인트가 샌다 — 앞 테스트의 queued 잡을 다음
+    테스트의 `run_next`가 집어가고, 같은 `thread_id`의 죽은 체크포인트가 재개로 되살아난다.
+    ⚠ **둘은 짝이다** — 한쪽만 지우면 잡 없는 체크포인트(또는 그 반대)가 남는다.
+    """
     global _idempotency_store, _context_store, _draft_store, _pack_store, _step_sink
     global _run_store
+    reset_default_agent_job_store()
+    reset_default_memory_checkpointer()
     _run_store = build_run_store()
     default_llm_call_collector().reset()
     _idempotency_store = build_idempotency_store()
@@ -296,7 +322,7 @@ def reset_counsel_stores() -> None:
     _draft_store = InMemoryDraftResultStore()
     _pack_store = InMemoryPackResultStore()
     _step_sink = InMemoryAgentStepSink()
-    _views.clear()
+    _view_cache.clear()
     _drafts.clear()
     set_counsel_provider(FakeCounselProvider())
 
@@ -496,7 +522,7 @@ async def _generate(
         # 다른 학생의 초안이 나가고 `_drafts`에도 등록돼 refine까지 오염됐다.
         mine = await supervisor.get(tenant_id=tenant_id, job_id=job.job_id) or job
         view_job_id = str(job.job_id)
-        if mine.phase not in _REPORTABLE_PHASES:
+        if not _can_report_result(mine.phase):
             # 아직 안 돌았다(queued·leased·running·paused) 또는 취소됐다. **결과가 없다는
             # 것과 실패는 다르다** — `result=None` + 잡 phase가 정직한 표현이다
             # (error_codes §2.1 "queued/generating → 스피너", 계약 `result`가 옵셔널).
@@ -618,7 +644,7 @@ async def post_counsel_draft(request: Request, response: Response) -> dict[str, 
 
     execution_id = uuid.uuid4()
     view = await _generate(draft_request, tenant_id=tenant_id)
-    _views[(tenant_id, view.job_id)] = view
+    _view_cache[(tenant_id, view.job_id)] = view
 
     envelope = success_envelope(
         data={"job_id": view.job_id, "status": view.status},
@@ -635,15 +661,59 @@ async def post_counsel_draft(request: Request, response: Response) -> dict[str, 
     return envelope
 
 
+async def _refresh_view(
+    cached: CounselDraftJobView, *, tenant_id: str
+) -> CounselDraftJobView:
+    """캐시된 뷰를 **잡 원장의 현재 phase**로 갱신한다 — 정본은 원장이다(㉩).
+
+    🔴 조회에 `tenant_id`를 **반드시** 싣는다 — 안 실으면 남의 잡 phase가 새어 "그 job_id는
+    존재한다"가 응답으로 드러난다(존재 은닉이 캐시 키에만 걸려 있으면 안 된다).
+
+    ⚠ **잡이 없을 수도 있다.** `template_only`·근거 0건 경로는 LLM도 워커도 안 타고 뷰만
+    만들어 돌려주므로(`_generate` ①②) 원장에 행이 없다 — 그건 장애가 아니라 **잡이 없는
+    확정**이라 캐시를 그대로 쓴다.
+
+    ⚠ **아직 못 하는 것:** phase가 뒤늦게 `succeeded`가 됐는데 캐시에 `result`가 없으면
+    `status="succeeded"` + `result=None`이 나간다. 결과 본문을 다시 조립하려면 원 요청
+    (`citations`·`labels_applied`의 출처)이 필요한데 그건 영속 설계 몫이다 — 계약의
+    `result`가 옵셔널이라 형태는 정직하고, 안건은 99에 등재했다.
+    """
+    try:
+        job_uuid = uuid.UUID(cached.job_id)
+    except ValueError:  # 캐시 키가 UUID가 아니다 — 갱신 대상이 아니다
+        return cached
+    job = await _build_supervisor().get(tenant_id=tenant_id, job_id=job_uuid)
+    if job is None or job.phase.value == cached.status:
+        return cached
+    if not _can_report_result(job.phase):
+        # 아직 안 끝났거나 취소됐다 — **결과 없음이 정직한 표현**이다(POST와 같은 판정).
+        return CounselDraftJobView(
+            job_id=cached.job_id, status=job.phase.value, result=None
+        )
+    if cached.result is None:
+        logger.info(
+            "counsel 잡이 뒤늦게 %s로 확정됐는데 캐시에 result가 없다 job_id=%s — "
+            "본문 재조립은 영속 설계 후속이다(99)",
+            job.phase.value,
+            cached.job_id,
+        )
+    return cached.model_copy(update={"status": job.phase.value})
+
+
 @router.get("/v1/counsel/drafts/{job_id}")
 async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
-    """결과 회수 — 잡 성공 ≠ 초안 존재(불변식 4)."""
+    """결과 회수 — 잡 성공 ≠ 초안 존재(불변식 4).
+
+    🔴 **캐시를 정본으로 삼지 않는다**(㉩) — 매번 잡 원장에서 현재 phase를 다시 읽는다.
+    """
     tenant_id = request.headers.get("X-Tenant-Id")
     if not tenant_id:
         raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": ["X-Tenant-Id"]})
-    view = _views.get((tenant_id, job_id))
-    if view is None:  # 존재 은닉 — 다른 테넌트의 job_id도 여기로 떨어진다
+    cached = _view_cache.get((tenant_id, job_id))
+    if cached is None:  # 존재 은닉 — 다른 테넌트의 job_id도 여기로 떨어진다
         raise NotFound("job_id 부재", {"job_id": job_id})
+    view = await _refresh_view(cached, tenant_id=tenant_id)
+    _view_cache[(tenant_id, job_id)] = view
     return success_envelope(
         data=view.model_dump(mode="json"),
         execution_id=str(uuid.uuid4()),

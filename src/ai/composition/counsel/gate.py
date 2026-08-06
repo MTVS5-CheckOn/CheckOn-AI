@@ -15,8 +15,8 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict
 
 from ai.composition.buffer_lexicon import find_forbidden, forbidden_terms
-from ai.composition.internal_terms import find_internal_terms
 from ai.contracts.composition import DraftContext, extract_numbers
+from ai.runtime.internal_terms import find_internal_terms
 
 #: LaTeX·마크다운 메타문자 — 한글 상담 초안엔 안 나오는 게 정상(× U+00D7은 정상 문자).
 _SYMBOL_RE: Final = re.compile(r"[$\\`*#_~^{}]")
