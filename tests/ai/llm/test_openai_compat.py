@@ -34,8 +34,8 @@ from ai.contracts.llm import (
 )
 from ai.llm.providers.openai_compat import (
     PROVIDER_NAME,
-    LocalLlmSettings,
     OpenAICompatProvider,
+    OpenAiSettings,
 )
 
 _REQ = httpx.Request("POST", "http://local/v1/chat/completions")
@@ -45,12 +45,12 @@ def _run[T](coro: Coroutine[object, object, T]) -> T:
     return asyncio.run(coro)
 
 
-def _settings() -> LocalLlmSettings:
-    return LocalLlmSettings.model_validate(
+def _settings() -> OpenAiSettings:
+    return OpenAiSettings.model_validate(
         {
-            "local_llm_base_url": "http://local/v1",
-            "local_llm_api_key": "k",
-            "local_llm_model": "gemma-test",
+            "openai_base_url": "http://local/v1",
+            "openai_api_key": "k",
+            "openai_model": "gemma-test",
         }
     )
 
@@ -126,7 +126,7 @@ def test_happy_path_returns_ok_result() -> None:
     assert result.model == "gemma-test"
     assert result.usage.tokens_in == 12
     assert result.usage.tokens_out == 7
-    assert result.usage.cost_usd == 0.0  # 로컬 서버 원가 없음
+    assert result.usage.cost_usd == 0.0  # 미측정 — 원가 없음이 아니다(99 ⓠ)
 
 
 def test_injected_name_identifies_provider_and_result() -> None:
@@ -181,6 +181,54 @@ def test_client_4xx_maps_to_llm_error_not_unavailable() -> None:
     assert not isinstance(exc.value, (LlmUnavailable, LlmTimeout))
 
 
+def test_rate_limit_429_maps_to_unavailable_so_it_is_retried() -> None:
+    """🔴 **429는 4xx지만 재시도 대상이다**(8/6 신설).
+
+    종전에는 5xx만 `LlmUnavailable`이고 나머지 4xx는 전부 `LlmError`(무재시도)였다.
+    로컬 서버는 rate limit이 없어 문제가 안 됐지만 외부 API는 평가셋 연속 호출에서 429를
+    맞는다 — 그때 무재시도로 떨어지면 **일시적 제한이 영구 실패처럼** 폴백된다.
+    게이트웨이는 `LlmUnavailable`·`LlmTimeout`만 재시도하므로(B 소유 · 무접촉) 판정을
+    **어댑터에서** 바꾼다.
+    """
+    err = APIStatusError("slow down", response=httpx.Response(429, request=_REQ), body=None)
+    provider = _provider(error=err)
+    with pytest.raises(LlmUnavailable):
+        _run(provider.complete(_request(), _context()))
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404])
+def test_other_4xx_stay_non_retryable(status: int) -> None:
+    """⚠ 429 외의 4xx는 **그대로 둔다** — 재시도해도 안 풀리는 요청 문제다."""
+    err = APIStatusError("nope", response=httpx.Response(status, request=_REQ), body=None)
+    provider = _provider(error=err)
+    with pytest.raises(LlmError) as exc:
+        _run(provider.complete(_request(), _context()))
+    assert not isinstance(exc.value, (LlmUnavailable, LlmTimeout))
+
+
+def test_cost_usd_is_zero_and_that_means_unmeasured() -> None:
+    """🔴 `cost_usd=0.0`은 **미측정**이지 "원가 없음"이 아니다(8/6 · 99 ⓠ).
+
+    종전 근거는 로컬 서버라 토큰당 과금이 없다는 것이었는데, 외부 유료 백엔드로 바뀌면 그
+    전제가 깨진다. 단가표는 만들지 않았다 — 모델·시점 종속이라 유지 부담이고 지금 쓰이지
+    않는다. **이 값을 합산해 "LLM 원가 0원" 리포트를 내면 안 된다.**
+
+    ⚠ 값 자체는 그대로 0.0이므로 동작 단정만으로는 의미 변화를 못 잡는다 — 그래서 주석에
+    "미측정"이 남아 있는지 함께 본다(소스 문자열 검사는 이 한 방향만: 낡은 문구의 부재를
+    검사하면 이 docstring이 스스로 걸린다).
+    """
+    import inspect
+
+    from ai.llm.providers import openai_compat
+
+    provider = _provider(result=_ok_response("답변"))
+    result = _run(provider.complete(_request(), _context()))
+    assert result.usage.cost_usd == 0.0
+
+    source = inspect.getsource(openai_compat.OpenAICompatProvider.complete)
+    assert "미측정" in source, "cost_usd=0.0의 의미(미측정)가 주석에서 사라졌다"
+
+
 def test_empty_content_maps_to_retryable_parse_failed() -> None:
     """빈 응답(None) = 재시도 대상 → ParseFailed(게이트웨이가 재호출)."""
     provider = _provider(result=_ok_response(None))
@@ -218,34 +266,45 @@ def test_default_temperature_when_params_absent() -> None:
     assert "top_p" not in kwargs  # 미지정은 서버 기본값에 맡김
 
 
-def test_thinking_disabled_by_default_via_extra_body() -> None:
-    """기본은 추론 끔 — enable_thinking=False를 벤더 경로(extra_body)로 전달."""
+def test_vendor_extra_body_is_not_sent_by_default() -> None:
+    """🔴 **벤더 확장은 기본으로 보내지 않는다**(8/6 기본값 반전).
+
+    `chat_template_kwargs`는 표준 OpenAI 파라미터가 아니라 vLLM/Qwen chat_template 확장이다.
+    기본으로 보내면 그 확장을 모르는 표준 API가 **400 `Unknown parameter`로 거부**한다
+    (실측). 확장은 아는 서버에서만 켠다 — `OPENAI_DISABLE_THINKING=true`.
+    """
     provider = _provider(result=_ok_response("ok"))
     _run(provider.complete(_request(), _context()))
     kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
     assert kwargs is not None
-    assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert "extra_body" not in kwargs
 
 
-def test_thinking_toggle_off_omits_extra_body() -> None:
-    """env로 추론을 켜면(disable=False) extra_body를 보내지 않는다(추론 필요 용도 대비)."""
-    settings = LocalLlmSettings.model_validate(
+def test_thinking_toggle_on_sends_extra_body() -> None:
+    """opt-in하면(disable=True) 벤더 경로로 `enable_thinking=False`를 전달한다.
+
+    팀 로컬 서버(mtp 계열)는 추론모델이라 이 옵션이 없으면 CoT가 `max_tokens`를 소진해
+    content가 빈 채로 잘린다(v2 프리뷰 실측) — 그 서버에선 반드시 켠다.
+    """
+    settings = OpenAiSettings.model_validate(
         {
-            "local_llm_base_url": "http://local/v1",
-            "local_llm_api_key": "k",
-            "local_llm_model": "gemma-test",
-            "local_llm_disable_thinking": False,
+            "openai_base_url": "http://local/v1",
+            "openai_api_key": "k",
+            "openai_model": "gemma-test",
+            "openai_disable_thinking": True,
         }
     )
     client = _FakeClient(result=_ok_response("ok"))
     provider = OpenAICompatProvider(settings=settings, client=client)  # type: ignore[arg-type]
     _run(provider.complete(_request(), _context()))
-    assert "extra_body" not in client.completions.last_kwargs  # type: ignore[operator]
+    assert client.completions.last_kwargs["extra_body"] == {  # type: ignore[index]
+        "chat_template_kwargs": {"enable_thinking": False}
+    }
 
 
 def test_default_timeout_is_total_15s() -> None:
     """기본 상한은 15s(전체 기준) — v2 프리뷰 실측 반영으로 10s에서 상향."""
-    assert LocalLlmSettings().local_llm_timeout_s == 15.0
+    assert OpenAiSettings().openai_timeout_s == 15.0
 
 
 def test_real_client_disables_sdk_retries() -> None:
@@ -264,12 +323,12 @@ class _SlowCompletions:
 
 def test_total_timeout_maps_to_llm_timeout() -> None:
     """호출이 전체 상한을 넘기면 asyncio.timeout이 끊어 LlmTimeout으로 매핑된다."""
-    settings = LocalLlmSettings.model_validate(
+    settings = OpenAiSettings.model_validate(
         {
-            "local_llm_base_url": "http://local/v1",
-            "local_llm_api_key": "k",
-            "local_llm_model": "gemma-test",
-            "local_llm_timeout_s": 0.05,
+            "openai_base_url": "http://local/v1",
+            "openai_api_key": "k",
+            "openai_model": "gemma-test",
+            "openai_timeout_s": 0.05,
         }
     )
     client = SimpleNamespace(chat=SimpleNamespace(completions=_SlowCompletions()))
@@ -279,7 +338,7 @@ def test_total_timeout_maps_to_llm_timeout() -> None:
 
 
 def test_settings_injection_overrides_model() -> None:
-    settings = LocalLlmSettings(local_llm_model="other-model")
+    settings = OpenAiSettings(openai_model="other-model")
     provider = OpenAICompatProvider(
         settings=settings,
         client=_FakeClient(result=_ok_response("ok")),  # type: ignore[arg-type]

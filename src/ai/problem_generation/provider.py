@@ -12,8 +12,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ai.contracts.llm import LLMProvider, ModelRole
 from ai.llm.gateway import LlmCallRecorder, LlmGateway
 from ai.llm.providers.openai_compat import (
-    LocalLlmSettings,
     OpenAICompatProvider,
+    OpenAiSettings,
     get_llm_settings,
 )
 from ai.llm.settings import LlmSettings
@@ -84,7 +84,7 @@ class ProblemProviders:
 def build_problem_providers(
     *,
     settings: ProblemProviderSettings | None = None,
-    local_settings: LocalLlmSettings | None = None,
+    local_settings: OpenAiSettings | None = None,
 ) -> ProblemProviders:
     """두 역할 provider를 조립한다.
 
@@ -111,12 +111,12 @@ def build_problem_providers(
     assert resolved.openai_base_url is not None
     assert resolved.openai_api_key is not None
     assert resolved.openai_model is not None
-    verifier_settings = LocalLlmSettings(
-        local_llm_base_url=resolved.openai_base_url,
-        local_llm_api_key=resolved.openai_api_key.get_secret_value(),
-        local_llm_model=resolved.openai_model,
-        local_llm_timeout_s=resolved.openai_timeout_s,
-        local_llm_disable_thinking=False,
+    verifier_settings = OpenAiSettings(
+        openai_base_url=resolved.openai_base_url,
+        openai_api_key=resolved.openai_api_key.get_secret_value(),
+        openai_model=resolved.openai_model,
+        openai_timeout_s=resolved.openai_timeout_s,
+        openai_disable_thinking=False,
         _env_file=None,
     )
     return ProblemProviders(
@@ -135,7 +135,7 @@ def build_problem_gateway(
     recorder: LlmCallRecorder,
     providers: ProblemProviders | None = None,
     provider_settings: ProblemProviderSettings | None = None,
-    local_settings: LocalLlmSettings | None = None,
+    local_settings: OpenAiSettings | None = None,
     llm_settings: LlmSettings | None = None,
 ) -> LlmGateway:
     """문제출제 role·재시도·마스킹 훅을 단일 지점에서 게이트웨이에 주입한다.

@@ -2,7 +2,7 @@
 
 기본 실행 제외(pytest addopts `-m 'not integration'`). 실 벤더 어댑터(openai_compat)는
 별도 PR 소유라 이 브랜치엔 없다 — provider 배선이 안 되면(NotImplementedError) skip한다.
-어댑터 머지 + LOCAL_LLM_* env 설정 후에만 실제로 돈다.
+어댑터 머지 + OPENAI_* env 설정 후에만 실제로 돈다.
 """
 
 from __future__ import annotations

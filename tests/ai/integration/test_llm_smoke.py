@@ -40,8 +40,8 @@ def _context() -> ExecutionContext:
 def test_local_server_single_roundtrip() -> None:
     """실서버가 있으면 OK + 비어있지 않은 한국어 응답. 없으면 skip."""
     settings = get_llm_settings()
-    if "localhost" in settings.local_llm_base_url:
-        pytest.skip("로컬 LLM 미설정(env LOCAL_LLM_BASE_URL) — 스모크 skip")
+    if "localhost" in settings.openai_base_url:
+        pytest.skip("로컬 LLM 미설정(env OPENAI_BASE_URL) — 스모크 skip")
 
     provider = OpenAICompatProvider(settings=settings)
     request = LLMRequest(
