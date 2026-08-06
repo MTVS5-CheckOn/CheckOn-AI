@@ -19,7 +19,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from ai.contracts.composition import DraftContext, StudentResult
+from ai.contracts.composition import DraftContext, PlanOutcome, StudentResult
 
 #: ref URI 스킴 — probe의 profile://·spec:// 선례를 따른다.
 CONTEXT_SCHEME: Final = "context"
@@ -107,6 +107,13 @@ class CounselPackResultRecord(BaseModel):
     summary: str
     results: tuple[StudentResult, ...]
     created_at: datetime
+
+    #: plan 결과 사유 — **강조점 0건의 이유**(99 ㉲). state에만 두면 체크포인트를 뒤져야
+    #: 읽을 수 있는데, 잡이 끝나면 그건 재개 대상이 아니라 사후에 볼 사람이 없다.
+    #: ⚠ 기본값을 둔 이유는 **기존 레코드 호환**이다 — 이 필드 이전에 저장된 pack은 사유를
+    #: 모르며, 그걸 `ok`로 읽는 것은 거짓이 아니라 "그때는 안 쟀다"에 가장 가깝다.
+    plan_outcome: PlanOutcome = PlanOutcome.OK
+    plan_dropped: int = 0
 
 
 class AgentStepRecord(BaseModel):

@@ -38,6 +38,8 @@ class CounselPackState(BaseModel):
 
     # plan 노드 산출 (LLM 1회 — 확정 수치 내 강조점만, 새 사실 생성 금지)
     emphasis_points: dict[str, list[str]]      # student_ref → 강조점(근거 record_id 필수)
+    plan_outcome: PlanOutcome = "ok"           # 강조점 0건의 **이유** — 사유 코드만(본문 금지)
+    plan_dropped: int = 0                      # 근거 실존 검증에서 드롭된 강조점 수
 
     # 진행 상태 (체크포인트 대상)
     cursor: int = 0                            # student_refs 인덱스 — 재개 지점
@@ -49,6 +51,21 @@ class CounselPackState(BaseModel):
 ```
 
 > **트레이스 노출 실측(2026-07-30):** 이 §1.2의 본문 미복제 결정이 트레이스 노출을 실제로 줄인다 — LangSmith span에 `prompt`·`facts`·`fallback_text`가 **등재되지 않았다**. 단 `emphasis_points`는 근거 라벨·수치·`record_id`가 문면 그대로 실린다(P2 1순위). 실측: `part_a/11_langsmith_trace_probe.md`.
+
+> **`plan_outcome`·`plan_dropped`의 단위와 근거(2026-08-08 확정 · 99 ㉲):** 초안에 강조점이 0건으로 나가는 이유가 **네 가지**인데 산출물만 보면 넷이 같았다 — ⓐ plan LLM 호출 실패 ⓑ 응답은 왔는데 **파싱 0건** ⓒ 파싱은 됐는데 **근거 실존 검증에서 전량 드롭** ⓓ 진짜로 강조할 게 없었다. 종전에 남는 것은 `logger.info` 두 줄뿐이라 *"강조점이 왜 없지"* 를 물었을 때 볼 것이 없었다.
+>
+> | 값 | 뜻 | 대응 |
+> | --- | --- | --- |
+> | `ok` | 정상 — 강조점이 0건이면 **진짜로 없었던 것**이다 | 없음 |
+> | `llm_failed` | plan 호출이 `LlmError`로 실패 | 업스트림·게이트웨이 확인 |
+> | `unparsed` | 응답은 왔는데 파싱 결과가 0건 | **프롬프트 형식 준수** 문제 |
+> | `all_dropped` | 파싱분이 근거 실존 검증에서 전량 드롭 | 날조·`record_id` 누락 |
+>
+> 🔴 **분모는 잡이다.** plan은 잡당 1회 사건이므로 학생 단위(`StudentResult`·`AGENT_STEP`)에 두지 않는다 — 잡당 1회 사건을 개체 단위 카운터에 태우지 않는다(99 ㊻ⓑ에서 세운 규율이고, 그래프가 이미 같은 근거로 plan 실패를 **서킷 카운터에서 제외**한다). ⚠ `plan_dropped`는 `all_dropped`가 아닌 경우에도 0이 아닐 수 있다(일부만 드롭) — 그래서 사유 코드와 개수가 **둘 다** 필요하다.
+>
+> 🔴 **본문을 담지 않는다** — 사유 코드와 개수까지다. state는 PostgresSaver 체크포인트와 LangSmith 노드 트레이스 두 경로로 나가므로(위 §1.2 각주 · 7/30 실측) 응답 원문·드롭된 강조점 문구를 담으면 그 두 경로로 그대로 샌다. `unparsed`와 "응답이 비었다"는 응답 **길이**로만 가른다.
+>
+> 이 두 필드는 `summarize`와 함께 `pack://` 결과 계약에 실려 워커가 저장한다(99 ㉕ — 그 레코드의 ERD 자리는 아직 없다).
 
 **불변식:** ① `emphasis_points`의 모든 강조점은 `record_id` 동반(plan 노드도 Evidence 규칙 적용) ② `cursor`는 단조 증가 — 재개 시 `results` 길이와 일치 검증(불일치 = 체크포인트 손상 → failed) ③ 학생 1명 실패가 루프를 멈추지 않는다(계약: failed여도 완료분 보존) ④ 재개 시 `context_ref`를 역참조한 컨텍스트 묶음의 해시를 `context_hash`와 대조 — 불일치 = 체크포인트 손상 → failed.
 

@@ -30,6 +30,8 @@ _DOC_FIELDS = {
     "context_hash",
     "plan_version",
     "emphasis_points",
+    "plan_outcome",
+    "plan_dropped",
     "cursor",
     "results",
     "quota_consumed",

@@ -361,6 +361,10 @@ class CounselPackRunner:
                 summary=final["summary"] or "",
                 results=tuple(final["results"]),
                 created_at=self._now(),
+                # plan 결과 사유를 결과 계약에 실어 보낸다 — state 밖으로 나가는 유일한
+                # 경로다(잡이 끝나면 체크포인트는 재개 대상이 아니다 · 99 ㉲).
+                plan_outcome=final["plan_outcome"],
+                plan_dropped=final["plan_dropped"],
             )
         )
 
