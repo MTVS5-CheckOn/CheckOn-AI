@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -38,14 +39,18 @@ from ai.composition.classify.provider import (
 from ai.contracts.classify import ClassifyRequest, ClassifyResult
 from ai.contracts.counsel import InquirySentiment, InquiryTopic, InquiryUrgency
 from ai.contracts.execution import Capability, ExecutionContext
+from ai.contracts.llm import LlmError
 from ai.evaluation.golden.classify.corpus import (
     CASES,
     INJECTION_CASES,
     REDACTION_CASES,
     complaint_count,
 )
+from ai.runtime.errors import RedactionUncertain
 from ai.runtime.redaction import redact
 from ai.runtime.tracing import active_tracing_env_names, external_tracing_active
+
+logger = logging.getLogger(__name__)
 
 _RESULT_PATH = Path("local_data/classify_eval_result.json")
 """원문 포함 산출 — 레포 반입 금지(local_data는 gitignore)."""
@@ -254,6 +259,38 @@ async def _classify_one(body: str, *, interval_ms: int = 0) -> ClassifyResult:
     return result
 
 
+#: 🔴 장애를 판정(`classified`·`fallback_reason`)에 섞지 않는다 — 별도 축이다.
+#: 그게 #117이 없앤 거짓말이고, 그 거짓말이 **측정 리포트에도** 있었다.
+_FAILURE_KINDS: Final = {
+    "LlmTimeout": "llm_timeout",
+    "LlmUnavailable": "llm_unavailable",
+    "RedactionUncertain": "redaction_uncertain",
+}
+
+
+def failure_kind(exc: BaseException) -> str:
+    """장애 종류 — `fallback_reason`(판단)과 **다른 축**이다."""
+    return _FAILURE_KINDS.get(type(exc).__name__, "llm_error")
+
+
+async def _try_classify_one(
+    body: str, *, interval_ms: int = 0
+) -> tuple[ClassifyResult | None, str | None]:
+    """1건 분류 — **장애 1건에 88건 회차를 잃지 않는다.**
+
+    돌려주는 것: `(결과, 장애 종류)`. 장애면 결과가 None이다.
+
+    ⚠ `except Exception`으로 뭉개지 않는다. 잡는 건 `LlmError` 계열과 `RedactionUncertain`
+    뿐이고 코드 버그(`AttributeError` 등)는 그대로 죽어야 한다 — **러너가 조용히 도는 것이
+    측정에선 최악**이다.
+    """
+    try:
+        return await _classify_one(body, interval_ms=interval_ms), None
+    except (LlmError, RedactionUncertain) as exc:
+        logger.warning("분류 1건 장애 — 행을 남기고 계속한다: %s", type(exc).__name__)
+        return None, failure_kind(exc)
+
+
 async def _main_async(interval_ms: int) -> int:
     if external_tracing_active():
         names = ", ".join(active_tracing_env_names()) or "(env 밖)"
@@ -265,8 +302,13 @@ async def _main_async(interval_ms: int) -> int:
     print(f"코퍼스 {len(CASES)}건(전량 합성) · complaint 양성 {complaint_count()}건")
     tally = _Tally()
     rows: list[CaseRow] = []
+    failures: list[dict[str, str]] = []
     for case in CASES:
-        result = await _classify_one(case.body_text, interval_ms=interval_ms)
+        result, failed = await _try_classify_one(case.body_text, interval_ms=interval_ms)
+        if result is None:
+            # 🔴 **분모에서 뺀다** — 판정이 없던 건을 오답으로 세면 정확도가 거짓이 된다.
+            failures.append({"stage": "corpus", "case": case.body_text[:24], "kind": failed or ""})
+            continue
         tally.total += 1
         if not result.classified:
             tally.unclassified += 1
@@ -299,7 +341,11 @@ async def _main_async(interval_ms: int) -> int:
     # 🔴 인젝션 — 정답이 아니라 "enum 밖으로 못 나갔는가"를 본다.
     injection_escapes = 0
     for attack in INJECTION_CASES:
-        result = await _classify_one(attack, interval_ms=interval_ms)
+        result, failed = await _try_classify_one(attack, interval_ms=interval_ms)
+        if result is None:
+            # ⚠ 장애는 **탈출이 아니다** — 0으로도 1로도 세지 않고 별도 축에 남긴다.
+            failures.append({"stage": "injection", "case": attack[:24], "kind": failed or ""})
+            continue
         # 파싱을 통과했다면 값은 반드시 enum 안이다(타입이 보장) — 여기선 예외 없이
         # 200으로 수렴했는지만 확인한다.
         injection_escapes += result.topic.value not in {
@@ -313,7 +359,10 @@ async def _main_async(interval_ms: int) -> int:
     # 여기선 **응답이 200으로 수렴하는지**(폴백 포함)만 본다.
     redaction_rows = []
     for body in REDACTION_CASES:
-        result = await _classify_one(body, interval_ms=interval_ms)
+        result, failed = await _try_classify_one(body, interval_ms=interval_ms)
+        if result is None:
+            failures.append({"stage": "redaction", "case": body[:24], "kind": failed or ""})
+            continue
         # A-4 판단: **넣는다.** 정답이 없어 정확도는 못 내지만, 폴백 건은 confidence가
         # 0.0으로 고정되므로(`_unclassified()`) "폴백했다"와 "낮은 확신으로 분류했다"를
         # 이 필드로만 가를 수 있다 — ⓔ(폴백률) 분석이 그 구분을 요구한다.
@@ -391,6 +440,10 @@ async def _main_async(interval_ms: int) -> int:
         f"\n     complaint 오검(FP) {fp}건 — 정상을 민원으로 봤다(재현율과 무관 · 참고)"
     )
 
+    if failures:
+        print(f"\n🔴 장애로 **분모에서 뺀 건** {len(failures)}건 — 정확도는 나머지 기준이다")
+        for f in failures:
+            print(f"     [{f['stage']}] {f['kind']} :: {f['case']}")
     print(f"\n판정: {'통과 ✅' if passed else '미달 ❌'}")
 
     _RESULT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -413,6 +466,9 @@ async def _main_async(interval_ms: int) -> int:
                 "bucket_width": BUCKET_WIDTH,
                 "min_bucket_samples": MIN_BUCKET_SAMPLES,
                 "redaction_cases": redaction_rows,
+                # 🔴 장애는 **별도 축**이다 — 정확도 분모에서 뺐으므로 몇 건을 뺐는지가
+                #    산출에 남아야 한다. 안 남기면 "88건 다 됐다"로 읽힌다.
+                "failures": failures,
                 "rows": [row.as_json() for row in rows],
             },
             ensure_ascii=False,

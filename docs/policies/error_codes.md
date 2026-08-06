@@ -220,6 +220,8 @@ DomainException (base)
 ⚠ **plain `LlmError`(4xx)를 503으로 뭉개지 않는다** — 벤더가 살아 있는데 우리 요청이 틀린
 것이라, 503의 폴백 문구("잠시 후 다시")가 거짓이 된다. `openai_compat`이 **429만**
 `LlmUnavailable`로 승격하고 나머지 4xx를 plain으로 두는 것이 이 구분이다.
+🔴 **부수효과(원장 적재 등)를 `except` 절 안에 두지 않는다.** 예외 종류가 늘면 그 절을 안 지나는 경로가 생기고 **그 경로만 기록이 빈다.** 실제로 `RedactionUncertain`에서 그랬다(8/7 — `DomainException`이라 `except LlmError`가 못 잡았고, refine·classify 두 곳에서 AI_RUN 0건 · 수집기 잔존 1건). `except` 절을 하나 더 추가하는 건 같은 복제를 반복하는 것이라 **`finally` 하나로 합친다** — 성공·차단·모든 종류의 실패가 같은 코드를 지난다.
+
 ⚠ 이 경계가 받는 시점에는 **재시도 예산이 이미 소진**돼 있다 — 게이트웨이가
 `reraise=True`로 재시도를 소진한 뒤 원 예외를 올린다. "아무도 못 바꾸고 기다릴 뿐"의
 조건이 구조적으로 충족되는 근거다.

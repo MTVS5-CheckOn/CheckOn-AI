@@ -139,9 +139,14 @@ def test_the_failure_detail_is_not_exposed() -> None:
 
 
 def test_the_failed_turn_still_lands_in_the_ledger() -> None:
-    """🔴 작업 3이 만든 새 구멍 — 장애 턴이 원장에서 사라지면 안 된다(불변식 8).
+    """🔴 장애 턴이 원장에서 사라지면 안 된다(불변식 8) — 하필 **가장 알고 싶은 턴**이다.
 
-    하필 **가장 알고 싶은 턴**이 사라진다. 차단 턴을 남기는 이유가 여기 더 강하게 든다.
+    ⚠ **이 테스트가 한 종류만 봐서 결함을 통과시켰다(8/7).** `LlmTimeout`만 확인했는데
+    `RedactionUncertain`(= `DomainException`)은 종전 `except LlmError` 절이 못 잡아
+    원장에서 사라졌고, 여기는 초록이었다. **종류 전수는
+    `tests/ai/failure/test_ledger_survives_every_failure.py`가 파라미터화로 본다** —
+    "종류를 늘려도 안 갈린다"는 성질이고, 성질은 한 종류로 증명되지 않는다.
+    여기는 HTTP 표면에서의 대표 1건으로 남긴다.
     """
     store = InMemoryRunStore()
     counsel_router.set_counsel_run_store(store)
