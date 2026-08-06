@@ -262,7 +262,7 @@
 | C4 | fakes/FakeProvider(타임아웃) · integration/부분 실패 격리 |
 | C5 | integration/LangGraph 상태 전이 · 중단→재개(체크포인트) · 학생별 격리 · gates/계획 노드 수치 조작 적대 케이스 |
 | C6 | gates/왜곡 게이트(수치·방향·라벨 반전 주입) · failure/템플릿 폴백 |
-| C7 | contract/enum 강제 파싱 · 오분류 피해 반경 계약 · **golden/classify(complaint 재현율 ≥95%)** |
+| C7 | contract/enum 강제 파싱 · 오분류 피해 반경 계약 · **golden/classify** · **golden/classify_baseline**(축별 baseline — 기준의 검증력) |
 | **C8 (신규)** | **golden/refine_attack A1~A8 · contract/정적 차단 미소모 · integration/revert_to 복원 · contract/부분 반영+사유 동시 반환** |
 | **C9 (신규)** | **gates/numbers_used 전수 대조 · contract/teacher_only 프롬프트 미포함(입력 검사) · contract/월별·단건 분기(할당) · unit/15일 규칙 vs DataSufficiency** |
 | L1 | gates/인용 실존 게이트 · contract/ai_suggested 미사용 보장 |
@@ -271,4 +271,6 @@
 | I3 | integration/동일 파일+spec 결정론 · **golden/redaction 코퍼스 30건(미탐 0 = CI 게이트)** |
 | I4 | integration/캐시 히트 · contract/미확정 태그 피처 미반영 · **golden/tagging(수능 enum·경계 사례 confidence)** |
 
+> 🔴 **합격 수치의 정본은 [`08_evaluation_plan.md`](08_evaluation_plan.md) §7이다 — 여기 중복 적지 않는다(8/8).** 종전 C7 행이 `complaint 재현율 ≥95%`를 인용하고 있었는데, §7이 기준의 **형태**를 바꾸면서(정확도는 baseline과 짝 · 소수 클래스 재현율을 축마다) 두 곳이 갈릴 자리가 됐다. 이 표는 **어떤 테스트가 도는가**만 적는다.
+>
 > **참조** — 파이프라인 v2 · ERD 전체 v2 · API 계약 v0.1(+요청JSON v0.1.1) · **핑퐁 정책서 v0(C8)** · **리포트 사양서 v0(C9)** · **수능태그 어휘집 v0(I4)** · **threshold 시트 v0(D1~D3)** · **평가 계획서 v0(전 매핑)** · AI 아키텍처 지시서(개정 안건 4건 — member-B 합의 전까지 C5·I2 착수 보류). 충돌 시 지시서가 우선한다.
