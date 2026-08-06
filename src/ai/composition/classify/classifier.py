@@ -58,7 +58,8 @@ MAX_PARSE_RETRY: Final = 2
 #: 분류 응답은 짧은 JSON 1개라 생성 토큰 상한을 좁게 준다(성능 제어).
 _CLASSIFY_MAX_TOKENS: Final = 256
 
-#: 결정론 설정 — 불변식 8. 재현 축(temperature·seed)의 정본은 `composition/determinism.py`다.
+#: 결정론 설정 — 불변식 8. 재현 축(temperature·seed)의 **정본은 `llm/determinism.py`**
+#: (B 소유)이고 `composition/determinism.py`는 재수출이다(99 ⓨ).
 #: 종전에는 이 파일이 seed 리터럴을 직접 들고 있었는데, 브리핑·초안이 seed 없이 도는 동안
 #: 분류만 고정돼 있어 **경로마다 재현 조건이 달랐다** — 상수를 한 곳으로 모았다(8/5).
 #: ⚠ **서버가 seed를 존중하는지는 프로바이더에 달렸다** — 어댑터는 값을 그대로 넘기지만
