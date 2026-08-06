@@ -353,6 +353,10 @@ def _draft_context(request: CounselDraftRequest) -> DraftContext:
         evidence_summaries=(),
         period_label=request.context.period_label,
         fallback_text="이번 기간 학습 상황을 정리해 보내드립니다.",
+        # 🔴 학부모가 실제로 물은 것 — 종전엔 아무도 안 읽어서 같은 학생·같은 라벨이면
+        # 어떤 문의든 바이트 동일한 프롬프트가 나왔다. BE 1차 마스킹분이고, 전송 직전
+        # `redact()`를 한 번 더 탄다(fail-closed · 불변식 3).
+        inquiry_text=request.inquiry.text_masked,
     )
 
 
@@ -679,6 +683,10 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
         writer=_provider,
         execution_context=refine_context,
         regen_max=_REGEN_MAX,
+        # 🔴 **누적의 배선.** `state.text`는 종전에 write-only였다(읽는 코드 0곳) —
+        # 매 턴 원본에서 새로 써서 턴1의 반영이 턴2에서 되살아났다. 팀 공유본
+        # (와이어프레임 v3.5·프로토타입·데이터계약)이 전부 누적을 전제로 만들어져 있다.
+        previous_text=state.text,
     )
     # 실행 원장 — refine 턴도 하나의 실행이다(불변식 8). 차단 턴도 남긴다: 차단은 에러가
     # 아니고(불변식 4) 어떤 호출이 무엇을 냈길래 게이트가 걸렸는지가 정확히 추적 대상이다.

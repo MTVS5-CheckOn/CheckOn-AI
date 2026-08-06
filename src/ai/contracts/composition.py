@@ -158,6 +158,18 @@ class DraftContext(BaseModel):
     fallback_text: NonEmptyStr
     """게이트 소진·LLM 실패 시 되돌아갈 결정론 템플릿(briefing_context와 동일 역할)."""
 
+    inquiry_text: str = ""
+    """🔴 **학부모가 실제로 물은 것**(BE 1차 마스킹분 `inquiry.text_masked`).
+
+    종전에는 이 값을 아무도 읽지 않아, 같은 학생·같은 라벨이면 *"성적이 왜 떨어졌나요"* 와
+    *"숙제 줄여주세요"* 가 **바이트 동일한 프롬프트**를 만들었다 — 답장이 질문과 무관해도
+    구조상 알 수 없었다.
+
+    ⚠ **BE의 1차 마스킹을 믿지 않는다** — 프롬프트 조립 뒤 `redact()`를 한 번 더 거치고
+    `uncertain`이면 전송하지 않는다(fail-closed · 불변식 3 · `GatewayDraftWriter`).
+    ⚠ 기본값이 빈 문자열이라 **안 넘기면 프롬프트가 종전과 같은 자리에 머문다.**
+    """
+
     def cited_record_ids(self) -> frozenset[str]:
         """강조점이 **인용할 수 있는** record_id 집합 — record_id가 있는 fact들만.
 
@@ -181,6 +193,11 @@ class DraftContext(BaseModel):
         근거**다. label이 `"7월 3주차 정답률"`이면 지시대로 쓴 문장이
         `ungrounded_number:3`으로 막힌다. label은 백엔드 스냅숏의 결정론 파생이지 LLM이
         만든 숫자가 아니다.
+
+        🔴 **`inquiry_text`는 넣지 않는다.** 학부모 문의는 **근거가 아니다** — *"지난번
+        80점이라고 하셨는데"* 의 80은 우리 기록에 없는 수치이고, 허용하면 LLM이 그걸
+        근거인 것처럼 되받아 쓴다(불변식 2). 프롬프트도 "문의에 있는 숫자를 그대로 쓰지
+        마라"고 지시한다 — 지시와 게이트가 같은 방향이어야 한다.
 
         어느 출처에도 없는 숫자는 그대로 거부된다 — 환산·창작 수치 차단(불변식 1·2)은
         불변이다.
