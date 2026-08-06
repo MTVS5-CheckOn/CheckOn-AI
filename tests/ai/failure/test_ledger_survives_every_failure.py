@@ -22,6 +22,9 @@ PR-4(#117)가 세운 규율이 refine 한 경로에만 적용됐고, 그 PR이 �
 | classify × `LlmTimeout` | **500**(504여야) | **0** | **1** |
 | classify × `LlmUnavailable` | **500**(503여야) | **0** | **1** |
 | classify × `LlmError` | 500 | **0** | **1** |
+| **워커 × 서킷 개방**(임계 3) | paused | **0** | **3** ← 가장 나쁘다 |
+| 워커 × `ContextHashMismatch` | failed | **0** | 0 |
+| 워커 × 미분류 예외 | failed | **0** | 0 |
 
 ⚠ **PR-4의 `test_the_failed_turn_still_lands_in_the_ledger`가 `LlmTimeout` 하나만 봐서
 이 결함이 초록으로 통과했다.** 그래서 여기는 **파라미터화**한다 — 종류를 늘려도 안 갈리는
@@ -30,22 +33,54 @@ PR-4(#117)가 세운 규율이 refine 한 경로에만 적용됐고, 그 PR이 �
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
-from collections.abc import Iterator
+import itertools
+from collections.abc import Callable, Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from langgraph.checkpoint.memory import InMemorySaver
 
+from ai.agents.job_store import InMemoryJobStore
+from ai.agents.supervisor import Supervisor
 from ai.api.app import create_app
 from ai.api.routers import classify as classify_router
 from ai.api.routers import confirmations as confirmations_router
 from ai.api.routers import counsel as counsel_router
 from ai.api.routers.counsel import reset_counsel_stores, set_counsel_provider
-from ai.composition.counsel.provider import FakeCounselProvider, RedactionBlockedError
-from ai.contracts.composition import DraftContext
+from ai.composition.counsel.assembly import DEFAULT_REGEN_MAX, build_counsel_gateway
+from ai.composition.counsel.enqueue import CounselPackEnqueuer
+from ai.composition.counsel.provider import (
+    CompositeCounselProvider,
+    FakeCounselLlmProvider,
+    FakeCounselProvider,
+    GatewayDraftWriter,
+    GatewayPlanner,
+    RedactionBlockedError,
+)
+from ai.composition.counsel.stores import (
+    ContextBundleRecord,
+    InMemoryAgentStepSink,
+    InMemoryContextStore,
+    InMemoryDraftResultStore,
+    InMemoryPackResultStore,
+)
+from ai.composition.counsel.worker import CounselPackRunner
+from ai.contracts.agents import JobPhase, WorkerJob
+from ai.contracts.composition import (
+    CommStyle,
+    DraftContext,
+    EvidenceFact,
+    Frequency,
+    Interest,
+    LabelSnapshot,
+    Sensitivity,
+)
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError, LLMRequest, LLMResult, LlmTimeout, LlmUnavailable
 from ai.db.repositories.run_store import InMemoryRunStore, default_llm_call_collector
@@ -67,6 +102,7 @@ _CLASSIFY_FAILURES = [
 ]
 
 _HEADERS = {"X-Tenant-Id": "t1", "X-Request-Id": "rq-ledger-1"}
+_WORKER_NOW = datetime(2026, 8, 7, tzinfo=UTC)
 _GROUNDED = "지문 42개를 함께 살펴봤습니다."
 
 
@@ -301,3 +337,259 @@ def test_successful_classify_still_records_and_stores(
     assert response.status_code == 200
     assert len(store.runs) == 1
     assert _pending_calls() == 0
+
+
+# ── C · 비동기 워커 (같은 형태 4번째) ────────────────────────────
+#
+# 🔴 **여기가 셋 중 가장 나쁘다.** 서킷은 연속 N학생 LLM 실패 뒤 열린다 — 그 시점
+# 수집기 버킷에 실제 LLM_CALL이 **최소 N건** 들어 있고 그게 통째로 방치된다
+# (refine은 대개 0~1건이었다). 실측(8/7 · 임계 3 · 5학생): 버킷 내 호출 **3건**.
+#
+# `_run_guarded`의 5개 절이 전부 `_execute` **밖**이라, 종전에는 `ainvoke` 뒤에 있던
+# 적재를 **어느 실패도 안 지났다**.
+
+
+def _worker_context(ref: str) -> DraftContext:
+    return DraftContext(
+        student_ref=ref,
+        guardian_ref="gd_1",
+        label_snapshot=LabelSnapshot(
+            comm=CommStyle.DATA,
+            sensitivity=Sensitivity.ANXIOUS,
+            interest=Interest.GRADE,
+            frequency=Frequency.FREQUENT,
+        ),
+        facts=(EvidenceFact(label="정답률", value="62%", record_id="le_1"),),
+        evidence_summaries=(),
+        period_label="2026년 7월",
+        fallback_text="이번 기간 학습 상황을 정리해 보내드립니다.",
+    )
+
+
+def _ids() -> Callable[[], UUID]:
+    counter = itertools.count(1)
+    return lambda: UUID(int=next(counter))
+
+
+class _WorkerHarness:
+    """워커 1개 + 저장소 — 원장·수집기를 주입해 관측한다."""
+
+    def __init__(self, provider: object, *, circuit: int = 3) -> None:
+        self.jobs = InMemoryJobStore()
+        self.supervisor = Supervisor(
+            store=self.jobs,
+            lease_duration=timedelta(seconds=600),
+            priority_aging_interval=timedelta(minutes=1),
+            clock=lambda: _WORKER_NOW,
+        )
+        self.contexts = _MutatingContextStore()
+        self.runs = InMemoryRunStore()
+        #: ⚠ 러너와 게이트웨이가 **같은 수집기**를 써야 버킷이 안 갈린다(assembly 규약).
+        self.collector = default_llm_call_collector()
+        self.collector.reset()
+        self.runner = CounselPackRunner(
+            supervisor=self.supervisor,
+            context_store=self.contexts,
+            draft_store=InMemoryDraftResultStore(),
+            pack_store=InMemoryPackResultStore(),
+            step_sink=InMemoryAgentStepSink(),
+            planner=provider,  # type: ignore[arg-type]
+            writer=provider,  # type: ignore[arg-type]
+            checkpointer=InMemorySaver(),
+            regen_max=DEFAULT_REGEN_MAX,
+            lease_owner="worker-1",
+            new_id=_ids(),
+            now=lambda: _WORKER_NOW,
+            llm_failure_circuit=circuit,
+            run_store=self.runs,
+            call_log=self.collector,
+        )
+
+    async def enqueue(self, refs: list[str]) -> WorkerJob:
+        return await CounselPackEnqueuer(
+            supervisor=self.supervisor,
+            context_store=self.contexts,
+            new_id=_ids(),
+            now=lambda: _WORKER_NOW,
+        ).enqueue(
+            tenant_id="t1",
+            class_ref="cl_a1",
+            contexts={ref: _worker_context(ref) for ref in refs},
+        )
+
+
+class _MutatingContextStore(InMemoryContextStore):
+    """조회 시점에 묶음을 바꿔칠 수 있다 — 체크포인트 해시 불일치 재현용."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.mutate: Callable[[ContextBundleRecord], ContextBundleRecord] | None = None
+
+    async def get(
+        self, ref: str, *, tenant_id: str
+    ) -> ContextBundleRecord | None:
+        bundle = await super().get(ref, tenant_id=tenant_id)
+        return self.mutate(bundle) if (bundle is not None and self.mutate) else bundle
+
+
+class _GatewayThenFail:
+    """게이트웨이를 거쳐 **기록을 남긴 뒤** 실패한다 — 버킷에 호출이 쌓인다."""
+
+    def __init__(self) -> None:
+        gateway = build_counsel_gateway(
+            FakeCounselLlmProvider("정답률이 88%까지 올랐습니다.")
+        )
+        self._inner = CompositeCounselProvider(
+            GatewayPlanner(gateway), GatewayDraftWriter(gateway)
+        )
+
+    async def plan(self, **_kwargs: object) -> dict[str, list[str]]:
+        return {}
+
+    async def write(self, **kwargs: object) -> str:
+        await self._inner.write(**kwargs)  # type: ignore[arg-type]  # 대역 — 키워드 통과만
+        raise LlmError("vendor down")
+
+
+class _UnclassifiedBoom:
+    """미분류 예외 — `_run_guarded`의 `except Exception` 절로 간다."""
+
+    async def plan(self, **_kwargs: object) -> dict[str, list[str]]:
+        raise RuntimeError("코드 버그")
+
+    async def write(self, **_kwargs: object) -> str:
+        return "정답률은 62%였습니다."
+
+
+def _ok_provider() -> FakeCounselProvider:
+    return FakeCounselProvider(drafts=["정답률은 62%였습니다."] * 40)
+
+
+def _run_circuit_open() -> tuple[_WorkerHarness, WorkerJob]:
+    harness = _WorkerHarness(_GatewayThenFail(), circuit=3)
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1", "st_2", "st_3", "st_4", "st_5"])
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    return harness, asyncio.run(scenario())
+
+
+def _run_hash_mismatch() -> tuple[_WorkerHarness, WorkerJob]:
+    harness = _WorkerHarness(_GatewayThenFail(), circuit=1)
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1", "st_2"])
+        paused = await harness.runner.run_next(tenant_id="t1")
+        assert paused is not None and paused.phase is JobPhase.PAUSED
+        # 재개 전에 묶음이 바뀐다 — 불변식 ④가 잡아야 하는 손상.
+        harness.collector.reset()
+        harness.runs.runs.clear()
+        harness.contexts.mutate = lambda b: b.model_copy(
+            update={"content_hash": "sha256:" + "9" * 64}
+        )
+        await harness.supervisor.resume(tenant_id="t1", job_id=paused.job_id)
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    return harness, asyncio.run(scenario())
+
+
+def _run_unclassified() -> tuple[_WorkerHarness, WorkerJob]:
+    harness = _WorkerHarness(_UnclassifiedBoom())
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1"])
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    return harness, asyncio.run(scenario())
+
+
+def _run_success() -> tuple[_WorkerHarness, WorkerJob]:
+    harness = _WorkerHarness(_ok_provider())
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1"])
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    return harness, asyncio.run(scenario())
+
+
+#: (시나리오, 기대 수렴 상태) — 🔴 **수렴 상태 단정을 빼지 마라.**
+#: `swallow_errors`가 없으면 `LlmCircuitOpenError`가 `WORKER_INTERNAL`로 바뀌는데,
+#: 원장 델타만 보면 그 뒤집힘(paused → failed)이 안 잡힌다.
+_WORKER_SCENARIOS = [
+    (_run_circuit_open, JobPhase.PAUSED),
+    (_run_hash_mismatch, JobPhase.FAILED),
+    (_run_unclassified, JobPhase.FAILED),
+    (_run_success, JobPhase.SUCCEEDED),
+]
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_phase"),
+    _WORKER_SCENARIOS,
+    ids=["circuit_open", "hash_mismatch", "unclassified", "success"],
+)
+def test_worker_ledger_survives_every_convergence_path(
+    scenario: Callable[[], tuple[_WorkerHarness, WorkerJob]], expected_phase: JobPhase
+) -> None:
+    """🔴 성공·서킷 개방·해시 불일치·미분류 — **어느 경로든 AI_RUN이 1건 남는다.**"""
+    harness, job = scenario()
+
+    assert job.phase is expected_phase, f"수렴 상태가 뒤집혔다: {job.phase.value}"
+    assert len(harness.runs.runs) == 1, (
+        f"{job.phase.value} 경로에서 AI_RUN이 안 남았다 — 적재가 ainvoke 뒤에만 있다"
+    )
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_phase"),
+    _WORKER_SCENARIOS,
+    ids=["circuit_open", "hash_mismatch", "unclassified", "success"],
+)
+def test_worker_collector_is_drained_on_every_convergence_path(
+    scenario: Callable[[], tuple[_WorkerHarness, WorkerJob]], expected_phase: JobPhase
+) -> None:
+    """⚠ 서킷 개방 시 **최소 임계만큼** 호출이 방치됐다(실측 3건) — 여기가 가장 나쁘다."""
+    del expected_phase
+    harness, _job = scenario()
+    residue = sum(len(bucket) for bucket in harness.collector._pending.values())
+    assert residue == 0, f"수집기에 호출 {residue}건이 남았다 — take()를 안 불렀다"
+
+
+@pytest.mark.parametrize(
+    "removal",
+    ["bundle_missing", "tenant_mismatch"],
+)
+def test_no_ledger_before_the_execution_starts(removal: str) -> None:
+    """🔴 **여기는 원장이 안 남는 게 정상이다** — 실행 자체가 없다.
+
+    `_execution_context(job)` 앞에서 죽는 두 경로는 `execution_id`도 LLM 호출도 없다.
+    ⚠ 이 단정이 없으면 다음 사람이 *"여기도 빠졌네"* 하고 넣는다 — **실행이 없는데 실행
+    기록을 만드는 것**이 된다.
+    """
+    harness = _WorkerHarness(_ok_provider())
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1"])
+        if removal == "bundle_missing":
+            harness.contexts._rows.clear()
+        else:
+            harness.contexts.mutate = lambda b: b.model_copy(
+                update={"tenant_id": "other"}
+            )
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    job = asyncio.run(scenario())
+    assert job.phase is JobPhase.FAILED
+    assert len(harness.runs.runs) == 0, "실행이 없었는데 실행 기록이 생겼다"
