@@ -157,6 +157,10 @@ def _config() -> _Config:
             phone = compiled
     bypass = raw["bypass"]
     scoring = raw["scoring"]
+    #: 🔴 `$surnames`는 **두 곳**이 쓴다 — 스코어링과 호칭(관계어 갈래). 조립을 한 번만
+    #: 하고 양쪽에 넘긴다: 따로 만들면 목록이 갈릴 수 있고, 그게 `patterns`↔`words`가
+    #: 갈려 조사 결합형이 우회했던 ⓛ와 같은 형태다.
+    surname_class = "".join(str(name) for name in scoring.get("surnames", []))
     context_risk = raw["context_risk"]
     particles: dict[str, list[str]] = raw["particles"]
     korean_particles = tuple(str(word) for word in particles["korean"])
@@ -164,7 +168,11 @@ def _config() -> _Config:
         tokens={str(k): str(v) for k, v in raw["tokens"].items()},
         batch=tuple(batch),
         honorific_type=str(raw["name_honorific"]["type"]),
-        honorific=_compile_all(raw["name_honorific"]["patterns"]),
+        honorific=_compile_all(
+            _expand_placeholders(
+                raw["name_honorific"]["patterns"], {"surnames": surname_class}
+            )
+        ),
         honorific_words=frozenset(
             str(word) for word in raw["name_honorific"].get("words", [])
         ),
@@ -179,9 +187,7 @@ def _config() -> _Config:
             _expand_placeholders(
                 scoring["name_candidates"],
                 {
-                    "surnames": "".join(
-                        str(name) for name in scoring.get("surnames", [])
-                    ),
+                    "surnames": surname_class,
                     "particles_korean": "|".join(korean_particles),
                     "particles_latin": "|".join(
                         str(word) for word in particles["latin"]
@@ -281,10 +287,14 @@ class _Redactor:
             # 목록에 없어 우회했고, 그 결과 "○○ 학생의 어머니입니다"가 2차 redact에서
             # 새 finding을 만들어 트립와이어가 전송을 막았다(불필요한 폴백).
             # 학부모 문의의 전형 문면이라 실제로 터진 형태다.
-            if (
-                _strip_particle(match.group(1), self.cfg.honorific_particles)
-                in self.cfg.honorific_words
-            ):
+            candidate = _strip_particle(match.group(1), self.cfg.honorific_particles)
+            if candidate in self.cfg.honorific_words:
+                return match.group(0)
+            # 🔴 (8/6) 관계어 갈래가 `$surnames`를 쓰면서 스코어링과 **같은 실패 모드**를
+            # 물려받는다 — 성씨 한 글자가 흔한 한자어의 첫 글자와 겹친다(`정`답률 형태).
+            # 이미 그 목적으로 있는 목록을 재사용한다. ⚠ 목록을 늘리는 게 아니다
+            # (제외 목록 부풀리기는 미탐 방향으로 작용한다 — 99 ⓓ에서 기각됨).
+            if candidate in self.cfg.name_exclude:
                 return match.group(0)
             return self._token(self.cfg.honorific_type, match.group(1)) + match.group(2)
 
