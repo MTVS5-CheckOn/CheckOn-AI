@@ -34,11 +34,11 @@ from ai.composition.counsel.assembly import (
     build_counsel_provider,
 )
 from ai.composition.counsel.grounding import ground_emphasis
+from ai.composition.counsel.prompt import PROMPT_ID
 from ai.composition.counsel.provider import (
     COUNSEL_GEN_PARAMS,
     PLAN_PROMPT_ID,
     PLAN_PROMPT_VERSION,
-    PROMPT_ID,
     assemble_plan_prompt,
     parse_plan_response,
 )

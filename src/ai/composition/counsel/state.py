@@ -21,7 +21,7 @@ from typing import Annotated, Final, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ai.contracts.composition import StudentResult
+from ai.contracts.composition import PlanOutcome, StudentResult
 
 STATE_SCHEMA_VERSION: Final = "counsel_pack.v1"
 
@@ -79,6 +79,21 @@ class CounselPackState(BaseModel):
     # plan 노드 산출 (LLM 1회 — 확정 수치 내 강조점만, 새 사실 생성 금지)
     emphasis_points: dict[str, list[str]] = {}
     """student_ref → 강조점(근거 record_id 필수 — 불변식 ①)."""
+
+    plan_outcome: PlanOutcome = PlanOutcome.OK
+    """강조점 0건의 **이유**(§1.2 · 99 ㉲) — 넷을 가른다.
+
+    🔴 **본문을 담지 않는다** — 사유 코드까지다. state는 PostgresSaver 체크포인트와
+    LangSmith 노드 트레이스 두 경로로 나가므로(7/30 실측) 응답 원문이나 드롭된 강조점
+    문구를 담으면 그대로 샌다.
+    """
+
+    plan_dropped: int = Field(default=0, ge=0)
+    """근거 실존 검증에서 드롭된 강조점 **수**.
+
+    ⚠ `all_dropped`가 아니어도 0이 아닐 수 있다(일부만 드롭) — 그래서 사유 코드와 개수가
+    **둘 다** 필요하다.
+    """
 
     # 진행 상태 (체크포인트 대상)
     cursor: int = Field(default=0, ge=0)

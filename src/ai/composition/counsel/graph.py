@@ -30,13 +30,20 @@ from ai.composition.counsel.grounding import ground_emphasis
 from ai.composition.counsel.provider import (
     CounselPlanner,
     DraftWriter,
+    PlanUnparsedError,
     RedactionBlockedError,
     max_chars_for,
 )
 from ai.composition.counsel.state import CounselPackState
 from ai.composition.counsel.stores import DraftRecord, DraftResultStore
 from ai.composition.gate_feedback import instruction_for
-from ai.contracts.composition import DraftContext, DraftKind, DraftStatus, StudentResult
+from ai.contracts.composition import (
+    DraftContext,
+    DraftKind,
+    DraftStatus,
+    PlanOutcome,
+    StudentResult,
+)
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError
 from ai.db.repositories.run_store import LlmCallCollector, default_llm_call_collector
@@ -127,13 +134,27 @@ def build_counsel_graph(
                 student_refs=state.student_refs,
                 execution_context=execution_context,
             )
+        # 🔴 `PlanUnparsedError`가 **먼저**다 — `LlmError`의 하위형이라 순서가 뒤집히면
+        #    형식 위반이 전부 `llm_failed`로 뭉개진다(구분하려고 만든 값이 죽는다).
+        except PlanUnparsedError as exc:
+            logger.info("plan 응답 형식 위반 — 무강조 진행 detail=%s", exc)
+            return {"emphasis_points": {}, "plan_outcome": PlanOutcome.UNPARSED}
         except LlmError as exc:  # plan 실패 = 무강조 진행(초안은 계속 만든다)
             logger.info("plan 실패 — 무강조 진행 reason=%s", type(exc).__name__)
-            return {"emphasis_points": {}}
+            return {"emphasis_points": {}, "plan_outcome": PlanOutcome.LLM_FAILED}
         outcome = ground_emphasis(planned, contexts=contexts)
         if outcome.drops:
             logger.info("강조점 %d건 드롭 — 사유별 기록 완료", len(outcome.drops))
-        return {"emphasis_points": outcome.emphasis_points}
+        # 🔴 **전량 드롭과 "고를 게 없었다"는 다른 사건이다.** 둘 다 강조점 0건이지만
+        #    전자는 근거 날조·record_id 누락이고 후자는 정상이다(99 ㉲).
+        all_dropped = bool(planned) and not outcome.emphasis_points
+        return {
+            "emphasis_points": outcome.emphasis_points,
+            "plan_outcome": (
+                PlanOutcome.ALL_DROPPED if all_dropped else PlanOutcome.OK
+            ),
+            "plan_dropped": len(outcome.drops),
+        }
 
     async def student(state: CounselPackState) -> dict[str, Any]:
         """학생 1명 처리 — assemble_context → generate_draft → gate_check → record.

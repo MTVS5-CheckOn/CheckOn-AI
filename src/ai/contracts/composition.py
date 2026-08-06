@@ -232,6 +232,29 @@ class DraftStatus(StrEnum):
     FAILED = "failed"
 
 
+class PlanOutcome(StrEnum):
+    """plan 노드의 결과 사유 — **강조점 0건의 이유**를 가른다(`langgraph_state` §1.2 · 99 ㉲).
+
+    산출물만 보면 네 경우가 같다. 종전에 남는 것은 `logger.info` 두 줄뿐이라
+    *"강조점이 왜 없지"* 를 물었을 때 볼 것이 없었다.
+
+    ⚠ **분모는 잡이다** — plan은 잡당 1회 사건이라 `StudentResult`가 아니라 잡 단위
+    state·pack 레코드에 실린다(99 ㊻ⓑ 규율).
+    """
+
+    OK = "ok"
+    """정상 — 강조점이 0건이면 **진짜로 없었던 것**이다(모델이 비워 뒀다)."""
+
+    LLM_FAILED = "llm_failed"
+    """plan 호출이 실패했다(전송 오류·outcome≠OK·마스킹 fail-closed)."""
+
+    UNPARSED = "unparsed"
+    """응답은 왔는데 **형식을 안 지켜** 파싱 결과가 0건이다 — 프롬프트 준수 문제."""
+
+    ALL_DROPPED = "all_dropped"
+    """파싱분이 **근거 실존 검증에서 전량 드롭**됐다 — 날조·record_id 누락."""
+
+
 class BlockType(StrEnum):
     """DRAFT_BLOCK.block_type — ERD 값 집합."""
 
@@ -269,6 +292,7 @@ class StudentResult(BaseModel):
 
 
 __all__ = [
+    "PlanOutcome",
     "BlockType",
     "CommStyle",
     "DraftBlock",

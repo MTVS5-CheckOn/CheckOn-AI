@@ -148,6 +148,21 @@ class RedactionBlockedError(LlmError):
     """마스킹 불확실 — 전송하지 않았다(fail-closed · 불변식 3)."""
 
 
+class PlanUnparsedError(LlmError):
+    """plan 응답이 **왔는데 형식을 안 지켰다** — 파싱 결과가 0건이다(99 ㉲ · `unparsed`).
+
+    🔴 **장애가 아니라 사유다.** 그래프는 이 예외를 잡아 `plan_outcome=unparsed`로 적고
+    **무강조로 계속 진행**한다(plan은 부가정보다). 예외로 올리는 이유는 planner가 그래프에
+    이 사실을 전할 **다른 경로가 없기** 때문이다 — `plan()`이 `dict`를 돌려주므로 "형식
+    위반으로 0건"과 "모델이 비워 뒀다"가 반환값에서 같아진다.
+
+    ⚠ **대안을 재 보고 골랐다.** 반환형을 `PlanReport`로 바꾸면 planner 대역 18곳이 딸려
+    오고, planner에 `last_responded()` 같은 상태를 두면 **provider가 프로세스 공용 1개**라
+    (`set_counsel_provider`) 동시 실행 잡끼리 값이 섞인다. 예외는 무상태이고 이 파일에 이미
+    같은 어휘가 있다(`RedactionBlockedError` · writer의 *"응답이 비었다"* `LlmError`).
+    """
+
+
 @runtime_checkable
 class CounselPlanner(Protocol):
     """plan 노드 — 학생별 강조점을 고른다(LLM 1회). 새 사실 생성 금지."""
@@ -281,9 +296,25 @@ class GatewayPlanner:
             ),
             execution_context,
         )
-        if result.outcome is not CallOutcome.OK or not (result.text or "").strip():
-            return {}  # 무강조 진행 — 잡 실패가 아니다
-        return parse_plan_response(result.text or "", student_refs)
+        # 🔴 **세 경우를 갈라 낸다**(종전에는 전부 `{}`였다 — 99 ㉲).
+        #    ⓐ outcome≠OK = **장애**다. 빈 값으로 삼키면 `GatewayDraftWriter`가 경고한
+        #      바로 그 오분류가 plan 쪽에서 일어난다("장애가 게이트 실패로 오분류").
+        if result.outcome is not CallOutcome.OK:
+            raise LlmError(f"plan 호출 실패 outcome={result.outcome.value}")
+        text = (result.text or "").strip()
+        #    ⓑ 응답이 비었다 = **모델이 비워 뒀다**. 프롬프트가 *"인용할 근거가 없으면 그
+        #      학생은 비워 두세요"* 라고 지시하므로 빈 응답은 적법한 답이고 사유는 `ok`다.
+        #      ⚠ writer는 빈 응답을 `LlmError`로 올린다 — **비대칭이 의도다.** 초안은
+        #      본문이 결과물이라 비면 실패지만, plan은 "고를 것이 없다"가 유효한 결과다.
+        if not text:
+            return {}
+        parsed = parse_plan_response(text, student_refs)
+        #    ⓒ 응답은 왔는데 파싱 0건 = **형식 위반**. 사유가 ⓑ와 다르므로 갈라 올린다.
+        if not parsed:
+            raise PlanUnparsedError(
+                f"plan 응답이 형식을 지키지 않았다 — 파싱 0건(응답 {len(text)}자)"
+            )
+        return parsed
 
 
 class CompositeCounselProvider:
@@ -493,6 +524,7 @@ class FakeCounselLlmProvider:
 __all__ = [
     "COUNSEL_GEN_PARAMS",
     "fake_plan_response",
+    "PlanUnparsedError",
     "PLAN_PROMPT_ID",
     "PLAN_PROMPT_VERSION",
     "GatewayPlanner",
