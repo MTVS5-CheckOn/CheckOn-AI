@@ -222,6 +222,61 @@ def empty_response_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, 
     return [row for row in rows if not (row.get("text") or "").strip()]
 
 
+class S5Comparison(NamedTuple):
+    """S5 재현성 스팟체크의 판정 — 🔴 **"못 잰다"를 "다르다"로 접지 않는다.**
+
+    이 타입이 생긴 경위: 러너가 `identical = first == second`만 냈는데, 양쪽이 빈
+    산출이면 `"" == ""`라 **True**가 나왔다(8/6 3차). "재현됐다"가 아니라 **비교할
+    산출이 없었다**. 1차엔 같은 판정 불가 상태가 `0 / 298`이라 **False**로 찍혔다 —
+    **같은 상태에서 필드가 정반대 값을 냈다.**
+
+    ⚠ 그래서 빈 산출을 False로 접어도 안 된다. False는 "다른 출력이 나왔다"는 관측인데
+    출력이 아예 없는 것은 다른 사건이다. `comparable=False` · `identical=None`이 정직하다.
+    """
+
+    comparable: bool
+    identical: bool | None
+    """🔴 `comparable=False`면 항상 None — True도 False도 거짓 판정이다."""
+    first_empty: bool
+    second_empty: bool
+
+
+def compare_reproduction(first: str, second: str) -> S5Comparison:
+    """같은 입력 2회의 산출 비교. **순수 함수**(단위 테스트 대상).
+
+    한쪽만 비어도 비교 불가다 — 99 ㊼의 조건이 *"빈 응답이 섞인 회차는 재현성 측정이
+    아니다"* 이고, 1차의 `0 / 298`이 정확히 그 경우였다.
+    """
+    first_empty = not first.strip()
+    second_empty = not second.strip()
+    if first_empty or second_empty:
+        return S5Comparison(
+            comparable=False,
+            identical=None,
+            first_empty=first_empty,
+            second_empty=second_empty,
+        )
+    return S5Comparison(
+        comparable=True,
+        identical=first == second,
+        first_empty=False,
+        second_empty=False,
+    )
+
+
+def render_s5_verdict(comparison: S5Comparison) -> str:
+    """리포트 한 칸. 🔴 비교가 성립하지 않으면 **"동일"이라는 낱말이 나오지 않는다.**
+
+    다음 회차에 길이 칸을 아무도 안 볼 수 있으므로, 이 문장 하나로 상태가 드러나야 한다.
+    """
+    if comparison.comparable:
+        return "**동일**" if comparison.identical else "**상이**"
+    if comparison.first_empty and comparison.second_empty:
+        return "🔴 **비교 불가 — 양쪽 산출 0자**"
+    side = "1회차" if comparison.first_empty else "2회차"
+    return f"🔴 **비교 불가 — {side} 산출 0자**"
+
+
 def _context(capability: Capability, tag: str) -> ExecutionContext:
     return ExecutionContext(
         execution_id=uuid4(),
@@ -595,8 +650,11 @@ def _run_s5(observers: list[_CountingProvider]) -> dict[str, Any]:
     """S2-① 2회 — temperature 0.0의 실제 결정론 수준. 다르다고 실패가 아니다."""
     first = _run_s2(observers, repeat_first=True)["rows"][0]
     second = _run_s2(observers, repeat_first=True)["rows"][0]
+    comparison = compare_reproduction(first["text"], second["text"])
     return {
-        "identical": first["text"] == second["text"],
+        "comparable": comparison.comparable,
+        "identical": comparison.identical,
+        "verdict": render_s5_verdict(comparison),
         "status_identical": first["draft_status"] == second["draft_status"],
         "len_first": len(first["text"]),
         "len_second": len(second["text"]),
@@ -868,7 +926,7 @@ def _render(data: dict[str, Any]) -> str:
         _table(
             ["항목", "값"],
             [
-                ["같은 입력 2회 · temperature 0.0", "**동일**" if s5["identical"] else "**상이**"],
+                ["같은 입력 2회 · temperature 0.0", s5["verdict"]],
                 ["draft_status 일치", "✅" if s5["status_identical"] else "❌"],
                 ["길이 (1회 / 2회)", f"{s5['len_first']} / {s5['len_second']}"],
             ],
@@ -877,6 +935,12 @@ def _render(data: dict[str, Any]) -> str:
         "> 불변식 8은 **결정론 경로**의 바이트 동일을 요구한다. LLM 경로는 그 대상이 아니며, "
         "다른 것이 실패가 아니다 — 실제 결정론 수준을 정직하게 기록하는 것이 목적이다.",
         "",
+        *([] if s5["comparable"] else [
+            "🔴 **이 회차로는 ㊼(seed 서버 존중)를 판정할 수 없다.** 빈 산출은 \"다른 출력\"이 "
+            "아니라 출력이 없는 것이라, 같다고도 다르다고도 말할 수 없다. 판정하려면 **게이트를 "
+            "통과하는 케이스**로 S5를 돌려야 한다(99 ㊼·㉤).",
+            "",
+        ]),
         "## 6. 한계",
         "",
         "1. **저장 백엔드가 `memory`다.** 측정 변수를 LLM 하나로 고정했다 — PG 영속은 "
@@ -1014,7 +1078,7 @@ async def _main_async(run_date: str) -> int:
     print(f"S1 1차통과 {summary['gate_first_try']}/{summary['total']}"
           f" · 폴백 {summary['fallback']} · 중앙값 {summary['median_ms']}ms")
     misses = _s3_misses(s3["rows"])
-    print(f"S3 차단 미탐 {len(misses)}건 · S5 동일 {s5['identical']}")
+    print(f"S3 차단 미탐 {len(misses)}건 · S5 {s5['verdict'].replace('*', '')}")
     return 0
 
 
