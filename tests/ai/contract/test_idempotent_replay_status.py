@@ -35,6 +35,7 @@ from ai.api.routers.classify import reset_inquiry_class_store
 from ai.api.routers.counsel import reset_counsel_stores
 from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
 from ai.api.routers.imports import reset_import_stores
+from ai.db.repositories.run_store import InMemoryRunStore
 from ai.db.store_factory import reset_shared_agent_runtime
 
 
@@ -172,4 +173,61 @@ def test_the_contract_states_the_rule_in_one_place() -> None:
     contract = Path("docs/04_api_contract.md").read_text(encoding="utf-8")
     assert "최초 요청과 같은 상태코드" in contract, (
         "04 §2.3의 멱등 재반환 규약 문장이 사라졌다 — 문서와 구현이 다시 갈릴 자리다"
+    )
+
+
+# ── ㊔ 응답과 원장이 같은 프롬프트 버전을 말한다 ───────────────────
+
+
+def test_counsel_response_and_ledger_agree_on_prompt_version() -> None:
+    """🔴 응답 `meta.versions.prompt`와 `AI_RUN.prompt_version`이 **같은 답**을 한다(99 ㊔).
+
+    종전에는 응답이 `null`, 원장이 `"0.2"`였다 — 같은 실행이 두 곳에서 다른 답을 했다.
+    BE는 응답만 보므로 *"이 초안은 어느 프롬프트가 냈나"* 를 못 짚는다.
+
+    ⚠ 게이트웨이를 **실제로 태운다** — 기본 `FakeCounselProvider`는 게이트웨이를 안 거쳐
+    `LLM_CALL`이 0건이라 축 분리를 볼 수 없다.
+    """
+    from ai.api.routers import counsel as counsel_router
+    from ai.composition.counsel.assembly import (
+        build_counsel_llm_provider,
+        build_counsel_provider,
+    )
+
+    router_test = _golden("tests/ai/integration/test_counsel_router.py")
+    headers = _headers("t1:prompt-version")
+
+    with TestClient(create_app()) as client:
+        counsel_router.set_counsel_provider(
+            build_counsel_provider(build_counsel_llm_provider())
+        )
+        body = client.post(
+            "/v1/counsel/drafts", json=router_test._REQUEST, headers=headers
+        ).json()
+
+    versions = body["meta"]["versions"]
+    #: 라우터의 `_run_store`는 Protocol 타입이라 인메모리 구현의 관측 필드를 좁혀 읽는다.
+    store = counsel_router._run_store
+    assert isinstance(store, InMemoryRunStore)
+    runs = [r.model_dump() for r in store.runs.values()]
+    assert runs, "AI_RUN이 안 남았다 — 이 단정의 전제가 깨졌다"
+
+    assert versions["prompt"] == runs[0]["prompt_version"], (
+        f"응답 prompt={versions['prompt']!r} · AI_RUN={runs[0]['prompt_version']!r} — "
+        "같은 실행인데 응답과 원장이 다른 답을 한다(99 ㊔)"
+    )
+    assert versions["prompt"] is not None, (
+        "counsel은 LLM을 쓰는데 prompt가 null이다 — 04 §2.2는 'LLM 미사용 실행에서 null'이다"
+    )
+    assert len(versions) == 10, (
+        f"meta.versions 키가 {len(versions)}개다 — 04 §2.2가 총 10종으로 A+B 승인했다. "
+        "이 변경은 값만 바꾼다(null → '0.2')"
+    )
+
+    #: ⚠ plan 프롬프트(0.1)는 유실되지 않는다 — 축이 다르다.
+    #:   AI_RUN = 실행의 대표 프롬프트 · LLM_CALL = 호출별 프롬프트.
+    call_versions = [c.prompt_version for c in store.calls]
+    assert "0.1" in call_versions and "0.2" in call_versions, (
+        f"LLM_CALL에 plan·초안 버전이 둘 다 남지 않았다: {call_versions} — "
+        "AI_RUN이 하나만 들 수 있는 이유가 이 축 분리인데 그 축이 비었다"
     )
