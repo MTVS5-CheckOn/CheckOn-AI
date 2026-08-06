@@ -34,7 +34,11 @@ _MUST_EXIST = frozenset(
         "IdempotencyConflict",
         "NotFound",
         "ConsentAbsent",
-        "LlmUnavailable",
+        # 🔴 (8/6) `LlmUnavailable` → `LlmUpstreamDown`으로 개명 + `LlmUpstreamTimeout` 신설.
+        #   §4 트리 A 판정(7/22)이 "contracts.llm 예외는 runtime adapter가 받아 변환하는
+        #   단일 경계"라 했는데 **받는 쪽과 받히는 쪽 이름이 같으면 경계가 아니다.**
+        "LlmUpstreamDown",
+        "LlmUpstreamTimeout",
         "RedactionUncertain",
         "LedgerWriteFailed",
     }
@@ -154,7 +158,8 @@ def test_all_4xx_exceptions_expose_detail() -> None:
         ("NotFound", 404, True),
         ("IdempotencyConflict", 409, True),
         ("ConsentAbsent", 422, True),
-        ("LlmUnavailable", 503, False),
+        ("LlmUpstreamDown", 503, False),
+        ("LlmUpstreamTimeout", 504, False),
         ("RedactionUncertain", 500, False),
         ("LedgerWriteFailed", 500, False),
     ],
