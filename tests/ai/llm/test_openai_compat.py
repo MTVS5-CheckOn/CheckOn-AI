@@ -252,9 +252,38 @@ def test_generation_params_passed_through_interface_path() -> None:
     assert kwargs["model"] == "gemma-test"
     assert kwargs["temperature"] == 0.2
     assert kwargs["top_p"] == 0.9
-    assert kwargs["max_tokens"] == 256
     assert kwargs["seed"] == 7
     assert kwargs["messages"] == [{"role": "user", "content": "[마스킹 통과 프롬프트]"}]
+
+
+def test_max_tokens_is_sent_as_max_completion_tokens() -> None:
+    """🔴 **계약 `max_tokens` → 벤더 키 `max_completion_tokens`**(8/6).
+
+    `gpt-5.4-mini`가 구 키를 거부한다 — 8/6 1차 실측에서 브리핑 21/21이 이 400으로 죽었다::
+
+        Unsupported parameter: 'max_tokens' is not supported with this model.
+        Use 'max_completion_tokens' instead.
+
+    ⚠ 계약 필드명(`GenerationParams.max_tokens`)은 **바꾸지 않았다** — 벤더 규격 번역은
+    어댑터의 일이다(모듈 docstring "벤더 독립 경계"). 그래서 이 테스트가 **양쪽을 동시에**
+    고정한다: 계약은 `max_tokens`로 받고 벤더에는 `max_completion_tokens`로 나간다.
+    """
+    provider = _provider(result=_ok_response("ok"))
+    _run(provider.complete(_request(GenerationParams(max_tokens=128)), _context()))
+    kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
+
+    assert kwargs["max_completion_tokens"] == 128
+    assert "max_tokens" not in kwargs, "구 키로 되돌아갔다 — 전 호출이 400이 된다"
+
+
+def test_no_token_cap_sends_neither_key() -> None:
+    """상한 미지정이면 어느 키도 안 나간다 — 8/6에 상담 경로가 400을 피한 이유다(99 ⓧ)."""
+    provider = _provider(result=_ok_response("ok"))
+    _run(provider.complete(_request(GenerationParams(temperature=0.0)), _context()))
+    kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
+
+    assert "max_completion_tokens" not in kwargs
+    assert "max_tokens" not in kwargs
 
 
 def test_default_temperature_when_params_absent() -> None:
