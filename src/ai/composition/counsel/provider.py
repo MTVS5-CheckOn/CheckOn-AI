@@ -250,6 +250,51 @@ class GatewayPlanner:
         return parse_plan_response(result.text or "", student_refs)
 
 
+class CompositeCounselProvider:
+    """plan·write를 **한 객체**로 묶는다 — 라우터·워커가 그 형태로 받는다.
+
+    `GatewayPlanner`와 `GatewayDraftWriter`는 노드가 다르고 프롬프트도 달라 따로 있는 게
+    맞지만, 주입 지점은 하나다(`set_counsel_provider`). 그 간극을 메우는 어댑터다.
+
+    ⚠ 이 클래스는 평가 러너(`evaluation/counsel_llm_smoke.py`)의 `_CompositeProvider`를
+    **승격**한 것이다 — 러너가 실 경로를 돌리려고 먼저 만들었는데, 프로덕션 조립 루트가
+    같은 모양을 필요로 했다. 두 벌로 두면 따로 늙는다(99 ⑰·㉚ 패턴)."""
+
+    def __init__(self, planner: CounselPlanner, writer: DraftWriter) -> None:
+        self._planner = planner
+        self._writer = writer
+
+    async def plan(
+        self,
+        *,
+        contexts: Mapping[str, DraftContext],
+        student_refs: Sequence[str],
+        execution_context: ExecutionContext,
+    ) -> dict[str, list[str]]:
+        return await self._planner.plan(
+            contexts=contexts,
+            student_refs=student_refs,
+            execution_context=execution_context,
+        )
+
+    async def write(
+        self,
+        *,
+        context: DraftContext,
+        execution_context: ExecutionContext,
+        emphasis: Sequence[str] = (),
+        gate_feedback: str = "",
+        refine_instruction: str = "",
+    ) -> str:
+        return await self._writer.write(
+            context=context,
+            execution_context=execution_context,
+            emphasis=emphasis,
+            gate_feedback=gate_feedback,
+            refine_instruction=refine_instruction,
+        )
+
+
 class FakeCounselProvider:
     """결정론 Fake — 시나리오 주입식. CI·테스트 기본값.
 
@@ -348,6 +393,7 @@ __all__ = [
     "assemble_plan_prompt",
     "parse_plan_response",
     "CHARS_PER_SENTENCE",
+    "CompositeCounselProvider",
     "CounselPlanner",
     "DraftWriter",
     "FakeCounselLlmProvider",
