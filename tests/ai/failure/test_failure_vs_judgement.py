@@ -151,7 +151,7 @@ def test_gate_exhaustion_is_still_a_judgement() -> None:
     """
 
     class _Ungrounded(_Boom):
-        async def write(self, **_kwargs: object) -> str:  # type: ignore[override]
+        async def write(self, **_kwargs: object) -> str:
             self.calls += 1
             return "정답률이 88%까지 올랐습니다."  # 근거(62%)에 없는 수치
 
@@ -190,7 +190,7 @@ def test_pii_from_the_context_is_a_failure_not_a_judgement() -> None:
     from ai.runtime.errors import RedactionUncertain
 
     class _ContextBlocked(_Boom):
-        async def write(self, **_kwargs: object) -> str:  # type: ignore[override]
+        async def write(self, **_kwargs: object) -> str:
             self.calls += 1
             raise RedactionBlockedError("컨텍스트 마스킹 불확실")
 
