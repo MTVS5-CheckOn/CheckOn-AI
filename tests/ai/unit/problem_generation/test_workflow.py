@@ -40,6 +40,7 @@ from ai.contracts.problem_generation import (
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.evaluation.fake_snapshot import fixture_stable
+from ai.llm.determinism import DETERMINISTIC_TEMPERATURE, LLM_SEED
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import ProblemGenerator
@@ -248,6 +249,10 @@ def test_fake_snapshot_to_generation_store_result_vertical_slice() -> None:
     assert len(harness.diagnosis.requests) == 1
     assert len(harness.graph.requests) == 1
     assert len(asyncio.run(harness.candidates.list_all())) == 1
+    generation_params = harness.generator_provider.requests[0].generation_params
+    assert generation_params is not None
+    assert generation_params.temperature == DETERMINISTIC_TEMPERATURE
+    assert generation_params.seed == LLM_SEED
     stored = asyncio.run(harness.items.list_all())
     assert len(stored) == 1
     assert stored[0].item is not None

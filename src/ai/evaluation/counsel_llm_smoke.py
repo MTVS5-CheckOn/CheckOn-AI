@@ -316,7 +316,6 @@ def _preflight() -> dict[str, Any]:
         "base_url": settings.openai_base_url,
         "model": settings.openai_model,
         "timeout_s": settings.openai_timeout_s,
-        "disable_thinking": settings.openai_disable_thinking,
     }
 
 
@@ -749,7 +748,6 @@ def _render(data: dict[str, Any]) -> str:
                  if not pre["tracing_env_active"] else f"⚠ {pre['tracing_env_active']}"],
                 ["서버", f"`{pre['base_url']}`"],
                 ["모델", f"`{pre['model']}`"],
-                ["타임아웃 / thinking", f"{pre['timeout_s']}s / 비활성={pre['disable_thinking']}"],
                 ["저장 백엔드", "`memory` — 측정 변수를 LLM 하나로 고정(§한계 ①)"],
                 ["threshold_config", f"v{demo['threshold_version']}"],
                 ["데모 스냅숏", f"학생 {demo['students']}명 · 신호 {demo['signals']}건"],

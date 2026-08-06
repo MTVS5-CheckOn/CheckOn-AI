@@ -15,6 +15,7 @@ from ai.contracts.problem_generation import (
     SolveResult,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
+from ai.llm.determinism import DETERMINISTIC_TEMPERATURE, LLM_SEED
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 
@@ -92,5 +93,7 @@ def test_cross_solver_sends_only_blind_item() -> None:
     assert '"why_wrong"' not in blind_json
     assert "비공개 해설 원문" not in prompt
     assert "grammar:rule-1" not in prompt
-    assert provider.requests[0].generation_params is not None
-    assert provider.requests[0].generation_params.temperature == 0.0
+    generation_params = provider.requests[0].generation_params
+    assert generation_params is not None
+    assert generation_params.temperature == DETERMINISTIC_TEMPERATURE
+    assert generation_params.seed == LLM_SEED
