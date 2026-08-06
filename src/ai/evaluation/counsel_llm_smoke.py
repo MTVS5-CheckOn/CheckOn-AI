@@ -635,6 +635,14 @@ def _run_s4(
             wired_recorder, LlmCallCollector
         ),
         "collector_dropped_calls": default_llm_call_collector().dropped_calls,
+        #: 🔴 **영속되지 않은 실행 수.** `LlmCallCollector`가 LRU로 버킷을 밀어낼 때 세고
+        #: 경고를 찍는다 — *"해당 실행의 조립부가 record_run/record_calls를 부르지 않았다"*.
+        #: 카운터와 경고는 8/5부터 있었는데 **읽는 사람이 0명이었다**(전수 grep) — 워커의
+        #: 원장 누락(99 ㉸)이 오래 안 보인 실질 이유다. 여기서 처음 소비한다.
+        #: ⚠ 스위트 전역에서 `== 0`을 단정하지 않는다 — 테스트 간 순서에 따라 흔들려
+        #: flaky가 된다. **방어선은 워커 가드**(`test_ledger_survives_every_failure`)이고
+        #: 이건 **관측**이다.
+        "collector_evicted_runs": default_llm_call_collector().evicted_runs,
         # ⓑ quota_consumed — 기본값(0)과 **증가 지점 존재 여부**는 다르다. 후자는 그래프
         #   단위 테스트가 고정하고(`test_llm_observability.py`), 여기선 기본값만 남긴다.
         "quota_consumed_default": CounselPackState.model_fields["quota_consumed"].default,
@@ -888,6 +896,13 @@ def _render(data: dict[str, Any]) -> str:
                           "**전량 폐기**된다"
                  ),
                  "✅ 배선됨" if s4["production_recorder_wired"] else "🔴 **결함 확정**"],
+                ["ⓐ′ 영속 안 된 실행(`evicted_runs`)",
+                 (f"🔴 **{s4['collector_evicted_runs']}건** — 어느 조립부가 "
+                  "`record_run`/`record_calls`를 안 불렀다. 그 실행의 LLM_CALL이 통째로 "
+                  "사라졌다는 뜻이라 **원장 재현이 그만큼 비어 있다**(불변식 8)"
+                  if s4["collector_evicted_runs"]
+                  else "0건 — 모든 실행이 원장에 도착했다"),
+                 "🔴 **확인 필요**" if s4["collector_evicted_runs"] else "✅ 0"],
                 ["ⓑ `quota_consumed` 증가",
                  f"기본값 {s4['quota_consumed_default']} · 증가 지점은 그래프 `_record` "
                  "1곳(단위 테스트가 고정 — 이 러너는 그래프 state를 읽지 않는다)",
@@ -1119,6 +1134,9 @@ async def _main_async(run_date: str) -> int:
     failures = s3_failures(s3["rows"])
     print(f"S3 차단 미탐 {len(misses)}건 · **장애 {len(failures)}건** "
           f"· S5 {s5['verdict'].replace('*', '')}")
+    evicted = data["s4"]["collector_evicted_runs"]
+    if evicted:
+        print(f"🔴 영속 안 된 실행 {evicted}건 — 원장이 그만큼 비었다(불변식 8)")
     return 0
 
 
