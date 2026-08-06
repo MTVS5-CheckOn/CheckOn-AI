@@ -24,6 +24,7 @@ from ai.contracts.problem_generation import (
     SolveResult,
 )
 from ai.contracts.taxonomy import TypeTag
+from ai.llm.determinism import deterministic_params
 from ai.llm.gateway import LlmGateway
 from ai.llm.prompts.loader import LoadedPromptTemplate, load_prompt_template
 from ai.llm.structured import parse
@@ -97,6 +98,7 @@ class ProblemGenerator:
                 prompt_id=self._prompt.prompt_id,
                 prompt_version=self._prompt.version,
                 response_schema_name=self._prompt.response_schema_name,
+                generation_params=deterministic_params(),
             ),
             execution_context,
         )

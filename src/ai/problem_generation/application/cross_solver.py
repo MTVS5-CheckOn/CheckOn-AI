@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from ai.contracts.execution import ExecutionContext, GenerationParams
+from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LLMRequest, ModelRole, RedactionBlocked
 from ai.contracts.problem_generation import GeneratedItem, SolveResult
+from ai.llm.determinism import deterministic_params
 from ai.llm.gateway import LlmGateway
 from ai.llm.prompts.loader import LoadedPromptTemplate, load_prompt_template
 from ai.llm.structured import parse
@@ -72,7 +73,7 @@ class BlindCrossSolver:
                 prompt=redacted.masked_text,
                 prompt_id=self._prompt.prompt_id,
                 prompt_version=self._prompt.version,
-                generation_params=GenerationParams(temperature=0.0),
+                generation_params=deterministic_params(),
                 response_schema_name=self._prompt.response_schema_name,
             ),
             execution_context,
