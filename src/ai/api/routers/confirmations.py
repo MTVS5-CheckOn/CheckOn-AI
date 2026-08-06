@@ -29,7 +29,10 @@ from ai.contracts.confirmations import (
     ConfirmationResponse,
 )
 from ai.db.repositories.inquiry_class_store import InquiryClassStore
-from ai.db.store_factory import build_inquiry_class_store
+from ai.db.store_factory import (
+    build_inquiry_class_store,
+    reset_default_inquiry_class_store,
+)
 from ai.runtime.errors import NotFound, SnapshotInvalid
 
 logger = logging.getLogger(__name__)
@@ -44,7 +47,15 @@ KIND_NOT_IMPLEMENTED = "kind_not_implemented"
 #: `classification`이 받지 않는 action의 사유 코드.
 ACTION_NOT_SUPPORTED = "action_not_supported"
 
-_store: InquiryClassStore = build_inquiry_class_store()
+#: 🔴 `/v1/classify`와 **같은 저장소를 봐야 한다** — 여기서 팩토리 결과를 모듈 전역에
+#: 굳히면 두 라우터가 각자 인스턴스를 갖고, 정정이 전부 404가 된다(그 404는
+#: "폴백이라 적재되지 않았다"와 구분되지 않아 유실이 조용하다). `classify.py`와 같은 규약.
+_store: InquiryClassStore | None = None
+
+
+def inquiry_class_store() -> InquiryClassStore:
+    """이 라우터가 쓸 저장소 — 주입분이 있으면 그것, 없으면 공용."""
+    return _store if _store is not None else build_inquiry_class_store()
 
 
 def set_inquiry_class_store(store: InquiryClassStore) -> None:
@@ -54,9 +65,10 @@ def set_inquiry_class_store(store: InquiryClassStore) -> None:
 
 
 def reset_inquiry_class_store() -> None:
-    """테스트 격리용 — 기본 저장소로 되돌린다."""
+    """테스트 격리용 — 주입을 걷고 공용 저장소를 비운다."""
     global _store
-    _store = build_inquiry_class_store()
+    _store = None
+    reset_default_inquiry_class_store()
 
 
 def _format_validation_error(exc: ValidationError) -> list[dict[str, str]]:
@@ -117,7 +129,7 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
         and confirmation.corrected_value is not None
         else {}
     )
-    applied = await _store.apply_confirmation(
+    applied = await inquiry_class_store().apply_confirmation(
         tenant_id=tenant_id,
         inquiry_ref=confirmation.suggestion_id,
         corrections=corrections,

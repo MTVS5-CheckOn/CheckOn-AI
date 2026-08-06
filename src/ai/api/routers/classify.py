@@ -40,7 +40,11 @@ from ai.db.repositories.run_store import (
     last_success_id,
     system_utc_now,
 )
-from ai.db.store_factory import build_inquiry_class_store, build_run_store
+from ai.db.store_factory import (
+    build_inquiry_class_store,
+    build_run_store,
+    reset_default_inquiry_class_store,
+)
 from ai.runtime.errors import SnapshotInvalid
 
 logger = logging.getLogger(__name__)
@@ -53,8 +57,18 @@ _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id")
 #: 시계 주입점 — `datetime.now()` 직접 호출 금지(03 §3).
 _clock = system_utc_now
 
-_store: InquiryClassStore = build_inquiry_class_store()
+#: 🔴 **모듈 전역에 팩토리 결과를 굳히지 않는다.** 굳히면 `/v1/confirmations`가 자기
+#: 인스턴스를 따로 갖게 되고(팩토리가 호출마다 새 객체였다) 정정이 전부 404가 됐다.
+#: 미주입이면 매번 팩토리를 부르고, 팩토리가 프로세스 공용 1개를 돌려준다.
+#: **명시 주입은 여전히 이긴다** — `bootstrap_counsel_provider`가 `_provider`를 덮지 않은
+#: 것과 같은 결이다(#108).
+_store: InquiryClassStore | None = None
 _run_store: RunStore = build_run_store()
+
+
+def inquiry_class_store() -> InquiryClassStore:
+    """이 라우터가 쓸 저장소 — 주입분이 있으면 그것, 없으면 공용."""
+    return _store if _store is not None else build_inquiry_class_store()
 
 
 def set_inquiry_class_store(store: InquiryClassStore) -> None:
@@ -70,8 +84,11 @@ def set_classify_run_store(store: RunStore) -> None:
 
 
 def reset_inquiry_class_store() -> None:
+    """테스트 격리용. ⚠ 재바인딩만으로는 **아무것도 리셋되지 않는다** — 공용 저장소라
+    같은 객체를 다시 가리킬 뿐이다. 캐시를 버려야 행이 실제로 사라진다."""
     global _store, _run_store
-    _store = build_inquiry_class_store()
+    _store = None
+    reset_default_inquiry_class_store()
     _run_store = build_run_store()
     default_llm_call_collector().reset()
 
@@ -138,7 +155,7 @@ async def post_classify(request: Request) -> dict[str, Any]:
     # ① 캐시 — 같은 `(tenant_id, inquiry_ref)`는 저장분을 돌려주고 **LLM을 안 부른다**
     #    (04:132 "분류·태깅(캐시)" · 04:418 태깅 선례). 재시도가 멱등키 없이 안전해지고,
     #    서버가 seed를 존중하는지 미확인인 상태(99 ㊼)에서도 같은 문의엔 같은 답이 나간다.
-    cached = await _store.get(
+    cached = await inquiry_class_store().get(
         tenant_id=tenant_id, inquiry_ref=classify_request.inquiry_ref
     )
     if cached is not None:
@@ -171,7 +188,7 @@ async def post_classify(request: Request) -> dict[str, Any]:
     #    ⚠ 적재 실패는 **삼키지 않는다** — 저장이 이 경로의 목적이고, 실패를 숨기면
     #    "평가셋이 쌓이는 줄 알았는데 비어 있다"가 된다. 캐시 덕에 재시도 비용이 0이다.
     if result.classified:
-        await _store.insert_prediction(
+        await inquiry_class_store().insert_prediction(
             tenant_id=tenant_id,
             inquiry_ref=classify_request.inquiry_ref,
             record=InquiryClassRecord(
