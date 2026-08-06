@@ -715,6 +715,9 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
 
     execution_id = uuid.uuid4()
     refine_context = _refine_execution_context(execution_id, tenant_id)
+    #: 🔴 `finally`가 성공·차단·**모든 종류의 실패**를 지나게 하려고 둔 플래그다.
+    #:  실패 경로에서만 적재 오류를 삼킨다(성공·차단은 fail-closed 그대로).
+    failed = True
     try:
         outcome = await refine_draft(
             context=state.context,
@@ -730,18 +733,27 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
             # (와이어프레임 v3.5·프로토타입·데이터계약)이 전부 누적을 전제로 만들어져 있다.
             previous_text=state.text,
         )
+        failed = False
     except LlmError as exc:
-        # 🔴 **실패 턴이야말로 원장에 남아야 한다.** refine_draft가 예외를 던지기 시작하면서
-        # (작업 3) 장애 턴이 원장에서 사라질 자리가 생겼다 — 불변식 8 위반이고, 하필 가장
-        # 알고 싶은 턴이 사라진다. 차단 턴을 남기는 이유(아래 주석)가 여기 더 강하게 든다.
-        # ⚠ 적재가 또 실패해도 **원인 예외를 덮지 않는다** — `LedgerWriteFailed`가 위로
-        #   올라가면 "LLM이 죽었다"가 "원장이 죽었다"로 바뀌어 진단이 뒤집힌다.
-        await _record_refine_run(refine_context, execution_id, swallow_errors=True)
+        # 변환은 **LLM 예외만의 일**이다 — `RedactionUncertain`은 이미 `DomainException`이라
+        # 변환 없이 그대로 500으로 나간다(그래서 여기 절이 필요 없다).
         raise domain_error_for(exc) from exc
-    # 실행 원장 — refine 턴도 하나의 실행이다(불변식 8). 차단 턴도 남긴다: 차단은 에러가
-    # 아니고(불변식 4) 어떤 호출이 무엇을 냈길래 게이트가 걸렸는지가 정확히 추적 대상이다.
-    # ⚠ `quota_consumed`(pack state)에는 들어가지 않는다 — 이 경로는 그래프 밖이다.
-    await _record_refine_run(refine_context, execution_id)
+    finally:
+        # 🔴 **성공·차단·모든 종류의 실패가 여기를 지난다.** 예외 종류가 늘어도 원장은
+        #   안 갈린다. 종전에는 이 부수효과가 `except LlmError` 절 **안에** 복제돼 있어서,
+        #   그 절이 못 잡는 예외(`RedactionUncertain` — `DomainException`)만 원장에서
+        #   사라졌다(8/7 실측: AI_RUN 0 · 수집기 잔존 1).
+        #   ⚠ `except DomainException`을 **추가**해서 때우지 않았다 — 그건 같은 복제를 한 번
+        #   더 하는 것이고 다음 예외에서 또 빠진다. 절이 아니라 구조를 고친다.
+        # ⚠ `finally`는 예외가 위로 전파되기 **전에** 돈다 — 적재가 raise보다 먼저다.
+        # 실행 원장 — refine 턴도 하나의 실행이다(불변식 8). 차단 턴도 남긴다: 차단은 에러가
+        # 아니고(불변식 4) 어떤 호출이 무엇을 냈길래 게이트가 걸렸는지가 정확히 추적 대상이다.
+        # ⚠ `quota_consumed`(pack state)에는 들어가지 않는다 — 이 경로는 그래프 밖이다.
+        # ⚠ 실패 경로에서만 적재 오류를 삼킨다 — `LedgerWriteFailed`가 원인 예외를 덮으면
+        #   "LLM이 죽었다"가 "원장이 죽었다"로 바뀌어 진단이 뒤집힌다.
+        await _record_refine_run(
+            refine_context, execution_id, swallow_errors=failed
+        )
     if outcome.applied and outcome.text:
         state.text = outcome.text  # 반영분만 승격 — 차단 턴은 직전 버전 유지(계약 §6)
         response = RefineResponse(
