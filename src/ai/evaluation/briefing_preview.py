@@ -13,7 +13,7 @@ LLM 원문은 가공 없이 기록하되, 저장 전 redaction으로 실명 잔�
 
 실행:
     LLM_PROVIDER=openai_compat uv run python -m ai.evaluation.briefing_preview
-    (.env의 LOCAL_LLM_* 사용 — 키가 유효해야 함)
+    (.env의 OPENAI_* 사용 — 키가 유효해야 함)
 """
 
 from __future__ import annotations

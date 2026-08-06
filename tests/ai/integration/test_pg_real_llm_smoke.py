@@ -42,7 +42,7 @@ from ai.contracts.problem_generation import (
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.llm.gateway import LlmCallRecord
-from ai.llm.providers.openai_compat import LocalLlmSettings, get_llm_settings
+from ai.llm.providers.openai_compat import OpenAiSettings, get_llm_settings
 from ai.llm.structured import parse
 from ai.problem_generation.bootstrap import build_problem_workflow
 from ai.problem_generation.infrastructure.config import load_verify_config
@@ -187,21 +187,21 @@ def _execution_context() -> ExecutionContext:
 
 
 def _provider_endpoints(
-    local: LocalLlmSettings,
+    local: OpenAiSettings,
     settings: ProblemProviderSettings,
 ) -> tuple[str, str, str, str]:
     if not settings.has_dedicated_verifier:
         return (
-            local.local_llm_base_url,
-            local.local_llm_model,
-            local.local_llm_base_url,
-            local.local_llm_model,
+            local.openai_base_url,
+            local.openai_model,
+            local.openai_base_url,
+            local.openai_model,
         )
     assert settings.openai_base_url is not None
     assert settings.openai_model is not None
     return (
-        local.local_llm_base_url,
-        local.local_llm_model,
+        local.openai_base_url,
+        local.openai_model,
         settings.openai_base_url,
         settings.openai_model,
     )
@@ -310,8 +310,8 @@ def test_t1_problem_generation_real_llm_roundtrip() -> None:
     """실 모델이 스키마 응답을 내고 게이트가 정상 상태를 결정한다."""
 
     settings = get_llm_settings()
-    if "localhost" in settings.local_llm_base_url:
-        pytest.skip("로컬 LLM 미설정(env LOCAL_LLM_BASE_URL) — 스모크 skip")
+    if "localhost" in settings.openai_base_url:
+        pytest.skip("로컬 LLM 미설정(env OPENAI_BASE_URL) — 스모크 skip")
     if external_tracing_active():
         pytest.skip("B-14 P2 전 외부 트레이싱 비활성 전제 — 스모크 skip")
 

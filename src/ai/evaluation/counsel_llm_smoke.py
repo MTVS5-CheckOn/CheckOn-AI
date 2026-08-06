@@ -20,7 +20,7 @@
 
 실행:
     LLM_PROVIDER=openai_compat uv run python -m ai.evaluation.counsel_llm_smoke
-    (.env의 LOCAL_LLM_* 사용 · 추적 4종이 켜져 있으면 시작 전에 멈춘다)
+    (.env의 OPENAI_* 사용 · 추적 4종이 켜져 있으면 시작 전에 멈춘다)
 """
 
 from __future__ import annotations
@@ -155,14 +155,14 @@ def _preflight() -> dict[str, Any]:
         names = ", ".join(active_tracing_env_names()) or "(env 밖 — 컨텍스트·run tree)"
         raise SystemExit(f"❌ 외부 추적이 활성이다({names}) — 실서버 스모크 중단(C-1).")
     settings = get_llm_settings()
-    if "localhost" in settings.local_llm_base_url:
-        raise SystemExit("❌ LOCAL_LLM_BASE_URL 미설정 — 실서버 스모크 skip.")
+    if "localhost" in settings.openai_base_url:
+        raise SystemExit("❌ OPENAI_BASE_URL 미설정 — 실서버 스모크 skip.")
     return {
         "tracing_env_active": list(active_tracing_env_names()),
-        "base_url": settings.local_llm_base_url,
-        "model": settings.local_llm_model,
-        "timeout_s": settings.local_llm_timeout_s,
-        "disable_thinking": settings.local_llm_disable_thinking,
+        "base_url": settings.openai_base_url,
+        "model": settings.openai_model,
+        "timeout_s": settings.openai_timeout_s,
+        "disable_thinking": settings.openai_disable_thinking,
     }
 
 

@@ -6,7 +6,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from ai.contracts.llm import ModelRole
-from ai.llm.providers.openai_compat import LocalLlmSettings, OpenAICompatProvider
+from ai.llm.providers.openai_compat import OpenAICompatProvider, OpenAiSettings
 from ai.problem_generation.infrastructure.config import load_verify_config
 from ai.problem_generation.provider import (
     EXTERNAL_VERIFIER_PROVIDER_NAME,
@@ -18,12 +18,12 @@ from ai.problem_generation.provider import (
 )
 
 
-def _local_settings() -> LocalLlmSettings:
-    return LocalLlmSettings.model_validate(
+def _local_settings() -> OpenAiSettings:
+    return OpenAiSettings.model_validate(
         {
-            "local_llm_base_url": "http://local.test/v1",
-            "local_llm_api_key": "local-secret",
-            "local_llm_model": "local-model",
+            "openai_base_url": "http://local.test/v1",
+            "openai_api_key": "local-secret",
+            "openai_model": "local-model",
         }
     )
 
@@ -60,10 +60,10 @@ def test_dedicated_verifier_uses_external_settings() -> None:
     verifier = providers.verifier
     assert isinstance(verifier, OpenAICompatProvider)
     assert verifier.name == EXTERNAL_VERIFIER_PROVIDER_NAME
-    assert verifier._settings.local_llm_base_url == "https://api.openai.test/v1"
-    assert verifier._settings.local_llm_model == "gpt-test"
-    assert verifier._settings.local_llm_timeout_s == 23.0
-    assert verifier._settings.local_llm_disable_thinking is False
+    assert verifier._settings.openai_base_url == "https://api.openai.test/v1"
+    assert verifier._settings.openai_model == "gpt-test"
+    assert verifier._settings.openai_timeout_s == 23.0
+    assert verifier._settings.openai_disable_thinking is False
     assert providers.has_dedicated_verifier
 
 
@@ -85,8 +85,8 @@ def test_dedicated_verifier_is_selected_from_environment(
     assert providers.has_dedicated_verifier
     assert providers.verifier.name == EXTERNAL_VERIFIER_PROVIDER_NAME
     assert isinstance(providers.verifier, OpenAICompatProvider)
-    assert providers.verifier._settings.local_llm_model == "gpt-env-test"
-    assert providers.verifier._settings.local_llm_timeout_s == 19.0
+    assert providers.verifier._settings.openai_model == "gpt-env-test"
+    assert providers.verifier._settings.openai_timeout_s == 19.0
 
 
 def test_partial_dedicated_verifier_settings_fail_closed() -> None:
