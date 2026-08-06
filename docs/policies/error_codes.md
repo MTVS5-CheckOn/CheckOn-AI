@@ -199,10 +199,30 @@ DomainException (base)
 ├─ IdempotencyConflict    → 409 IDEMPOTENCY_CONFLICT
 ├─ GateRejected           → 200 + status (에러로 승격 금지!)
 ├─ EvidenceUnresolvable   → 200 + 블록 empty_reason=bad_ref
-├─ LlmUnavailable         → 503 LLM_UPSTREAM_DOWN
-├─ LlmTimeout             → 504 TIMEOUT
+├─ LlmUpstreamDown        → 503 LLM_UPSTREAM_DOWN
+├─ LlmUpstreamTimeout     → 504 TIMEOUT
 └─ RedactionUncertain     → 500 INTERNAL (원문 노출 위험 — 상세 사유 응답에 미포함)
 ```
+
+🔴 **(8/6) 트리의 이름은 runtime 매핑 예외다.** `contracts.llm`의 `LlmUnavailable`·
+`LlmTimeout`은 이 경계가 **받아 변환하는 입력**이며(아래 7/22 A 판정), **이름을 갈라 둔
+이유가 그것이다.** 종전에는 트리 쪽도 `LlmUnavailable`이라 `contracts.llm`과 동명이었고 —
+받는 쪽과 받히는 쪽이 같은 이름이면 그건 경계가 아니다. 변환은 순수 함수
+`runtime.errors.domain_error_for(exc)` 한 곳이 한다.
+
+| 받는 예외(`contracts.llm`) | 내는 예외(runtime) | HTTP |
+| --- | --- | --- |
+| `LlmTimeout` | `LlmUpstreamTimeout` | 504 TIMEOUT |
+| `LlmUnavailable` | `LlmUpstreamDown` | 503 LLM_UPSTREAM_DOWN |
+| `ParseFailed`·`FieldMissing` | `DomainException` | 500 INTERNAL |
+| 그 밖의 `LlmError`(4xx) | `DomainException` | 500 INTERNAL |
+
+⚠ **plain `LlmError`(4xx)를 503으로 뭉개지 않는다** — 벤더가 살아 있는데 우리 요청이 틀린
+것이라, 503의 폴백 문구("잠시 후 다시")가 거짓이 된다. `openai_compat`이 **429만**
+`LlmUnavailable`로 승격하고 나머지 4xx를 plain으로 두는 것이 이 구분이다.
+⚠ 이 경계가 받는 시점에는 **재시도 예산이 이미 소진**돼 있다 — 게이트웨이가
+`reraise=True`로 재시도를 소진한 뒤 원 예외를 올린다. "아무도 못 바꾸고 기다릴 뿐"의
+조건이 구조적으로 충족되는 근거다.
 
 > **[PART_B 크로스체킹 요청 · 미확정 — 예외 트리]** 실제 공통 계약의 `LlmTimeout`과 runtime의 `IdempotencyConflict`가 위 트리에 없고, `contracts.llm.LlmUnavailable`과 runtime 예외도 서로 다른 계층이다. **제안 해결안:** canonical 예외→HTTP adapter 한 곳을 정한 뒤 §4 트리에 `IdempotencyConflict`·`LlmTimeout`을 포함하고 HTTP 통합 테스트로 409·503·504를 고정한다. A·B가 확인해 달라.
 >
