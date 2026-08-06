@@ -42,6 +42,7 @@ from ai.composition.counsel.assembly import (
     build_counsel_llm_provider,
     build_counsel_provider,
     open_counsel_pack_runner,
+    reset_default_memory_checkpointer,
 )
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.labels import LabelVocabularyError, snapshot_from_labels
@@ -91,6 +92,7 @@ from ai.db.store_factory import (
     build_agent_job_store,
     build_idempotency_store,
     build_run_store,
+    reset_default_agent_job_store,
 )
 from ai.runtime.errors import (
     IdempotencyConflict,
@@ -286,9 +288,17 @@ def set_counsel_run_store(store: RunStore) -> None:
 
 
 def reset_counsel_stores() -> None:
-    """테스트 격리용 — 저장소·읽기 모델·provider를 기본값으로 되돌린다."""
+    """테스트 격리용 — 저장소·읽기 모델·provider를 기본값으로 되돌린다.
+
+    🔴 **잡 원장과 체크포인터도 함께 버린다**(8/7 · 99 ㉦). 둘은 프로세스 공용 싱글턴이라
+    비우지 않으면 테스트 간에 잡·체크포인트가 샌다 — 앞 테스트의 queued 잡을 다음
+    테스트의 `run_next`가 집어가고, 같은 `thread_id`의 죽은 체크포인트가 재개로 되살아난다.
+    ⚠ **둘은 짝이다** — 한쪽만 지우면 잡 없는 체크포인트(또는 그 반대)가 남는다.
+    """
     global _idempotency_store, _context_store, _draft_store, _pack_store, _step_sink
     global _run_store
+    reset_default_agent_job_store()
+    reset_default_memory_checkpointer()
     _run_store = build_run_store()
     default_llm_call_collector().reset()
     _idempotency_store = build_idempotency_store()

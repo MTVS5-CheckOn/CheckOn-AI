@@ -184,7 +184,9 @@ def test_two_requests_see_the_same_job_queue() -> None:
     async def scenario() -> tuple[UUID, WorkerJob | None]:
         first_sv = counsel_router._build_supervisor()  # noqa: SLF001 — 서비스 경로 그대로
         job = await CounselPackEnqueuer(
-            supervisor=first_sv, context_store=contexts, now=lambda: _NOW
+            supervisor=first_sv,
+            context_store=contexts,
+            now=counsel_router._clock,  # noqa: SLF001 — 서비스 경로 그대로
         ).enqueue(
             tenant_id="t1", class_ref="cl_a1", contexts={"st_1": _context("st_1")}
         )
@@ -222,11 +224,14 @@ class _ServiceHarness:
         return counsel_router._build_supervisor()  # noqa: SLF001 — 서비스 경로 그대로
 
     async def enqueue(self, refs: list[str]) -> WorkerJob:
+        #: ⚠ 시계도 **라우터가 쓰는 것**을 쓴다(`counsel._clock`). 고정 시각을 넣으면
+        #: `_build_supervisor()`의 실 시계와 어긋나 `lease_acquired_at < queued_at`으로
+        #: 계약 검증에 걸린다 — 서비스 경로를 흉내 낼 때 시계만 바꾸면 안 된다.
         return await CounselPackEnqueuer(
             supervisor=self.supervisor(),
             context_store=self.contexts,
             new_id=_counter(),
-            now=lambda: _NOW,
+            now=counsel_router._clock,  # noqa: SLF001 — 서비스 경로 그대로
         ).enqueue(
             tenant_id="t1",
             class_ref="cl_a1",
@@ -323,36 +328,49 @@ def test_a_paused_job_survives_the_request_that_paused_it() -> None:
 
 
 def test_resume_after_pause_does_not_regenerate_completed_students() -> None:
-    """🔴 **되살아난 경로를 실제로 태운다** — 재개가 완료 학생을 다시 만들지 않는다.
+    """🔴 **되살아난 경로를 실제로 태운다** — 재개가 **기록된** 학생을 다시 만들지 않는다.
 
     ⚠ **LLM 호출 수로 증명한다.** 상태 문자열만 보면 헛돈다 — `succeeded`는 처음부터
-    다시 돌아도 나온다(#119·#120에서 두 번 겪었다). 서킷이 열린 3명은 실패로 확정됐고
-    나머지 5명이 남으므로, 재개 후 **추가 호출은 정확히 5건**이어야 한다.
+    다시 돌아도 나온다(#119·#120에서 두 번 겪었다).
 
-    이 단정이 통과하는 순간이 ⑰의 재개가 **인메모리에서 처음 실제로 도는** 순간이다.
+    ⚠ **기대값을 실측이 정정했다(8/7).** 처음엔 "8명이니 총 8회"로 적었는데 실제는 9회다.
+    서킷은 **st_3을 처리하던 중** 열리므로 그 학생의 결과는 **기록되기 전**이고, 재개가
+    st_3부터 다시 시작하는 것이 맞다(§1.3 "cursor부터"). 재생성이 아니라 **미완료 재시도**다.
+
+        중단 전: st_1 st_2 st_3          → paused (st_1·st_2만 failed로 확정)
+        재개 후: st_3 st_4 … st_8        → succeeded
+        ⇒ 총 9회 · **확정된 st_1·st_2는 한 번도 다시 안 불린다** ← 이게 지킬 불변식
+
+    기대값을 9로 고치는 대신 **누가 몇 번 불렸는지**로 단정한다 — 총계만 보면 "st_1을 다시
+    부르고 st_8을 빠뜨렸다"도 9로 통과한다.
     """
     refs = [f"st_{i}" for i in range(1, 9)]
     provider = _FailThenRecover(fail_for=_CIRCUIT)
     harness = _ServiceHarness(provider)
 
-    async def scenario() -> tuple[int, int, WorkerJob | None]:
+    async def scenario() -> tuple[list[str], list[str], WorkerJob | None]:
         job = await harness.enqueue(refs)
         paused = await harness.run_once()
         assert paused is not None and paused.phase is JobPhase.PAUSED
-        after_pause = len(provider.write_calls)
+        before = list(provider.write_calls)
 
         # 강사·운영이 재개를 지시한다 — paused → queued.
         await harness.supervisor().resume(tenant_id="t1", job_id=job.job_id)
         done = await harness.run_once()
-        return after_pause, len(provider.write_calls), done
+        return before, provider.write_calls[len(before) :], done
 
-    after_pause, total, done = _run(scenario())
-    assert after_pause == _CIRCUIT, f"서킷이 임계에서 안 멈췄다: {after_pause}"
+    before, after, done = _run(scenario())
+    assert before == ["st_1", "st_2", "st_3"], f"서킷이 임계에서 안 멈췄다: {before}"
     assert done is not None, "재개할 잡을 lease하지 못했다 — 큐가 요청과 함께 죽었다(㉦)"
     assert done.phase is JobPhase.SUCCEEDED
-    assert total == len(refs), (
-        f"재개가 완료 학생을 재생성했다: 총 {total}회 호출(기대 {len(refs)}) — "
-        "체크포인트가 요청과 함께 소멸해 cursor=0부터 다시 돌았다(㉦)"
+    #: 🔴 확정된 학생(failed로 기록된 st_1·st_2)은 재개가 **건드리지 않는다**.
+    assert "st_1" not in after and "st_2" not in after, (
+        f"재개가 이미 확정된 학생을 재생성했다: {after} — 체크포인트가 요청과 함께 소멸해 "
+        "cursor=0부터 다시 돌았다(㉦)"
+    )
+    #: 중단 지점(st_3)부터 끝까지, 각 1회씩.
+    assert after == ["st_3", "st_4", "st_5", "st_6", "st_7", "st_8"], (
+        f"재개가 cursor 지점부터 순서대로 돌지 않았다: {after}"
     )
 
 
@@ -516,17 +534,18 @@ def test_lease_recovery_still_works_across_requests() -> None:
 
     async def scenario() -> tuple[WorkerJob | None, JobPhase]:
         job = await harness.enqueue(["st_1", "st_2"])
+        base = job.queued_at
         store = build_agent_job_store()
         # 요청 ①: lease만 하고 죽는다(running 방치).
         leased = await Supervisor(
             store=store,
             lease_duration=settings_lease,
             priority_aging_interval=timedelta(minutes=1),
-            clock=lambda: _NOW,
+            clock=lambda: base,
         ).lease_next(tenant_id="t1", worker_kind=job.worker_kind, lease_owner="dead")
         assert leased is not None
         # 요청 ②: lease가 만료된 뒤 다음 워커가 회수해 간다.
-        later = _NOW + timedelta(seconds=120)
+        later = base + timedelta(seconds=120)
         recovered = await Supervisor(
             store=build_agent_job_store(),
             lease_duration=settings_lease,

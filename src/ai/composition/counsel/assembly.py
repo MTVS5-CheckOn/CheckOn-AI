@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from uuid import UUID, uuid4
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -90,14 +91,48 @@ def build_counsel_gateway(
     )
 
 
+@lru_cache
+def _default_memory_checkpointer() -> InMemorySaver:
+    """프로세스 공용 인메모리 체크포인터 — `_default_agent_job_store()`와 짝이다.
+
+    🔴 **컨텍스트마다 새로 만들면 재개할 state가 없다.** `_resume_input`의 `aget_state`가
+    항상 빈 스냅숏을 받아 **매번 init(cursor=0)** 을 투입하므로, 재개 분기도 그 안의
+    불변식 ④ `context_hash` 대조도 서비스 경로에서 한 번도 돌지 않았다(99 ㉦).
+    """
+    return InMemorySaver()
+
+
+def reset_default_memory_checkpointer() -> None:
+    """공용 체크포인터를 버린다 — **테스트 격리 전용**.
+
+    ⚠ 잡 원장 리셋과 **반드시 함께** 부른다 — 한쪽만 지우면 죽은 잡의 체크포인트가 다음
+    테스트의 같은 `thread_id`(=`job_id`)로 되살아난다.
+    """
+    _default_memory_checkpointer.cache_clear()
+
+
 @asynccontextmanager
 async def _open_saver(settings: DbSettings) -> AsyncIterator[BaseCheckpointSaver]:  # type: ignore[type-arg]
-    """store_backend에 맞춘 체크포인터(probe/assembly와 동일 규약)."""
+    """store_backend에 맞춘 체크포인터(probe/assembly와 동일 규약).
+
+    🔴 **두 분기의 수명이 의도적으로 다르다 — 여기가 가장 틀리기 쉬운 자리다.**
+
+      `pg`     요청 스코프. `AsyncPostgresSaver`는 **커넥션**이라 컨텍스트를 벗어날 때
+               닫혀야 한다. 싱글턴으로 만들면 커넥션 수명·풀·트랜잭션 경계가 요청과
+               어긋난다. 저장소가 외부라 **공유할 이유도 없다** — 이미 산다.
+      memory   **프로세스 공용.** 저장소가 이 객체 자체라 요청과 함께 죽으면 재개가
+               통째로 사라진다(㉦).
+
+    ⚠ **memory는 닫지 않는다.** `finally`에 정리를 넣거나 `async with`로 감싸면 첫 요청이
+    끝날 때 공용 인스턴스가 닫혀 **다음 요청이 죽는다.** 아래 `else` 분기에 정리 코드를
+    추가하지 마라 — `test_the_memory_checkpointer_is_not_closed_on_exit`가 지킨다.
+    """
     if settings.store_backend == _PG:
         async with open_checkpointer(settings) as saver:
             yield saver
     else:
-        yield InMemorySaver()
+        # ⚠ 여기서 yield만 한다 — 닫지 않는 것이 계약이다(위 docstring).
+        yield _default_memory_checkpointer()
 
 
 @asynccontextmanager
@@ -215,6 +250,7 @@ def build_counsel_llm_provider(settings: CounselSettings | None = None) -> LLMPr
 __all__ = [
     "COUNSELOR_TRANSPORT_RETRY",
     "DEFAULT_REGEN_MAX",
+    "reset_default_memory_checkpointer",
     "build_counsel_gateway",
     "build_counsel_llm_provider",
     "build_counsel_provider",
