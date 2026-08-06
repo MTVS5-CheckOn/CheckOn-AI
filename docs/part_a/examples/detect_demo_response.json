@@ -253,14 +253,14 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "43822646-4512-407e-b381-d6a3a8957133",
+    "execution_id": "b9946bfb-a74f-4953-9ab3-bc9890e6dfd8",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.2",
       "schema": "0.1",
       "contract": "0.1",
       "threshold": "default-v3",
-      "prompt": null,
+      "prompt": "0.2",
       "graph": null,
       "taxonomy": null,
       "verify_config": null,

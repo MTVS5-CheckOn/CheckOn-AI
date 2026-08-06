@@ -30,6 +30,7 @@ from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
 from ai.composition.briefing import BRIEF_GEN_PARAMS, make_brief
+from ai.composition.briefing import PROMPT_VERSION as BRIEF_PROMPT_VERSION
 from ai.composition.briefing_context import build_contexts
 from ai.composition.provider import build_brief_gateway, build_brief_provider
 from ai.contracts.detection import (
@@ -161,10 +162,26 @@ def reset_idempotency_store() -> None:
 
 
 def detection_versions(config: ThresholdConfig | None = None) -> VersionSet:
-    """detection 실행/엔드포인트의 버전 세트 — threshold는 config 버전, LLM/B 키는 None.
+    """detection 실행/엔드포인트의 버전 세트 — threshold는 config 버전, B 키는 None.
 
     config가 없으면(실행 전 오류의 meta.versions 조립) 기본 config로 정적 버전을 낸다
     (04 §2.2 A판정 — 실패 응답도 이 엔드포인트의 버전을 싣는다).
+
+    🔴 **`prompt_version`을 싣는다(8/8).** 종전에는 응답도 `AI_RUN`도 `prompt=null`이었는데
+    **그 실행은 실제로 브리핑 프롬프트 `0.2`를 쓴다** — *"그때 어떤 프롬프트로 브리핑을
+    만들었나"* 를 원장에서 못 읽었다(불변식 8).
+
+    ⚠ **㊔(counsel)와 다른 결함이다.** ㊔는 *"응답과 원장이 **다른 답**을 한다"* 였고
+    (응답 null · AI_RUN "0.2"), 이건 *"**둘 다 비어 있는데** 실제로는 쓰고 있다"* 다.
+    detect는 응답·원장이 같은 `detection_versions()`를 쓰므로 **일관되게 틀렸다** —
+    그래서 한 곳만 고치면 둘 다 채워진다.
+
+    ⚠ **브리핑이 폴백으로 LLM을 안 탈 때도 싣는다.** 04 §2.2 A판정이 *"그 엔드포인트가
+    아는 정적 앱 버전"* 이라고 했고, 실제 사용 여부는 신호별 `brief.fallback_used`가 따로
+    말한다. 버전 세트는 *"이 실행이 어떤 버전으로 조립됐나"* 이지 *"LLM을 탔나"* 가 아니다.
+
+    ⚠ **값을 여기 복제하지 않는다** — `briefing.PROMPT_VERSION`이 정본이다. 두 곳에 살면
+    갈린다(#118에서 겪었다). `LLM_CALL` 행도 같은 상수를 쓰므로 세 자리가 한 값이 된다.
     """
     config = config or default_threshold_config()
     return VersionSet(
@@ -173,6 +190,7 @@ def detection_versions(config: ThresholdConfig | None = None) -> VersionSet:
         schema_version=_SCHEMA_VERSION,
         contract_version=_CONTRACT_VERSION,
         threshold_version=config.threshold_version,
+        prompt_version=BRIEF_PROMPT_VERSION,
     )
 
 
