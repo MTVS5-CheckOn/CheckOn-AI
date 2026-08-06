@@ -595,7 +595,7 @@ def test_get_reflects_the_phase_the_job_has_now() -> None:
         cached = CounselDraftJobView(
             job_id=str(job.job_id), status=JobPhase.QUEUED.value, result=None
         )
-        counsel_router._view_cache[("t1", str(job.job_id))] = cached  # noqa: SLF001
+        counsel_router._view_cache.put(("t1", str(job.job_id)), cached)  # noqa: SLF001
         # 그 뒤에 잡이 끝난다(다음 요청의 워커가 돌렸다고 하자).
         sv = counsel_router._build_supervisor()  # noqa: SLF001
         leased = await sv.lease_next(
@@ -652,7 +652,7 @@ def test_get_hides_other_tenants_jobs_even_after_refresh() -> None:
         status=JobPhase.SUCCEEDED.value,
         result=None,
     )
-    counsel_router._view_cache[("t-other", view.job_id)] = view  # noqa: SLF001
+    counsel_router._view_cache.put(("t-other", view.job_id), view)  # noqa: SLF001
 
     with TestClient(create_app()) as client:
         response = client.get(
@@ -676,3 +676,63 @@ def test_get_and_post_share_one_reportable_judgement() -> None:
             f"{name}이 공유 판정 함수를 안 쓴다 — 같은 판정이 두 곳에 복제되면 한쪽만 "
             "고쳐진다(#108·#111·#114·#116·#119에서 다섯 번 겪었다)"
         )
+
+
+# ── #121이 연 표면: 프로세스 공용 캐시의 상한 ──────────────────────
+
+
+def test_the_view_cache_has_a_bound() -> None:
+    """🔴 프로세스 공용 캐시가 **무한히 자라지 않는다**(불변식 6).
+
+    ⚠ **이 질문은 #121이 처음으로 유효하게 만들었다.** 전에는 잡 원장이 요청마다 새로
+    만들어져 짝이 되는 캐시 항목도 사실상 죽은 값이었다 — 이제 잡이 프로세스 수명 내내
+    살아 캐시도 계속 유효한 참조가 되므로 쌓이는 것이 실제 문제가 된다.
+
+    선례를 그대로 복사했다 — `LlmCallCollector`의 `MAX_PENDING_RUNS` LRU + 카운터
+    (`run_store.py`). 설계 결정을 새로 하지 않는다.
+    """
+    cache: counsel_router._JobCache[str] = counsel_router._JobCache(  # noqa: SLF001
+        "test", max_items=3
+    )
+    for i in range(10):
+        cache.put(("t1", f"job-{i}"), f"v{i}")
+
+    assert len(cache) == 3, f"상한을 넘겼다: {len(cache)}"
+    assert cache.evicted == 7, f"밀려난 수를 안 셌다: {cache.evicted}"
+    assert cache.get(("t1", "job-0")) is None, "가장 오래된 항목이 남아 있다"
+    assert cache.get(("t1", "job-9")) == "v9", "최근 항목이 밀려났다 — LRU 방향이 반대다"
+
+
+def test_reading_an_entry_keeps_it_alive() -> None:
+    """⚠ LRU다 — **읽힌 항목**은 뒤로 간다. 삽입 순서만 보면 활성 잡이 먼저 밀린다."""
+    cache: counsel_router._JobCache[str] = counsel_router._JobCache(  # noqa: SLF001
+        "test", max_items=2
+    )
+    cache.put(("t1", "a"), "va")
+    cache.put(("t1", "b"), "vb")
+    cache.get(("t1", "a"))  # a를 다시 읽는다 → 살아남아야 한다
+    cache.put(("t1", "c"), "vc")
+
+    assert cache.get(("t1", "a")) == "va", "방금 읽은 항목이 밀려났다"
+    assert cache.get(("t1", "b")) is None
+
+
+def test_the_job_ledger_is_not_capped_and_that_is_deliberate() -> None:
+    """🔴 **잡 원장에는 같은 처방을 쓰지 않았다** — 캐시와 원장은 다르다(99 ㊐).
+
+    밀려난 **캐시** 항목은 다시 만들면 되지만, 밀려난 **잡**은 *"없어진 잡"* 이다 — GET이
+    404를 내고 BE는 그 잡이 존재한 적 없다고 읽는다(존재 은닉과 구분 불가). paused 잡이
+    조용히 사라지면 강사가 다시 눌러 초안이 2개 생긴다.
+
+    ⚠ 그래서 이 PR은 `InMemoryJobStore`에 상한을 **걸지 않았고**, 그 사실을 여기 못 박는다.
+    무한 증가가 괜찮다는 뜻이 아니라 **처방이 다르다**는 뜻이다 — 99 ㊐에 등재했다.
+    """
+    import inspect
+
+    from ai.agents import job_store
+
+    source = inspect.getsource(job_store.InMemoryJobStore)
+    assert "popitem" not in source and "max_items" not in source, (
+        "잡 원장에 LRU eviction이 생겼다 — 밀려난 잡은 없어진 잡이다(404). 캐시와 원장은 "
+        "처방이 다르다(99 ㊐)"
+    )

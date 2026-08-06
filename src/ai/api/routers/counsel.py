@@ -29,6 +29,7 @@ import hashlib
 import json
 import logging
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Final
@@ -154,6 +155,66 @@ _draft_store: DraftResultStore = InMemoryDraftResultStore()
 _pack_store: PackResultStore = InMemoryPackResultStore()
 _step_sink: AgentStepSink = InMemoryAgentStepSink()
 
+#: 인메모리 캐시 1개의 항목 상한 — `LlmCallCollector.MAX_PENDING_RUNS`와 **같은 계열**로
+#: 둔다(불변식 6 "모든 루프에 상한"). ⚠ **추측값이다** — 실사용 부하 데이터가 없다. 근거는
+#: "같은 프로세스가 동시에 들고 있을 법한 잡 수"이며 그쪽 상수의 판단을 그대로 따랐다.
+#: 실측이 생기면 바꾼다.
+_MAX_CACHED_JOBS: Final = 256
+
+
+class _JobCache[V]:
+    """`(tenant_id, job_id) → V` 인메모리 캐시 — **LRU 상한 + 밀려난 수 카운터**.
+
+    🔴 **#121이 연 표면이다.** 전에는 잡 원장이 요청마다 새로 만들어져 짝이 되는 캐시
+    항목도 사실상 죽은 값이었다. 이제 잡이 **프로세스 수명 내내 살아** 캐시도 계속 유효한
+    참조가 되므로, 무한히 쌓이는 것이 처음으로 실제 문제가 됐다.
+
+    선례를 그대로 복사했다 — `LlmCallCollector`가 `MAX_PENDING_RUNS` LRU + `evicted_runs`
+    카운터 + 경고 로그를 이미 갖고 있다(`run_store.py`). 설계 결정을 새로 하지 않는다.
+
+    ⚠ **밀려난 항목은 404가 된다.** 캐시라서 허용하는 것이다 — 잡 **원장**에는 같은
+    처방을 쓰면 안 된다(밀려난 잡 = 없어진 잡 · 99 ㊐).
+    ⚠ 카운터를 읽는 자리를 같이 만든다 — 로그 59의 교훈("관측 장치를 만들 때 읽는 자리를
+    같이 만들지 않으면 없는 것과 같다"). `evicted`는 경고 로그로 나간다.
+    """
+
+    def __init__(self, label: str, *, max_items: int = _MAX_CACHED_JOBS) -> None:
+        self._label = label
+        self._max_items = max_items
+        self._rows: OrderedDict[tuple[str, str], V] = OrderedDict()
+        self.evicted = 0
+        """상한 초과로 밀려난 항목 수 — 0이 아니면 캐시가 부하를 못 담고 있다."""
+
+    def get(self, key: tuple[str, str]) -> V | None:
+        row = self._rows.get(key)
+        if row is not None:
+            self._rows.move_to_end(key)  # LRU — 읽힌 항목을 뒤로
+        return row
+
+    def put(self, key: tuple[str, str], value: V) -> None:
+        self._rows[key] = value
+        self._rows.move_to_end(key)
+        while len(self._rows) > self._max_items:
+            stale_key, _ = self._rows.popitem(last=False)
+            self.evicted += 1
+            logger.warning(
+                "%s 캐시 상한 초과 — 가장 오래된 항목을 버린다 tenant=%s job_id=%s "
+                "limit=%d evicted=%d. 이후 그 job_id의 GET·refine은 404다.",
+                self._label,
+                stale_key[0],
+                stale_key[1],
+                self._max_items,
+                self.evicted,
+            )
+
+    def clear(self) -> None:
+        self._rows.clear()
+        self.evicted = 0
+
+    def __len__(self) -> int:
+        return len(self._rows)
+
+
 #: 와이어 읽기 모델 — `(tenant_id, job_id) → 계약 뷰`. 🔴 **캐시다, 정본이 아니다.**
 #:
 #: 정본은 **잡 원장**(`WorkerJob`)이고 이건 그 투영을 담아 두는 자리다. 종전에는 쓰기가
@@ -163,7 +224,7 @@ _step_sink: AgentStepSink = InMemoryAgentStepSink()
 #:
 #: ⚠ **영속은 이 PR이 아니다**(`_DraftState` docstring과 같은 판정) — 프로세스 공용
 #: 캐시까지가 v1이고, PG 이관 시 자리를 넘긴다.
-_view_cache: dict[tuple[str, str], CounselDraftJobView] = {}
+_view_cache: _JobCache[CounselDraftJobView] = _JobCache("counsel_view")
 
 
 @dataclass
@@ -183,7 +244,7 @@ class _DraftState:
 #: refine 읽기 모델 — `(tenant_id, job_id) → 초안 상태`. 키가 job_id인 이유는
 #: 문의 1건 = 잡 1개 = 초안 1개(pack N=1 · 99 D ㉛)라 별도 draft_id를 노출할 필요가
 #: 없고, BE가 Kafka 완료 통지로 이미 받은 값을 그대로 쓸 수 있어서다(04 §3.9).
-_drafts: dict[tuple[str, str], _DraftState] = {}
+_drafts: _JobCache[_DraftState] = _JobCache("counsel_draft")
 
 #: LLM 접점 — 🔴 **기본값이 없다.** 조립부가 주입하지 않으면 서비스는 뜨지 않는다.
 #:
@@ -591,8 +652,11 @@ async def _wire_result(
         # refine 대상 등록 — 키는 **응답이 싣는 job_id**다(04 §3.9). 종전에는 내부
         # `record.id`로 등록했는데 그 값은 어떤 응답에도 실리지 않아, BE가 refine 대상
         # 키를 얻을 계약 경로가 없었다(호출하면 404 확정 · 99 D).
-        _drafts[(tenant_id, job_id)] = _DraftState(
-            context=_draft_context(request), citations=citations, text=record.content
+        _drafts.put(
+            (tenant_id, job_id),
+            _DraftState(
+                context=_draft_context(request), citations=citations, text=record.content
+            ),
         )
     return CounselDraftResult(
         draft_status=WireDraftStatus.GENERATED,
@@ -644,7 +708,7 @@ async def post_counsel_draft(request: Request, response: Response) -> dict[str, 
 
     execution_id = uuid.uuid4()
     view = await _generate(draft_request, tenant_id=tenant_id)
-    _view_cache[(tenant_id, view.job_id)] = view
+    _view_cache.put((tenant_id, view.job_id), view)
 
     envelope = success_envelope(
         data={"job_id": view.job_id, "status": view.status},
@@ -713,7 +777,7 @@ async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
     if cached is None:  # 존재 은닉 — 다른 테넌트의 job_id도 여기로 떨어진다
         raise NotFound("job_id 부재", {"job_id": job_id})
     view = await _refresh_view(cached, tenant_id=tenant_id)
-    _view_cache[(tenant_id, job_id)] = view
+    _view_cache.put((tenant_id, job_id), view)
     return success_envelope(
         data=view.model_dump(mode="json"),
         execution_id=str(uuid.uuid4()),
