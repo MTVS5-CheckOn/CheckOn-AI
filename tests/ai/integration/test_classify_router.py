@@ -30,8 +30,19 @@ _RESULT_FIELDS = {
 }
 
 
+#: 🔴 앱을 띄우면 counsel 라우터의 기동 가드가 함께 돈다 — provider는 **기본값이 없다**.
+#: 종전 기본값이 `FakeCounselProvider()`였고 그게 프로덕션에서 답하던 것이 결함이었다.
+#: 이 테스트는 counsel과 무관하지만 `create_app()`을 쓰므로 조립 루트 몫을 대신 한다.
+def _wire_counsel_provider() -> None:
+    from ai.api.routers.counsel import set_counsel_provider
+    from ai.composition.counsel.provider import FakeCounselProvider
+
+    set_counsel_provider(FakeCounselProvider())
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
+    _wire_counsel_provider()
     with TestClient(create_app()) as test_client:
         yield test_client
 

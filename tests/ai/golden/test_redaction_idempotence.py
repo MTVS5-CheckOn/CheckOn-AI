@@ -166,6 +166,17 @@ def test_particles_come_from_one_yaml_list() -> None:
 # ── C-3 🔴 트립와이어 종단 — 정상 문면이 차단되지 않는다 ──────────
 
 
+
+#: 🔴 앱을 띄우면 counsel 라우터의 기동 가드가 함께 돈다 — provider는 **기본값이 없다**.
+#: 종전 기본값이 `FakeCounselProvider()`였고 그게 프로덕션에서 답하던 것이 결함이었다.
+#: 이 테스트는 counsel과 무관하지만 `create_app()`을 쓰므로 조립 루트 몫을 대신 한다.
+def _wire_counsel_provider() -> None:
+    from ai.api.routers.counsel import set_counsel_provider
+    from ai.composition.counsel.provider import FakeCounselProvider
+
+    set_counsel_provider(FakeCounselProvider())
+
+
 def test_typical_guardian_inquiry_is_not_blocked_by_the_tripwire() -> None:
     """🔴 **수용 기준 3.** `"김민준 학생의 어머니입니다"`가 classify에서 차단되지 않는다.
 
@@ -185,6 +196,7 @@ def test_typical_guardian_inquiry_is_not_blocked_by_the_tripwire() -> None:
     from ai.api.routers.classify import reset_inquiry_class_store
 
     reset_inquiry_class_store()
+    _wire_counsel_provider()
     try:
         with TestClient(create_app()) as client:
             response = client.post(
