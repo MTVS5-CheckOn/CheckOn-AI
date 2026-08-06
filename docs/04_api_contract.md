@@ -99,7 +99,16 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 
 **에러 코드의 정본은 [`docs/policies/error_codes.md`](policies/error_codes.md) §1이다 — 여기 중복 정의하지 않는다.** (과거 이 표의 일부 코드가 정본과 코드명·409 의미가 어긋나 있어 표를 제거 — 7/21 통일, 상세는 99_open_items #12. 404의 "동의 없는 학생 참조 포함"·429 쿼터 주석은 정본 §1로 이관.)
 
-- **멱등(409):** 같은 `Idempotency-Key` + **같은 바디** = 기존 결과를 200으로 반환 · 같은 키 + **다른 바디** = `409 IDEMPOTENCY_CONFLICT`로 거부(기존 결과 반환 안 함).
+- **멱등:** 같은 `Idempotency-Key` + **같은 바디** = 기존 결과를 **최초 요청과 같은 상태코드로** 재반환 · 같은 키 + **다른 바디** = `409 IDEMPOTENCY_CONFLICT`로 거부(기존 결과 반환 안 함).
+
+  🔴 **재반환 상태코드는 동기 200 · 비동기 202다(8/7 확정).** 종전 표기는 *"200으로 반환"* 이었는데 그건 **동기 엔드포인트만 있던 시절**의 문장이고, 비동기 202가 생기면서 뒤처졌다. 멱등 재요청에 200을 주면 *"결과가 준비됐다"* 는 뜻이 되는데 **그 시점에 잡이 `running`일 수 있다** — 202가 뜻하는 *"접수했고 아직 안 끝났을 수 있다"* 와 정반대라 거짓말이 된다.
+
+  | 엔드포인트 | 최초 | 멱등 재반환 |
+  | --- | --- | --- |
+  | `POST /v1/detect` · `POST /v1/classify` · `POST /v1/imports/{job_id}/confirm` | 200 | **200** |
+  | `POST /v1/imports` · `POST /v1/counsel/drafts` | 202 | **202** |
+
+  ⚠ **구현 세 곳은 이미 일관됐다** — 틀린 것은 문서였다(실측 8/7). `imports`·`counsel`은 데코레이터 `status_code=202`가 재반환에도 그대로 걸리고, `detect`·`classify`는 기본 200이다. 회귀는 `tests/ai/contract/test_idempotent_replay_status.py`가 세 축을 한 자리에서 잡는다.
 
 > **[PART_B 크로스체킹 요청 · 미확정 — 공통 HTTP 경계]** 현재 감지 v0 캐시는 전역 Idempotency-Key와 클라이언트 `snapshot_hash`를 신뢰한다. **제안 해결안:** `(tenant_id, method/path, idempotency_key)`로 스코프하고 서버가 canonical body digest를 계산해 원자 저장·TTL·영속화를 보장한다. 아울러 `RequestValidationError`를 공통 envelope의 `400 INVALID_SCHEMA`로 매핑하고, 실제 `contracts.llm` 예외를 503/504로 변환하는 단일 adapter, `RedactionUncertain` 상세 강제 제거, `X-Request-Id` 응답 echo·로그 correlation을 공통 계층에 두는 안을 A·B·백엔드가 확인해 달라.
 >
