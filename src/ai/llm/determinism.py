@@ -1,7 +1,7 @@
 """결정론 생성 파라미터의 공용 정본.
 
-소유는 member-B의 `llm/`에 있다. `composition/determinism.py`는 member-A가 이후 이
-모듈의 재수출로 전환할 예정이며, 그 전까지 동일 상수와 함수가 두 모듈에 임시 병존한다.
+소유는 member-B의 `llm/`에 있고 이 모듈이 정본이다. `composition/determinism.py`는
+member-A가 이 모듈의 재수출로 전환을 완료했으며, 동일 상수와 함수는 여기서만 정의된다.
 """
 
 from __future__ import annotations
