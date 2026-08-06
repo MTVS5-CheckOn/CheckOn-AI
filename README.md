@@ -59,19 +59,24 @@ uv run pytest -m integration                 # PG 왕복·재시작 생존 통�
 | `OPENAI_BASE_URL` | **코드가 읽는다** — OpenAI 호환 엔드포인트 | 예: `<...>/v1` |
 | `OPENAI_API_KEY` | **코드가 읽는다** — API 키 | 키를 안 받는 서버면 임의값 |
 | `OPENAI_MODEL` | **코드가 읽는다** — 모델명 | 서버·벤더 등록명 |
-| `LOCAL_LLM_BASE_URL` | ~~팀 로컬 OpenAI 호환 서버~~ | 🔴 **코드가 읽지 않는다**(8/6~) |
-| `LOCAL_LLM_API_KEY` | ~~로컬 서버 키~~ | 🔴 코드가 읽지 않는다 |
-| `LOCAL_LLM_MODEL` | ~~모델명(Gemma 계열)~~ | 🔴 코드가 읽지 않는다 |
+| `LOCAL_LLM_BASE_URL` | ~~팀 로컬 OpenAI 호환 서버~~ | 🔴 **폐기(8/6)** — 코드가 읽지 않는다 |
+| `LOCAL_LLM_API_KEY` | ~~로컬 서버 키~~ | 🔴 폐기 — 코드가 읽지 않는다 |
+| `LOCAL_LLM_MODEL` | ~~모델명(Gemma 계열)~~ | 🔴 폐기 — 코드가 읽지 않는다 |
 
-> 🔴 **접속 설정 접두가 `OPENAI_*`로 바뀌었습니다(8/6).** 팀 로컬 서버(Gemma 계열)가 502로
-> 내려가 측정이 막혀 교체했습니다. **`LOCAL_LLM_*` 키는 `.env`에 남겨 두되 코드는 읽지
-> 않습니다** — 로컬 서버로 되돌리려면 키를 지울 필요 없이 `OPENAI_BASE_URL`·`OPENAI_MODEL`을
-> 그 값으로 바꾸면 됩니다(어댑터는 규격이 같아 그대로 돕니다) — 단 그 서버는 추론모델이라
-> **`OPENAI_DISABLE_THINKING=true`를 함께** 줘야 합니다(빼면 CoT가 `max_tokens`를 소진해
-> 빈 응답이 됩니다). 반대로 표준 API에 그 값을 켜면 **400**입니다 — 벤더 확장이라
-> 기본은 꺼져 있습니다. 경위는 99 ⓟ.
+> 🔴 **백엔드는 OpenAI(`gpt-5.4-mini`) 단일입니다(8/6 재확정).** 팀 로컬 서버(Gemma 계열)는
+> 502로 내려간 뒤 **폐기했고 복귀 계획이 없습니다**(99 ⓟ · B-5).
+>
+> **`LOCAL_LLM_*` 3행을 표에서 지우지 않은 이유:** 노션 공유 `.env`에 그 키가 **아직 남아
+> 있고**, 표에서 빼면 "이 키는 왜 있지 / 왜 안 붙지"를 알 길이 없어집니다. **코드는 읽지
+> 않습니다.**
+>
+> 어댑터는 벤더가 아니라 **규격**(OpenAI 호환) 기준이라 `OPENAI_BASE_URL`만 바꾸면 어떤
+> 호환 서버든 가리킬 수 있습니다 — 다만 그건 **가능하다는 사실이지 계획된 경로가 아닙니다.**
+> (참고로 그 로컬 서버는 추론모델이라 `OPENAI_DISABLE_THINKING=true`가 필요했습니다. 표준
+> API에 그 값을 켜면 **400**이라 지금은 기본이 꺼져 있고, 켤 대상이 없어 사실상 죽은
+> 옵션입니다 — 99 ⓢ.)
 
-의존성: FastAPI · SQLAlchemy(+asyncpg) · Alembic · pandas/numpy/openpyxl · LangGraph(+postgres checkpointer) · **openai(로컬 OpenAI 호환 서버용 — `llm/providers/`에서만 사용)**.
+의존성: FastAPI · SQLAlchemy(+asyncpg) · Alembic · pandas/numpy/openpyxl · LangGraph(+postgres checkpointer) · **openai(OpenAI 호환 백엔드용 — `llm/providers/`에서만 사용)**.
 **LLM 벤더 확정(7/23):** OpenAI **호환 규격**. `openai` SDK는 `llm/providers/` 안에서만 import하며, capability·contracts는 벤더 독립을 유지합니다(개발·CI 기본은 Fake/Stub). ⚠ `LLM_PROVIDER=openai_compat`은 **규격 이름**이지 벤더 고정이 아닙니다 — 접속 대상은 `OPENAI_BASE_URL`이 정합니다(8/6).
 
 ## 폴더 구조 (AI 아키텍처 지시서 기준 — 소유권은 `docs/02_ownership.md`)
