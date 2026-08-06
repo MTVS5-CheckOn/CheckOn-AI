@@ -175,7 +175,14 @@ class OpenAICompatProvider:
         return self._name
 
     def _build_kwargs(self, request: LLMRequest) -> dict[str, Any]:
-        """계약 인터페이스(GenerationParams)가 정의한 경로로만 파라미터를 받는다."""
+        """계약 인터페이스(GenerationParams)가 정의한 경로로만 파라미터를 받는다.
+
+        🔴 **여기가 계약 → 벤더 규격 번역 지점이다.** 계약 필드명과 벤더 파라미터명이
+        1:1일 필요는 없다 — 다르면 **여기서 흡수한다**. 그게 이 어댑터의 존재 이유이고
+        (모듈 docstring "벤더 독립 경계"), `contracts/execution.py`가 양자 승인 파일인
+        이유이기도 하다. 벤더가 이름을 바꿨다고 계약을 따라 바꾸면 벤더가 계약으로
+        새어 들어온다.
+        """
         params = request.generation_params
         kwargs: dict[str, Any] = {
             "model": self._settings.openai_model,
@@ -190,7 +197,17 @@ class OpenAICompatProvider:
             if params.top_p is not None:
                 kwargs["top_p"] = params.top_p
             if params.max_tokens is not None:
-                kwargs["max_tokens"] = params.max_tokens
+                # 🔴 (8/6) 계약의 `max_tokens` → 벤더 키 **`max_completion_tokens`**.
+                #   `gpt-5.4-mini`가 구 키를 거부한다. 8/6 1차 실측의 400 원문:
+                #     Unsupported parameter: 'max_tokens' is not supported with this
+                #     model. Use 'max_completion_tokens' instead.
+                #   브리핑(128)이 21/21 죽었고 분류(256)도 같은 경로였다. 상담 초안·plan은
+                #   `max_tokens`가 None이라 이 줄을 안 타서 무사했다(21회 성공).
+                #   ⚠ **되돌리지 말 것** — 구 키로 돌리면 전 호출이 400이다.
+                #   ⚠ **설정 플래그로 분기하지 않았다.** "구 서버는 max_tokens"로 나누고
+                #     싶어지지만 그게 `openai_disable_thinking`이 죽은 분기가 된 경로다
+                #     (99 ⓢ). 로컬 서버는 폐기 확정이라(B-5 재확정) 교체가 맞다.
+                kwargs["max_completion_tokens"] = params.max_tokens
             if params.seed is not None:
                 kwargs["seed"] = params.seed
         if self._settings.openai_disable_thinking:
