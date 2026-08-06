@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.composition.counsel.graph import build_counsel_graph, summarize
@@ -191,12 +192,71 @@ def test_missing_context_is_insufficient_not_failure() -> None:
 
 
 def test_gate_failure_regenerates_up_to_cap_then_records_failure() -> None:
-    """근거에 없는 수치는 계속 실패 → 정확히 regen_max회 시도 후 failed."""
+    """근거에 없는 수치는 계속 실패 → **재생성 regen_max회 = 시도 regen_max+1회** 후 failed.
+
+    🔴 종전 기대값은 `== _REGEN_MAX`(시도 3 = 재생성 2)였다. 그건 `range(regen_max)`의
+    off-by-one을 그대로 굳힌 것이고, 예산을 1회 깎아 ERD `DRAFT_BLOCK.regen_count`(le=3)의
+    3을 **도달 불가능한 값**으로 만들었다. `classify`의 `range(MAX_PARSE_RETRY + 1)`과
+    같은 관례로 맞췄다.
+    """
     provider = FakeCounselProvider(drafts=["정답률이 88%까지 올랐습니다."])
     _graph, out = _run(["st_1"], provider)
-    assert len(provider.write_calls) == _REGEN_MAX
+    assert len(provider.write_calls) == _REGEN_MAX + 1
     assert out["results"][0].status is DraftStatus.FAILED
     assert out["results"][0].fail_reason.startswith("gate_exhausted:ungrounded_number")
+
+
+def test_regen_budget_is_n_regenerations_not_n_attempts() -> None:
+    """🔴 관례 고정 — **재생성 N회 = 시도 N+1회**(`classify`의 `MAX_PARSE_RETRY + 1` 선례).
+
+    ERD `DRAFT_BLOCK.regen_count`가 `le=3`인데 시도가 3회면 재생성은 2회라 **3은 영영
+    안 나온다.** 상한 값과 원장 컬럼의 뜻이 갈리면 어느 쪽이 계약인지 알 수 없다.
+    """
+    for budget in (1, 2, 3):
+        provider = FakeCounselProvider(drafts=["정답률이 88%까지 올랐습니다."])
+        graph = build_counsel_graph(
+            planner=provider,
+            writer=provider,
+            contexts={"st_1": _context("st_1")},
+            execution_context=_execution_context(),
+            checkpointer=InMemorySaver(),
+            regen_max=budget,
+            llm_failure_circuit=99,
+            draft_store=InMemoryDraftResultStore(),
+            tenant_id="t1",
+            agent_run_id=UUID("00000000-0000-4000-8000-00000000000e"),
+            new_draft_id=_draft_ids(),
+            now=lambda: _NOW,
+        )
+        asyncio.run(
+            graph.ainvoke(_state(["st_1"]), config={"configurable": {"thread_id": f"b{budget}"}})
+        )
+        assert len(provider.write_calls) == budget + 1, f"regen_max={budget}"
+
+
+def test_zero_regen_budget_is_refused_at_build_time() -> None:
+    """🔴 `regen_max=0`이면 시도가 0회다 — LLM을 한 번도 안 부르고 `gate_exhausted`로 나간다.
+
+    게이트가 막은 것처럼 보이지만 아무것도 생성하지 않은 것이라 사후 진단이 거짓이 된다.
+    `gateway.py`가 `transport_retry`에 "0..1 밖이면 기동 실패"를 건 것과 같은 자리다(불변식 6).
+    """
+    provider = FakeCounselProvider(drafts=["정답률은 62%였습니다."])
+    with pytest.raises(ValueError, match="regen_max"):
+        build_counsel_graph(
+            planner=provider,
+            writer=provider,
+            contexts={"st_1": _context("st_1")},
+            execution_context=_execution_context(),
+            checkpointer=InMemorySaver(),
+            regen_max=0,
+            llm_failure_circuit=99,
+            draft_store=InMemoryDraftResultStore(),
+            tenant_id="t1",
+            agent_run_id=UUID("00000000-0000-4000-8000-00000000000e"),
+            new_draft_id=_draft_ids(),
+            now=lambda: _NOW,
+        )
+    assert provider.write_calls == [], "거부 전에 LLM을 불렀다"
 
 
 def test_gate_pass_on_second_attempt_stops_regenerating() -> None:

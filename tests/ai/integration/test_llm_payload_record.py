@@ -330,7 +330,8 @@ def test_payload_distinguishes_prompts_that_share_one_prompt_version() -> None:
     writes = [
         call for call in runs.calls if call.prompt_id == "composition/counsel_pack"
     ]
-    assert len(writes) == DEFAULT_REGEN_MAX, "재생성이 실제로 일어나지 않았다"
+    # 재생성 3회 = 시도 4회(`range(regen_max + 1)`).
+    assert len(writes) == DEFAULT_REGEN_MAX + 1, "재생성이 실제로 일어나지 않았다"
     versions = {(call.prompt_id, call.prompt_version) for call in writes}
     bodies = {runs.payload_of(call.id).request_masked for call in writes}  # type: ignore[union-attr]
 
