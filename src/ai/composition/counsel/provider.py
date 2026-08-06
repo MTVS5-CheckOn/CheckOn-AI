@@ -14,7 +14,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import re
+from collections.abc import Iterable, Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
@@ -401,14 +402,69 @@ class FakeCounselProvider:
         return step
 
 
+#: plan 프롬프트의 학생 블록 머리 — `assemble_plan_prompt`가 만드는 형식이다.
+#: `{ref}` 다음 줄부터 `  - {label}: {value} (record_id=…)`가 이어진다.
+_PLAN_BLOCK_LINE: Final = re.compile(
+    r"^(?P<ref>\S+)\n\s+- (?P<label>[^:]+): (?P<value>.+?) \(record_id=(?P<rid>[\w-]+)\)",
+    re.MULTILINE,
+)
+
+_DEFAULT_FAKE_TEXT: Final = "이번 주 학습 상황을 정리해 드립니다."
+
+
+def fake_plan_response(prompt: str) -> str:
+    """plan 프롬프트를 읽고 **파서가 먹는 형식**으로 답한다 — CI 대역용(결정론).
+
+    🔴 **"Fake가 프롬프트를 파싱한다"는 결합이 목적이다.** plan 프롬프트 형식이 바뀌면 이
+    함수가 깨지고 CI가 알려 준다 — 우연한 결합이 아니라 **의도된 계약**이다. 종전 Fake는
+    `request`를 통째로 무시해 plan 응답과 write 응답이 같았고, 그래서
+    `parse_plan_response → ground_emphasis → 프롬프트 주입` 체인이 CI에서 **한 번도 돌지
+    않았다**(㉪ · ㉦과 같은 유형).
+
+    ⚠ **근거가 0건인 학생은 줄을 내지 않는다.** 그 학생은 강조점 0건이 정답이고,
+    `ground_emphasis`가 드롭할 재료를 억지로 만들면 `all_dropped`가 거짓으로 뜬다 —
+    관측을 고치려다 관측을 오염시키는 꼴이다(`(인용 가능한 근거 없음)` 블록은 이 정규식에
+    애초에 안 걸린다).
+
+    결정론: 학생별 **첫 라벨** 하나만 쓴다. 시계·난수를 쓰지 않는다.
+    """
+    lines = [
+        f"{m['ref']} | {m['label']} {m['value']} (record_id={m['rid']})"
+        for m in _dedupe_by_ref(_PLAN_BLOCK_LINE.finditer(prompt))
+    ]
+    return "\n".join(lines)
+
+
+def _dedupe_by_ref(matches: Iterable[re.Match[str]]) -> list[re.Match[str]]:
+    """학생당 첫 매치만 — 근거가 여러 건이어도 강조점은 하나로 고정한다(결정론)."""
+    seen: set[str] = set()
+    kept: list[re.Match[str]] = []
+    for match in matches:
+        if match["ref"] in seen:
+            continue
+        seen.add(match["ref"])
+        kept.append(match)
+    return kept
+
+
 class FakeCounselLlmProvider:
     """`LLMProvider` 대역 — gateway 경로의 CI 기본값(실 벤더 호출 없음).
 
     `composition/provider.FakeBriefProvider`와 같은 자리다. 결정론이며 시계·난수를 쓰지 않는다.
+
+    🔴 **무인자일 때만 plan 형식으로 답한다**(8/8 · ㉪). 명시 `text`가 주어지면 예전처럼
+    그대로 낸다 — 소비처 12곳 중 대부분이 write 경로 검증용으로 특정 문자열을 주입하므로
+    (`FakeCounselLlmProvider("정답률은 62%였습니다.")`), 그 동작이 바뀌면 남의 테스트가
+    **이유 없이** 깨진다.
+
+    ⚠ **가르는 축은 `prompt_id`다 — role이 아니다.** plan도 write도
+    `ModelRole.COUNSELOR`라(:227·:277) role로는 못 가른다.
     """
 
-    def __init__(self, text: str = "이번 주 학습 상황을 정리해 드립니다.") -> None:
-        self._text = text
+    def __init__(self, text: str | None = None) -> None:
+        #: 명시 주입 여부를 **보존**한다 — 기본값과 "우연히 기본값과 같은 문자열"을
+        #: 구분해야 분기가 정확해진다.
+        self._pinned = text
 
     @property
     def name(self) -> str:
@@ -417,9 +473,16 @@ class FakeCounselLlmProvider:
     async def complete(
         self, request: LLMRequest, context: ExecutionContext
     ) -> LLMResult:
+        del context
+        if self._pinned is not None:
+            text = self._pinned
+        elif request.prompt_id == PLAN_PROMPT_ID:
+            text = fake_plan_response(request.prompt)
+        else:
+            text = _DEFAULT_FAKE_TEXT
         return LLMResult(
             outcome=CallOutcome.OK,
-            text=self._text,
+            text=text,
             provider=self.name,
             model="template",
             usage=TokenUsage(tokens_in=0, tokens_out=0, cost_usd=0.0),
@@ -429,6 +492,7 @@ class FakeCounselLlmProvider:
 
 __all__ = [
     "COUNSEL_GEN_PARAMS",
+    "fake_plan_response",
     "PLAN_PROMPT_ID",
     "PLAN_PROMPT_VERSION",
     "GatewayPlanner",
