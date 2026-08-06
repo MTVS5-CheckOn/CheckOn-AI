@@ -42,11 +42,14 @@ from uuid import uuid4
 
 from ai.composition.briefing import make_brief
 from ai.composition.briefing_context import build_contexts
-from ai.composition.counsel.assembly import DEFAULT_REGEN_MAX, build_counsel_gateway
-from ai.composition.counsel.provider import GatewayDraftWriter, GatewayPlanner
+from ai.composition.counsel.assembly import (
+    DEFAULT_REGEN_MAX,
+    build_counsel_gateway,
+    build_counsel_provider,
+)
+from ai.composition.counsel.provider import GatewayDraftWriter
 from ai.composition.counsel.refine import refine_draft
 from ai.composition.provider import build_brief_gateway
-from ai.contracts.composition import DraftContext
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LLMProvider, LLMRequest, LLMResult
 from ai.detection.engine import detect
@@ -410,8 +413,8 @@ def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -
 
     provider = _CountingProvider(OpenAICompatProvider())
     observers.append(provider)
-    gateway = build_counsel_gateway(provider)  # 프로덕션 조립부
-    real = _CompositeProvider(GatewayPlanner(gateway), GatewayDraftWriter(gateway))
+    # 프로덕션 조립 루트를 그대로 쓴다 — env 층은 건너뛴다(관측 래퍼를 이미 들고 있다).
+    real = build_counsel_provider(provider)
 
     cases = _s2_cases()
     if repeat_first:
@@ -459,44 +462,6 @@ def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -
         )
         reset_counsel_stores()
     return {"rows": rows}
-
-
-class _CompositeProvider:
-    """라우터는 planner·writer를 **한 객체**로 받는다 — 실 경로 둘을 묶는다."""
-
-    def __init__(self, planner: GatewayPlanner, writer: GatewayDraftWriter) -> None:
-        self._planner = planner
-        self._writer = writer
-
-    async def plan(
-        self,
-        *,
-        contexts: Mapping[str, DraftContext],
-        student_refs: Sequence[str],
-        execution_context: ExecutionContext,
-    ) -> dict[str, list[str]]:
-        return await self._planner.plan(
-            contexts=contexts,
-            student_refs=student_refs,
-            execution_context=execution_context,
-        )
-
-    async def write(
-        self,
-        *,
-        context: DraftContext,
-        execution_context: ExecutionContext,
-        emphasis: Sequence[str] = (),
-        gate_feedback: str = "",
-        refine_instruction: str = "",
-    ) -> str:
-        return await self._writer.write(
-            context=context,
-            execution_context=execution_context,
-            emphasis=emphasis,
-            gate_feedback=gate_feedback,
-            refine_instruction=refine_instruction,
-        )
 
 
 # ── S3 — refine 공격 A1~A7 ───────────────────────────────────────
