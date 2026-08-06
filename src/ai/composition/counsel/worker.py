@@ -214,25 +214,25 @@ class CounselPackRunner:
             now=self._now,
         )
         config = {"configurable": {"thread_id": thread_id}}
-        graph_input = await self._resume_input(graph, config, job, bundle)
-        final = await graph.ainvoke(graph_input, config=config)
-
-        # ④′ 실행 원장 — AI_RUN + LLM_CALL. 🔴 **agent_step보다 먼저**다: agent_step의
-        #    `llm_call_id`가 가리킬 LLM_CALL 행이 먼저 서야 참조가 실존한다(99 ⓒ).
-        #    AI_RUN은 호출 0건이어도 남긴다 — 불변식 8은 "모든 실행"을 기록하며, CI 기본
-        #    `FakeCounselProvider`는 게이트웨이를 타지 않아 호출이 실제로 0건이다.
-        calls = self._call_log.take(context.execution_id)
-        last = calls[-1].record if calls else None
-        await self._runs.record_run(
-            context.to_run_metadata(
-                created_at=self._now(),
-                # 실측값을 옮긴다 — 조립부 설정을 여기서 재선언하면 두 값이 갈린다.
-                model_provider=last.provider if last is not None else None,
-                model_name=last.model if last is not None else None,
-                generation_params=COUNSEL_GEN_PARAMS,
-            ),
-            calls,
-        )
+        #: 🔴 `finally`가 **모든 수렴 경로**를 지나게 하려고 둔 플래그다(라우터 2곳과 같은
+        #:  형태 — #117 → #119 → 여기가 4번째). 실패 경로에서만 적재 오류를 삼킨다.
+        failed = True
+        try:
+            graph_input = await self._resume_input(graph, config, job, bundle)
+            final = await graph.ainvoke(graph_input, config=config)
+            failed = False
+        finally:
+            # ④′ 실행 원장 — AI_RUN + LLM_CALL. 🔴 **agent_step보다 먼저**다: agent_step의
+            #    `llm_call_id`가 가리킬 LLM_CALL 행이 먼저 서야 참조가 실존한다(99 ⓒ).
+            #    `finally`로 옮기면서 그 순서가 **더 강하게** 지켜진다 — agent_step(④)은
+            #    성공 경로에만 있으므로 원장이 항상 먼저다.
+            #    AI_RUN은 호출 0건이어도 남긴다 — 불변식 8은 "모든 실행"을 기록하며, CI 기본
+            #    `FakeCounselProvider`는 게이트웨이를 타지 않아 호출이 실제로 0건이다.
+            # 🔴 **성공·서킷 개방·해시 불일치·미분류 실패가 모두 여기를 지난다.** 종전에는
+            #    `ainvoke` 뒤에만 있어서 `_run_guarded`가 잡는 5종이 **전부** 원장을
+            #    건너뛰었다(8/7 실측: 서킷 개방 시 AI_RUN 0 · 수집기에 호출 3건 방치).
+            #    ⚠ `except` 절을 추가해 때우지 않았다 — 복제가 둘이면 경로는 셋이다(#119).
+            await self._record_execution(context, swallow_errors=failed)
 
         # ④ agent_step 영속 — 학생 처리 이력(AGENT_STEP 1:1, 마스킹 통과분만).
         # agent_run_id = job_id (AGENT_STEP.agent_run_id → AGENT_RUN.id, §5 1:1 투영).
@@ -272,6 +272,46 @@ class CounselPackRunner:
             lease_generation=job.lease_generation,
             result_ref=result_ref,
         )
+
+    async def _record_execution(
+        self, context: ExecutionContext, *, swallow_errors: bool
+    ) -> None:
+        """실행 원장 1건 — 성공·서킷 개방·해시 불일치·미분류 실패 **전부**가 부른다.
+
+        ⚠ `take(execution_id)`는 **어느 경로에서도** 불려야 한다. 안 부르면 버킷이 남아
+        수집기가 LRU로 밀어낼 때까지 방치되고, `LlmCallCollector`가 그때
+        `evicted_runs`를 세며 경고를 찍는다 — **그 경고를 읽는 사람이 0명이었다**(8/7
+        전수 grep). 이 결함이 오래 안 보인 실질 이유다.
+
+        🔴 `swallow_errors`는 실패 경로 전용이고 **필수**다. `finally` 안에서 적재가
+        실패하면 원인 예외가 **교체된다** — `LlmCircuitOpenError`가 사라지고
+        `_run_guarded`가 그걸 `WORKER_INTERNAL`로 떨군다. 즉 *"서킷이 열렸다"* 가
+        *"워커가 알 수 없는 이유로 죽었다"* 로 바뀌고, **paused로 갈 잡이 failed로 간다**
+        (사용자에게 보이는 결과가 달라진다).
+
+        ⚠ 성공 경로는 삼키지 않는다 — 현행 동작 유지다. 이 파일 상단 주석은 원장 적재를
+        *"fail-open(관측이지 게이트 아님)"* 이라 적어 놨지만 **실측(8/7)은 그 반대다**:
+        `record_run`이 터지면 `_run_guarded`의 `except Exception`이 잡아 잡을
+        `worker_internal_error`로 떨군다. 주석과 코드가 갈렸고, 어느 쪽이 정본인지는
+        판정 대상이라 **이 PR에서 바꾸지 않았다**(99 등재).
+        """
+        calls = self._call_log.take(context.execution_id)
+        last = calls[-1].record if calls else None
+        try:
+            await self._runs.record_run(
+                context.to_run_metadata(
+                    created_at=self._now(),
+                    # 실측값을 옮긴다 — 조립부 설정을 여기서 재선언하면 두 값이 갈린다.
+                    model_provider=last.provider if last is not None else None,
+                    model_name=last.model if last is not None else None,
+                    generation_params=COUNSEL_GEN_PARAMS,
+                ),
+                calls,
+            )
+        except Exception:  # noqa: BLE001 — 원인 예외를 덮지 않는다(위 docstring)
+            if not swallow_errors:
+                raise
+            logger.exception("실패 경로의 실행 원장 적재 실패 — 원인 예외를 유지한다")
 
     async def _resume_input(
         self,
