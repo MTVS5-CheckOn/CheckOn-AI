@@ -15,7 +15,12 @@ from ai.evaluation.classify_eval import (
     confusion_matrix,
     render_confusion,
 )
-from ai.evaluation.counsel_llm_smoke import empty_response_rows, token_spread
+from ai.evaluation.counsel_llm_smoke import (
+    compare_reproduction,
+    empty_response_rows,
+    render_s5_verdict,
+    token_spread,
+)
 
 # ── ㉠ 혼동행렬 ───────────────────────────────────────────────────
 
@@ -164,3 +169,62 @@ def test_empty_rows_are_separated_from_produced_ones() -> None:
         {"text": "정답률은 62%였습니다."}, {"text": ""}, {"text": None}
     ]
     assert len(empty_response_rows(rows)) == 2
+
+
+# ── S5 재현성 판정 (99 ㉣) ────────────────────────────────────────
+
+
+def test_both_empty_is_not_comparable_and_not_identical() -> None:
+    """🔴 ㉣의 본체 — `"" == ""`가 True라 **"둘 다 없음"이 "재현됨"으로** 보고됐다(8/6 3차).
+
+    ⚠ 여기서 False를 기대하면 안 된다. False는 "다른 출력이 나왔다"는 관측이고,
+    출력이 아예 없는 것은 다른 사건이다. **"못 잰다"가 맞다.**
+    """
+    result = compare_reproduction("", "")
+    assert result.comparable is False
+    assert result.identical is None  # 🔴 True도 False도 거짓 판정이다
+
+
+def test_one_sided_empty_is_not_comparable_either() -> None:
+    """1차(`0 / 298`)도 판정 불가였다 — 빈 산출이 **섞이기만 해도** 재현성 측정이 아니다.
+
+    이 케이스가 False로 찍혔던 탓에 *"서버가 seed를 무시한다"* 로 성급히 확정했다가
+    되돌렸다(결정 로그 47). 3차의 True와 **같은 상태인데 정반대 값**이었다.
+    """
+    assert compare_reproduction("", "초안 본문 298자…").comparable is False
+    assert compare_reproduction("초안 본문 298자…", "").identical is None
+
+
+def test_comparable_pair_still_reports_identical_or_not() -> None:
+    """양쪽에 산출이 있으면 원래대로 판정한다 — 가드가 정상 경로를 막지 않는다."""
+    same = compare_reproduction("같은 문장입니다.", "같은 문장입니다.")
+    differ = compare_reproduction("같은 문장입니다.", "다른 문장입니다.")
+    assert (same.comparable, same.identical) == (True, True)
+    assert (differ.comparable, differ.identical) == (True, False)
+
+
+@pytest.mark.parametrize(
+    ("first", "second"), [("", ""), ("   ", "\n"), ("", "산출 있음"), ("산출 있음", "  ")]
+)
+def test_report_never_says_identical_when_it_could_not_measure(
+    first: str, second: str
+) -> None:
+    """🔴 수용 기준 — 빈 산출일 때 리포트에 **"동일"이 찍히지 않는다.**
+
+    다음 회차에 길이 칸을 아무도 안 볼 수 있다. 문장 하나로 상태가 드러나야 한다.
+    """
+    verdict = render_s5_verdict(compare_reproduction(first, second))
+    assert "동일" not in verdict
+    assert "비교 불가" in verdict
+
+
+def test_verdict_names_which_side_was_empty() -> None:
+    """한쪽만 비었으면 어느 쪽인지 적는다 — "양쪽 0자"로 뭉치면 1차 형태가 사라진다."""
+    assert "양쪽" in render_s5_verdict(compare_reproduction("", ""))
+    assert "1회차" in render_s5_verdict(compare_reproduction("", "산출"))
+    assert "2회차" in render_s5_verdict(compare_reproduction("산출", ""))
+
+
+def test_blank_only_output_is_not_a_produced_one() -> None:
+    """공백만 있는 산출도 빈 것으로 본다 — `empty_response_rows`와 같은 규칙이다."""
+    assert compare_reproduction("   ", "   ").comparable is False
