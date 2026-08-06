@@ -24,6 +24,14 @@ class CounselSettings(BaseSettings):
     counsel_priority_aging_seconds: int = 600
     """우선순위 aging 간격(초) — 큐가 길어질 때 오래 기다린 잡을 끌어올린다."""
 
+    llm_provider: str = "fake"
+    """LLM 구현 선택 — `classify`와 **같은 env 이름**(`LLM_PROVIDER`)을 읽는다.
+
+    기본이 `fake`인 것은 CI 규약이다(실 LLM 호출 0). ⚠ **기본값이 fake인 것과 배선을
+    잊는 것은 다르다** — 전자는 명시적 선택이라 경고 로그와 `LLM_CALL.provider`에 남고,
+    후자는 `CounselProviderNotWired`로 기동이 막힌다(99 ㉥).
+    """
+
 
 @lru_cache
 def get_counsel_settings() -> CounselSettings:

@@ -38,7 +38,11 @@ from pydantic import ValidationError
 
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
-from ai.composition.counsel.assembly import open_counsel_pack_runner
+from ai.composition.counsel.assembly import (
+    build_counsel_llm_provider,
+    build_counsel_provider,
+    open_counsel_pack_runner,
+)
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.labels import LabelVocabularyError, snapshot_from_labels
 from ai.composition.counsel.provider import (
@@ -218,7 +222,33 @@ def require_counsel_provider() -> Any:  # noqa: ANN401 — Planner+Writer 이중
     return _provider
 
 
-router.add_event_handler("startup", require_counsel_provider)
+def bootstrap_counsel_provider() -> None:
+    """조립 루트 — 기동 시 env를 보고 provider를 만들어 꽂는다(`LLM_PROVIDER`).
+
+    🔴 **이미 배선돼 있으면 덮지 않는다.** 테스트·평가 러너는 자기 시나리오 provider를
+    명시 주입하는데, 조립 루트가 그걸 갈아치우면 주입 seam이 무의미해진다.
+
+    ⚠ fake가 선택되는 것은 **사고가 아니라 선택**이다 — `build_counsel_llm_provider`가
+    경고 로그를 남기고 산출물에도 `fake-counsel`이 적힌다. 반면 이 함수가 아예 안 돌면
+    아래 `require_counsel_provider`가 기동을 막는다. 둘은 다른 사건이다.
+    """
+    if _provider is not None:
+        return
+    set_counsel_provider(build_counsel_provider(build_counsel_llm_provider()))
+
+
+def _startup() -> None:
+    """기동 순서 = **조립 → 확인**. 확인이 뒤라 조립 루트가 없거나 실패하면 걸린다.
+
+    ⚠ 조립 루트를 **전역 이름으로** 부른다 — 테스트가 `bootstrap_counsel_provider`를
+    비워 "조립 루트 부재"를 재현할 수 있어야 하기 때문이다(핸들러가 함수 객체를 잡아
+    두면 monkeypatch가 안 먹는다).
+    """
+    bootstrap_counsel_provider()
+    require_counsel_provider()
+
+
+router.add_event_handler("startup", _startup)
 
 
 def set_counsel_stores(
@@ -690,6 +720,7 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
 
 __all__ = [
     "CounselProviderNotWired",
+    "bootstrap_counsel_provider",
     "counsel_versions",
     "require_counsel_provider",
     "set_counsel_run_store",

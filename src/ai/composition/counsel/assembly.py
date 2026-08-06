@@ -21,6 +21,7 @@ PR(#48)은 머지됐고, 그 기동 가드가 요구하는 `trace_masking_hook`�
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
@@ -31,10 +32,14 @@ from langgraph.checkpoint.memory import InMemorySaver
 from ai.agents.checkpointer import open_checkpointer
 from ai.agents.supervisor import Supervisor
 from ai.composition.counsel.provider import (
+    CompositeCounselProvider,
     CounselPlanner,
     DraftWriter,
+    FakeCounselLlmProvider,
     GatewayDraftWriter,
+    GatewayPlanner,
 )
+from ai.composition.counsel.settings import CounselSettings, get_counsel_settings
 from ai.composition.counsel.stores import (
     AgentStepSink,
     ContextStore,
@@ -52,7 +57,10 @@ from ai.llm.gateway import LlmCallRecorder, LlmGateway
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
 from ai.runtime.tracing import require_tracing_disabled
 
+logger = logging.getLogger(__name__)
+
 _PG = "pg"
+_OPENAI_COMPAT = "openai_compat"
 
 #: 상담팩 전송 재시도 = 0 — LLM 실패 시 재시도 없이 정직하게 기록한다(브리핑 narrator 동일).
 COUNSELOR_TRANSPORT_RETRY = 0
@@ -152,10 +160,64 @@ def build_gateway_writer(
     return GatewayDraftWriter(build_counsel_gateway(provider, recorder=recorder))
 
 
+# ── 조립 루트 ─────────────────────────────────────────────────────
+#
+# 🔴 **두 층으로 나눈다.** 선례가 둘인데 성격이 다르고, counsel은 둘 다 필요하다.
+#
+#   `problem_generation/bootstrap.py`  순수 조립 — env를 안 읽고 호출자가 의존성을 준다
+#   `classify.build_classify_provider` env(`LLM_PROVIDER`)로 fake↔실 구현을 고른다
+#
+# 가르는 기준은 **테스트·러너가 무엇을 주입하는가**다. 평가 러너는 자기 관측 래퍼
+# (`_CountingProvider(OpenAICompatProvider())`)를 감싼 provider를 이미 들고 있으므로
+# env 선택이 끼면 안 된다 — 순수 조립(`build_counsel_provider`)을 부른다. 프로덕션 기동은
+# 반대로 아무것도 안 들고 있으므로 env 층(`build_counsel_llm_provider`)이 필요하다.
+# 한 함수로 합치면 러너가 env를 우회하려고 내부를 다시 뜯게 된다.
+
+
+def build_counsel_provider(
+    provider: LLMProvider, *, recorder: LlmCallRecorder | None = None
+) -> CompositeCounselProvider:
+    """**순수 조립** — 주어진 LLM provider로 plan+write 한 객체를 만든다(env 미참조).
+
+    라우터·워커는 planner·writer를 **한 객체**로 받는데 실 경로는 둘이라 어댑터가 필요하다.
+    """
+    gateway = build_counsel_gateway(provider, recorder=recorder)
+    return CompositeCounselProvider(GatewayPlanner(gateway), GatewayDraftWriter(gateway))
+
+
+def build_counsel_llm_provider(settings: CounselSettings | None = None) -> LLMProvider:
+    """**env 선택** — `LLM_PROVIDER`로 fake↔실 구현을 고른다(`classify`와 같은 규약).
+
+    🔴 **fake를 고르는 것과 배선을 잊는 것은 다르다.** 잊으면 기동이 막히고
+    (`CounselProviderNotWired`), 고르면 여기서 **경고 로그**가 남고 산출물의
+    `LLM_CALL.provider`·`AI_RUN.model_provider`에 `fake-counsel`이 적힌다 — 사후에
+    "이 초안이 진짜였나"를 가릴 수 있다. 종전 기본값(`FakeCounselProvider`)은 게이트웨이를
+    아예 안 거쳐서 **원장에 아무것도 안 남았다.**
+
+    벤더 독립: `openai` import는 어댑터 안에만 있고 여기선 구현을 **선택만** 한다.
+    """
+    settings = settings or get_counsel_settings()
+    if settings.llm_provider == _OPENAI_COMPAT:
+        from ai.llm.providers.openai_compat import OpenAICompatProvider  # noqa: PLC0415
+
+        return OpenAICompatProvider()
+    logger.warning(
+        "counsel provider=fake — LLM_PROVIDER=%r이라 결정론 Fake로 조립한다. "
+        "실 LLM 호출은 0건이고 산출물에는 provider=%r가 남는다(사후 구분용). "
+        "실 경로는 LLM_PROVIDER=%s.",
+        settings.llm_provider,
+        FakeCounselLlmProvider().name,
+        _OPENAI_COMPAT,
+    )
+    return FakeCounselLlmProvider()
+
+
 __all__ = [
     "COUNSELOR_TRANSPORT_RETRY",
     "DEFAULT_REGEN_MAX",
     "build_counsel_gateway",
+    "build_counsel_llm_provider",
+    "build_counsel_provider",
     "build_gateway_writer",
     "open_counsel_pack_runner",
 ]
