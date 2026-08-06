@@ -101,6 +101,7 @@ class _FeedbackSensitiveWriter:
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
         refine_instruction: str = "",
+        previous_text: str = "",
     ) -> str:
         del context, execution_context, emphasis, refine_instruction
         self.feedbacks.append(gate_feedback)

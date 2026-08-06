@@ -104,6 +104,7 @@ async def refine_draft(
     writer: DraftWriter,
     execution_context: ExecutionContext,
     regen_max: int,
+    previous_text: str = "",
 ) -> RefineOutcome:
     """지시를 반영해 초안을 다시 만든다 — **매 턴 게이트 전체 재통과**(06 §1).
 
@@ -111,6 +112,11 @@ async def refine_draft(
     ② 지시를 프롬프트에 조립해 생성 → 게이트. 실패하면 사유를 다음 시도에 실어 재생성한다
        (05 §6-2 — 같은 상한 ≤3 안에서만. 불변식 6).
     ③ 상한까지 통과 못 하면 차단으로 수렴하고 **초안은 직전 버전 유지**(호출자 책임).
+
+    🔴 `previous_text`는 **직전 턴의 본문**이다. 없으면 매 턴 원본 근거에서 새로 쓰므로
+    턴1의 "짧게"가 턴2에서 되살아난다 — 다듬기가 누적되지 않는다. 기본값이 빈 문자열인
+    이유는 호출자(라우터)가 아직 초안을 모를 수 있어서가 아니라, **이 파라미터가 없던
+    시절의 동작을 명시적으로 재현할 수 있게** 두기 위함이다(테스트가 대조군으로 쓴다).
     """
     # 🔴 `regen_max=0`이면 루프가 0회 — LLM을 한 번도 안 부르고 "상한 소진"으로 차단된다.
     # 강사에게는 게이트가 막은 것으로 보이는데 실은 아무것도 시도하지 않았다.
@@ -141,6 +147,7 @@ async def refine_draft(
                 execution_context=execution_context,
                 gate_feedback=instruction_for(last_reason),
                 refine_instruction=instruction,
+                previous_text=previous_text,
             )
         except RedactionBlockedError:  # fail-closed — 미전송(불변식 3)
             return RefineOutcome(applied=False, blocked_reason=BlockedReason.PII_EXPOSURE)

@@ -76,7 +76,24 @@ class InquirySentiment(StrEnum):
 
 
 class InquiryUrgency(StrEnum):
-    """긴급도 — 완충 강화 입력(불만 + 즉시 → 완충 강화)."""
+    """긴급도 — **인박스 정렬·SLA용(BE 소유)이고 AI 톤에는 쓰지 않는다.**
+
+    🔴 **(8/6 모순 해소)** 종전 문면은 *"완충 강화 입력(불만 + 즉시 → 완충 강화)"* 이었는데
+    `InquiryTopic` docstring의 *"§199에서 `urgency`·`topic`에서 `sensitivity`를 파생하지
+    않기로 확정"* 과 **정반대**였다. 코드는 후자를 따른다(라벨 4축만 톤을 정한다) — 계약이
+    두 말을 하면 다음 사람이 "구현이 빠졌다"고 읽는다.
+
+    **소비하지 않는 근거 3건:**
+    ⓐ `sensitivity` 기본값이 이미 최대 완충(`anxious` → `buffer_level` 2)이라 **올릴 여지가
+       없다** — 어느 입력에서 파생해도 값이 안 바뀐다(`InquiryTopic`이 적어 둔 근거).
+    ⓑ `direct`(완충 1)를 immediate로 2로 올리는 건 **강사가 학부모별로 설정한 톤을 문의
+       하나가 뒤집는 것**이다. 라벨은 설정이고 urgency는 이 문의의 성질이다 —
+       **설정을 요청이 이기면 안 된다.**
+    ⓒ 톤 축이 되면 조합이 24 → 48이 되고 `tone_map.yaml`의 "4축 데카르트곱 24와 정확히
+       일치" 검증(로더 fail-closed)이 깨진다.
+
+    ⚠ 값 자체는 계약에 남는다 — BE가 인박스 정렬에 쓰고, AI는 **받아서 쓰지 않는다.**
+    """
 
     IMMEDIATE = "immediate"
     NORMAL = "normal"

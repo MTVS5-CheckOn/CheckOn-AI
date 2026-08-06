@@ -173,8 +173,15 @@ class DraftWriter(Protocol):
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
         refine_instruction: str = "",
+        previous_text: str = "",
     ) -> str:
         """조립·마스킹을 마친 프롬프트로 초안 본문을 받는다.
+
+        🔴 `previous_text`는 **다듬기 전용 입력**이다 — 기본값이 빈 문자열이라 최초 생성
+        경로는 안 넘기고, 그 경로의 프롬프트는 이 인자 때문에 바뀌지 않는다.
+        ⚠ `refine_instruction`·`gate_feedback`이 이미 같은 형태로 이 시그니처에 살고 있다 —
+        "다듬기 턴에만 있는 입력"의 자리가 여기라는 선례다. `DraftContext`에 넣지 않은 이유:
+        컨텍스트는 **학생 스냅숏**(근거·라벨)이고 직전 본문은 **이 턴의 상태**다.
 
         `emphasis`는 근거 실존 검증을 통과한 강조점이다 — 비면 프롬프트가 현행과 동일하다.
         `gate_feedback`은 직전 게이트 실패의 수정 지시다(05 §6-2) — **1회차는 빈 문자열**
@@ -203,9 +210,12 @@ class GatewayDraftWriter:
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
         refine_instruction: str = "",
+        previous_text: str = "",
     ) -> str:
         redacted = redact(
-            assemble_prompt(context, emphasis, gate_feedback, refine_instruction)
+            assemble_prompt(
+                context, emphasis, gate_feedback, refine_instruction, previous_text
+            )
         )
         if redacted.uncertain:  # fail-closed — 불확실하면 LLM에 보내지 않는다
             raise RedactionBlockedError("상담 초안 프롬프트의 마스킹이 불확실하다")
@@ -309,6 +319,7 @@ class CompositeCounselProvider:
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
         refine_instruction: str = "",
+        previous_text: str = "",
     ) -> str:
         return await self._writer.write(
             context=context,
@@ -316,6 +327,7 @@ class CompositeCounselProvider:
             emphasis=emphasis,
             gate_feedback=gate_feedback,
             refine_instruction=refine_instruction,
+            previous_text=previous_text,
         )
 
 
@@ -337,6 +349,8 @@ class FakeCounselProvider:
         self.plan_calls: list[tuple[str, ...]] = []
         #: 시도별 수정 지시 — 재생성 피드백(05 §6-2)이 실제로 전달됐는지 볼 수 있게 남긴다.
         self.gate_feedbacks: list[str] = []
+        #: 턴별로 받은 직전 본문 — 다듬기 누적이 실제로 전달되는지 본다.
+        self.previous_texts: list[str] = []
 
     async def plan(
         self,
@@ -366,9 +380,12 @@ class FakeCounselProvider:
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
         refine_instruction: str = "",
+        previous_text: str = "",
     ) -> str:
         # Fake는 강조점·지시를 소비하지 않는다 — 시나리오 순서로만 응답한다.
         del emphasis, refine_instruction
+        #: 직전 본문이 실제로 전달됐는지는 관측한다(누적 배선의 회귀 감지).
+        self.previous_texts.append(previous_text)
         self.gate_feedbacks.append(gate_feedback)  # 소비는 안 하되 전달 여부는 관측한다
         index = len(self.write_calls)
         self.write_calls.append(context.student_ref)

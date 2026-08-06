@@ -115,6 +115,7 @@ class _EchoWriter:
         emphasis: Sequence[str] = (),
         gate_feedback: str = "",
         refine_instruction: str = "",
+        previous_text: str = "",
     ) -> str:
         del context, execution_context, emphasis, gate_feedback, refine_instruction
         self.calls += 1
