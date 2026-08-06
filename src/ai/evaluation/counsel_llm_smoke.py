@@ -51,11 +51,12 @@ from ai.composition.counsel.provider import GatewayDraftWriter
 from ai.composition.counsel.refine import refine_draft
 from ai.composition.provider import build_brief_gateway
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
-from ai.contracts.llm import LLMProvider, LLMRequest, LLMResult
+from ai.contracts.llm import LlmError, LLMProvider, LLMRequest, LLMResult
 from ai.detection.engine import detect
 from ai.detection.thresholds import default_threshold_config
 from ai.evaluation.demo_snapshot import build_demo_request
 from ai.llm.providers.openai_compat import OpenAICompatProvider, get_llm_settings
+from ai.runtime.errors import RedactionUncertain
 from ai.runtime.redaction import redact
 from ai.runtime.tracing import active_tracing_env_names, external_tracing_active
 
@@ -486,6 +487,25 @@ def _leak_oracle(text: str) -> tuple[str, ...]:
     return tuple(form for form in _LEAK_FORMS if form in text)
 
 
+#: 🔴 장애를 `blocked_reason`으로 적지 않는다 — 그게 #117이 없앤 거짓말이고, 그 거짓말이
+#: **측정 리포트에도** 있었다(LLM 장애가 `tone_violation` 행으로 기록됐다). 별도 축으로 둔다.
+_FAILURE_KINDS: Final = {
+    "LlmTimeout": "llm_timeout",
+    "LlmUnavailable": "llm_unavailable",
+    "RedactionUncertain": "redaction_uncertain",
+}
+
+
+def failure_kind(exc: BaseException) -> str:
+    """장애 종류 — 판정(`blocked_reason`)과 **다른 축**이다.
+
+    ⚠ `except Exception`으로 뭉개지 않는다. 잡는 건 `LlmError` 계열과 `RedactionUncertain`
+    뿐이고, 코드 버그(`AttributeError` 등)는 그대로 죽어야 한다 — **러너가 조용히 도는 것이
+    측정에선 최악**이다.
+    """
+    return _FAILURE_KINDS.get(type(exc).__name__, "llm_error")
+
+
 async def _run_s3(observers: list[_CountingProvider]) -> dict[str, Any]:
     golden = _golden("tests.ai.golden.refine_attack.test_refine_attack")
     static_attacks = golden._STATIC_ATTACKS  # A2·A3·A5·A6·A7 — 08 §5 표 정본
@@ -503,13 +523,34 @@ async def _run_s3(observers: list[_CountingProvider]) -> dict[str, Any]:
 
     for code, instruction, expected in cases:
         started = time.monotonic()
-        outcome = await refine_draft(
-            context=draft_context(),
-            instruction=instruction,
-            writer=writer,
-            execution_context=_context(Capability.COMPOSITION, f"s3-{code}"),
-            regen_max=DEFAULT_REGEN_MAX,
-        )
+        try:
+            outcome = await refine_draft(
+                context=draft_context(),
+                instruction=instruction,
+                writer=writer,
+                execution_context=_context(Capability.COMPOSITION, f"s3-{code}"),
+                regen_max=DEFAULT_REGEN_MAX,
+            )
+        except (LlmError, RedactionUncertain) as exc:
+            # 🔴 **장애 1건에 회차를 잃지 않는다** — 팀원 API 키이고 회차를 통째로 버리는
+            #   비용이 실제 비용이다. 행을 남기고 계속한다.
+            # 🔴 `blocked_reason`에 적지 않는다 — 장애와 판단은 다른 축이다(#117).
+            rows.append(
+                {
+                    "code": code,
+                    "instruction": instruction,
+                    "expected_reason": expected,
+                    "applied": None,          # 판정 없음 — False가 아니다
+                    "blocked_reason": None,
+                    "failure_kind": failure_kind(exc),
+                    "failure_detail": type(exc).__name__,
+                    "leaked_terms": [],
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "mask_residue": False,
+                    "text": "",
+                }
+            )
+            continue
         text = outcome.text or ""
         # 🔴 미탐 판정은 "차단되지 않았다"가 아니라 **"위반이 실제로 통과했다"** 다.
         # 실 LLM이 지시를 거부하고 깨끗한 문장을 내면 applied=True가 정상이다 —
@@ -524,6 +565,8 @@ async def _run_s3(observers: list[_CountingProvider]) -> dict[str, Any]:
                 "blocked_reason": (
                     outcome.blocked_reason.value if outcome.blocked_reason else None
                 ),
+                "failure_kind": None,   # 스키마 동일 — 집계가 키 유무를 안 물어도 되게
+                "failure_detail": None,
                 "leaked_terms": list(leaked),
                 "elapsed_ms": int((time.monotonic() - started) * 1000),
                 "mask_residue": _mask_residue(text),
@@ -676,6 +719,11 @@ def _s3_misses(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     misses = []
     for row in rows:
+        # 🔴 **장애 행은 미탐이 아니다.** 판정 자체가 없었다 — `blocked_reason`이 None이라
+        #   정적 케이스 비교(`!= expected`)에 걸려 **보안 결함으로 오분류**된다.
+        #   장애는 `s3_failures()`가 별도 줄로 보고한다(집계 분모에서 뺀다).
+        if row.get("failure_kind"):
+            continue
         static_case = row["code"] not in {code for code, _, _ in _POST_GEN_ATTACKS}
         if static_case:
             if row["blocked_reason"] != row["expected_reason"]:
@@ -683,6 +731,14 @@ def _s3_misses(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         elif row["leaked_terms"]:
             misses.append(row)
     return misses
+
+
+def s3_failures(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """장애로 판정이 없던 행 — **미탐과 다른 축**이다(별도 줄로 보고한다).
+
+    조용히 성공/차단에 섞으면 다음 사람이 "7건 다 됐다"고 읽는다.
+    """
+    return [row for row in rows if row.get("failure_kind")]
 
 
 def _verdict(data: dict[str, Any]) -> str:
@@ -884,6 +940,20 @@ def _render(data: dict[str, Any]) -> str:
         "> 빈 응답은 **\"다른 출력\"이 아니라 출력이 없는 것**이다. 섞여 있으면 재현성 판정"
         "(㊼)도 품질 판정도 성립하지 않는다 — 몇 건인지부터 세운다.",
         "",
+        *([] if not s3_failures(s3["rows"]) else [
+            "",
+            "### 3-c. 🔴 장애로 판정이 없던 케이스",
+            "",
+            _table(
+                ["케이스", "장애", "상세"],
+                [[r["code"], r["failure_kind"], r["failure_detail"]]
+                 for r in s3_failures(s3["rows"])],
+            ),
+            "",
+            "> ⚠ **미탐 집계의 분모에서 뺐다** — 판정 자체가 없었던 건이라 차단 실패와 "
+            "다른 축이다. 조용히 섞으면 다음 사람이 \"7건 다 됐다\"고 읽는다. "
+            "🔴 장애를 `blocked_reason`으로 적지 않는 이유도 같다(#117).",
+        ]),
         "## 5. S5 — 재현성 스팟체크",
         "",
         _table(
@@ -1005,33 +1075,38 @@ async def _main_async(run_date: str) -> int:
           f"· threshold v{demo['threshold_version']}")
 
     observers: list[_CountingProvider] = []
-    print(f"▶ S1 브리핑 {demo['signals']}신호 × {_REPEATS}회…")
-    s1 = await _run_s1(observers)
-    print("▶ S2 문의 초안 4케이스…")
-    s2 = _run_s2(observers)
-    print("▶ S3 refine 공격 A1~A7…")
-    s3 = await _run_s3(observers)
-    print("▶ S5 재현성 2회…")
-    s5 = _run_s5(observers)
-    s4 = _run_s4(observers, s2, s1["rows"])
+    data: dict[str, Any] = {"run_date": run_date, "preflight": preflight, "demo": demo}
 
-    data = {
-        "run_date": run_date,
-        "preflight": preflight,
-        "demo": demo,
-        "s1": s1,
-        "s2": s2,
-        "s3": s3,
-        "s4": s4,
-        "s5": s5,
-    }
+    def checkpoint() -> None:
+        """🔴 **단계별 부분 저장** — 뒤 단계에서 죽어도 앞의 것을 잃지 않는다.
+
+        종전에는 전부 끝난 뒤에만 썼다(:1034). S3에서 죽으면 S1·S2가 통째로 사라졌고,
+        **팀원 API 키라 회차를 다시 태우는 게 실제 비용**이다.
+        """
+        raw_file.parent.mkdir(parents=True, exist_ok=True)
+        raw_file.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    print(f"▶ S1 브리핑 {demo['signals']}신호 × {_REPEATS}회…")
+    data["s1"] = s1 = await _run_s1(observers)
+    checkpoint()
+    print("▶ S2 문의 초안 4케이스…")
+    data["s2"] = s2 = _run_s2(observers)
+    checkpoint()
+    print("▶ S3 refine 공격 A1~A7…")
+    data["s3"] = s3 = await _run_s3(observers)
+    checkpoint()
+    print("▶ S5 재현성 2회…")
+    data["s5"] = s5 = _run_s5(observers)
+    data["s4"] = _run_s4(observers, s2, s1["rows"])
+    checkpoint()
 
     data["pii"] = _pii_scan(data)
     data["verdict"] = _verdict(data)
 
     # 원문(LLM 출력 포함)은 로컬에만 떨군다 — 레포에 반입하지 않는다(local_data).
-    raw_file.parent.mkdir(parents=True, exist_ok=True)
-    raw_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    checkpoint()   # 판정·PII 스캔까지 담은 최종본
 
     report_file.parent.mkdir(parents=True, exist_ok=True)
     report_file.write_text(_render(data), encoding="utf-8")
@@ -1041,7 +1116,9 @@ async def _main_async(run_date: str) -> int:
     print(f"S1 1차통과 {summary['gate_first_try']}/{summary['total']}"
           f" · 폴백 {summary['fallback']} · 중앙값 {summary['median_ms']}ms")
     misses = _s3_misses(s3["rows"])
-    print(f"S3 차단 미탐 {len(misses)}건 · S5 {s5['verdict'].replace('*', '')}")
+    failures = s3_failures(s3["rows"])
+    print(f"S3 차단 미탐 {len(misses)}건 · **장애 {len(failures)}건** "
+          f"· S5 {s5['verdict'].replace('*', '')}")
     return 0
 
 
