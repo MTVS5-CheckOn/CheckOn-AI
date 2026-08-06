@@ -29,6 +29,7 @@ import argparse
 import asyncio
 import importlib
 import json
+import math
 import re
 import sys
 import time
@@ -36,7 +37,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 from uuid import uuid4
 
 from ai.composition.briefing import make_brief
@@ -172,6 +173,53 @@ class _CountingProvider:
             )
         )
         return result
+
+
+class TokenSpread(NamedTuple):
+    """한 role의 `tokens_out` 분포 — ⓧ(토큰 상한) 값 결정의 **유일한 근거**다.
+
+    🔴 **role별로 나누는 것이 요점이다.** 브리핑(narrator)은 한 줄, 상담 초안(counselor)은
+    문단이라 출력 성격이 완전히 다르다 — 섞은 총합으로는 어느 경로에 얼마를 줘야 하는지
+    알 수 없다. 2차까지 리포트가 낸 것이 그 섞인 총합("21회 · 15,758토큰")이었다.
+    """
+
+    role: str
+    samples: int
+    minimum: int
+    median: int
+    p90: int
+    maximum: int
+
+
+def token_spread(role: str, values: Sequence[int]) -> TokenSpread:
+    """`tokens_out` 목록 → 분포. **순수 함수**(단위 테스트 대상).
+
+    p90은 **가장 가까운 순위**(nearest-rank)로 잡는다 — 보간하면 실제로 관측되지 않은
+    값이 나오고, 상한을 정하는 근거로는 실측값이 낫다.
+    """
+    ordered = sorted(values)
+    n = len(ordered)
+    if not n:
+        return TokenSpread(role=role, samples=0, minimum=0, median=0, p90=0, maximum=0)
+    return TokenSpread(
+        role=role,
+        samples=n,
+        minimum=ordered[0],
+        median=ordered[n // 2],
+        p90=ordered[min(n - 1, math.ceil(n * 0.9) - 1)],
+        maximum=ordered[-1],
+    )
+
+
+def empty_response_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """본문이 0자인 산출 — 🔴 이번 회차의 핵심 관측이다(ⓧ·㊼).
+
+    빈 응답은 "다른 출력"이 아니라 **출력이 없는 것**이라, 섞여 있으면 재현성 판정도
+    품질 판정도 성립하지 않는다. 몇 건인지부터 세운다.
+
+    ⚠ 공백만 있는 본문도 빈 것으로 센다 — 길이 0만 세면 `"   "`가 산출로 잡힌다.
+    """
+    return [row for row in rows if not (row.get("text") or "").strip()]
 
 
 def _context(capability: Capability, tag: str) -> ExecutionContext:
@@ -469,7 +517,11 @@ async def _run_s3(observers: list[_CountingProvider]) -> dict[str, Any]:
 # ── S4 · S5 ──────────────────────────────────────────────────────
 
 
-def _run_s4(observers: list[_CountingProvider], s2: dict[str, Any]) -> dict[str, Any]:
+def _run_s4(
+    observers: list[_CountingProvider],
+    s2: dict[str, Any],
+    s1_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
     """B-5 3종 + 기록 실재. 전부 memory 백엔드로 관측 가능하다.
 
     ⚠ 8/5 개정 — 종전에는 3종의 판정을 **리터럴로 박아** 리포트에 "🔴 결함 확정"을 찍었다.
@@ -488,9 +540,33 @@ def _run_s4(observers: list[_CountingProvider], s2: dict[str, Any]) -> dict[str,
     #   기본 recorder가 `_ignore_record`면 배선이 없는 것이고, 수집기면 있는 것이다.
     probe = build_brief_gateway()
     wired_recorder = probe._recorder  # noqa: SLF001 — 관측 목적(배선 여부 판정)
+    # 🔴 ⓧ 재료 — role별 `tokens_out` 분포. 총합만으로는 상한을 못 정한다.
+    by_role: dict[str, list[int]] = {}
+    for call in calls:
+        by_role.setdefault(call.role, []).append(call.tokens_out)
+    spreads = [token_spread(role, values) for role, values in sorted(by_role.items())]
+
+    # 🔴 빈 응답 — S1·S2 산출에서 본문이 0자인 건. 재현성·품질 판정의 전제다.
+    empty_s1 = empty_response_rows(s1_rows)
+    empty_s2 = empty_response_rows(s2["rows"])
+
     return {
         "records_captured": len(calls),
         "tokens_total": sum(call.tokens_in + call.tokens_out for call in calls),
+        "token_spread": [spread._asdict() for spread in spreads],
+        "empty_s1": len(empty_s1),
+        "empty_s2": len(empty_s2),
+        "empty_s1_detail": [
+            {"outcome": r["outcome"], "attempts": r["attempts"]} for r in empty_s1
+        ],
+        "empty_s2_detail": [
+            {"draft_status": r.get("draft_status"), "status_reason": r.get("status_reason")}
+            for r in empty_s2
+        ],
+        # ⚠ `reasoning_tokens`는 **여기서 못 남긴다** — 래퍼가 `LLMResult`만 받고
+        #   `TokenUsage`는 3필드라 SDK의 `completion_tokens_details`가 어댑터 안에서
+        #   소멸한다. 어댑터는 B 소유다(99 ⓩ). "러너를 고치면 된다"가 아니다.
+        "reasoning_tokens_available": False,
         "record_outcomes": dict(outcomes),
         "production_recorder_wired": wired_recorder is not _ignore_record,
         "production_recorder_is_collector": isinstance(
@@ -750,6 +826,43 @@ def _render(data: dict[str, Any]) -> str:
             ],
         ),
         "",
+        "### 4-a. role별 `tokens_out` 분포 — 🔴 ⓧ(토큰 상한) 값의 근거",
+        "",
+        _table(
+            ["role", "표본", "최소", "중앙값", "p90", "최대"],
+            [
+                [f"`{sp['role']}`", str(sp["samples"]), str(sp["minimum"]),
+                 str(sp["median"]), str(sp["p90"]), str(sp["maximum"])]
+                for sp in s4["token_spread"]
+            ] or [["—", "0", "—", "—", "—", "—"]],
+        ),
+        "",
+        "> 🔴 **role별로 나눈 것이 요점이다.** 브리핑(`narrator`)은 한 줄, 상담 초안"
+        "(`counselor`)은 문단이라 출력 성격이 다르다 — 섞은 총합으로는 어느 경로에 얼마를"
+        " 줘야 하는지 알 수 없다.",
+        "",
+        "> ⚠ **`reasoning_tokens`는 여기 없다.** 벤더는 `completion_tokens_details`로 주지만"
+        " 래퍼가 `LLMResult`만 받고 `TokenUsage`가 3필드라 어댑터 안에서 소멸한다."
+        " **러너를 고쳐서 될 일이 아니다** — 어댑터는 B 소유다(99 ⓩ)."
+        f" 이 회차의 분리 가능 여부: **{'가능' if s4['reasoning_tokens_available'] else '불가'}**.",
+        "",
+        "### 4-b. 빈 응답(본문 0자) — 🔴 재현성·품질 판정의 전제",
+        "",
+        _table(
+            ["구간", "건수", "내역"],
+            [
+                ["S1 브리핑", str(s4["empty_s1"]),
+                 ", ".join(f"`{d['outcome']}`(시도 {d['attempts']})"
+                           for d in s4["empty_s1_detail"]) or "—"],
+                ["S2 초안", str(s4["empty_s2"]),
+                 ", ".join(f"`{d['draft_status']}`/`{d['status_reason']}`"
+                           for d in s4["empty_s2_detail"]) or "—"],
+            ],
+        ),
+        "",
+        "> 빈 응답은 **\"다른 출력\"이 아니라 출력이 없는 것**이다. 섞여 있으면 재현성 판정"
+        "(㊼)도 품질 판정도 성립하지 않는다 — 몇 건인지부터 세운다.",
+        "",
         "## 5. S5 — 재현성 스팟체크",
         "",
         _table(
@@ -873,7 +986,7 @@ async def _main_async(run_date: str) -> int:
     s3 = await _run_s3(observers)
     print("▶ S5 재현성 2회…")
     s5 = _run_s5(observers)
-    s4 = _run_s4(observers, s2)
+    s4 = _run_s4(observers, s2, s1["rows"])
 
     data = {
         "run_date": run_date,
