@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v3.6 (2026-08-07): **§2-19 신설 — `/v1/problems` v1 API 스펙 초안.** A 확정 회신에 따라 자체 job 대신 공용 슈퍼바이저를 사용하고, v1 operation을 `problem_set.generate` 하나로 고정했다. counsel/drafts와 같은 필수 헤더·멱등 규약, `JobPhase` 기반 GET 상태, 미완료 `result=null`, 오류 주체 판별, `domain_error_for`의 504/503/500 매핑, 현행 `LANGUAGE`·자료 없음 제약을 한곳에 모았다. 이 절은 §2-1의 가칭 경로와 refine·reverify 범위를 v1에서 대체하며, A가 `04_api_contract.md`에 옮길 초안이다.
 > - v3.5 (2026-08-05): **라이선스 전제 명시에 따라 W16·W18을 P3으로 내렸다.** 이 프로젝트는 부트캠프 대회 출제용이며 상업 서비스가 아니다 — AI Hub 이용정책은 비상업 연구개발을 허용하므로 71857을 **사용 가능**으로 재판정했고, CC BY-SA 전파도 비상업 범위에서는 출처 표시로 닫힌다. **두 항목은 삭제하지 않았다** — 상용 전환 시 P1으로 되살아나며 그 조건을 `05` §1.1.4 머리에 함께 못 박았다.
 > - v3.4 (2026-08-05): **W18 신설 — AI Hub 71857 상업 이용 협의 필요.** 9.1·9.4·C-15·F17을 한 번에 닫을 수 있는 자료를 확보했으나 이용정책이 구축기관 협의를 요구해 v1에서 쓰지 않는다. 실측값과 대안 경로를 함께 적었다.
 > - v3.3 (2026-08-05): **W17 신설 — 어휘 대조 재현성 갭.** 사전 API에 자료 버전이 없어 `VersionSet`에 적을 값이 없다. 전체 덤프로 닫을 수 있으나 색인 99.8 MB가 동봉 선을 넘고 W16과 겹쳐 A-1 저장 계층으로 미뤘다.
@@ -878,6 +879,159 @@ W 번호도 `W1`~`W10`의 실제 표기를 놓치는 하이픈 필수 grep 패�
 **`CLAUDE.md` §2 "구조 재편 금지"와의 관계.** 이번 변경은 **capability 내부**에 한정한다 — `src/ai/` 최상위 폴더를 신설·이동하지 않았고 A 소유 경로는 건드리지 않았다. `02_ownership.md` §5 원칙("폴더는 capability 기준 그대로")은 유지된다. **capability 안쪽 배치가 오너 재량이라는 해석이 맞는지 확인 부탁드린다** — 아니라면 되돌린다.
 
 **검증.** ruff · mypy 252 files · pytest **1511 passed / 실패 0 / skip 0**(재배치 전 1500 → +11은 AST 계약 테스트가 새 파일을 스캔한 증가분이며 테스트를 추가·삭제하지 않았다). 계층 경계는 `tests/ai/contract/test_pg_layer_boundaries.py` 18케이스가 AST로 고정한다. 상세는 [`13_code_layout.md`](13_code_layout.md).
+
+### 2-19. `/v1/problems` v1 API 스펙 초안 `[제안 · 2026-08-07 · A 반영 대기]`
+
+> **반영 대상은 A 소유 정본 `docs/04_api_contract.md`다.** 이 절은 B가 넘기는 초안이며
+> 정본을 직접 고치지 않는다. A 확정 회신에 따라 §2-1의 가칭 `/problem-sets` 경로와
+> refine·reverify 범위를 **v1에서 대체**한다. 자체 job은 만들지 않고 공용 슈퍼바이저의
+> `WorkerKind.PROBLEM_GENERATION`·`OperationKind.PROBLEM_SET_GENERATE`
+> (`"problem_set.generate"`)를 쓴다. v1 operation은 이것 하나뿐이다.
+
+#### 2-19.1 `POST /v1/problems` — 세트 생성 기동(202)
+
+필수 헤더와 멱등 범위는 `04_api_contract.md` §3.9 counsel/drafts와 같다.
+
+| 필수 헤더 | 내부 `ProblemRequest` 매핑 | 규약 |
+| --- | --- | --- |
+| `X-Tenant-Id` | `tenant_id` | 테넌트 범위. 바디에는 중복하지 않는다 |
+| `X-Request-Id` | `request_id` | 요청 추적 키. 바디에는 중복하지 않는다 |
+| `Idempotency-Key` | `idempotency_key` | 같은 키+같은 바디는 최초 202 응답을 재반환하고, 같은 키+다른 바디는 409 `IDEMPOTENCY_CONFLICT` |
+
+⚠ **같은 키+같은 바디의 상태코드는 구현과 정본 문구가 갈려 있다.** counsel 구현은 최초
+응답을 **202로 재반환**하고(`api/routers/counsel.py:637-639`), `04_api_contract.md` §2.3은
+"기존 결과를 **200**으로 반환"이라고 적혀 있다. 이 초안은 **구현(202)** 을 따랐다 —
+A가 04에 옮길 때 둘 중 하나로 통일해 달라. 통일 전까지 BE는 202를 전제로 구현한다.
+
+외부 HTTP 바디는 내부 command의 헤더 파생 3필드를 제외한 투영이다
+(`contracts/problem_generation.py:83-131`, 이 문서 §2-1의 B HTTP 경계 확정).
+
+| 바디 필드 | 형식·제약 |
+| --- | --- |
+| `target_kind` | `student | class` |
+| `target_ref` | 비어 있지 않은 가명 참조 |
+| `target_source` | `weakness_auto | teacher_manual` |
+| `weakness_map_id` | UUID 또는 `null`. `teacher_manual`이면 금지 |
+| `manual_targets` | 문자열 배열 또는 `null`. `teacher_manual`이면 1건 이상 필수, `weakness_auto`이면 금지 |
+| `snapshot_hash` | 비어 있지 않은 입력 스냅숏 해시 |
+| `taxonomy_version` | 비어 있지 않은 taxonomy 버전 |
+| `area_tag` | **v1은 `language`만 허용** |
+| `type_tags` | `fact | infer | critic | concept` 중 중복 없는 1건 이상 |
+| `item_format` | **v1은 `mcq`만 허용** |
+| `count` | 1..20 |
+| `requested_difficulty` | `low | medium | high | null` |
+| `target` | `cell | node | auto`, 기본 `auto` |
+| `passage` | **v1은 생략 또는 `null`만 허용** |
+| `topic_hint` | 비어 있지 않은 문자열 또는 `null` |
+
+```json
+{
+  "target_kind": "student",
+  "target_ref": "st_8f2a",
+  "target_source": "teacher_manual",
+  "manual_targets": ["grammar:sentence-structure"],
+  "snapshot_hash": "sha256:…",
+  "taxonomy_version": "2026.08",
+  "area_tag": "language",
+  "type_tags": ["concept"],
+  "item_format": "mcq",
+  "count": 1,
+  "requested_difficulty": "medium",
+  "target": "auto"
+}
+```
+
+성공 응답은 공통 envelope를 사용하며 HTTP 202의 식별자는 `job_id` 하나다. 생성 결과
+본문은 POST에 싣지 않고 GET으로만 회수한다.
+
+```json
+{
+  "data": { "job_id": "8e94ceac-2213-4e58-b4b7-d48b1c922785" },
+  "error": null,
+  "meta": { "execution_id": "…", "versions": { "…": "…" } }
+}
+```
+
+#### 2-19.2 `GET /v1/problems/{job_id}` — 상태·결과 회수
+
+GET은 `X-Tenant-Id`가 필수이고 다른 테넌트의 `job_id`는 존재를 숨겨 404로 수렴한다.
+`status`는 새 enum을 만들지 않고 `contracts/agents.py:43-52`의 `JobPhase`를 그대로 쓴다:
+`queued | leased | running | paused | succeeded | failed | cancelled`.
+
+```json
+{
+  "data": {
+    "job_id": "8e94ceac-2213-4e58-b4b7-d48b1c922785",
+    "status": "queued",
+    "result": null
+  },
+  "error": null,
+  "meta": { "execution_id": "…", "versions": { "…": "…" } }
+}
+```
+
+`result`는 `contracts/problem_generation.py`의 `ProblemGenerationOutcome`
+(`RejectedInsufficientOutcome | ProblemSetResult`) 또는 `null`이다. 실행 phase와 도메인
+결과 status를 섞지 않는다.
+
+| `JobPhase` | `result` | 계약 |
+| --- | --- | --- |
+| `queued | leased | running | paused` | 반드시 `null` | 아직 결과 계약이 확정되지 않았다. 실패·거부 결과를 미리 만들지 않는다 |
+| `succeeded` | 반드시 `ProblemGenerationOutcome` | `rejected_insufficient`와 세트의 `generated | partial_success | failed`는 **정상 도메인 결과**다 |
+| `failed | cancelled` | `null` | 실행 실패·취소를 도메인 게이트 결과로 위장하지 않는다 |
+
+도메인 `result.status` 값의 정의 정본은 `docs/policies/error_codes.md` §2.6이다.
+이 절은 **실행 phase ↔ result 조합 규약만** 정하고 값 자체를 재정의하지 않는다.
+
+따라서 `status="queued" + result.status="failed"`, `status="running" +
+result.status="rejected_insufficient"`, `status="succeeded" + result=null` 같은 조합은
+금지한다(99 ㉥). GET 자체는 잡이 존재하면 200이며, 게이트 거부·근거 부족도 5xx가 아니다.
+
+#### 2-19.3 오류 판별과 canonical LLM 매핑
+
+판별 기준은 A 확정본을 그대로 쓴다. 상태코드를 PG 라우터에서 다시 판단하지 않는다.
+
+| 누가 입력을 바꿀 수 있는가 | 사례 | wire 결과 |
+| --- | --- | --- |
+| 강사가 바꿀 수 있다 | 게이트 거부, 자동 개인화 근거 부족 | HTTP 200 GET + `status=succeeded` + 도메인 `result.status`. 정상 결과이므로 4xx·5xx로 올리지 않는다 |
+| 호출자(BE)가 고쳐야 한다 | 필수 헤더·JSON·스키마·enum 위반, v1 미지원 요청 | 400 `INVALID_SCHEMA`. 같은 멱등키+다른 바디는 409 `IDEMPOTENCY_CONFLICT`, 없는/다른 테넌트 job은 404 `NOT_FOUND` |
+| 호출자·강사가 현재 요청에서 고칠 수 없다 | 벤더 장애·타임아웃 | 게이트웨이 재시도 예산이 소진된 뒤에만 503/504. 재시도 전 5xx로 승격하지 않는다 |
+
+LLM 예외는 `runtime/errors.py:142-173`의 `domain_error_for()` 표를 **인용만** 한다.
+
+| 입력(`contracts.llm`) | canonical 출력(`runtime.errors`) | HTTP |
+| --- | --- | --- |
+| `LlmTimeout` | `LlmUpstreamTimeout` | 504 `TIMEOUT` |
+| `LlmUnavailable` | `LlmUpstreamDown` | 503 `LLM_UPSTREAM_DOWN` |
+| `ParseFailed`·`FieldMissing` | `DomainException` | 500 `INTERNAL` |
+| 그 밖의 plain `LlmError` | `DomainException` | 500 `INTERNAL` |
+
+plain `LlmError`와 파싱·필드 오류를 503으로 뭉개지 않는다. 벤더가 살아 있는데 우리
+요청·스키마가 틀린 경우라 “잠시 후 다시” 문구가 거짓이 된다. 반대로
+`ProblemWorkflowConfigurationError`는 `LlmError`가 아니므로 `domain_error_for()` 대상이
+아니며 아래 v1 미지원 요청의 400 경계로 보낸다.
+
+`ProblemWorkflowConfigurationError`는 `ValueError` 하위라 `DomainException`이 아니다 —
+그대로 올리면 `api/app.py`의 일반 예외 핸들러가 잡아 500 `INTERNAL`이 된다.
+**라우터가 `SnapshotInvalid`(400 `INVALID_SCHEMA`)로 변환한다.**
+
+#### 2-19.4 v1 지원 한계 — BE 선검사 필요
+
+현재 `ProblemGenerationWorkflow._validate_execution()`은 아래 둘을 동시에 만족하는 요청만
+처리한다(`application/workflow.py:485-494`).
+
+1. `area_tag="language"`
+2. `passage` 생략 또는 `null`
+
+이 제한은 트랙 제한을 새로 만든 것이 아니라 **자료 조달 방식 제한**이다. 현행 그래프에는
+지문·담화·매체를 만드는 “생성” 노드와 승인 저작물 풀에서 고르는 “저작물” 노드가 없다
+(`"생성·저작물 노드 미구현(05 §1.2)"`). 다른 `area_tag` 또는 `passage`가 있는 요청은
+BE가 고쳐야 하는 v1 미지원 요청이므로 400 `INVALID_SCHEMA`로 수렴한다. 게이트를
+완화하거나 임의의 빈 자료로 실행하지 않는다.
+
+또한 v1은 `problem_set.generate` 하나뿐이다. `problem_item.refine`·
+`problem_item.reverify`는 공용 enum의 예약 operation일 뿐 이 API에 엔드포인트나 분기를
+만들지 않는다.
 
 ---
 
