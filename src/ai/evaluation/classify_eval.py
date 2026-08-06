@@ -323,8 +323,10 @@ async def _main_async(interval_ms: int) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="분류 평가 러너(실 LLM)")
-    # 🔴 기본 0 — 로컬 서버에선 불필요한 지연이다. 값은 **실행자가** 정한다.
-    #   외부 API에서 429를 맞으면 올린다(우회책 — `_classify_one` docstring 참조).
+    # 🔴 기본 0 — **실측 전에는 필요한 간격을 모른다.** 88건은 순차 호출이라 tier에 따라
+    #   429가 아예 안 날 수도 있다. 0이 아닌 값을 기본으로 박으면 이후 모든 실행이 그 지연을
+    #   조용히 지불하면서 "간격이 실제로 필요했는지"를 영영 못 재게 된다.
+    #   값은 429를 맞은 **실행자가** 정한다(우회책 — `_classify_one` docstring · 99 ⓡ).
     parser.add_argument(
         "--interval-ms",
         type=int,

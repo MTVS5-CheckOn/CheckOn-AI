@@ -107,7 +107,9 @@ _run_store: RunStore = build_run_store()
 _brief_provider: LLMProvider = build_brief_provider()
 _brief_gateway: LlmGateway = build_brief_gateway(_brief_provider)
 _BRIEFING_BUDGET_S = 45.0
-#: 신호별 브리핑 LLM 호출 동시 실행 상한 — 팀 로컬 서버 부하를 배려한 세마포어(v3 병렬화).
+#: 신호별 브리핑 LLM 호출 동시 실행 상한 — 세마포어(v3 병렬화).
+#: ⚠ 원래 근거는 "팀 로컬 서버 부하 배려"였는데 그 서버는 폐기됐다(99 ⓟ). 값은 그대로
+#: 두되 근거가 바뀐다 — 외부 API에서는 **동시성이 rate limit 표면**이다(99 ⓡ).
 _BRIEFING_CONCURRENCY = 3
 
 
