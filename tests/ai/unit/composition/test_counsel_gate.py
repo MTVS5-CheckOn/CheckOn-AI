@@ -321,3 +321,93 @@ def test_no_combination_got_a_narrower_limit() -> None:
                     rule = tone_rule_for(context)
                     previous = rule.sentences_per_block * 120  # 구 공식
                     assert max_chars_for(context) >= previous
+
+
+# ── 허용 수치 커버리지 (C) ───────────────────────────────────────
+
+
+def _numeric_context(
+    *, label: str = "정답률", value: str = "62%", period: str = "2026년 7월"
+) -> DraftContext:
+    return DraftContext(
+        student_ref="st_1",
+        guardian_ref="gd_1",
+        label_snapshot=LabelSnapshot(
+            comm=CommStyle.DATA,
+            sensitivity=Sensitivity.ANXIOUS,
+            interest=Interest.GRADE,
+            frequency=Frequency.FREQUENT,
+        ),
+        facts=(EvidenceFact(label=label, value=value),),
+        evidence_summaries=(),
+        period_label=period,
+        fallback_text="이번 주 학습 상황을 정리해 보내드립니다.",
+    )
+
+
+def test_numbers_inside_the_fact_label_are_allowed() -> None:
+    """🔴 label도 프롬프트에 실린다 — `- {label}: {value}`(render_evidence_block).
+
+    `period_label`을 허용집합에 넣은 것과 **같은 근거**다: 프롬프트가 쓰라고 지시한 문면을
+    게이트가 막으면 게이트가 프롬프트와 싸운다(99 ㉘).
+    """
+    context = _numeric_context(label="7월 3주차 정답률", value="62%")
+    result = check_counsel_gate(
+        "7월 3주차 정답률은 62%였습니다.", context, max_chars=max_chars_for(context)
+    )
+    assert result.passed, result.reason
+
+
+@pytest.mark.parametrize(
+    ("evidence", "body"),
+    [
+        ("출석 1,240회", "출석은 1240회였습니다."),  # 근거에 쉼표 · 본문에 없음
+        ("출석 1240회", "출석은 1,240회였습니다."),  # 반대 방향
+        ("출석 1,240회", "출석은 1,240회였습니다."),  # 양쪽 다 쉼표
+    ],
+)
+def test_digit_separators_match_in_both_directions(evidence: str, body: str) -> None:
+    """🔴 같은 값인데 **표기만 달라도** 막히던 것 — 양방향을 고정한다.
+
+    `\\d+`가 쉼표에서 끊겨 `1,240`이 `{1, 240}`이 됐다. 한쪽만 정규화하면 반대 방향이
+    남으므로 **추출 함수 자체**를 게이트와 허용집합이 공유한다.
+    """
+    context = _numeric_context(label="출석", value=evidence)
+    result = check_counsel_gate(body, context, max_chars=max_chars_for(context))
+    assert result.passed, result.reason
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("정답률이 88%까지 올랐습니다.", "88"),  # 근거에 없는 수치
+        ("출석은 1250회였습니다.", "1250"),  # 근사값 — 1,240과 다르다
+        ("정답률은 62%이고 백분위는 31입니다.", "31"),  # 일부만 근거
+    ],
+)
+def test_fabricated_numbers_are_still_blocked(body: str, expected: str) -> None:
+    """🔴 **C의 유일한 안전 리스크** — 허용집합을 넓히면서 불변식 2가 느슨해지지 않았는지.
+
+    근거에 없는 숫자는 여전히 막힌다. 이 역케이스가 통과하지 못하면 위 완화는 되돌려야 한다.
+    """
+    context = _numeric_context(label="출석", value="1,240회 · 정답률 62%")
+    result = check_counsel_gate(body, context, max_chars=max_chars_for(context))
+    assert not result.passed
+    assert result.reason == f"ungrounded_number:{expected}"
+
+
+def test_separator_normalisation_does_not_merge_separate_numbers() -> None:
+    """⚠ 쉼표를 전부 지우면 `"62%, 71%"`가 `6271`로 붙어 **없던 수치가 생긴다.**
+
+    숫자 사이에 낀 쉼표만 지운다 — 뒤에 공백이 있으면 자릿수 구분이 아니다.
+    """
+    context = _numeric_context(label="정답률", value="62%, 71%")
+    allowed = context.allowed_numbers()
+    assert {"62", "71"} <= allowed
+    assert "6271" not in allowed
+
+
+def test_allowed_numbers_still_rejects_what_no_source_provided() -> None:
+    """출처 셋(label·value·period) 밖의 숫자는 허용집합에 없다."""
+    context = _numeric_context(label="정답률", value="62%", period="2026년 7월")
+    assert context.allowed_numbers() == {"62", "2026", "7"}

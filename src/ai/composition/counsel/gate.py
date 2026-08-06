@@ -15,9 +15,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict
 
 from ai.composition.buffer_lexicon import find_forbidden, forbidden_terms
-from ai.contracts.composition import DraftContext
-
-_NUMBER_RE: Final = re.compile(r"\d+")
+from ai.contracts.composition import DraftContext, extract_numbers
 
 #: LaTeX·마크다운 메타문자 — 한글 상담 초안엔 안 나오는 게 정상(× U+00D7은 정상 문자).
 _SYMBOL_RE: Final = re.compile(r"[$\\`*#_~^{}]")
@@ -66,7 +64,9 @@ def check_counsel_gate(
         return GateResult(passed=False, reason=f"forbidden:{hits[0]}")
 
     allowed = context.allowed_numbers()
-    ungrounded = sorted(set(_NUMBER_RE.findall(body)) - allowed)
+    # 🔴 추출은 허용집합과 **같은 함수**여야 한다 — 한쪽만 정규화하면 표기 방향이
+    # 반대일 때 그대로 뚫린다(`1,240` ↔ `1240`). 검사 순서·사유 코드는 그대로다.
+    ungrounded = sorted(extract_numbers(body) - allowed)
     if ungrounded:  # 근거에 없는 수치 — 불변식 1·2(LLM이 수치를 만들지 않는다)
         return GateResult(passed=False, reason=f"ungrounded_number:{ungrounded[0]}")
 
