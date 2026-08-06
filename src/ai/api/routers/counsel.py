@@ -10,7 +10,14 @@ HTTP로 노출한다. **요청 단위 = 문의 1건**이며 워커는 새로 만
 enqueue까지만 하고 GET이 잡 상태를 읽는 형태로 좁아진다(계약은 그대로다 — BE는 이미
 202 → Kafka → GET 순서로 쓴다).
 
-**CI 기본은 Fake provider** — 실 LLM 호출 0. 실 경로는 `build_gateway_writer`로 교체한다.
+🔴 **provider에 기본값이 없다** — 조립 루트가 `set_counsel_provider()`를 부르지 않으면
+**기동이 실패한다**. 종전 기본값은 `FakeCounselProvider()`였고, 그건 배선 실수를 조용한
+날조 산출로 바꿨다(Fake의 `fallback_text`는 게이트를 통과하고 원장에도 안 남는다).
+CI·테스트는 Fake를 **명시적으로** 꽂고(`reset_counsel_stores`), 실 경로는
+`GatewayPlanner`+`GatewayDraftWriter`를 만족하는 한 객체를 꽂는다.
+
+**러너는 `assembly.open_counsel_pack_runner`로만 만든다** — 직접 생성하면
+`require_tracing_disabled`(불변식 3)와 체크포인터 선택이 서비스 경로에서만 빠진다.
 
 멱등: 감지·Import 라우터 선례 재사용 — `(tenant_id, endpoint, idempotency_key)` 스코프,
 바디 동일성은 canonical 해시. 캐시 fail-open.
@@ -27,14 +34,19 @@ from datetime import timedelta
 from typing import Any, Final
 
 from fastapi import APIRouter, Request, Response
-from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
+from ai.composition.counsel.assembly import open_counsel_pack_runner
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.labels import LabelVocabularyError, snapshot_from_labels
-from ai.composition.counsel.provider import COUNSEL_GEN_PARAMS, FakeCounselProvider
+from ai.composition.counsel.provider import (
+    COUNSEL_GEN_PARAMS,
+    CounselPlanner,
+    DraftWriter,
+    FakeCounselProvider,
+)
 from ai.composition.counsel.refine import refine_draft
 from ai.composition.counsel.settings import get_counsel_settings
 from ai.composition.counsel.stores import (
@@ -100,6 +112,15 @@ _NO_DATA_TOPICS: Final[frozenset[InquiryTopic]] = frozenset({InquiryTopic.SCHEDU
 _REGEN_MAX = 3
 _LEASE_OWNER = "counsel-router"
 
+#: `result`를 실을 수 있는 phase — **결과 계약이 확정된 상태**만이다(error_codes §2.5).
+#: 나머지(queued·leased·running·paused·cancelled)는 결과가 **아직/영영 없는** 것이고,
+#: 🔴 그걸 `llm_failed`로 보고하면 `status="queued"` + `draft_status="llm_failed"`라는
+#: **모순 조합**이 나간다 — 잡은 살아 있는데 BE는 "다시 시도"를 그리고, 강사가 누르면
+#: 초안이 2개 생긴다. 계약의 `result`가 옵셔널인 이유가 이것이다.
+_REPORTABLE_PHASES: Final[frozenset[JobPhase]] = frozenset(
+    {JobPhase.SUCCEEDED, JobPhase.FAILED}
+)
+
 #: 시계 주입점 — `datetime.now()` 직접 호출 금지(03 §3).
 _clock = system_utc_now
 
@@ -136,14 +157,68 @@ class _DraftState:
 #: 없고, BE가 Kafka 완료 통지로 이미 받은 값을 그대로 쓸 수 있어서다(04 §3.9).
 _drafts: dict[tuple[str, str], _DraftState] = {}
 
-#: LLM 접점 — CI 기본은 결정론 Fake다(실 호출 0). 실 경로는 주입으로 교체한다.
-_provider: Any = FakeCounselProvider()
+#: LLM 접점 — 🔴 **기본값이 없다.** 조립부가 주입하지 않으면 서비스는 뜨지 않는다.
+#:
+#: ⚠ 종전 기본값은 `FakeCounselProvider()`였다. Fake는 시나리오가 없으면
+#: `context.fallback_text`("이번 기간 학습 상황을 정리해 보내드립니다.")를 돌려주는데, 그
+#: 문장은 숫자·금칙어가 없어 **게이트를 그대로 통과**한다 — `draft_status=generated` +
+#: `citations`가 붙은 정상 초안으로 학부모에게 나가고, LLM 호출이 0건이라
+#: **AI_RUN·LLM_CALL에도 남지 않아 사후 추적으로도 구분되지 않는다.**
+#: `assembly.open_counsel_pack_runner`가 같은 이유로 이미 폴백을 제거했고
+#: ("조용한 Fake가 최악"), 이 라우터에만 남아 있었다.
+_provider: Any = None
+
+
+class CounselProviderNotWired(RuntimeError):
+    """counsel provider 미배선·부분 배선 — **기동 시점**에 터뜨린다.
+
+    첫 요청까지 미루면 Fake 산출이 나가거나(구 기본값) `worker_internal_error`가 되는데,
+    둘 다 배포 후에야 드러난다.
+    """
+
+
+#: provider가 만족해야 할 Protocol — 워커가 **plan·write 둘 다** 호출한다.
+#: ⚠ `runtime_checkable`은 **메서드 존재만** 본다(시그니처는 안 본다). 그래도
+#: "planner 없는 writer만 꽂혔다"는 이 PR이 잡으려는 실수는 전부 걸린다.
+_PROVIDER_PROTOCOLS: Final = (("plan", CounselPlanner), ("write", DraftWriter))
 
 
 def set_counsel_provider(provider: Any) -> None:  # noqa: ANN401 — Planner+Writer 이중 Protocol
-    """plan·write provider 주입 — 테스트 시나리오·실 LLM 배선의 seam."""
+    """plan·write provider 주입 — 테스트 시나리오·실 LLM 배선의 seam.
+
+    🔴 한 객체가 `CounselPlanner`·`DraftWriter` **양쪽**을 만족해야 한다. 종전에는 검사가
+    없어 `write`만 있는 객체를 꽂아도 기동이 통과하고 **첫 요청에서** `worker_internal_error`가
+    났다 — 배선 실수는 배선 시점에 터지는 게 맞다.
+    """
+    missing = [
+        name for name, protocol in _PROVIDER_PROTOCOLS
+        if not isinstance(provider, protocol)
+    ]
+    if missing:
+        raise CounselProviderNotWired(
+            f"counsel provider가 {', '.join(missing)}을(를) 구현하지 않는다 "
+            f"({type(provider).__name__}) — 워커가 plan·write 둘 다 호출한다"
+        )
     global _provider
     _provider = provider
+
+
+def require_counsel_provider() -> Any:  # noqa: ANN401 — Planner+Writer 이중 Protocol
+    """배선 확인 — 미배선이면 **기동을 막는다**(아래 startup 훅이 부른다).
+
+    ⚠ `api/app.py`는 양자 승인 파일이라 라우터가 자기 startup 훅을 들고 간다
+    (`include_router`가 앱으로 옮겨 준다). 앱 조립부를 고치지 않고도 같은 시점에 터진다.
+    """
+    if _provider is None:
+        raise CounselProviderNotWired(
+            "counsel provider가 배선되지 않았다 — `set_counsel_provider()`를 부르지 않으면 "
+            "초안 경로를 띄우지 않는다. 조용한 Fake 폴백은 제거됐다(날조 산출 저장 방지). "
+            "테스트·CI는 `reset_counsel_stores()`가 Fake를 명시적으로 꽂는다."
+        )
+    return _provider
+
+
+router.add_event_handler("startup", require_counsel_provider)
 
 
 def set_counsel_stores(
@@ -348,33 +423,52 @@ async def _generate(
         class_ref=request.class_ref,
         contexts={request.student_ref: context},
     )
-    runner = CounselPackRunner(
+    provider = require_counsel_provider()
+    # 🔴 조립부를 경유한다 — 러너를 여기서 직접 만들면 `require_tracing_disabled`와
+    # 체크포인터 선택(`_open_saver`)이 **서비스 경로에서만 빠진다**. 실제로 그랬다:
+    # `LANGSMITH_TRACING=true`여도 이 엔드포인트는 그냥 돌았다.
+    async with open_counsel_pack_runner(
         supervisor=supervisor,
         context_store=_context_store,
         step_sink=_step_sink,
         draft_store=_draft_store,
         pack_store=_pack_store,
-        planner=_provider,
-        writer=_provider,
-        checkpointer=InMemorySaver(),
+        planner=provider,
+        writer=provider,
         regen_max=_REGEN_MAX,
         lease_owner=_LEASE_OWNER,
-        now=_clock,
         # 실행 원장은 라우터와 **같은 인스턴스**를 쓴다 — 워커가 기본 팩토리로 따로 만들면
         # 테스트가 주입한 저장소를 우회해 적재를 관측할 수 없다.
         run_store=_run_store,
-    )
-    ran = await runner.run_next(tenant_id=tenant_id) or job
-    # 🔴 뷰가 싣는 job_id와 refine 등록 키는 **같은 값이어야 한다** — 그래서 한 곳에서
-    # 만들어 양쪽에 넘긴다. `ran`은 `run_next`가 집어온 잡이라 `job`과 다를 수 있으므로
-    # `ran.job_id`를 쓰면 응답의 job_id로 refine을 못 찾는 조합이 생긴다.
-    view_job_id = str(job.job_id)
-    result = await _wire_result(
-        runner, ran, request, applied, job_id=view_job_id, tenant_id=tenant_id
-    )
-    return CounselDraftJobView(
-        job_id=view_job_id, status=ran.phase.value, result=result
-    )
+    ) as runner:
+        # 🔴 `run_next`는 `worker_kind + tenant_id`로만 lease한다 — **job_id를 지정해 집을
+        # 수 없다.** 큐에 남의 잡이 남아 있으면 이게 집어오는 건 내 잡이 아니다. 그래도
+        # 호출은 유지한다(큐를 비우는 역할이 있다) — 바꾼 것은 **결과를 어디서 읽는가**다.
+        ran = await runner.run_next(tenant_id=tenant_id)
+        if ran is not None and ran.job_id != job.job_id:
+            logger.info(
+                "counsel 러너가 다른 잡을 실행했다 mine=%s ran=%s — 결과는 내 잡에서 읽는다",
+                job.job_id,
+                ran.job_id,
+            )
+        # 🔴 **이 요청은 자기 잡의 결과만 읽는다.** 종전에는 `ran`(남의 잡일 수 있다)의
+        # `result_ref`에서 본문을 꺼내 내 `job_id`·`citations`와 함께 반환했다 —
+        # 다른 학생의 초안이 나가고 `_drafts`에도 등록돼 refine까지 오염됐다.
+        mine = await supervisor.get(tenant_id=tenant_id, job_id=job.job_id) or job
+        view_job_id = str(job.job_id)
+        if mine.phase not in _REPORTABLE_PHASES:
+            # 아직 안 돌았다(queued·leased·running·paused) 또는 취소됐다. **결과가 없다는
+            # 것과 실패는 다르다** — `result=None` + 잡 phase가 정직한 표현이다
+            # (error_codes §2.1 "queued/generating → 스피너", 계약 `result`가 옵셔널).
+            return CounselDraftJobView(
+                job_id=view_job_id, status=mine.phase.value, result=None
+            )
+        result = await _wire_result(
+            runner, mine, request, applied, job_id=view_job_id, tenant_id=tenant_id
+        )
+        return CounselDraftJobView(
+            job_id=view_job_id, status=mine.phase.value, result=result
+        )
 
 
 async def _wire_result(
@@ -420,7 +514,9 @@ async def _wire_result(
             generated_at=_clock(),
         )
     record = (
-        await _draft_store.get(make_ref(DRAFT_SCHEME, student.draft_id))
+        await _draft_store.get(
+            make_ref(DRAFT_SCHEME, student.draft_id), tenant_id=tenant_id
+        )
         if student.draft_id
         else None
     )
@@ -593,7 +689,9 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
 
 
 __all__ = [
+    "CounselProviderNotWired",
     "counsel_versions",
+    "require_counsel_provider",
     "set_counsel_run_store",
     "reset_counsel_stores",
     "router",
