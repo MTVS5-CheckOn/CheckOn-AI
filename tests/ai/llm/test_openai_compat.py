@@ -299,38 +299,13 @@ def test_vendor_extra_body_is_not_sent_by_default() -> None:
     """🔴 **벤더 확장은 기본으로 보내지 않는다**(8/6 기본값 반전).
 
     `chat_template_kwargs`는 표준 OpenAI 파라미터가 아니라 vLLM/Qwen chat_template 확장이다.
-    기본으로 보내면 그 확장을 모르는 표준 API가 **400 `Unknown parameter`로 거부**한다
-    (실측). 확장은 아는 서버에서만 켠다 — `OPENAI_DISABLE_THINKING=true`.
+    기본으로 보내면 그 확장을 모르는 표준 API가 **400 `Unknown parameter`로 거부**한다(실측).
     """
     provider = _provider(result=_ok_response("ok"))
     _run(provider.complete(_request(), _context()))
     kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
     assert kwargs is not None
     assert "extra_body" not in kwargs
-
-
-def test_thinking_toggle_on_sends_extra_body() -> None:
-    """opt-in하면(disable=True) 벤더 경로로 `enable_thinking=False`를 전달한다.
-
-    ⚠ **지금은 켤 대상이 없다**(99 ⓟ·ⓢ) — 이 경로가 살아 있는 이유는 같은 확장을 쓰는
-    서버가 다시 생길 때를 위해서고, 지금은 "켜면 무엇이 실리는가"를 고정할 뿐이다.
-    (근거였던 팀 로컬 서버는 추론모델이라 이 옵션이 없으면 CoT가 `max_tokens`를 소진해
-    content가 빈 채로 잘렸다 — v2 프리뷰 실측.)
-    """
-    settings = OpenAiSettings.model_validate(
-        {
-            "openai_base_url": "http://local/v1",
-            "openai_api_key": "k",
-            "openai_model": "gemma-test",
-            "openai_disable_thinking": True,
-        }
-    )
-    client = _FakeClient(result=_ok_response("ok"))
-    provider = OpenAICompatProvider(settings=settings, client=client)  # type: ignore[arg-type]
-    _run(provider.complete(_request(), _context()))
-    assert client.completions.last_kwargs["extra_body"] == {  # type: ignore[index]
-        "chat_template_kwargs": {"enable_thinking": False}
-    }
 
 
 def test_default_timeout_is_total_15s() -> None:

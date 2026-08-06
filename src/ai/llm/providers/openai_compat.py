@@ -115,29 +115,6 @@ class OpenAiSettings(BaseSettings):
     상향. httpx 구간 타임아웃도 이 값으로 두되, 실제 상한은 complete()의 asyncio.timeout.
     """
 
-    openai_disable_thinking: bool = False
-    """추론(thinking) 비활성 — **벤더 특화 확장이라 opt-in이다**(기본 꺼짐).
-
-    켜면 요청에 `extra_body={"chat_template_kwargs": {"enable_thinking": False}}`가 붙는다.
-    이건 **표준 OpenAI 파라미터가 아니라 vLLM/Qwen chat_template 확장**이다.
-
-    🔴 **(8/6) 기본을 True → False로 뒤집었다.** 실측:
-
-        disable_thinking=True  → 400 `Unknown parameter: 'chat_template_kwargs'`
-        disable_thinking=False → 정상 응답
-
-    표준 API는 모르는 body 파라미터를 거부한다. **벤더 확장을 기본으로 보내면 그 확장을
-    아는 서버 외에는 전부 400**이라, 기본 ON은 "로컬 서버 전용" 가정이 코드에 박힌
-    상태였다. 확장은 아는 서버에서만 켜는 게 맞다.
-
-    ⚠ **(8/6) 지금은 켤 대상이 없다 — 사실상 죽은 옵션이다.** 이 플래그가 있던 이유는 팀
-    로컬 서버(mtp 계열)가 추론모델이라 영어 CoT를 `message.content` 앞에 수백 토큰 뱉고
-    그게 `max_tokens`를 소진해 content가 빈 채로 잘렸기 때문이다(v2 프리뷰 실측). **그
-    서버는 폐기됐고 복귀 계획이 없다**(99 ⓟ) — 표준 API에서 켜면 400이므로 항상 False다.
-    제거 후보지만 `OpenAiSettings`를 B의 `problem_generation/`이 참조해 **B 승인 대상**이다
-    (99 ⓢ). 같은 확장을 쓰는 서버가 다시 생기면 그때 켠다.
-    """
-
 
 @lru_cache
 def get_llm_settings() -> OpenAiSettings:
@@ -205,15 +182,12 @@ class OpenAICompatProvider:
                 #   `max_tokens`가 None이라 이 줄을 안 타서 무사했다(21회 성공).
                 #   ⚠ **되돌리지 말 것** — 구 키로 돌리면 전 호출이 400이다.
                 #   ⚠ **설정 플래그로 분기하지 않았다.** "구 서버는 max_tokens"로 나누고
-                #     싶어지지만 그게 `openai_disable_thinking`이 죽은 분기가 된 경로다
+                #     싶어지지만 그게 제거된 thinking 확장 플래그가 죽은 분기가 된 경로다
                 #     (99 ⓢ). 로컬 서버는 폐기 확정이라(B-5 재확정) 교체가 맞다.
                 kwargs["max_completion_tokens"] = params.max_tokens
             if params.seed is not None:
                 kwargs["seed"] = params.seed
-        if self._settings.openai_disable_thinking:
-            # 벤더 특화(계약 밖) — 서버 chat_template의 thinking을 끈다. 이 옵션은 어댑터에만
-            # 존재하고 상위(composition)로 새지 않는다(벤더 독립 유지). enable_thinking=False.
-            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+        # 표준 OpenAI API에서 지원하지 않는 thinking 비활성화 확장은 제거됨 · 99 ⓢ
         return kwargs
 
     async def complete(

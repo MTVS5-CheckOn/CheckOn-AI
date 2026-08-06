@@ -116,7 +116,6 @@ def build_problem_providers(
         openai_api_key=resolved.openai_api_key.get_secret_value(),
         openai_model=resolved.openai_model,
         openai_timeout_s=resolved.openai_timeout_s,
-        openai_disable_thinking=False,
         _env_file=None,
     )
     return ProblemProviders(

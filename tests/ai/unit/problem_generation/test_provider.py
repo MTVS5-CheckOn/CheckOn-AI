@@ -63,7 +63,6 @@ def test_dedicated_verifier_uses_external_settings() -> None:
     assert verifier._settings.openai_base_url == "https://api.openai.test/v1"
     assert verifier._settings.openai_model == "gpt-test"
     assert verifier._settings.openai_timeout_s == 23.0
-    assert verifier._settings.openai_disable_thinking is False
     assert providers.has_dedicated_verifier
 
 
