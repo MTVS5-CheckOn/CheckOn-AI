@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -26,6 +27,10 @@ from fastapi.testclient import TestClient
 from ai.api.app import create_app
 from ai.api.routers import classify as classify_router
 from ai.api.routers import confirmations as confirmations_router
+from ai.api.routers.confirmations import (
+    CORRECTED_VALUE_MISSING,
+    CORRECTED_VALUE_NOT_ALLOWED,
+)
 from ai.db.repositories.inquiry_class_store import (
     InMemoryInquiryClassStore,
     InquiryClassRecord,
@@ -169,3 +174,133 @@ def test_missing_prediction_is_still_a_404(client: TestClient) -> None:
         },
     )
     assert response.status_code == 404
+
+
+# ── B 조용한 통과 2종 ────────────────────────────────────────────
+
+
+def test_corrected_without_a_value_is_refused(client: TestClient) -> None:
+    """🔴 `action=corrected` + 값 없음이 성공으로 나가지 않는다.
+
+    종전엔 200 `accepted:true`로 나가고 `corrections={}`라 `reviewed_at`만 찍혔다.
+    그 행은 규약 ①에 의해 **이후 재예측이 영구 차단**된다 — "검토함"으로 굳는다.
+    """
+    _classify(client, "iq_empty")
+    response = _confirm(
+        client,
+        {"kind": "classification", "suggestion_id": "iq_empty", "action": "corrected"},
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["detail"]["reason"] == CORRECTED_VALUE_MISSING
+
+    row = _row("iq_empty")
+    assert row is not None and row.reviewed_at is None, (
+        "거절했는데 reviewed_at이 찍혀 규약 ①로 재예측이 막혔다"
+    )
+
+
+def test_all_null_correction_counts_as_missing(client: TestClient) -> None:
+    """⚠ `corrected_value={}`(3축 전부 null)도 같은 자리다 — 형태만 다르고 결과가 같다."""
+    _classify(client, "iq_allnull")
+    response = _confirm(
+        client,
+        {
+            "kind": "classification",
+            "suggestion_id": "iq_allnull",
+            "action": "corrected",
+            "corrected_value": {"topic": None, "sentiment": None, "urgency": None},
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["detail"]["reason"] == CORRECTED_VALUE_MISSING
+
+
+def test_confirmed_with_a_value_is_refused(client: TestClient) -> None:
+    """🔴 반대 조합 — `confirmed`에 값이 실리면 종전엔 값이 통째로 버려졌다.
+
+    버릴 거면 받지 않는다(kind·action 거절과 같은 결).
+    """
+    _classify(client, "iq_conf")
+    response = _confirm(
+        client,
+        {
+            "kind": "classification",
+            "suggestion_id": "iq_conf",
+            "action": "confirmed",
+            "corrected_value": {"topic": "schedule"},
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["detail"]["reason"] == CORRECTED_VALUE_NOT_ALLOWED
+
+
+def test_plain_confirmed_still_marks_reviewed(client: TestClient) -> None:
+    """⚠ 정상 확정은 그대로 통과한다 — 과차단은 미차단만큼 나쁘다."""
+    _classify(client, "iq_ok")
+    response = _confirm(
+        client,
+        {"kind": "classification", "suggestion_id": "iq_ok", "action": "confirmed"},
+    )
+    assert response.status_code == 200, response.text
+    row = _row("iq_ok")
+    assert row is not None and row.reviewed_at is not None
+    assert row.corrected_topic is None  # 확정은 정정이 아니다
+
+
+def test_outcome_reports_what_was_actually_applied(client: TestClient) -> None:
+    """🔴 로그 수치가 요청받은 축 수가 아니라 **실제 적용분**이다.
+
+    규약 ②로 걸러진 축까지 "적용"으로 남으면 저장 상태와 로그가 갈린다.
+    """
+    predicted = _classify(client, "iq_same")
+    store = confirmations_router.inquiry_class_store()
+    outcome = asyncio.run(
+        store.apply_confirmation(
+            tenant_id="t1",
+            inquiry_ref="iq_same",
+            corrections={"topic": predicted["topic"]},  # 예측과 같은 값
+        )
+    )
+    assert outcome.found is True
+    assert outcome.applied == {}, "같은 값 정정이 적용으로 세어졌다(규약 ②)"
+    assert outcome.touched == 0
+
+
+def test_unknown_axis_is_reported_not_silently_dropped() -> None:
+    """🔴 미지 축을 조용히 버리지 않는다.
+
+    ⚠ **HTTP로는 도달하지 않는다** — `ClassificationCorrection`이 `extra="forbid"`라
+    축 오타는 400(`extra_forbidden`)에서 걸린다. 이 방어는 저장소를 직접 부르는 호출부
+    (평가 러너·향후 배치)를 위한 것이고, 저장소는 계약을 믿지 않는다.
+    """
+    store = InMemoryInquiryClassStore()
+    record = InquiryClassRecord(
+        topic="grade",
+        sentiment="normal",
+        urgency="normal",
+        confidence_topic=Decimal("0.9"),
+        confidence_sentiment=Decimal("0.9"),
+        confidence_urgency=Decimal("0.9"),
+    )
+    asyncio.run(store.insert_prediction(tenant_id="t1", inquiry_ref="x", record=record))
+    outcome = asyncio.run(
+        store.apply_confirmation(
+            tenant_id="t1",
+            inquiry_ref="x",
+            corrections={"topik": "schedule", "sentiment": "complaint"},
+        )
+    )
+    assert outcome.unknown == {"topik"}
+    assert set(outcome.applied) == {"sentiment"}
+    assert outcome.touched == 1, "요청 2축인데 적용은 1축 — 수치가 실제와 같아야 한다"
+
+
+def test_outcome_is_not_a_truthy_tuple() -> None:
+    """🔴 반환 타입을 바꾸면서 남길 뻔한 함정 — `if not outcome:`이 조용히 죽는 형태.
+
+    NamedTuple이면 필드가 있는 한 항상 truthy라 종전 호출부의 404 분기가 사라진다.
+    호출부가 `outcome.found`를 명시적으로 보게 강제한다.
+    """
+    from ai.db.repositories.inquiry_class_store import ConfirmationOutcome
+
+    assert not isinstance(ConfirmationOutcome(found=False), tuple)

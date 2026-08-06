@@ -34,7 +34,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
@@ -82,6 +83,37 @@ class InquiryClassRecord(BaseModel):
     """
 
 
+@dataclass(frozen=True)
+class ConfirmationOutcome:
+    """확정 회신 1건의 결과 — 🔴 **bool로는 세 가지를 구분할 수 없었다.**
+
+    종전 반환 타입이 `bool`이라 호출부가 ⓐ 행이 없다(404) ⓑ 적용됐다 ⓒ **받았지만 한 축도
+    적용되지 않았다**를 구분할 방법이 없었다. ⓒ가 성공으로 나가면 BE는 정정이 저장됐다고
+    믿는데 `reviewed_at`만 찍히고, 그 행은 규약 ①에 의해 **이후 재예측이 영구 차단**된다.
+
+    ⚠ **일부러 tuple이 아니라 dataclass다.** NamedTuple이면 항상 truthy라 종전 호출부의
+    `if not applied:`(404 분기)가 조용히 죽는다 — 반환 타입을 바꾸면서 그 함정을 남기지
+    않는다. 호출부는 `outcome.found`를 명시적으로 봐야 한다.
+    """
+
+    found: bool
+    """대상 행이 존재했는가. `False`면 404(폴백이라 미적재이거나 분류한 적 없음)."""
+
+    applied: Mapping[str, str] = field(default_factory=dict)
+    """`corrected_*`에 쓴 축 → 값. 저장 구현이 이걸 그대로 쓴다."""
+
+    cleared: frozenset[str] = frozenset()
+    """이전 정정을 취소해 `corrected_*`를 NULL로 되돌린 축."""
+
+    unknown: frozenset[str] = frozenset()
+    """3축 밖이라 저장소가 버린 축 — 조용히 버리지 않고 사실을 돌려준다."""
+
+    @property
+    def touched(self) -> int:
+        """실제로 바뀐 축 수 — 로그가 이 값을 쓴다(요청받은 축 수가 아니라)."""
+        return len(self.applied) + len(self.cleared)
+
+
 @runtime_checkable
 class InquiryClassStore(Protocol):
     """분류 평가셋 저장소 인터페이스 — 라우터는 이 타입에만 의존한다."""
@@ -104,22 +136,49 @@ class InquiryClassStore(Protocol):
         tenant_id: str,
         inquiry_ref: str,
         corrections: dict[str, str],
-    ) -> bool: ...
+    ) -> ConfirmationOutcome:
+        """확정 회신 반영. ⚠ 반환은 `bool`이 아니다 — `ConfirmationOutcome` 참조."""
+        ...
 
 
-def _corrections_to_apply(
+def _plan_corrections(
     record: InquiryClassRecord, corrections: dict[str, str]
-) -> dict[str, str]:
-    """🔴 **예측과 다른 축만** 남긴다 — 규약 ②(P2-b 기록 규약 ①).
+) -> ConfirmationOutcome:
+    """축별로 **세 상태**를 가른다 — 규약 ②(P2-b 기록 규약 ①)를 지키면서 되돌리기를 허용한다.
 
-    같은 값으로 "정정"된 축은 버린다. 이걸 안 하면 강사가 확인만 하고 지나간 건도
-    오답으로 집계돼 재분류율이 부풀려진다.
+    | 회신 값 | 현재 `corrected_*` | 판정 |
+    | --- | --- | --- |
+    | 예측과 같음 | NULL | **무시** — 같은 값 정정은 정정이 아니다(규약 ②) |
+    | 예측과 같음 | 값 있음 | 🔴 **되돌리기** — NULL로 복원 |
+    | 예측과 다름 | 무관 | **정정** |
+
+    🔴 종전에는 예측하고만 비교해서 두 번째 줄이 첫 줄에 흡수됐다 — 강사가 정정을 실수로
+    알아채고 원래 값으로 회신해도 `corrected_*`가 **영구히 남았다.** 규약 ②가 막으려던
+    왜곡(재분류율 부풀리기)을 규약 ② 구현이 만들고 있었다.
+
+    ⚠ 되돌리기는 규약 ②와 **같은 방향**이다 — 둘 다 분자(정정된 행)에서 가짜를 뺀다.
     """
-    return {
-        axis: value
-        for axis, value in corrections.items()
-        if axis in AXES and value != getattr(record, axis)
-    }
+    applied: dict[str, str] = {}
+    cleared: set[str] = set()
+    unknown: set[str] = set()
+    for axis, value in corrections.items():
+        if axis not in AXES:
+            unknown.add(axis)
+            continue
+        if value != getattr(record, axis):
+            applied[axis] = value
+        elif getattr(record, f"corrected_{axis}") is not None:
+            cleared.add(axis)  # 이전 정정 취소
+    if unknown:  # 조용히 버리지 않는다 — 계약이 막고 있지만 저장소는 계약을 믿지 않는다
+        logger.warning(
+            "inquiry_class.unknown_axes_dropped axes=%s", sorted(unknown)
+        )
+    return ConfirmationOutcome(
+        found=True,
+        applied=applied,
+        cleared=frozenset(cleared),
+        unknown=frozenset(unknown),
+    )
 
 
 class InMemoryInquiryClassStore:
@@ -157,19 +216,20 @@ class InMemoryInquiryClassStore:
         tenant_id: str,
         inquiry_ref: str,
         corrections: dict[str, str],
-    ) -> bool:
+    ) -> ConfirmationOutcome:
         scope = (tenant_id, inquiry_ref)
         record = self._rows.get(scope)
         if record is None:
-            return False
-        applied = _corrections_to_apply(record, corrections)
+            return ConfirmationOutcome(found=False)
+        outcome = _plan_corrections(record, corrections)
         self._rows[scope] = record.model_copy(
             update={
-                **{f"corrected_{axis}": value for axis, value in applied.items()},
+                **{f"corrected_{axis}": value for axis, value in outcome.applied.items()},
+                **{f"corrected_{axis}": None for axis in outcome.cleared},
                 "reviewed_at": self._clock(),
             }
         )
-        return True
+        return outcome
 
     def clear(self) -> None:
         self._rows.clear()
@@ -234,18 +294,19 @@ class PgInquiryClassStore:
         tenant_id: str,
         inquiry_ref: str,
         corrections: dict[str, str],
-    ) -> bool:
+    ) -> ConfirmationOutcome:
         async with self._sessionmaker() as session:
             row = await self._select(session, tenant_id, inquiry_ref)
             if row is None:
-                return False
-            for axis, value in _corrections_to_apply(
-                _to_record(row), corrections
-            ).items():
+                return ConfirmationOutcome(found=False)
+            outcome = _plan_corrections(_to_record(row), corrections)
+            for axis, value in outcome.applied.items():
                 setattr(row, f"corrected_{axis}", value)
+            for axis in outcome.cleared:  # 되돌리기 — NULL 복원
+                setattr(row, f"corrected_{axis}", None)
             row.reviewed_at = self._clock()
             await session.commit()
-            return True
+            return outcome
 
     @staticmethod
     async def _select(
@@ -278,6 +339,7 @@ def _to_record(row: InquiryClass) -> InquiryClassRecord:
 
 __all__ = [
     "AXES",
+    "ConfirmationOutcome",
     "InMemoryInquiryClassStore",
     "InquiryClassRecord",
     "InquiryClassStore",
