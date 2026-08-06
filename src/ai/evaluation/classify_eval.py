@@ -36,7 +36,7 @@ from ai.composition.classify.provider import (
     get_classify_settings,
 )
 from ai.contracts.classify import ClassifyRequest, ClassifyResult
-from ai.contracts.counsel import InquirySentiment
+from ai.contracts.counsel import InquirySentiment, InquiryTopic, InquiryUrgency
 from ai.contracts.execution import Capability, ExecutionContext
 from ai.evaluation.golden.classify.corpus import (
     CASES,
@@ -57,6 +57,14 @@ _COMPLAINT_RECALL_MIN = 0.95
 #: 🔴 축 순서 — `expected`·`actual`·`confidence` **세 배열이 같은 순서**를 쓴다.
 #: 순서가 어긋나면 조용히 틀린 표가 나온다(정확도는 그럴듯한 숫자로 나오고 아무도 못 본다).
 AXES: Final = ("topic", "sentiment", "urgency")
+
+#: 축별 라벨 — 혼동행렬의 행·열 순서다. 🔴 **표본에 안 나온 라벨도 표에 0으로 남아야**
+#: "그 값이 한 번도 예측되지 않았다"는 사실이 보인다. 어휘 정본은 `contracts/counsel.py`다.
+AXIS_LABELS: Final[dict[str, tuple[str, ...]]] = {
+    "topic": tuple(v.value for v in InquiryTopic),
+    "sentiment": tuple(v.value for v in InquirySentiment),
+    "urgency": tuple(v.value for v in InquiryUrgency),
+}
 
 #: confidence 구간 폭. 0.1 단위 — 표본 88건이라 이보다 잘게 쪼개면 구간당 한 자릿수가 된다.
 BUCKET_WIDTH: Final = 0.1
@@ -97,6 +105,74 @@ class Bucket(NamedTuple):
     @property
     def thin(self) -> bool:
         return 0 < self.samples < MIN_BUCKET_SAMPLES
+
+
+class ConfusionMatrix(NamedTuple):
+    """한 축의 예측×정답 교차표 — **순수 함수 산출**(단위 테스트 대상).
+
+    🔴 **왜 필요한가 — 재현율만으로는 대응이 안 정해진다.** 2차 실측에서 `complaint`
+    재현율이 93.3%(28/30)로 H-3 기준 95%에 미달했는데, **놓친 2건이 어느 방향인지** 알 수
+    없었다(99 ㉠). complaint→normal(**놓침**)이면 프롬프트·임계를 손봐야 하고,
+    normal→complaint면 재현율 정의상 무관하다. 방향을 모르면 "미달"만 남는다.
+    """
+
+    labels: tuple[str, ...]
+    #: `counts[정답][예측]` — 행이 정답, 열이 예측이다(관례를 뒤집으면 FN/FP가 바뀐다).
+    counts: dict[str, dict[str, int]]
+
+    def total(self) -> int:
+        return sum(sum(row.values()) for row in self.counts.values())
+
+    def hits(self) -> int:
+        return sum(self.counts[label][label] for label in self.labels)
+
+    def false_negatives(self, label: str) -> int:
+        """정답이 `label`인데 다른 값으로 예측한 수 — **놓침**."""
+        return sum(n for pred, n in self.counts[label].items() if pred != label)
+
+    def false_positives(self, label: str) -> int:
+        """정답이 아닌데 `label`로 예측한 수."""
+        return sum(
+            self.counts[truth][label] for truth in self.labels if truth != label
+        )
+
+    def confusions(self) -> list[tuple[str, str, int]]:
+        """(정답, 예측, 수) — 틀린 칸만, 많은 순. 어디로 새는지가 대응을 정한다."""
+        wrong = [
+            (truth, pred, n)
+            for truth, row in self.counts.items()
+            for pred, n in row.items()
+            if truth != pred and n
+        ]
+        return sorted(wrong, key=lambda item: (-item[2], item[0], item[1]))
+
+
+def confusion_matrix(
+    pairs: Sequence[tuple[str, str]], labels: Sequence[str]
+) -> ConfusionMatrix:
+    """(정답, 예측) 목록 → 교차표. **순수 함수**.
+
+    `labels`를 인자로 받는 이유: 표본에 안 나온 라벨도 표에 **0으로 남아야** 한다 —
+    빠지면 "그 값이 한 번도 예측되지 않았다"는 사실 자체가 안 보인다.
+    """
+    order = tuple(labels)
+    counts: dict[str, dict[str, int]] = {
+        truth: dict.fromkeys(order, 0) for truth in order
+    }
+    for truth, pred in pairs:
+        counts[truth][pred] += 1
+    return ConfusionMatrix(labels=order, counts=counts)
+
+
+def render_confusion(axis: str, matrix: ConfusionMatrix) -> list[str]:
+    """교차표를 텍스트 줄로 — 틀린 칸만 나열한다(4×4를 다 그리면 읽히지 않는다)."""
+    lines = [f"  [{axis}] 혼동 — 총 {matrix.total()}건 · 적중 {matrix.hits()}건"]
+    wrong = matrix.confusions()
+    if not wrong:
+        lines.append("    (오분류 없음)")
+        return lines
+    lines.extend(f"    정답 {t} → 예측 {p} : {n}건" for t, p, n in wrong)
+    return lines
 
 
 def confidence_buckets(
@@ -291,6 +367,30 @@ async def _main_async(interval_ms: int) -> int:
         "\n    임계값은 이 표를 근거로 **사람이** 정하고(04 §3.5 계약 값), 실사용 착수 후"
         "\n    재분류율(P2-c `corrected_*`)로 재조정한다."
     )
+
+    # 🔴 ㉠ — 재현율만으로는 대응이 안 정해진다. 어디로 새는지를 축마다 낸다.
+    matrices = {
+        axis: confusion_matrix(
+            [(row.expected[i], row.actual[i]) for row in rows], AXIS_LABELS[axis]
+        )
+        for i, axis in enumerate(AXES)
+    }
+    print()
+    for axis in AXES:
+        for line in render_confusion(axis, matrices[axis]):
+            print(line)
+
+    # 🔴 complaint **FN**을 따로 세운다 — §7이 이 축만 95%로 잡은 이유가 "민원 놓침이
+    #    최악"이고 FN이 정확히 그 놓침이다. FP와 같은 무게로 섞어 보이면 판단이 흐려진다.
+    sentiment_matrix = matrices["sentiment"]
+    complaint = InquirySentiment.COMPLAINT.value
+    fn = sentiment_matrix.false_negatives(complaint)
+    fp = sentiment_matrix.false_positives(complaint)
+    print(
+        f"\n  🔴 complaint **놓침(FN)** {fn}건 — 민원을 normal로 봤다(§7이 95%를 요구하는 이유)"
+        f"\n     complaint 오검(FP) {fp}건 — 정상을 민원으로 봤다(재현율과 무관 · 참고)"
+    )
+
     print(f"\n판정: {'통과 ✅' if passed else '미달 ❌'}")
 
     _RESULT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -307,6 +407,9 @@ async def _main_async(interval_ms: int) -> int:
                 "confidence_buckets": {
                     axis: [b._asdict() for b in buckets[axis]] for axis in AXES
                 },
+                "confusion": {axis: matrices[axis].counts for axis in AXES},
+                "complaint_fn": fn,
+                "complaint_fp": fp,
                 "bucket_width": BUCKET_WIDTH,
                 "min_bucket_samples": MIN_BUCKET_SAMPLES,
                 "redaction_cases": redaction_rows,
