@@ -246,7 +246,7 @@ def test_draft_body_is_actually_stored_and_matches_gate_output() -> None:
         bodies: list[str] = []
         for result in pack.results:
             assert result.draft_id is not None, f"{result.student_ref} draft_id 없음"
-            record = await h.drafts.get(f"draft://{result.draft_id}")
+            record = await h.drafts.get(f"draft://{result.draft_id}", tenant_id="t1")
             assert record is not None, f"{result.student_ref} 초안 본문이 저장되지 않았다"
             bodies.append(record.content)
         return bodies

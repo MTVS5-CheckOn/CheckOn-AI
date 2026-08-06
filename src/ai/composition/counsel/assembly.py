@@ -46,7 +46,7 @@ from ai.composition.counsel.stores import (
 from ai.composition.counsel.worker import CounselPackRunner
 from ai.contracts.llm import LLMProvider, ModelRole
 from ai.db.repositories.llm_payload import capture_payloads
-from ai.db.repositories.run_store import default_llm_call_collector
+from ai.db.repositories.run_store import RunStore, default_llm_call_collector
 from ai.db.settings import DbSettings, get_db_settings
 from ai.llm.gateway import LlmCallRecorder, LlmGateway
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
@@ -106,12 +106,16 @@ async def open_counsel_pack_runner(
     db_settings: DbSettings | None = None,
     regen_max: int = DEFAULT_REGEN_MAX,
     new_id: Callable[[], UUID] = uuid4,
+    run_store: RunStore | None = None,
 ) -> AsyncIterator[CounselPackRunner]:
     """설정에 맞춘 체크포인터와 LLM 접점을 주입한 러너를 연다.
 
     ⚠ `planner`·`writer`는 **명시 주입 필수**다. 이전에는 미주입 시 `FakeCounselProvider`로
     조용히 폴백했는데, 운영 배선 실수가 곧 **날조 산출 저장**이었다(조용한 Fake가 최악).
     테스트·개발 조립부는 Fake를 명시적으로 꽂고, 프로덕션 미배선은 기동 시점에 터진다.
+
+    `run_store`는 미지정이면 러너가 기본 팩토리로 만든다 — 주입은 **호출자와 같은 인스턴스**를
+    쓰기 위한 seam이다(라우터·테스트가 적재를 관측하려면 같은 저장소여야 한다).
     """
     # ㉒-a fail-closed — 추적이 켜져 있으면 아예 돌지 않는다. LangGraph 워커는 마스킹 전
     # state를 노드 경계로 내보내므로(part_a/11 §1.1) P2 은닉 전까지 기동을 막는다.
@@ -137,6 +141,7 @@ async def open_counsel_pack_runner(
             regen_max=regen_max,
             lease_owner=lease_owner,
             new_id=new_id,
+            run_store=run_store,
         )
 
 

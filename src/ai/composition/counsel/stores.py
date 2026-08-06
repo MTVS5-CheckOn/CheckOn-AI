@@ -146,7 +146,15 @@ class ContextStore(Protocol):
 class DraftResultStore(Protocol):
     async def put(self, record: DraftRecord) -> str: ...
 
-    async def get(self, ref: str) -> DraftRecord | None: ...
+    async def get(self, ref: str, *, tenant_id: str) -> DraftRecord | None:
+        """참조 해소 — **테넌트 스코프 필수**(`ContextStore.get`과 동형).
+
+        ⚠ 종전에는 이 인자가 없어 `ContextStore`와 **비대칭**이었다. 라우터가 잘못된 잡의
+        `draft://`를 들고 오면 저장소가 그대로 내줬고, **초안 본문에는 다른 학생의 문장이
+        들어 있다** — 입력 묶음보다 유출 피해가 큰 쪽에 방어가 없었던 셈이다.
+        상위(라우터·워커)의 귀속 검증은 이중 방어이고 여기가 마지막 층이다.
+        """
+        ...
 
 
 class PackResultStore(Protocol):
@@ -186,8 +194,11 @@ class InMemoryDraftResultStore:
         self._rows[record.id] = record
         return make_ref(DRAFT_SCHEME, record.id)
 
-    async def get(self, ref: str) -> DraftRecord | None:
-        return self._rows.get(parse_ref(ref, DRAFT_SCHEME))
+    async def get(self, ref: str, *, tenant_id: str) -> DraftRecord | None:
+        row = self._rows.get(parse_ref(ref, DRAFT_SCHEME))
+        if row is None or row.tenant_id != tenant_id:  # 저장소 수준 격리
+            return None
+        return row
 
     def ids(self) -> tuple[UUID, ...]:
         """저장된 draft_id 목록 — 재개가 이중 발급하지 않는지 확인하는 테스트용."""
