@@ -7,6 +7,8 @@ PG 저장소 생성은 엔진을 lazy로 만들 뿐 접속하지 않는다(sessi
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from ai.agents.job_store import InMemoryJobStore, JobStore
 from ai.db.repositories.agent_job import PgJobStore
 from ai.db.repositories.detection_store import (
@@ -48,14 +50,42 @@ from ai.import_mapping.probe.stores import (
 _PG = "pg"
 
 
+@lru_cache
+def _default_inquiry_class_store() -> InMemoryInquiryClassStore:
+    """프로세스 공용 인메모리 저장소 — `default_llm_call_collector()`와 같은 규약.
+
+    🔴 **호출마다 새 인스턴스를 주면 정정 루프가 통째로 끊긴다.** `/v1/classify`가 A에
+    적재하고 `/v1/confirmations`가 B를 읽어 `apply_confirmation`이 행을 못 찾고, 라우터가
+    404를 낸다 — 그 404가 *"폴백이라 적재되지 않았다"*(error_codes §2.7)와 **같은 응답**이라
+    강사 정정이 전부 유실되는데 로그·응답 어디에도 이상 신호가 없다.
+    """
+    return InMemoryInquiryClassStore()
+
+
+def reset_default_inquiry_class_store() -> None:
+    """공용 인메모리 저장소를 비운다 — **테스트 격리 전용**.
+
+    ⚠ 공유로 바꾸면 라우터의 `_store = build_inquiry_class_store()` 재바인딩이 같은 객체를
+    다시 가리켜 **아무것도 리셋하지 않는다**(테스트 간 행 누수). 캐시를 버려 다음 호출이
+    새 인스턴스를 받게 한다 — 두 라우터가 각자 재바인딩할 필요가 없다.
+    PG 백엔드에는 영향이 없다(세션메이커가 원본이라 이미 공유).
+    """
+    _default_inquiry_class_store.cache_clear()
+
+
 def build_inquiry_class_store(
     settings: DbSettings | None = None,
 ) -> InquiryClassStore:
-    """분류 평가셋 저장소 — 적재 실패는 **fail-closed**(inquiry_class_store.py 참조)."""
+    """분류 평가셋 저장소 — 적재 실패는 **fail-closed**(inquiry_class_store.py 참조).
+
+    🔴 인메모리도 **프로세스 공용 1개**다. `/v1/classify`와 `/v1/confirmations`가 같은 행을
+    봐야 정정 루프가 닫힌다(`counsel.py`가 실행 원장에 같은 판단을 적어 뒀다 — *"워커가 기본
+    팩토리로 따로 만들면 테스트가 주입한 저장소를 우회한다"*).
+    """
     settings = settings or get_db_settings()
     if settings.store_backend == _PG:
         return PgInquiryClassStore(sessionmaker=get_sessionmaker())
-    return InMemoryInquiryClassStore()
+    return _default_inquiry_class_store()
 
 
 def build_run_store(settings: DbSettings | None = None) -> RunStore:

@@ -29,7 +29,10 @@ from ai.contracts.confirmations import (
     ConfirmationResponse,
 )
 from ai.db.repositories.inquiry_class_store import InquiryClassStore
-from ai.db.store_factory import build_inquiry_class_store
+from ai.db.store_factory import (
+    build_inquiry_class_store,
+    reset_default_inquiry_class_store,
+)
 from ai.runtime.errors import NotFound, SnapshotInvalid
 
 logger = logging.getLogger(__name__)
@@ -44,7 +47,21 @@ KIND_NOT_IMPLEMENTED = "kind_not_implemented"
 #: `classification`이 받지 않는 action의 사유 코드.
 ACTION_NOT_SUPPORTED = "action_not_supported"
 
-_store: InquiryClassStore = build_inquiry_class_store()
+#: `action=corrected`인데 정정할 축이 하나도 없다 — 조용히 "검토함"으로 굳히지 않는다.
+CORRECTED_VALUE_MISSING = "corrected_value_missing"
+
+#: `action=confirmed`인데 정정값이 실려 왔다 — 값을 조용히 버리지 않는다.
+CORRECTED_VALUE_NOT_ALLOWED = "corrected_value_not_allowed"
+
+#: 🔴 `/v1/classify`와 **같은 저장소를 봐야 한다** — 여기서 팩토리 결과를 모듈 전역에
+#: 굳히면 두 라우터가 각자 인스턴스를 갖고, 정정이 전부 404가 된다(그 404는
+#: "폴백이라 적재되지 않았다"와 구분되지 않아 유실이 조용하다). `classify.py`와 같은 규약.
+_store: InquiryClassStore | None = None
+
+
+def inquiry_class_store() -> InquiryClassStore:
+    """이 라우터가 쓸 저장소 — 주입분이 있으면 그것, 없으면 공용."""
+    return _store if _store is not None else build_inquiry_class_store()
 
 
 def set_inquiry_class_store(store: InquiryClassStore) -> None:
@@ -54,9 +71,10 @@ def set_inquiry_class_store(store: InquiryClassStore) -> None:
 
 
 def reset_inquiry_class_store() -> None:
-    """테스트 격리용 — 기본 저장소로 되돌린다."""
+    """테스트 격리용 — 주입을 걷고 공용 저장소를 비운다."""
     global _store
-    _store = build_inquiry_class_store()
+    _store = None
+    reset_default_inquiry_class_store()
 
 
 def _format_validation_error(exc: ValidationError) -> list[dict[str, str]]:
@@ -113,26 +131,53 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
 
     corrections = (
         confirmation.corrected_value.as_axis_map()
-        if confirmation.action is ConfirmationAction.CORRECTED
-        and confirmation.corrected_value is not None
+        if confirmation.corrected_value is not None
         else {}
     )
-    applied = await _store.apply_confirmation(
+    # 🔴 **action과 값의 조합이 어긋나면 거절한다.** 종전에는 둘 다 200 `accepted:true`였다.
+    #   ⓐ `corrected` + 값 없음 → `corrections={}`로 떨어져 `reviewed_at`만 찍혔다.
+    #      그 행은 규약 ①에 의해 **이후 재예측이 영구 차단**된다 — "검토함"으로 굳는다.
+    #   ⓑ `confirmed` + 값 실림 → 값이 통째로 버려졌다.
+    #   둘 다 BE는 "저장됐다"고 믿는다. 안 한 일을 한 척하지 않는다(kind·action 거절과 같은 결).
+    if confirmation.action is ConfirmationAction.CORRECTED and not corrections:
+        raise SnapshotInvalid(
+            "정정값 없음",
+            {
+                "reason": CORRECTED_VALUE_MISSING,
+                "action": confirmation.action.value,
+                "detail": "action=corrected는 corrected_value에 축을 하나 이상 담아야 한다",
+            },
+        )
+    if confirmation.action is ConfirmationAction.CONFIRMED and corrections:
+        raise SnapshotInvalid(
+            "확정에 정정값이 실림",
+            {
+                "reason": CORRECTED_VALUE_NOT_ALLOWED,
+                "action": confirmation.action.value,
+                "detail": "action=confirmed는 corrected_value를 비운다 — 값을 버리지 않는다",
+            },
+        )
+
+    outcome = await inquiry_class_store().apply_confirmation(
         tenant_id=tenant_id,
         inquiry_ref=confirmation.suggestion_id,
         corrections=corrections,
     )
-    if not applied:
+    if not outcome.found:
         # 대상 분류가 없다 — 폴백이었거나(적재 안 함) 분류를 부른 적이 없다.
         raise NotFound(
             "대상 분류 없음", {"inquiry_ref": confirmation.suggestion_id}
         )
 
+    # ⚠ **실제 적용분을 찍는다.** 종전엔 필터 이전 값(`len(corrections)`)이라 규약 ②로
+    # 걸러진 축까지 "적용"으로 남았다 — 로그가 저장 상태와 달랐다.
     logger.info(
-        "confirmations.applied inquiry_ref=%s action=%s axes=%d",
+        "confirmations.applied inquiry_ref=%s action=%s applied=%d cleared=%d unknown=%d",
         confirmation.suggestion_id,
         confirmation.action.value,
-        len(corrections),
+        len(outcome.applied),
+        len(outcome.cleared),
+        len(outcome.unknown),
     )
     return success_envelope(
         data=ConfirmationResponse(accepted=True).model_dump(mode="json"),
@@ -143,7 +188,10 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
 
 __all__ = [
     "ACTION_NOT_SUPPORTED",
+    "CORRECTED_VALUE_MISSING",
+    "CORRECTED_VALUE_NOT_ALLOWED",
     "KIND_NOT_IMPLEMENTED",
+    "inquiry_class_store",
     "reset_inquiry_class_store",
     "router",
     "set_inquiry_class_store",
