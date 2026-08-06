@@ -148,3 +148,58 @@ def test_no_vendor_sdk_imported() -> None:
     source = inspect.getsource(llm_module).lower()
     for vendor in ("openai", "anthropic", "google.generativeai", "cohere", "mistralai"):
         assert vendor not in source, f"벤더 SDK 흔적: {vendor}"
+
+
+# ── 결정론 파라미터 정본 단일성 (99 ⓨ 후속) ──────────────────────
+
+
+def test_determinism_reexport_is_the_same_object() -> None:
+    """composition은 llm의 **재수출**이다 — 값이 아니라 **동일성**으로 고정한다.
+
+    🔴 `==`를 쓰지 마라. 값 비교는 *"각자 정의했는데 마침 같다"* 를 통과시킨다 — 그게
+    8/5~8/6의 상태였고 우리가 없앤 것이다. 두 모듈이 상수 2개와 함수 1개를 각자 정의했고,
+    값이 우연히 같아서 **아무 테스트도 안 깨졌다.** 한쪽만 고치면 브리핑·초안·분류와
+    문항 생성의 재현 조건이 조용히 갈린다(불변식 8).
+
+    ⚠ **함수 객체 `is`가 본체이고 상수 `is`는 보조다** — 다음 사람이 이 int `is`를
+    버그로 보고 `==`로 바꾸지 않도록 적어 둔다.
+    ⚠ **실측(8/6):** 병존을 일부러 되살려 보니 상수 `is`도 red가 났다
+    (`assert 20260805 is 20260805` 실패) — 20260805가 CPython 소형 정수 캐시(-5~256) 밖이라
+    두 모듈의 리터럴이 **다른 객체**이기 때문이다. 다만 그건 **구현 세부이지 보장이 아니다**
+    (상수 폴딩·캐시 정책이 바뀌면 우연히 같아질 수 있다). 그래서 함수 `is`를 먼저 둔다.
+    """
+    import ai.composition.determinism as composition
+    import ai.llm.determinism as canonical
+
+    assert composition.deterministic_params is canonical.deterministic_params
+    assert composition.LLM_SEED is canonical.LLM_SEED
+    assert composition.DETERMINISTIC_TEMPERATURE is canonical.DETERMINISTIC_TEMPERATURE
+
+
+def test_determinism_is_defined_in_exactly_one_file() -> None:
+    """재현 키의 **정의**가 한 파일에만 있다 — 병존이 다시 생기면 red.
+
+    🔴 **정규식 주의(8/6 실측).** `LLM_SEED\\s*=`는 **0건**을 낸다 — 실제 코드가
+    `LLM_SEED: Final = 20260805`라 `\\s*=`가 `: Final =`을 못 잡는다. 그 패턴으로
+    `<= 1`을 단언하면 **조용히 통과**한다 — ⓒ·ⓛ·㉯가 세 번 겪은 "게이트가 통과하는 동안
+    샜다"와 같은 형태다.
+
+    앵커 `^`가 핵심이다 — 들여쓴 참조(`c.LLM_SEED`)와 docstring 안 언급, 재수출 파일의
+    `__all__` 문자열을 전부 걸러 준다.
+
+    🔴 **0건이면 통과가 아니라 실패다**(검사 경로 절단 검출 · `test_scan_finds_*` 선례).
+    """
+    import re
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[3] / "src" / "ai"
+    pattern = re.compile(r"^(LLM_SEED|DETERMINISTIC_TEMPERATURE)\b", re.MULTILINE)
+    defining = sorted(
+        str(path.relative_to(src.parent))
+        for path in src.rglob("*.py")
+        if "__pycache__" not in path.parts and pattern.search(path.read_text("utf-8"))
+    )
+    assert defining == ["ai/llm/determinism.py"], (
+        f"재현 키 정의가 1파일이 아니다: {defining} — 0건이면 검사 경로가 끊긴 것이고, "
+        "2건 이상이면 병존이 되살아난 것이다(둘 다 red)"
+    )
