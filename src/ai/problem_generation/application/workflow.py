@@ -79,16 +79,43 @@ from ai.problem_generation.infrastructure.config import (
     load_banned_topics,
     load_verify_config,
 )
+from ai.runtime.errors import DomainException
 
 type DiagnosisCallable = Callable[[ProblemRequest], Awaitable[DiagnosisResult]]
+
+SOURCE_PROCUREMENT_NOT_IMPLEMENTED = "source_procurement_not_implemented"
 
 _BEGIN_ATTEMPT = "begin_attempt"
 _BEGIN_DIFFICULTY_REGEN = "begin_difficulty_regen"
 _RUN_ATTEMPT = "run_attempt"
 
 
-class ProblemWorkflowConfigurationError(ValueError):
+class ProblemWorkflowConfigurationError(DomainException):
     """실행 컨텍스트와 고정 버전 또는 입력이 일치하지 않음."""
+
+    code = "INVALID_SCHEMA"
+    http_status = 400
+
+
+class ProblemTenantMismatch(ProblemWorkflowConfigurationError):
+    """요청과 실행 컨텍스트의 테넌트가 일치하지 않음."""
+
+    code = "TENANT_MISMATCH"
+    http_status = 403
+
+
+class ProblemSourceUnsupported(ProblemWorkflowConfigurationError):
+    """요청한 자료 조달 방식을 현재 워크플로가 지원하지 않음."""
+
+    code = "INVALID_SCHEMA"
+    http_status = 400
+
+
+class ProblemExecutionContextMismatch(DomainException):
+    """라우터가 다른 capability의 실행 컨텍스트를 조립함."""
+
+    code = "INTERNAL"
+    http_status = 500
 
 
 class GraphContextError(RuntimeError):
@@ -488,16 +515,21 @@ class ProblemGenerationWorkflow:
         # 자료를 동반한 요청을 받을 수 없다. 생성 노드 1개가 붙으면 T2 본문·T4·T5가
         # 함께 열린다 — 트랙마다 파이프라인을 다시 만드는 구조가 아니다.
         if request.area_tag is not AreaTag.LANGUAGE or request.passage is not None:
-            raise ProblemWorkflowConfigurationError(
+            raise ProblemSourceUnsupported(
                 "자료 조달 방식이 '자료 없음'인 요청만 처리할 수 있다 "
-                "— 생성·저작물 노드 미구현(05 §1.2)"
+                "— 생성·저작물 노드 미구현(05 §1.2)",
+                {
+                    "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
+                    "area_tag": request.area_tag.value,
+                    "passage": request.passage is not None,
+                },
             )
         if execution_context.capability is not Capability.PROBLEM_GENERATION:
-            raise ProblemWorkflowConfigurationError(
+            raise ProblemExecutionContextMismatch(
                 "problem_generation 실행 컨텍스트가 아니다"
             )
         if execution_context.tenant_id != request.tenant_id:
-            raise ProblemWorkflowConfigurationError("요청과 실행의 tenant_id가 다르다")
+            raise ProblemTenantMismatch("요청과 실행의 tenant_id가 다르다")
         if execution_context.input_snapshot_hash != request.snapshot_hash:
             raise ProblemWorkflowConfigurationError(
                 "요청과 실행의 input_snapshot_hash가 다르다"
@@ -908,7 +940,10 @@ __all__ = [
     "DiagnosisCallable",
     "GraphContextError",
     "GraphContextUnavailable",
+    "ProblemExecutionContextMismatch",
     "ProblemGenerationWorkflow",
+    "ProblemSourceUnsupported",
+    "ProblemTenantMismatch",
     "ProblemWorkflowConfigurationError",
     "TargetPlan",
 ]
