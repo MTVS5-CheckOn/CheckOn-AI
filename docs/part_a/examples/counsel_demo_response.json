@@ -1,0 +1,22 @@
+{
+  "data": {
+    "job_id": "a3223977-5a2c-4007-917a-750092db3e5e",
+    "status": "succeeded"
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "05654ea3-e855-4f18-ae45-87bc0886f4b2",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "counsel-pack-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": null,
+      "graph": null,
+      "taxonomy": null,
+      "verify_config": null,
+      "difficulty_calib": null
+    }
+  }
+}
