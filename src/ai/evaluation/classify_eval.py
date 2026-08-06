@@ -5,12 +5,19 @@
 🔴 **CI 기본 경로에 넣지 않는다.** FakeProvider 시나리오는 pytest가 담당하고
 (`tests/ai/unit/composition/test_classify.py`), 이 러너는 실서버 env가 있을 때만 돈다.
 
-**합격 기준(H-3):**
-- `topic` 정확도 ≥ 85%
+**합격 기준(H-3 · 8/8 개정 — 정본은 08 §7):**
+- `topic` 정확도 ≥ 85% (baseline 25.00% · 요구 개선폭 **+60.00%p**)
+- `urgency` 정확도 ≥ 85% (baseline **81.25%** · 요구 개선폭 **+3.75%p** — 🔴 **검증력 없음**)
 - `sentiment=complaint` **재현율 ≥ 95%** — 민원 놓침이 최악이다(08 §7 근거 유지)
-- `urgency` 정확도 ≥ 85%
+- `urgency=immediate` 재현율 **`[측정 대기]`** — 표본 15건이라 1건이 6.7%p다(99 ㉡)
+- 인젝션 탈출 0건
 - **축 독립성**: `topic` 오분류 건에서 다른 축이 함께 틀리는 비율을 **관측만** 한다
   (수치 기준은 이번에 정하지 않는다 — 표본이 80건이라 유의성을 말할 수 없다)
+
+🔴 **정확도는 baseline과 짝으로만 낸다.** 2차 실측에서 `urgency`가 87.5%로 "통과"했는데
+같은 표본의 `immediate` 재현율은 **33.3%**(5/15)였다 — 긴급의 2/3를 놓치며 합격했다.
+**baseline은 이 러너가 코퍼스에서 직접 계산한다** — 사람이 표에 적으면 코퍼스가 바뀔 때
+갱신을 잊고, 그게 ㉡을 만든 형태다.
 
 실행:
     LLM_PROVIDER=openai_compat uv run python -m ai.evaluation.classify_eval
@@ -25,6 +32,7 @@ import asyncio
 import json
 import logging
 import sys
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -219,6 +227,19 @@ def render_buckets(axis: str, buckets: Sequence[Bucket]) -> list[str]:
     return lines
 
 
+def majority_baselines() -> dict[str, float]:
+    """축별 **다수 클래스 baseline** — 코퍼스에서 직접 계산한다(99 ㉡).
+
+    🔴 **사람이 문서에 적어 두면 코퍼스가 바뀔 때 갱신을 잊는다.** 기준 85%가 분포와
+    무관하게 굳어 있었던 것이 ㉡의 형태이므로, 분모는 **매 회차 계산**한다.
+    `tests/ai/golden/test_classify_baseline.py`가 문서 값과의 일치를 따로 잠근다.
+    """
+    return {
+        axis: max(Counter(getattr(c, axis).value for c in CASES).values()) / len(CASES)
+        for axis in AXES
+    }
+
+
 @dataclass
 class _Tally:
     total: int = 0
@@ -227,6 +248,11 @@ class _Tally:
     sentiment_hit: int = 0
     complaint_total: int = 0
     complaint_hit: int = 0
+    #: 🔴 `complaint`와 **같은 종류의 실패**다 — 긴급을 인박스에 못 올린다(99 ㉡).
+    #:  기준값은 아직 없다(`[측정 대기]`) — 그래도 **수치는 낸다**. 안 내면 다음 회차에도
+    #:  "정확도는 통과"만 남는다.
+    immediate_total: int = 0
+    immediate_hit: int = 0
     unclassified: int = 0
     #: topic이 틀린 건에서 다른 축도 함께 틀린 수 — 축 독립성 관측(H-3).
     topic_miss: int = 0
@@ -321,6 +347,9 @@ async def _main_async(interval_ms: int) -> int:
         if case.sentiment is InquirySentiment.COMPLAINT:
             tally.complaint_total += 1
             tally.complaint_hit += sentiment_ok
+        if case.urgency is InquiryUrgency.IMMEDIATE:
+            tally.immediate_total += 1
+            tally.immediate_hit += urgency_ok
         if not topic_ok:
             tally.topic_miss += 1
             tally.topic_miss_with_other_miss += not (sentiment_ok and urgency_ok)
@@ -385,6 +414,12 @@ async def _main_async(interval_ms: int) -> int:
     recall = (
         tally.complaint_hit / tally.complaint_total if tally.complaint_total else 0.0
     )
+    #: `[측정 대기]`라 합격 판정에는 넣지 않는다 — 그래도 **수치는 낸다**(99 ㉡).
+    immediate_recall = (
+        tally.immediate_hit / tally.immediate_total if tally.immediate_total else 0.0
+    )
+    sentiment_acc = tally.sentiment_hit / tally.total
+    baselines = majority_baselines()
     passed = (
         topic_acc >= _TOPIC_MIN
         and urgency_acc >= _URGENCY_MIN
@@ -392,9 +427,27 @@ async def _main_async(interval_ms: int) -> int:
         and injection_escapes == 0
     )
 
-    print(f"  topic    정확도 {topic_acc:.1%} (기준 {_TOPIC_MIN:.0%})")
-    print(f"  urgency  정확도 {urgency_acc:.1%} (기준 {_URGENCY_MIN:.0%})")
+    # 🔴 **정확도는 baseline과 짝으로만 낸다**(99 ㉡) — 단독 수치는 그 기준이 무엇을
+    #    검증하는지 말하지 않는다. 같은 85%가 topic에서는 +60%p를, urgency에서는
+    #    +3.75%p를 요구한다.
+    for axis, acc, floor in (
+        ("topic", topic_acc, _TOPIC_MIN),
+        ("sentiment", sentiment_acc, None),
+        ("urgency", urgency_acc, _URGENCY_MIN),
+    ):
+        base = baselines[axis]
+        gate = f"기준 {floor:.0%}" if floor is not None else "기준 미정"
+        weak = "  🔴 이 기준은 검증력이 없다" if floor is not None and floor - base < 0.10 else ""
+        print(
+            f"  {axis:9} 정확도 {acc:.1%} (baseline {base:.2%} · "
+            f"개선폭 {acc - base:+.2%}p · {gate}){weak}"
+        )
     print(f"  complaint 재현율 {recall:.1%} (기준 {_COMPLAINT_RECALL_MIN:.0%})")
+    # ⚠ 기준값이 없어도 낸다 — 안 내면 다음 회차에도 "정확도는 통과"만 남는다.
+    print(
+        f"  immediate 재현율 {immediate_recall:.1%} "
+        f"({tally.immediate_hit}/{tally.immediate_total} · 기준 [측정 대기] · 99 ㉡)"
+    )
     print(f"  미분류 {tally.unclassified}/{tally.total} · 인젝션 탈출 {injection_escapes}/5")
     if tally.topic_miss:
         share = tally.topic_miss_with_other_miss / tally.topic_miss
@@ -451,8 +504,11 @@ async def _main_async(interval_ms: int) -> int:
         json.dumps(
             {
                 "topic_accuracy": topic_acc,
+                "sentiment_accuracy": sentiment_acc,
                 "urgency_accuracy": urgency_acc,
+                "majority_baselines": baselines,
                 "complaint_recall": recall,
+                "immediate_recall": immediate_recall,
                 "unclassified": tally.unclassified,
                 "injection_escapes": injection_escapes,
                 "topic_miss": tally.topic_miss,
