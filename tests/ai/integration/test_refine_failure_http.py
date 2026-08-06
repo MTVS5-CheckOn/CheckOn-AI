@@ -29,6 +29,7 @@ from ai.contracts.composition import DraftContext
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError, LlmTimeout, LlmUnavailable
 from ai.db.repositories.run_store import InMemoryRunStore
+from ai.db.store_factory import reset_shared_agent_runtime
 
 _HEADERS = {
     "X-Tenant-Id": "t1",
@@ -82,8 +83,10 @@ def _request_body() -> dict[str, Any]:
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     yield
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
 
 

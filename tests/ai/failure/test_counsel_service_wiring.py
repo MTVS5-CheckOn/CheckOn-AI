@@ -47,6 +47,7 @@ from ai.composition.counsel.stores import (
     make_ref,
 )
 from ai.db.repositories.run_store import InMemoryRunStore
+from ai.db.store_factory import reset_shared_agent_runtime
 from ai.runtime.tracing import TRACING_ENV_SYNONYMS
 
 _HEADERS = {
@@ -78,8 +79,10 @@ _BODY: dict[str, Any] = {
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     yield
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
 
 

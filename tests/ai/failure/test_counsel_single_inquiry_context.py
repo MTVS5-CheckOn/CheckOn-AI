@@ -23,6 +23,7 @@ from ai.api.routers.counsel import reset_counsel_stores, set_counsel_stores
 from ai.composition.counsel.stores import ContextBundleRecord, InMemoryContextStore
 from ai.contracts.composition import DraftStatus
 from ai.contracts.counsel import WireDraftStatus, wire_status_for
+from ai.db.store_factory import reset_shared_agent_runtime
 
 _HEADERS = {
     "X-Tenant-Id": "t1",
@@ -73,8 +74,10 @@ class _DroppingContextStore(InMemoryContextStore):
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     yield
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
 
 

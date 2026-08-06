@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from ai.api.app import create_app
 from ai.api.routers.counsel import reset_counsel_stores, set_counsel_provider
 from ai.composition.counsel.provider import FakeCounselProvider
+from ai.db.store_factory import reset_shared_agent_runtime
 
 _HEADERS = {
     "X-Tenant-Id": "t1",
@@ -66,8 +67,10 @@ _RESULT_FIELDS = {
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     yield
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
 
 

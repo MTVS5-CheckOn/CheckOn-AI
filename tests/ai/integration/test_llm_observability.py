@@ -78,6 +78,7 @@ from ai.db.repositories.run_store import (
     InMemoryRunStore,
     default_llm_call_collector,
 )
+from ai.db.store_factory import reset_shared_agent_runtime
 from ai.evaluation.fake_snapshot import fixture_composite_risk, to_payload
 
 _NOW = datetime(2026, 8, 5, tzinfo=UTC)
@@ -248,6 +249,7 @@ def _isolate() -> Iterator[None]:
     reset_detection_store()
     reset_brief_provider()
     reset_inquiry_class_store()
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     yield
     default_llm_call_collector().reset()
@@ -255,6 +257,7 @@ def _isolate() -> Iterator[None]:
     reset_detection_store()
     reset_brief_provider()
     reset_inquiry_class_store()
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
 
 

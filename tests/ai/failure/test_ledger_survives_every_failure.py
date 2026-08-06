@@ -84,6 +84,7 @@ from ai.contracts.composition import (
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError, LLMRequest, LLMResult, LlmTimeout, LlmUnavailable
 from ai.db.repositories.run_store import InMemoryRunStore, default_llm_call_collector
+from ai.db.store_factory import reset_shared_agent_runtime
 
 #: 실패 종류 축 — 🔴 `RedactionUncertain`을 **반드시** 포함한다(그게 빠져 결함이 통과했다).
 #: refine 쪽은 `RedactionBlockedError`를 주입하면 `refine_draft`가 `RedactionUncertain`으로
@@ -163,11 +164,13 @@ class _BoomProvider:
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     classify_router.reset_inquiry_class_store()
     confirmations_router.reset_inquiry_class_store()
     default_llm_call_collector().reset()
     yield
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     classify_router.reset_inquiry_class_store()
     confirmations_router.reset_inquiry_class_store()

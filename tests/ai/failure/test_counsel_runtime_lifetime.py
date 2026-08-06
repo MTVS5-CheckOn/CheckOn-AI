@@ -78,7 +78,10 @@ from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmUnavailable
 from ai.db.repositories.run_store import MAX_PENDING_RUNS
 from ai.db.settings import DbSettings
-from ai.db.store_factory import build_agent_job_store
+from ai.db.store_factory import (
+    build_agent_job_store,
+    reset_shared_agent_runtime,  # noqa: F401
+)
 
 _NOW = datetime(2026, 8, 7, 3, 0, tzinfo=UTC)
 _DRAFT_TEXT = "정답률은 62%였습니다."
@@ -118,8 +121,10 @@ def _context(ref: str) -> DraftContext:
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
     yield
+    reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
 
 
@@ -784,3 +789,51 @@ def test_the_real_router_caches_are_bounded() -> None:
     )
     assert counsel_router._view_cache.evicted == 8  # noqa: SLF001
     counsel_router._view_cache.clear()  # noqa: SLF001
+
+
+# ── 공용 저장소의 전제: lease가 worker_kind로 격리된다 ─────────────
+
+
+def test_lease_is_isolated_by_worker_kind() -> None:
+    """🔴 **공용 저장소의 전제다** — 이 테스트가 왜 있는지 모르면 지우지 마라.
+
+    #121이 잡 원장을 프로세스 공용 싱글턴으로 만들었고, B가 pg 워커에서 **같은 팩토리**를
+    쓰기로 확정했다(8/7). ⇒ `store_backend=memory`에서 **counsel 잡과 problem_generation
+    잡이 같은 저장소에 산다.** 섞이지 않는 근거는 하나뿐이다 — `lease_next`가
+    `worker_kind`로 거른다(`job_store.py`).
+
+    그 필터가 사라지면 **counsel 잡을 pg 워커가 집어가고**(그래프가 다르니 즉시 실패)
+    그 반대도 일어난다. 둘 다 조용하다 — 잡은 `failed`로 수렴하고 원인은 원장에 안 남는다.
+
+    ⚠ B가 반대 방향(pg 잡을 counsel `run_next`가 안 집는다)을 잠그기로 했다. **한쪽만
+    있으면 반쪽이다** — 이쪽이 A 방향이다.
+    """
+    from ai.contracts.agents import WorkerKind
+
+    harness = _ServiceHarness(_FailThenRecover(fail_for=0))
+
+    async def scenario() -> tuple[WorkerJob | None, WorkerJob | None]:
+        await harness.enqueue(["st_1"])
+        supervisor = harness.supervisor()
+        # ① 남의 worker_kind로는 안 잡힌다.
+        stolen = await supervisor.lease_next(
+            tenant_id="t1",
+            worker_kind=WorkerKind.PROBLEM_GENERATION,
+            lease_owner="pg-worker",
+        )
+        # ② 자기 worker_kind로는 잡힌다 — ①이 "큐가 비어서" None이 아님을 증명한다.
+        mine = await harness.supervisor().lease_next(
+            tenant_id="t1",
+            worker_kind=WorkerKind.COUNSEL_PACK,
+            lease_owner="counsel-router",
+        )
+        return stolen, mine
+
+    stolen, mine = _run(scenario())
+    assert stolen is None, (
+        "problem_generation 워커가 counsel 잡을 lease했다 — 공용 저장소의 전제가 깨졌다. "
+        "그래프가 달라 즉시 실패하고, 잡은 failed로 조용히 수렴한다(원인이 원장에 안 남는다)"
+    )
+    assert mine is not None, (
+        "대조군 실패 — counsel 워커도 못 잡았다. 위 None은 격리가 아니라 빈 큐 탓이다"
+    )
