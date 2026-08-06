@@ -21,7 +21,6 @@ from ai.composition.counsel.gate import check_counsel_gate
 from ai.composition.counsel.prompt import PROMPT_VERSION, assemble_prompt
 from ai.composition.counsel.provider import max_chars_for
 from ai.composition.counsel.refine import refine_draft
-from ai.composition.internal_terms import find_internal_terms, internal_terms
 from ai.contracts.composition import (
     CommStyle,
     DraftContext,
@@ -32,6 +31,7 @@ from ai.contracts.composition import (
     Sensitivity,
 )
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
+from ai.runtime.internal_terms import find_internal_terms, internal_terms
 
 
 def _context(*, inquiry_text: str = "") -> DraftContext:
