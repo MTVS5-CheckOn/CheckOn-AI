@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v3.7 (2026-08-07): **§2-20 신설 — `PROBLEM_ITEM` 스키마 결손과 해소안 제안.** `ProblemItemStore`의 `(set_id, slot_index)` 조회 키와 `StoredProblemItem` 무손실 왕복을 막는 결손 12건을 계약·ORM 행 단위로 대조하고, `ITEM_REVISION` 우회가 성립하지 않는 이유 4건을 기록했다. A가 결정할 조회 키·보존 방식·본문 없는 슬롯 표현의 선택지를 분리했으며, B는 `ITEM_CANDIDATE` 선례에 맞춘 전체 스냅숏 1컬럼 + nullable 파생 투영을 권고한다. §2-19에는 스키마 결정 전 v1 인메모리 운용과 프로세스 재시작 후 404 한계를 추가했다.
 > - v3.6 (2026-08-07): **§2-19 신설 — `/v1/problems` v1 API 스펙 초안.** A 확정 회신에 따라 자체 job 대신 공용 슈퍼바이저를 사용하고, v1 operation을 `problem_set.generate` 하나로 고정했다. counsel/drafts와 같은 필수 헤더·멱등 규약, `JobPhase` 기반 GET 상태, 미완료 `result=null`, 오류 주체 판별, `domain_error_for`의 504/503/500 매핑, 현행 `LANGUAGE`·자료 없음 제약을 한곳에 모았다. 이 절은 §2-1의 가칭 경로와 refine·reverify 범위를 v1에서 대체하며, A가 `04_api_contract.md`에 옮길 초안이다.
 > - v3.5 (2026-08-05): **라이선스 전제 명시에 따라 W16·W18을 P3으로 내렸다.** 이 프로젝트는 부트캠프 대회 출제용이며 상업 서비스가 아니다 — AI Hub 이용정책은 비상업 연구개발을 허용하므로 71857을 **사용 가능**으로 재판정했고, CC BY-SA 전파도 비상업 범위에서는 출처 표시로 닫힌다. **두 항목은 삭제하지 않았다** — 상용 전환 시 P1으로 되살아나며 그 조건을 `05` §1.1.4 머리에 함께 못 박았다.
 > - v3.4 (2026-08-05): **W18 신설 — AI Hub 71857 상업 이용 협의 필요.** 9.1·9.4·C-15·F17을 한 번에 닫을 수 있는 자료를 확보했으나 이용정책이 구축기관 협의를 요구해 v1에서 쓰지 않는다. 실측값과 대안 경로를 함께 적었다.
@@ -997,6 +998,11 @@ result.status="rejected_insufficient"`, `status="succeeded" + result=null` 같�
 | 호출자(BE)가 고쳐야 한다 | 필수 헤더·JSON·스키마·enum 위반, v1 미지원 요청 | 400 `INVALID_SCHEMA`. 같은 멱등키+다른 바디는 409 `IDEMPOTENCY_CONFLICT`, 없는/다른 테넌트 job은 404 `NOT_FOUND` |
 | 호출자·강사가 현재 요청에서 고칠 수 없다 | 벤더 장애·타임아웃 | 게이트웨이 재시도 예산이 소진된 뒤에만 503/504. 재시도 전 5xx로 승격하지 않는다 |
 
+`PROBLEM_ITEM` 영속 스키마가 §2-20의 A 결정을 기다리는 동안 v1은 기존 인메모리
+저장소로 동작한다. 따라서 프로세스 재시작 뒤에는 이전 `job_id`와 결과가 소실되어 GET이
+위와 같은 404 `NOT_FOUND`로 수렴한다. 새 상태코드를 만들지 않으며, BE는 이 한계를
+재시작 후 복구가 보장되는 것으로 해석하지 않는다.
+
 LLM 예외는 `runtime/errors.py:142-173`의 `domain_error_for()` 표를 **인용만** 한다.
 
 | 입력(`contracts.llm`) | canonical 출력(`runtime.errors`) | HTTP |
@@ -1032,6 +1038,95 @@ BE가 고쳐야 하는 v1 미지원 요청이므로 400 `INVALID_SCHEMA`로 수�
 또한 v1은 `problem_set.generate` 하나뿐이다. `problem_item.refine`·
 `problem_item.reverify`는 공용 enum의 예약 operation일 뿐 이 API에 엔드포인트나 분기를
 만들지 않는다.
+
+### 2-20. `PROBLEM_ITEM` 스키마 결손과 해소안 `[제안 · A 결정 대기]`
+
+`ProblemItemStore` 계약은 `save(... set_id, slot_index ...)`와
+`get(set_id, slot_index)`가 같은 `StoredProblemItem`을 무손실로 왕복할 것을 요구한다
+(`problem_generation/application/ports.py:42-66`). 그러나 계약 값 객체
+(`problem_generation/domain/models.py:53-58`)와 현행 ORM(`db/models.py:345-367`)을
+대조하면 아래 12건이 맞지 않는다. 이 상태에서는 구현이 계약에 맞출 수 없으므로
+`db/repositories/problem_store.py`는 A 결정 뒤로 미룬다.
+
+| # | 계약·조회 요구 | 현행 `problem_item` | 영향·근거 |
+| --- | --- | --- | --- |
+| 1 | `slot_index` | 컬럼 없음 | `get(set_id, slot_index)`의 조회 키 자체가 없다. `StoredProblemItem.slot_index`는 `domain/models.py:55`, ORM 전체는 `db/models.py:345-367` |
+| 2 | 테넌트 격리 | 직접 `tenant_id` 없음 | 직접 컬럼 결손은 차단이 아니다. 부모 `problem_set.tenant_id`가 `db/models.py:330`에 있어 조인으로 격리 가능 |
+| 3 | `item=None`인 본문 없는 슬롯 | `area_tag`·`type_tag`·`item_format`·`stem`·`choices`·`answer`·`rationale`가 모두 NOT NULL | `StoredProblemItem.item`은 nullable(`domain/models.py:58`)인데 ORM 본문은 `db/models.py:353-360`에서 필수라 행을 만들 수 없다 |
+| 4 | `result.difficulty_est: float \| None` | `difficulty_est` NOT NULL | 계약은 `contracts/problem_generation.py:286`, ORM은 `db/models.py:361` |
+| 5 | 저장 시점에 없는 난이도 보정 버전 | `difficulty_calib_ver` NOT NULL | `StoredProblemItem`·`ItemResult`에는 대응 값이 없는데 ORM은 `db/models.py:363`에서 필수다 |
+| 6 | `candidate_ref` | 컬럼 없음 | 최종 후보 포인터를 잃는다(`domain/models.py:57`) |
+| 7 | `result.attempt_no` | 컬럼 없음 | 최종 시도 회차를 복원할 수 없다(`contracts/problem_generation.py:283`). `verification_result.attempt_no`는 게이트 이력의 회차라 최종본 정본을 대신하지 않는다 |
+| 8 | `result.failure_detail` | 컬럼 없음 | 실패 상세를 무손실로 복원할 수 없다(`contracts/problem_generation.py:285`) |
+| 9 | `result.difficulty_band` | 컬럼 없음 | 난이도 밴드를 복원할 수 없다(`contracts/problem_generation.py:287`) |
+| 10 | `result.review_reason` | `review_badge` boolean만 있음 | 여러 `ReviewReason`을 boolean 하나로 되살릴 수 없다(`contracts/problem_generation.py:289`, `db/models.py:364`) |
+| 11 | `item.evidence` | 컬럼 없음 | `GeneratedItem.evidence` 전문이 소실된다(`contracts/problem_generation.py:175-188`, `db/models.py:353-360`) |
+| 12 | `result.failure_reason: ProblemFailureReason \| None` | `drop_reason`(폐기 사유 전용, `db/models.py:367`) | 폐기가 아닌 상태의 실패 사유를 폐기 사유 컬럼에 싣는 오버로딩이 된다. A안 채택 시 별도 결정이 필요하고, B안 채택 시 스냅숏이 정본이라 해소된다(`contracts/problem_generation.py:284`) |
+
+#### 2-20.1 `ITEM_REVISION` 우회가 성립하지 않는 이유
+
+1. 계약의 `ItemRevision.result_snapshot` 형식은 `GeneratedItem | None`이지
+   `StoredProblemItem`이 아니다(`contracts/problem_generation.py:667-675`).
+2. `RevisionKind`는 `ai_refine | teacher_direct | rollback` 3종뿐이며 최초 생성 저장을
+   뜻하는 값이 없다(`contracts/problem_generation.py:613-616`). 임의 문자열을 넣으면
+   계약을 우회한다.
+3. `item_revision.item_id`는 먼저 존재해야 하는 `problem_item.id`의 FK다
+   (`db/models.py:384-392`). 만들 수 없는 최종 행을 우회하기 위해 그 행을 전제하는
+   순환이 된다.
+4. `ItemRevision.validate_snapshot()`은 `verifications_passed=True`일 때
+   `result_snapshot=None`을 거부한다(`contracts/problem_generation.py:681-684`). 따라서
+   본문 없는 슬롯을 통과 리비전으로 위장할 수도 없다.
+
+#### 2-20.2 A 결정 요청 3건
+
+**결정 ① — 조회 키.** `problem_item`에 `slot_index`를 추가하고
+`UNIQUE(set_id, slot_index)`를 둔다. `item_candidate`가 이미
+`(tenant_id, set_id, slot_index, attempt_no)`를 유일 범위로 쓴다
+(`db/models.py:417-423`). Protocol 조회 키를 구현하려면 다른 선택지가 없는 결손이다.
+
+**결정 ② — 무손실 보존 방식.** 다음 두 선택지 중 A가 정한다.
+
+- **A안 — 컬럼 전개:** `candidate_ref`·`attempt_no`·`failure_detail`·
+  `difficulty_band`·`review_reason`·`evidence(JSONB)` 6개를 추가하고,
+  `difficulty_est`·`difficulty_calib_ver`를 nullable로 바꾼다.
+- **B안 — 전체 스냅숏 1컬럼:** `result_snapshot JSONB`에 `StoredProblemItem` 전문을
+  보존하고 기존 컬럼은 조회·인덱싱용 파생 투영으로 둔다.
+
+**B 권고는 B안이다.** `item_candidate`가 이미 `snapshot JSONB`를 정본으로 두고
+`difficulty_est`를 파생 컬럼으로 함께 저장한다(`db/models.py:430-432`). 같은 형태면
+계약 필드가 늘어도 개별 컬럼 누락으로 다시 무손실 왕복이 깨지지 않는다.
+
+**결정 ③ — 본문 없는 슬롯 표현.** 다음 선택지 중 A가 정한다.
+
+- **ⓐ 본문 컬럼 nullable:** `area_tag`부터 `rationale`까지 본문 투영을 nullable로 바꾼다.
+- **ⓑ 행을 만들지 않음:** `get(set_id, slot_index)`가 해당 슬롯 결과를 반환하지 못해
+  `ProblemItemStore` Protocol을 위반하므로 채택할 수 없다.
+- **ⓒ 결정 ②의 B안과 결합:** 전체 스냅숏을 진실로 삼고 본문 파생 컬럼을 nullable로
+  둔다.
+
+변경량과 향후 계약 확장 위험을 함께 줄이는 조합은 **결정 ② B안 + 결정 ③ ⓒ**다.
+이는 B의 권고이며 최종 선택은 A가 한다.
+
+#### 2-20.3 테넌트 격리와 마이그레이션 경계
+
+테넌트 격리는 이번 차단 원인이 아니다. 저장소 생성자에 `tenant_id`를 주입해 인스턴스를
+테넌트 단위로 스코프하고, Protocol 시그니처를 바꾸지 않은 채 모든 조회에서 부모를
+조인하면 된다.
+
+```python
+select(ProblemItem).join(
+    ProblemSet,
+    ProblemItem.set_id == ProblemSet.id,
+).where(
+    ProblemSet.tenant_id == self._tenant_id,
+    ProblemItem.set_id == set_id,
+    ProblemItem.slot_index == slot_index,
+)
+```
+
+마이그레이션 파일은 양자 승인 목록이 아니라 `db/models.py` 모델 diff의 기계적 산출물이다.
+따라서 A가 모델 선택지를 승인한 뒤 같은 모델 변경 PR에서 함께 리뷰하면 된다
+(`docs/02_ownership.md:60`).
 
 ---
 
