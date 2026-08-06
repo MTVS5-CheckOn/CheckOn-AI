@@ -112,13 +112,29 @@ async def refine_draft(
        (05 §6-2 — 같은 상한 ≤3 안에서만. 불변식 6).
     ③ 상한까지 통과 못 하면 차단으로 수렴하고 **초안은 직전 버전 유지**(호출자 책임).
     """
+    # 🔴 `regen_max=0`이면 루프가 0회 — LLM을 한 번도 안 부르고 "상한 소진"으로 차단된다.
+    # 강사에게는 게이트가 막은 것으로 보이는데 실은 아무것도 시도하지 않았다.
+    # ⚠ `graph.py`는 **조립 시점**(`build_counsel_graph`)에 막지만 여기는 **함수 진입**이다 —
+    #   refine에는 조립 단계가 없고 라우터가 매 턴 직접 부르므로, 값이 들어오는 가장 이른
+    #   지점이 여기다. 두 경로 다 "값이 처음 들어오는 곳"이라는 규칙은 같다.
+    #   검사가 LLM 호출보다 앞이라 비용도 0이다.
+    if regen_max < 1:
+        raise ValueError(
+            f"regen_max는 1 이상이어야 한다(받은 값: {regen_max}) — 0이면 생성 시도가 "
+            "0회인데 상한 소진으로 차단된다"
+        )
+
     blocked = screen_instruction(instruction)
     if blocked is not None:
         return RefineOutcome(applied=False, blocked_reason=blocked)
 
     max_chars = max_chars_for(context)
     last_reason = ""
-    for _ in range(regen_max):
+    # 🔴 **재생성 N회 = 시도 N+1회.** 초안 경로(`graph.py`)와 **같은 `_REGEN_MAX`를 받으므로
+    # 해석도 같아야 한다** — 종전 `range(regen_max)`는 여기만 시도 3회(재생성 2회)라
+    # 초안은 3회 재생성하고 다듬기는 2회였다. 위 docstring이 "같은 상한 ≤3 안에서만"이라고
+    # 선언해 놓고 지키지 않던 자리다(#110이 초안 쪽만 고쳤다).
+    for _ in range(regen_max + 1):
         try:
             text = await writer.write(
                 context=context,

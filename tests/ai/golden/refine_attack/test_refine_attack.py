@@ -244,7 +244,12 @@ def test_a4_forbidden_term_is_tone_violation() -> None:
 
 
 def test_post_generation_block_uses_the_full_regen_budget() -> None:
-    """차단 전에 재생성 상한까지 시도한다 — 사유를 실어 다시 묻는다(05 §6-2 · 불변식 6)."""
+    """차단 전에 재생성 상한까지 시도한다 — 사유를 실어 다시 묻는다(05 §6-2 · 불변식 6).
+
+    🔴 기대값이 3 → 4다. **재생성 3회 = 시도 4회**이고, 초안 경로(`graph.py`)와 같은
+    `_REGEN_MAX`를 받으므로 해석도 같아야 한다 — 종전엔 여기만 시도 3회(재생성 2회)라
+    다듬기가 예산을 1회 덜 썼다. 대칭은 `test_regen_budget_symmetry.py`가 고정한다.
+    """
     writer = _EchoWriter("정답률이 95%로 올랐습니다.")
     asyncio.run(
         refine_draft(
@@ -255,7 +260,7 @@ def test_post_generation_block_uses_the_full_regen_budget() -> None:
             regen_max=3,
         )
     )
-    assert writer.calls == 3
+    assert writer.calls == 4
 
 
 # ── 정상 지시는 통과한다 (과차단 방지) ───────────────────────────
