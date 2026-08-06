@@ -18,16 +18,19 @@ _FALSE_POSITIVE_BUDGET = 2
 
 def test_corpus_has_expected_cases() -> None:
     """§5 원형 30 + 누적 31~34 + 성명형/잔여/성씨함정 35~49(43 제외) + **산출물 재입력
-    50~55** = 54 (누적만, §6).
+    50~55** + **관계어/양·군 56~64** = 63 (누적만, §6).
 
     🔴 35~49는 8/5 미탐 실측분이다 — 종전 코퍼스가 별명형에 편중돼 "미탐 0" 게이트가
     통과하는 동안 성명형이 통째로 새고 있었다. 형태 커버리지 표는 코퍼스 상단에 있다.
     🔴 50~55는 8/6 실측분이다 — 이번엔 **조사 없는 형태에 편중**돼 `학생의`가 우회했다.
     형태 축을 조사 유무까지 갈라 적었고, 개별 형태 대신 **멱등성이라는 성질**을 코퍼스
     전건에 걸었다(`test_redaction_idempotence.py`).
+    🔴 56~64는 8/6 실측분이다 — 이번엔 **관계어 앞 정식 성명이 한 건도 없었다**(미탐 14종)
+    그리고 **학원 빈출어가 없었다**(오탐 9종). 편중 세 번째라, 형태 커버리지를 사람이
+    표로 관리하는 대신 **곱집합을 생성해 CI가 재게** 했다(`test_redaction_coverage.py`).
     """
-    assert len(CORPUS) == 54
-    assert len({case.id for case in CORPUS}) == 54  # id 중복 없음
+    assert len(CORPUS) == 63
+    assert len({case.id for case in CORPUS}) == 63  # id 중복 없음
 
 
 def test_no_miss_across_corpus() -> None:
