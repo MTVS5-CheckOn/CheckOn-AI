@@ -34,13 +34,29 @@ from ai.contracts.llm import LlmError
 
 _RULES_PATH: Final = Path(__file__).parent / "refine_rules.yaml"
 
-#: 게이트 사유 접두 → 차단 사유(06 §4). 목록에 없는 접두는 `tone_violation`으로 수렴한다 —
-#: 게이트를 통과하지 못한 결과라는 의미는 같고, `BlockedReason`은 닫힌 공용 enum이라
-#: 형식 실패(`too_long`·`symbol`·`token_leak`·`empty`)를 위한 값이 없다.
-#: 사유 세분은 99 D에 후속으로 등록했다 — 여기서 새 어휘를 발명하지 않는다.
+#: 게이트 사유 접두 → 차단 사유(06 §4). **게이트가 내는 사유 전수를 명시 등재한다** —
+#: `tests/ai/contract/test_gate_feedback_coverage.py`가 CI에서 대조한다.
+#:
+#: 🔴 **왜 기본값에 맡기지 않는가.** `.get(prefix, TONE_VIOLATION)`이 있으니 등재를 빼도
+#: 런타임은 돈다 — 그래서 #113이 `internal_term`을 새로 만들면서 여기만 빠뜨렸고 아무도
+#: 몰랐다. **"의도적으로 수렴시켰다"와 "빠뜨렸다"는 다른 사건인데 기본값으로 흐르면
+#: 코드에서 구분되지 않는다.** 기본값은 안전망으로 남기되 정상 상태에서는 안 쓰인다.
+#:
+#: ⚠ **`BlockedReason`은 닫힌 공용 enum(양자)이라 형식 실패에 맞는 값이 없다**(99 ㊴).
+#: 아래 다섯은 전부 `TONE_VIOLATION`으로 **수렴시킨 것**이지 그 값이 정확해서가 아니다 —
+#: 강사에게는 "안전 기준에 걸려 다시 썼다"로 보이고, 형식 실패도 게이트 미통과라는 점에서
+#: 같은 쪽이다. ㊴가 닫히면 **이 dict 한 곳만** 고치면 된다.
 _GATE_REASON_TO_BLOCK: Final[dict[str, BlockedReason]] = {
+    # 근거 축 — 유일하게 `BlockedReason`에 정확한 값이 있다.
     "ungrounded_number": BlockedReason.EVIDENCE_MISSING,
+    # 톤 축 — 원래 이 값이 뜻하는 것.
     "forbidden": BlockedReason.TONE_VIOLATION,
+    # ── 아래부터 ㊴ 수렴분: 맞는 enum 값이 없어 tone_violation으로 모은다 ──
+    "internal_term": BlockedReason.TONE_VIOLATION,  # 지시문 누출(#113)
+    "too_long": BlockedReason.TONE_VIOLATION,
+    "symbol": BlockedReason.TONE_VIOLATION,
+    "token_leak": BlockedReason.TONE_VIOLATION,
+    "empty": BlockedReason.TONE_VIOLATION,
 }
 
 

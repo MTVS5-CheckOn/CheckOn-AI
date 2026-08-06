@@ -1,4 +1,16 @@
-"""게이트 사유 코드 전수가 `gate_feedback.yaml`에 등재됐는가 — 05 §5·§6-2 CI 대조.
+"""게이트 사유 코드 전수가 **소비자 양쪽에** 등재됐는가 — 05 §5·§6-2 CI 대조.
+
+소비자는 둘이다. 🔴 **한쪽만 가드하면 절반만 잡힌다** — #113이 `internal_term`을 만들며
+`gate_feedback.yaml`에는 등재했는데 `_GATE_REASON_TO_BLOCK`에는 빠뜨렸고, 이 파일이
+전자만 봐서 통과시켰다.
+
+| 소비자 | 미등재 시 |
+| --- | --- |
+| `gate_feedback.yaml` | 재생성 지시가 `default`로 조용히 퇴화(㉙) |
+| `refine._GATE_REASON_TO_BLOCK` | 차단 사유가 `tone_violation`으로 조용히 수렴 |
+
+⚠ `contracts.counsel.wire_status_for`는 **소비자가 아니다.** 그건 `fail_reason` 접두
+(`gate_exhausted`)만 보고, 게이트 사유는 콜론 뒤 detail이라 와이어에서 버려진다.
 
 **왜 CI에서 잡아야 하나.** 미등재 코드는 런타임에서 터지지 않는다 — `instruction_for`가
 조용히 `default` 문구로 퇴화한다. 새 게이트 사유를 추가한 사람은 아무 신호도 못 받고,
@@ -16,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from ai.composition.counsel.refine import _GATE_REASON_TO_BLOCK
 from ai.composition.gate_feedback import instruction_for, load_gate_feedback
 
 _SRC = Path(__file__).resolve().parents[3] / "src" / "ai" / "composition"
@@ -29,9 +42,9 @@ _GATE_SOURCES = {
 #: `reason="empty"` · `reason=f"forbidden:{hits[0]}"` 양쪽을 잡는다.
 _REASON_RE = re.compile(r"""reason=f?["']([a-z_]+)""")
 
-#: 실측 하한(2026-07-31): counsel 6종 · briefing 5종. 추출 정규식이 소스 변화로 안 맞게
-#: 되면 이 하한이 먼저 깨져 "검사 경로가 끊겼다"를 알린다.
-_MIN_CODES = {"counsel": 6, "briefing": 5}
+#: 실측 하한(8/6 갱신 — counsel에 `internal_term` 추가): counsel 7종 · briefing 5종.
+#: 추출 정규식이 소스 변화로 안 맞게 되면 이 하한이 먼저 깨져 "검사 경로가 끊겼다"를 알린다.
+_MIN_CODES = {"counsel": 7, "briefing": 5}
 
 
 def _emitted_codes(path: Path) -> set[str]:
@@ -54,6 +67,43 @@ def test_every_emitted_reason_has_an_instruction(gate: str) -> None:
         f"{gate} 게이트 사유가 gate_feedback.yaml에 없다: {missing} — "
         "등재하지 않으면 default로 조용히 퇴화한다(99 D ㉙)"
     )
+
+
+# ── 소비자 ② refine의 차단 사유 매핑 ─────────────────────────────
+
+
+def test_every_counsel_reason_has_a_block_reason() -> None:
+    """🔴 **이번 결함을 막는 가드.** counsel 게이트 사유 전수가 매핑에 등재돼 있다.
+
+    ⚠ **등재 여부만 본다 — 값은 강제하지 않는다.** 형식 실패 4종과 `internal_term`이
+    `tone_violation`으로 수렴하는 건 `BlockedReason`(양자)에 맞는 값이 없어서이고(99 ㊴),
+    그건 이 가드가 판정할 문제가 아니다. 가드는 **누락**을 잡는다.
+
+    ⚠ briefing 게이트는 대상이 아니다 — refine은 counsel 초안만 다듬는다.
+    """
+    missing = sorted(_emitted_codes(_GATE_SOURCES["counsel"]) - set(_GATE_REASON_TO_BLOCK))
+    assert not missing, (
+        f"counsel 게이트 사유가 _GATE_REASON_TO_BLOCK에 없다: {missing} — "
+        "등재하지 않으면 tone_violation으로 조용히 수렴해 "
+        "'의도적 수렴'과 '누락'이 구분되지 않는다"
+    )
+
+
+def test_no_orphan_block_reason_mappings() -> None:
+    """반대 방향 — 어느 게이트도 내지 않는 매핑이 남아 있지 않다(죽은 데이터, 03 §1)."""
+    orphans = sorted(set(_GATE_REASON_TO_BLOCK) - _emitted_codes(_GATE_SOURCES["counsel"]))
+    assert not orphans, f"counsel 게이트가 내지 않는 사유 매핑: {orphans}"
+
+
+def test_both_consumers_see_the_same_reason_list() -> None:
+    """🔴 두 가드가 **같은 출처**를 읽는다 — 다르면 한쪽만 통과하는 상태가 생긴다.
+
+    그게 이번 결함의 확대판이다. 사유 목록의 정본은 아직 `gate.py`의 `reason=` 리터럴이고
+    (enum화는 99 ㉟), 그래서 두 대조가 **같은 추출 함수**를 쓴다 — 복제하면 드리프트한다.
+    """
+    counsel_codes = _emitted_codes(_GATE_SOURCES["counsel"])
+    assert counsel_codes <= set(load_gate_feedback().instructions)
+    assert counsel_codes <= set(_GATE_REASON_TO_BLOCK)
 
 
 def test_no_orphan_instructions() -> None:
