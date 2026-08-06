@@ -30,6 +30,7 @@ from ai.composition.classify.provider import build_classify_gateway
 from ai.contracts.classify import AxisConfidence, ClassifyRequest, ClassifyResult
 from ai.contracts.counsel import InquirySentiment, InquiryTopic, InquiryUrgency
 from ai.contracts.execution import Capability, ExecutionContext
+from ai.contracts.llm import LlmError
 from ai.db.repositories.inquiry_class_store import (
     InquiryClassRecord,
     InquiryClassStore,
@@ -45,7 +46,7 @@ from ai.db.store_factory import (
     build_run_store,
     reset_default_inquiry_class_store,
 )
-from ai.runtime.errors import SnapshotInvalid
+from ai.runtime.errors import SnapshotInvalid, domain_error_for
 
 logger = logging.getLogger(__name__)
 
@@ -165,24 +166,46 @@ async def post_classify(request: Request) -> dict[str, Any]:
             versions=versions,
         )
 
-    result = await classify(
-        classify_request, build_classify_gateway(), context=context
-    )
-    # ② 실행 원장 — AI_RUN + LLM_CALL. 🔴 **INQUIRY_CLASS보다 먼저**다:
-    #    `inquiry_class.llm_call_id`가 `llm_call.id`를 참조하는 **실 FK**라 순서가 뒤집히면
-    #    FK 위반으로 죽는다. AI_RUN은 폴백 건에도 남긴다 — 불변식 8은 판정 성공 여부와
-    #    무관하게 "모든 실행"을 기록하고, 폴백 원인 추적에 호출 기록이 정확히 필요하다.
-    calls = default_llm_call_collector().take(execution_id)
-    last = calls[-1].record if calls else None
-    await _run_store.record_run(
-        context.to_run_metadata(
-            created_at=_clock(),
-            model_provider=last.provider if last is not None else None,
-            model_name=last.model if last is not None else None,
-            generation_params=CLASSIFY_GEN_PARAMS,
-        ),
-        calls,
-    )
+    #: 🔴 refine과 **같은 형태**다(counsel.py) — 부수효과를 `except` 절 안에 두지 않는다.
+    failed = True
+    try:
+        result = await classify(
+            classify_request, build_classify_gateway(), context=context
+        )
+        failed = False
+    except LlmError as exc:
+        # 🔴 **변환 경계를 여기서 받는다.** `classifier.py`가 *"LlmUnavailable·LlmTimeout은
+        #   여기서 삼키지 않는다"* 고 선언하고 올려보내는데 **받는 쪽이 없어서** 전부
+        #   `app.py` 일반 핸들러 → 500이었다(8/7 실측). 맞는 값은 504·503이다
+        #   (error_codes §4·§6 "LLM 장애는 폴백이 아니다").
+        #   ⚠ 판정을 여기서 하지 않는다 — 매핑표는 `domain_error_for` 한 곳이 든다.
+        raise domain_error_for(exc) from exc
+    finally:
+        # ② 실행 원장 — AI_RUN + LLM_CALL. 🔴 **INQUIRY_CLASS보다 먼저**다:
+        #    `inquiry_class.llm_call_id`가 `llm_call.id`를 참조하는 **실 FK**라 순서가 뒤집히면
+        #    FK 위반으로 죽는다. AI_RUN은 폴백 건에도 남긴다 — 불변식 8은 판정 성공 여부와
+        #    무관하게 "모든 실행"을 기록하고, 폴백 원인 추적에 호출 기록이 정확히 필요하다.
+        # 🔴 **장애 건도 여기를 지난다.** 위 주석이 "모든 실행"이라고 선언해 놓고 종전에는
+        #    호출 뒤에만 있어 장애 건이 빠졌다 — 선언과 코드가 갈린 자리였다(8/7 실측:
+        #    AI_RUN 0 · 수집기 잔존 1). 분류는 파싱 재시도로 호출을 여러 번 하고 실패하므로
+        #    **수집기에 레코드가 실제로 쌓인 채** 방치됐다.
+        # ⚠ 실패 경로에서만 적재 오류를 삼킨다 — 원인 예외를 덮으면 진단이 뒤집힌다.
+        calls = default_llm_call_collector().take(execution_id)
+        last = calls[-1].record if calls else None
+        try:
+            await _run_store.record_run(
+                context.to_run_metadata(
+                    created_at=_clock(),
+                    model_provider=last.provider if last is not None else None,
+                    model_name=last.model if last is not None else None,
+                    generation_params=CLASSIFY_GEN_PARAMS,
+                ),
+                calls,
+            )
+        except Exception:  # noqa: BLE001 — 원인 예외를 덮지 않는다(위 주석)
+            if not failed:
+                raise
+            logger.exception("분류 장애 건의 원장 적재 실패 — 원인 예외를 유지한다")
     # ③ 적재 — **판정이 선 건만**(불변식 2 · P2-b 조건 4). 폴백 건은 행을 만들지 않으므로
     #    캐시도 되지 않고, 재호출하면 다시 시도한다(redaction·파싱 실패는 일시적일 수 있다).
     #    ⚠ 적재 실패는 **삼키지 않는다** — 저장이 이 경로의 목적이고, 실패를 숨기면
