@@ -15,6 +15,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict
 
 from ai.composition.buffer_lexicon import find_forbidden, forbidden_terms
+from ai.composition.internal_terms import find_internal_terms
 from ai.contracts.composition import DraftContext, extract_numbers
 
 #: LaTeX·마크다운 메타문자 — 한글 상담 초안엔 안 나오는 게 정상(× U+00D7은 정상 문자).
@@ -46,6 +47,8 @@ def check_counsel_gate(
     블록 하나분으로 계산되는 것이 오래 안 보였다(99 ㉤). 블록 단위 판정은 별건이다(㊱).
 
     검사 순서는 고정이라 같은 입력에 같은 사유가 나온다(결정론).
+    ⚠ `internal_term`은 **맨 뒤에 붙였다** — 기존 검사 사이에 끼우면 종전에 다른 사유로
+    막히던 본문의 사유 코드가 바뀐다(순서가 곧 계약이다).
     `max_chars`는 호출자가 tone_map에서 산출해 주입한다(`max_chars_for` — 블록 수 ×
     블록당 문장 수 × 문장당 글자) — 임계값을 이 모듈에 박지 않는다(03 §1).
     """
@@ -62,6 +65,13 @@ def check_counsel_gate(
     hits = find_forbidden(body, forbidden_terms())
     if hits:  # A군 금칙 — 치환 불가, 블록 재생성(05 §4)
         return GateResult(passed=False, reason=f"forbidden:{hits[0]}")
+
+    leaked = find_internal_terms(body)
+    if leaked:
+        # 🔴 지시문·산출물 이름 누출 — 3차 실측 첫 문장이 "…상담 초안을 드립니다."였다.
+        # 프롬프트에 "쓰지 마라"를 적는 걸로는 못 막는다(금칙어에서 겪은 그대로) — 확률적
+        # 되뇜의 실제 방어선은 게이트다. 어휘 정본은 `internal_terms.yaml`.
+        return GateResult(passed=False, reason=f"internal_term:{leaked[0]}")
 
     allowed = context.allowed_numbers()
     # 🔴 추출은 허용집합과 **같은 함수**여야 한다 — 한쪽만 정규화하면 표기 방향이
