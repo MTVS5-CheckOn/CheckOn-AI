@@ -76,6 +76,7 @@ from ai.contracts.composition import (
 from ai.contracts.counsel import CounselDraftJobView
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmUnavailable
+from ai.db.repositories.run_store import MAX_PENDING_RUNS
 from ai.db.settings import DbSettings
 from ai.db.store_factory import build_agent_job_store
 
@@ -741,3 +742,45 @@ def test_the_job_ledger_is_not_capped_and_that_is_deliberate() -> None:
         "잡 원장에 LRU eviction이 생겼다 — 밀려난 잡은 없어진 잡이다(404). 캐시와 원장은 "
         "처방이 다르다(99 ㊐)"
     )
+
+
+def test_the_real_router_caches_are_bounded() -> None:
+    """🔴 **라우터가 실제로 쓰는 캐시**가 상한을 갖는다 — 상수까지 함께 잠근다.
+
+    ⚠ **위 두 테스트만으로는 부족했다(8/8 실측).** 그것들은 `_JobCache("test", max_items=3)`
+    으로 상한을 **직접 주입**하므로 `_MAX_CACHED_JOBS`를 무한대로 바꿔도 초록이다 —
+    뒤집기로 확인했고 red가 안 났다. LRU **기구**는 검증하지만 **적용 여부**는 안 본다.
+    이 시리즈가 여덟 번째로 겪는 형태다: 테스트가 엉뚱한 이유로 통과한다.
+
+    ⚠ **채워 보는 것만으로도 부족했다.** 상한을 `10**9`로 바꾸면 그만큼 넣어야 하니
+    테스트가 **red가 아니라 행(hang)** 이 된다 — 무한 루프를 잡는 테스트가 무한 루프가
+    되는 꼴이다(같은 뒤집기에서 2분 타임아웃으로 드러났다). 그래서 **먼저 상수를 보고**,
+    그 다음에 동작을 본다.
+    """
+    limit = counsel_router._MAX_CACHED_JOBS  # noqa: SLF001
+    #: 선례(`MAX_PENDING_RUNS = 256`)의 4배까지를 "상한이라 부를 수 있는 범위"로 본다 —
+    #: 수천 건을 담는 캐시는 이름만 상한이다. 새 매직 넘버를 만들지 않으려고 그 상수에 건다.
+    assert 0 < limit <= MAX_PENDING_RUNS * 4, (
+        f"_MAX_CACHED_JOBS={limit} — 상한이라 부를 수 없는 값이다(불변식 6). "
+        f"선례 MAX_PENDING_RUNS={MAX_PENDING_RUNS}와 같은 계열이어야 한다"
+    )
+    for cache in (counsel_router._view_cache, counsel_router._drafts):  # noqa: SLF001
+        assert cache._max_items == limit, (  # noqa: SLF001
+            "라우터 캐시가 모듈 상한을 안 쓴다 — 상수를 고쳐도 실제 캐시는 안 바뀐다"
+        )
+
+    counsel_router._view_cache.clear()  # noqa: SLF001
+    view = CounselDraftJobView(
+        job_id="11111111-1111-4111-8111-111111111111",
+        status=JobPhase.SUCCEEDED.value,
+        result=None,
+    )
+    for i in range(limit + 8):
+        counsel_router._view_cache.put(("t1", f"job-{i}"), view)  # noqa: SLF001
+
+    assert len(counsel_router._view_cache) == limit, (  # noqa: SLF001
+        f"라우터 뷰 캐시가 상한 없이 자란다: {len(counsel_router._view_cache)}개 — "  # noqa: SLF001
+        "#121이 잡을 프로세스 수명 내내 살려 둔 뒤로는 이게 실제로 쌓인다"
+    )
+    assert counsel_router._view_cache.evicted == 8  # noqa: SLF001
+    counsel_router._view_cache.clear()  # noqa: SLF001
