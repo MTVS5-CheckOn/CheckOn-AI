@@ -59,8 +59,9 @@ PROMPT_VERSION = "0.2"
 _BRIEF_MAX_TOKENS = 128
 
 #: 🔴 종전에는 `max_tokens`만 있어 **temperature·seed가 둘 다 미지정**이었다 — 어댑터
-#: 기본 temperature(0.7)로 나가 같은 신호가 매번 다른 문장을 냈다(99 ㊼). 재현 축의
-#: 정본은 `composition/determinism.py`다.
+#: 기본 temperature(0.7)로 나가 같은 신호가 매번 다른 문장을 냈다(99 ㊼).
+#: 재현 축의 **정본은 `llm/determinism.py`**(B 소유)이고
+#: `composition/determinism.py`는 재수출이다(99 ⓨ).
 BRIEF_GEN_PARAMS = deterministic_params(max_tokens=_BRIEF_MAX_TOKENS)
 
 

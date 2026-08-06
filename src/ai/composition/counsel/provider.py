@@ -54,8 +54,9 @@ from ai.runtime.redaction import redact
 #: ⚠ 표본 4건이고 그중 초안 경로는 1건이다. 회차가 쌓이면 재역산한다.
 CHARS_PER_SENTENCE = 60
 
-#: 초안·plan 생성 파라미터 — 재현 축(temperature·seed)은 `composition/determinism.py`가
-#: 정본이다(99 ㊼). 워커가 AI_RUN.generation_params에 이 값을 적재한다.
+#: 초안·plan 생성 파라미터 — 재현 축(temperature·seed)의 **정본은 `llm/determinism.py`**
+#: (B 소유)이고 `composition/determinism.py`는 재수출이다(99 ㊼·ⓨ).
+#: 워커가 AI_RUN.generation_params에 이 값을 적재한다.
 COUNSEL_GEN_PARAMS: Final = deterministic_params()
 
 

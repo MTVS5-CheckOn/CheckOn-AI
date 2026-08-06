@@ -234,7 +234,8 @@ def test_prompt_version_is_recorded() -> None:
 def test_generation_params_are_deterministic() -> None:
     """temperature 0.0 + seed 고정 — 서버가 seed를 존중하는지는 별개다(99 ㊼).
 
-    seed 리터럴은 이제 `composition/determinism.py`가 정본이다(8/5) — 경로별로 상수를
+    seed 리터럴의 **정본은 `llm/determinism.py`**(B 소유)이고
+    `composition/determinism.py`는 재수출이다(8/5 신설 → 8/7 전환) — 경로별로 상수를
     따로 두면 브리핑·초안·분류의 재현 조건이 갈린다. 전 경로 공유는
     `tests/ai/integration/test_llm_observability.py`가 고정한다.
     """
