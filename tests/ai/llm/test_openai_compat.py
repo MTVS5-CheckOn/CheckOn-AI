@@ -283,8 +283,10 @@ def test_vendor_extra_body_is_not_sent_by_default() -> None:
 def test_thinking_toggle_on_sends_extra_body() -> None:
     """opt-in하면(disable=True) 벤더 경로로 `enable_thinking=False`를 전달한다.
 
-    팀 로컬 서버(mtp 계열)는 추론모델이라 이 옵션이 없으면 CoT가 `max_tokens`를 소진해
-    content가 빈 채로 잘린다(v2 프리뷰 실측) — 그 서버에선 반드시 켠다.
+    ⚠ **지금은 켤 대상이 없다**(99 ⓟ·ⓢ) — 이 경로가 살아 있는 이유는 같은 확장을 쓰는
+    서버가 다시 생길 때를 위해서고, 지금은 "켜면 무엇이 실리는가"를 고정할 뿐이다.
+    (근거였던 팀 로컬 서버는 추론모델이라 이 옵션이 없으면 CoT가 `max_tokens`를 소진해
+    content가 빈 채로 잘렸다 — v2 프리뷰 실측.)
     """
     settings = OpenAiSettings.model_validate(
         {

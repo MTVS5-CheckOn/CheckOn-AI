@@ -29,6 +29,7 @@ import argparse
 import asyncio
 import importlib
 import json
+import re
 import sys
 import time
 from collections import Counter
@@ -57,11 +58,58 @@ from ai.runtime.tracing import active_tracing_env_names, external_tracing_active
 _REPEATS = 3
 """신호당 반복 — briefing_preview.py 선례. 7신호 × 3 = 21호출로 S1의 N ≥ 10을 채운다."""
 
-_REPORT_PATH = Path("docs/handoff/2026-08-04_llm_smoke_report.md")
-"""⚠ 재실행하면 **통째로 덮어쓴다** — 발행 후 손으로 덧붙인 정정 블록은 사라진다.
-정정의 정본은 리포트가 아니라 `99_open_items.md`에 둔다(99 D ⑰ 선례)."""
-_RAW_PATH = Path("local_data/llm_smoke_raw.json")
+_REPORT_DIR = Path("docs/handoff")
+_RAW_DIR = Path("local_data")
 """원문 포함 산출 — 레포 반입 금지(local_data는 gitignore)."""
+
+#: `--date` 형식 — `YYYY-MM-DD` 또는 같은 날 재실행용 회차 접미(`2026-08-07-2`).
+#: 🔴 이 값이 **파일 경로가 되므로** 형식을 강제한다 — 검증 없이 쓰면 `../`로 디렉터리를
+#: 빠져나갈 수 있다.
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(-\d+)?$")
+
+
+def report_path(run_date: str) -> Path:
+    """리포트 경로 — **`--date`에서 파생**한다(99 ⓝ②).
+
+    🔴 종전에는 모듈 상수 `docs/handoff/2026-08-04_llm_smoke_report.md`였고 `--date`는
+    **본문 표기만** 바꿨다 — 어느 날짜로 돌려도 **8/4 리포트를 덮어썼다.** 8/4·8/5 리포트는
+    그 날짜의 실측 기록이라 덮이면 복구가 git뿐이다.
+    """
+    return _REPORT_DIR / f"{run_date}_llm_smoke_report.md"
+
+
+def raw_path(run_date: str) -> Path:
+    """원문 덤프 경로 — 리포트와 같은 규칙(B-5).
+
+    gitignore 대상이라 레포 기록은 아니지만, 고정 경로면 **직전 회차의 원문이 조용히
+    사라진다.** 리포트만 날짜를 붙이면 리포트와 원문의 짝이 어긋난다.
+    """
+    return _RAW_DIR / f"{run_date}_llm_smoke_raw.json"
+
+
+def resolve_outputs(run_date: str) -> tuple[Path, Path]:
+    """산출 경로 2종을 확정하고 **선점 검사**까지 한다 — 실행 **전에** 부른다.
+
+    🔴 **검사를 시작 시점에 하는 것이 요점이다.** 쓰기 직전에 검사하면 LLM 호출 수십 건을
+    다 태운 뒤에야 충돌을 알게 된다.
+
+    🔴 **이미 있으면 거부한다. `--force`를 만들지 않는다** — 실측 기록을 덮는 것은 사고지
+    옵션이 아니다. 같은 날 다시 돌려야 하면 `--date`에 회차를 붙인다(`2026-08-07-2`).
+    """
+    if not _DATE_RE.match(run_date):
+        raise SystemExit(
+            f"❌ --date 형식이 아니다: {run_date!r} — YYYY-MM-DD 또는 YYYY-MM-DD-N"
+        )
+    report, raw = report_path(run_date), raw_path(run_date)
+    existing = [path for path in (report, raw) if path.exists()]
+    if existing:
+        listed = " · ".join(str(path) for path in existing)
+        raise SystemExit(
+            f"❌ 산출 파일이 이미 있다: {listed}\n"
+            "   실측 기록은 덮지 않는다 — 같은 날 재실행이면 --date에 회차를 붙여라"
+            " (예: --date 2026-08-07-2)."
+        )
+    return report, raw
 
 _MASK_TOKENS = ("⟪", "⟫")
 
@@ -801,6 +849,8 @@ def _render(data: dict[str, Any]) -> str:
 
 
 async def _main_async(run_date: str) -> int:
+    # 🔴 산출 경로 확정·선점 검사를 **가장 먼저** — LLM 호출을 태우기 전에 충돌을 잡는다.
+    report_file, raw_file = resolve_outputs(run_date)
     preflight = _preflight()
     print(f"✅ 전제 확인 — 추적 비활성 · 서버 {preflight['base_url']}")
 
@@ -840,12 +890,12 @@ async def _main_async(run_date: str) -> int:
     data["verdict"] = _verdict(data)
 
     # 원문(LLM 출력 포함)은 로컬에만 떨군다 — 레포에 반입하지 않는다(local_data).
-    _RAW_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _RAW_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    raw_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    _REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _REPORT_PATH.write_text(_render(data), encoding="utf-8")
-    print(f"\n리포트: {_REPORT_PATH}\n원문(비커밋): {_RAW_PATH}")
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    report_file.write_text(_render(data), encoding="utf-8")
+    print(f"\n리포트: {report_file}\n원문(비커밋): {raw_file}")
 
     summary = _s1_summary(s1["rows"])
     print(f"S1 1차통과 {summary['gate_first_try']}/{summary['total']}"
@@ -857,7 +907,13 @@ async def _main_async(run_date: str) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="counsel·briefing 실 LLM 스모크")
-    parser.add_argument("--date", default="2026-08-04", help="리포트 표기용 실행일")
+    # 🔴 필수다(기본값 없음). 오늘 날짜를 기본으로 넣는 것도 안 된다 — 실행일과 리포트
+    #   날짜가 다를 수 있고, 명시하게 하는 편이 사고를 막는다(99 ⓝ②).
+    parser.add_argument(
+        "--date",
+        required=True,
+        help="실행일 YYYY-MM-DD(같은 날 재실행은 -N 접미) — 리포트 파일명이 된다",
+    )
     args = parser.parse_args()
     sys.path.insert(0, str(Path.cwd()))  # 골든 공격 테이블 import(정의 중복 회피)
     raise SystemExit(asyncio.run(_main_async(args.date)))

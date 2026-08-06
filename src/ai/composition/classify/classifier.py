@@ -62,8 +62,8 @@ _CLASSIFY_MAX_TOKENS: Final = 256
 #: 종전에는 이 파일이 seed 리터럴을 직접 들고 있었는데, 브리핑·초안이 seed 없이 도는 동안
 #: 분류만 고정돼 있어 **경로마다 재현 조건이 달랐다** — 상수를 한 곳으로 모았다(8/5).
 #: ⚠ **서버가 seed를 존중하는지는 프로바이더에 달렸다** — 어댑터는 값을 그대로 넘기지만
-#: (`llm/providers/openai_compat.py`의 `_build_kwargs`), 로컬 서버가 무시하면 같은 입력에
-#: 다른 출력이 나올 수 있다. 99 ㊼가 그 실측을 기다리는 항목이다.
+#: (`llm/providers/openai_compat.py`의 `_build_kwargs`), **서버가 무시하면** 같은 입력에
+#: 다른 출력이 나올 수 있다(표준 API의 seed도 best-effort다). 99 ㊼가 그 실측을 기다린다.
 CLASSIFY_GEN_PARAMS: Final = deterministic_params(max_tokens=_CLASSIFY_MAX_TOKENS)
 
 #: 전송 직전 트립와이어가 잔여 흔적을 발견해 막았다 — **장애가 아니라 미분류**다.
