@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import difflib
 import importlib
 import json
 import math
@@ -702,22 +703,64 @@ def _s1_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+#: 마스킹 조각 앞뒤로 남길 문맥 글자 수 — 오탐 판정에 필요한 최소한.
+_HIT_CONTEXT: Final = 16
+
+
+def _redaction_hits(text: str, masked: str) -> list[dict[str, str]]:
+    """마스킹된 **조각과 그 문맥** — 🔴 오탐/진탐을 가르려면 무엇이 걸렸는지 알아야 한다.
+
+    ⚠ 종전에는 `uncertain`·`masked`를 **건수만** 남겼다(8/7 4차). 그래서 *"fail-closed
+    4건"* 이 정상 어휘 오탐인지 **LLM이 실명을 낸 것**인지 사후에 가를 수 없었고, 4차
+    판정이 그 둘을 뭉쳐 「데모 불가」를 냈다(99 ㊪). **건수는 판정의 근거가 못 된다.**
+    """
+    hits: list[dict[str, str]] = []
+    matcher = difflib.SequenceMatcher(None, text, masked, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        hits.append(
+            {
+                "fragment": text[i1:i2],
+                "token": masked[j1:j2],
+                "context": text[max(0, i1 - _HIT_CONTEXT) : i2 + _HIT_CONTEXT].replace(
+                    "\n", " "
+                ),
+            }
+        )
+    return hits
+
+
 def _pii_scan(data: dict[str, Any]) -> dict[str, Any]:
     """**LLM이 만든 텍스트만** 마스킹 검사한다 — 실명이 들어올 수 있는 표면은 여기뿐이다.
 
     ⚠ 리포트 전문을 검사하지 않는다. 리포트 산문·공격 지시 문자열은 사람이 쓴 것이고,
     거기에 redaction을 걸면 오탐이 섞여 "LLM이 실명을 냈다"와 구분되지 않는다(실제로
     `재기동`이 행정동으로, `반 평균이랑`이 인명 후보로 잡혔다 — 결함 목록 참고).
+
+    🔴 **`uncertain_detail`을 남긴다**(8/9 · 99 ㊪). `uncertain`은 *"실명이 나갔다"* 가
+    아니라 *"불확실해서 안 보냈다"* 이고, 그게 **오탐인지 진탐인지는 조각을 봐야** 안다.
+    남기지 않으면 다음 회차에도 같은 판정 사고가 난다.
     """
-    texts = [r["text"] for r in data["s1"]["rows"]]
-    texts += [r["text"] for r in data["s2"]["rows"] if r["text"]]
-    texts += [r["text"] for r in data["s3"]["rows"] if r["text"]]
-    scanned = [redact(t) for t in texts if t]
+    labelled = [(f"s1/rows/{i}", r["text"]) for i, r in enumerate(data["s1"]["rows"])]
+    labelled += [(f"s2/rows/{i}", r["text"]) for i, r in enumerate(data["s2"]["rows"])]
+    labelled += [(f"s3/rows/{i}", r["text"]) for i, r in enumerate(data["s3"]["rows"])]
+    scanned = [(where, text, redact(text)) for where, text in labelled if text]
     return {
         "llm_texts": len(scanned),
-        "uncertain": sum(1 for r in scanned if r.uncertain),
-        "masked": sum(1 for r in scanned if r.findings),
-        "token_residue": sum(1 for t in texts if _mask_residue(t)),
+        "uncertain": sum(1 for _w, _t, r in scanned if r.uncertain),
+        "masked": sum(1 for _w, _t, r in scanned if r.findings),
+        "token_residue": sum(1 for _w, t, _r in scanned if _mask_residue(t)),
+        "uncertain_detail": [
+            {"where": where, "hits": _redaction_hits(text, result.masked_text)}
+            for where, text, result in scanned
+            if result.uncertain
+        ],
+        "residue_detail": [
+            {"where": where, "text": text}
+            for where, text, _result in scanned
+            if _mask_residue(text)
+        ],
     }
 
 

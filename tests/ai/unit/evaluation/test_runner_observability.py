@@ -16,6 +16,7 @@ from ai.evaluation.classify_eval import (
     render_confusion,
 )
 from ai.evaluation.counsel_llm_smoke import (
+    _pii_scan,
     compare_reproduction,
     empty_response_rows,
     render_s5_verdict,
@@ -228,3 +229,28 @@ def test_verdict_names_which_side_was_empty() -> None:
 def test_blank_only_output_is_not_a_produced_one() -> None:
     """공백만 있는 산출도 빈 것으로 본다 — `empty_response_rows`와 같은 규칙이다."""
     assert compare_reproduction("   ", "   ").comparable is False
+
+
+# ── ㊪ 마스킹 기록 ────────────────────────────────────────────────
+
+
+def test_pii_scan_keeps_the_fragment_that_was_masked() -> None:
+    """🔴 건수만 남기면 **오탐/진탐을 영원히 못 가른다**(4차가 그랬다 · 99 ㊪).
+
+    ⚠ 여기서 쓰는 문자열은 실 산출이 아니라 **형태 확인용**이다 — `uncertain_detail`이
+    조각과 문맥을 담는지만 본다.
+    """
+    data = {
+        "s1": {"rows": [{"text": "이번 주 제출을 이어가는 태도가 좋았습니다."}]},
+        "s2": {"rows": []},
+        "s3": {"rows": []},
+    }
+    scan = _pii_scan(data)
+    assert scan["llm_texts"] == 1
+    if not scan["uncertain"]:
+        pytest.skip("이 문장이 더는 fail-closed를 만들지 않는다 — 조각 형태만 검사한다")
+    detail = scan["uncertain_detail"]
+    assert len(detail) == scan["uncertain"]
+    hits = detail[0]["hits"]
+    assert hits, "불확실인데 조각이 비었다 — 무엇이 걸렸는지 알 수 없다"
+    assert all(h["fragment"] and h["context"] for h in hits), hits
