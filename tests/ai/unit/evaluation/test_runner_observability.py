@@ -23,8 +23,10 @@ from ai.evaluation.counsel_llm_smoke import (
     _verdict,
     compare_reproduction,
     empty_response_rows,
+    leaked_terms_label,
     render_s5_verdict,
     token_spread,
+    uncertain_fragments_label,
     usage_axis_split,
 )
 
@@ -398,3 +400,61 @@ def test_a_row_whose_model_fields_disagree_with_its_params_is_flagged() -> None:
     """
     split = usage_axis_split([_row(calls=0, params=None, provider="openai_compat")])
     assert split["model_fields_agree"] is False
+
+
+# ── §8 결함표가 측정에서 나오는가 (8/9) ───────────────────────────
+
+
+def test_leaked_terms_come_from_the_run_not_from_prose() -> None:
+    """🔴 §8 D0의 근거는 **그 회차 본문에서 실제로 찾은 조각**뿐이다.
+
+    4차(8/7)는 산출물에 **없는 문장**(`게으른 모습이 관찰되었습니다`)을 근거로 D0을
+    「높음(신규·안전)」에 올렸고 같은 회차에 철회했다(D0′).
+    """
+    assert leaked_terms_label([]) == "—"
+    assert leaked_terms_label([{"leaked_terms": ["게으른", "산만한"]}]) == "`게으른`, `산만한`"
+
+
+def test_the_retracted_d0_sentence_is_not_a_literal_in_the_runner() -> None:
+    """🔴 **철회된 문장이 러너에 리터럴로 남아 있으면 다음 회차가 되살린다.**
+
+    4차의 철회는 **리포트 마크다운**에만 적혔는데 다음 실행이 그 파일을 덮어쓴다 —
+    5차가 D0·D5·D6를 통째로 부활시켰다. 철회는 **산출물이 아니라 산출하는 코드**에
+    적혀야 한다. 이 단정이 그 회귀를 막는다.
+    """
+    import ast
+    from pathlib import Path
+
+    import ai.evaluation.counsel_llm_smoke as runner
+
+    # 🔴 **리터럴만 본다** — 주석은 대상이 아니다. *"왜 뺐는지"* 를 적은 주석까지 걸면
+    #   검사의 이름이 실제 의도보다 넓어지고, 설명을 못 남기게 된다(로그 85).
+    #   `ast`는 주석을 트리에 담지 않으므로 그 구분이 공짜다.
+    tree = ast.parse(Path(runner.__file__).read_text(encoding="utf-8"))
+    source = "\n".join(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    )
+    assert "게으른 모습이 관찰되었습니다" not in source, (
+        "🔴 철회된 D0의 근거 문장이 러너에 다시 박혔다 — 다음 회차 리포트가 그걸 "
+        "「높음(신규·안전)」으로 싣는다"
+    )
+    assert "counsel·briefing 어느 쪽도 넣지 않는다" not in source, (
+        "🔴 철회된 D6의 원인 서술이 다시 박혔다 — `seed`는 실려 있다(4차 D6′)"
+    )
+    assert "실서버 최초 연결" not in source, (
+        "🔴 회차·브랜치를 리터럴로 박으면 두 번째 회차부터 거짓이 된다"
+    )
+
+
+def test_uncertain_fragments_are_listed_not_just_counted() -> None:
+    """건수는 판정의 근거가 못 된다(99 ㊪) — 조각이 있어야 사람이 진탐/오탐을 가른다."""
+    pii = {
+        "uncertain": 1,
+        "uncertain_detail": [
+            {"where": "s2/rows/0", "hits": [{"fragment": "하면서", "token": "⟪확인필요⟫"}]}
+        ],
+    }
+    assert uncertain_fragments_label(pii) == "`하면서`→`⟪확인필요⟫`"
+    assert uncertain_fragments_label({"uncertain": 0, "uncertain_detail": []}) == "—"

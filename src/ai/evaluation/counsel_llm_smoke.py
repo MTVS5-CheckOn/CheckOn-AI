@@ -970,6 +970,26 @@ def _verdict(data: dict[str, Any]) -> str:
     return f"{head} 다만 " + " / ".join(tail) + ". §8 결함을 먼저 본다."
 
 
+def leaked_terms_label(misses: Sequence[Mapping[str, Any]]) -> str:
+    """차단 미탐 행에서 **실제로 남은 낙인 표현**만 모은다 — §8 D0의 근거.
+
+    🔴 **문면을 지어내지 않는다.** 4차 D0은 산출물에 없는 문장(`게으른 모습이…`)을
+    근거로 인용했고 같은 회차에 철회됐다(D0′). 여기서 나오는 것은 `_leak_oracle`이
+    **그 회차 본문에서 실제로 찾은** 조각뿐이다.
+    """
+    terms = sorted({term for miss in misses for term in miss.get("leaked_terms", ())})
+    return ", ".join(f"`{term}`" for term in terms) or "—"
+
+
+def uncertain_fragments_label(pii: Mapping[str, Any]) -> str:
+    """마스킹 불확실로 걸린 조각 — §8 D4의 근거. **건수는 판정의 근거가 못 된다**(99 ㊪)."""
+    return ", ".join(
+        f"`{hit['fragment']}`→`{hit['token']}`"
+        for detail in pii.get("uncertain_detail", ())
+        for hit in detail.get("hits", ())
+    ) or "—"
+
+
 def _table(headers: list[str], rows: list[list[str]]) -> str:
     out = ["| " + " | ".join(headers) + " |", "| " + " | ".join("---" for _ in headers) + " |"]
     out += ["| " + " | ".join(row) + " |" for row in rows]
@@ -993,7 +1013,10 @@ def _render(data: dict[str, Any]) -> str:
     parts = [
         "# counsel·briefing 실 LLM 스모크 리포트",
         "",
-        f"**{data['run_date']} · 브랜치 `test/counsel-llm-smoke` · 실서버 최초 연결**",
+        # ⚠ 브랜치명·회차를 **리터럴로 박지 않는다** — 4차까지 `test/counsel-llm-smoke ·
+        #   실서버 최초 연결`이 박혀 있었고, 5차에도 그대로 찍혀 **둘 다 거짓**이었다.
+        #   값이 바뀌는데 코드 diff가 생기면 위치가 틀린 것이다(03 §1).
+        f"**{data['run_date']} · 실서버 · 모델 `{pre['model']}`**",
         "",
         "> 목적은 기능 추가가 아니라 **실측**이다. 게이트·프롬프트·금칙어는 스모크 통과를 "
         "위해 손대지 않았다 — 걸리면 걸린 대로 싣는다.",
@@ -1265,16 +1288,17 @@ def _render(data: dict[str, Any]) -> str:
         _table(
             ["#", "결함", "근거", "심각도"],
             [
-                ["D0", "🔴 **금칙어 게이트가 활용형을 놓친다 — 실서버에서 A4 차단 미탐**",
-                 "실 LLM이 `게으른 모습이 관찰되었습니다`를 냈고 게이트가 **통과시켰다**"
-                 "(`applied=True`). `buffer_lexicon`은 부분 문자열 포함이라 `게으르`가 "
-                 "**`게으른`을 잡지 못한다**(`'게으르' in '게으른'` → `False`). "
-                 "⚠ 그런데 `buffer_lexicon.py`의 모듈 docstring과 `find_forbidden` "
-                 "docstring **양쪽이 \"`게으르`는 게으르다·게으른을 잡는다\"고 적고 있다** — "
-                 "99 D ⑰에 기록된 구멍(`게을러서`·`산만해서`)보다 **넓다**. "
-                 "fake(`게으르다는`)는 잡히고 실서버(`게으른`)는 안 잡힌 것이 정확히 "
-                 "지시서가 경계한 \"fake 통과와 실서버 통과는 다른 문제\"다",
-                 "**높음(신규·안전)**"],
+                ["D0", "금칙어 게이트가 활용형을 놓치는가 — 차단 미탐",
+                 (f"🔴 **이 회차 차단 미탐 {len(s3_misses)}건** — 반영된 본문에 낙인 표현이 "
+                  f"남았다: {leaked_terms_label(s3_misses)}"
+                  if s3_misses
+                  else "**이 회차 차단 미탐 0건.** ⚠ 「반영됨」은 미탐이 아니다 — 실 LLM이 "
+                       "지시를 거부하고 무해한 문장을 내면 `applied=True`가 정상이고, "
+                       "`_s3_misses`는 **반영된 본문에 낙인 표현이 남았을 때만** 센다. "
+                       "🔴 4차(8/7)에 이 행이 「높음(신규·안전)」으로 **리터럴로 박혀** "
+                       "있었고 같은 회차에 **철회**됐다(D0′) — 근거로 든 문장이 산출물에 "
+                       "없었고 게이트는 활용형을 실제로 잡는다"),
+                 "🔴 **높음(안전)**" if s3_misses else "해당 없음 — 측정값 0"],
                 ["D1", "`LlmCallRecord` 적재 배선",
                  (f"조립부 기본 recorder가 공용 수집기다 — 실 호출 "
                   f"{s4['records_captured']}건이 `AI_RUN`·`LLM_CALL`로 영속된다"
@@ -1289,21 +1313,30 @@ def _render(data: dict[str, Any]) -> str:
                   else "`counsel/worker.py`가 상수 `None`. `agent_step`에서 `LLM_CALL`로 갈 "
                        "간선이 끊겨 `execution_id`로 도달할 수 없다"),
                  "높음(B-5 ⓒ)" if s4["llm_call_id_is_constant_none"] else "해소(8/5)"],
-                ["D4", "redaction이 일반 어휘를 오탐한다",
-                 "`재기동` → `⟪주소1⟫`(행정동 패턴) · `반 평균이랑` → **uncertain=True**"
-                 "(인명 후보). 후자는 fail-closed라 **정상 지시가 전송 자체를 못 한다**",
-                 "중간(신규)"],
+                ["D4", "redaction이 일반 어휘를 오탐한다 — ⚠ **가용성 축**",
+                 (f"이 회차 마스킹 불확실 **{pii['uncertain']}건** · 걸린 조각: "
+                  f"{uncertain_fragments_label(pii)}. "
+                  "🔴 **안전이 아니라 가용성이다** — 실명이 나간 것이 아니라 정상 문장이 "
+                  "막힌 것이다(4차 D4′ 재산정). 조각의 진탐·오탐 판정은 **사람이** 한다"
+                  if pii["uncertain"]
+                  else "이 회차 불확실 0건 — 오탐이 관측되지 않았다"),
+                 "중간(가용성)" if pii["uncertain"] else "이 회차 미관측"],
                 ["D5", "A1·A4 공격 케이스가 골든에서 import 불가",
                  "`_STATIC_ATTACKS`(A2·A3·A5·A6·A7)는 모듈 레벨이지만 A1·A4는 테스트 함수 "
                  "안에 있어 이 러너가 **문자열을 복제**했다 — fake판과 실서버판이 갈릴 자리. "
-                 "**D0이 실서버에서만 드러난 이유이기도 하다**", "낮음(신규)"],
+                 "⚠ **아직 안 갈렸다가 안 갈린다는 아니다**(4차 D5′ — 「D0이 실서버에서만 "
+                 "드러난 이유」라는 인과는 D0과 함께 철회됐다)", "낮음"],
                 ["D6", "`temperature=0.0`인데 같은 입력이 **다른 출력**을 낸다",
                  f"S5 2회 실행 길이 {s5['len_first']} vs {s5['len_second']}자 · 문면 상이. "
-                 "불변식 8은 결정론 **경로**만 요구하므로 위반은 아니다. 다만 "
-                 "\"같은 문의에 매번 다른 초안\"이라 **재현 문의·회귀 판정의 기준선이 없다** — "
-                 "`seed` 파라미터는 계약(`GenerationParams.seed`)에 이미 있고 어댑터도 "
-                 "전달하는데 counsel·briefing 어느 쪽도 넣지 않는다",
-                 "중간(신규)"],
+                 "불변식 8은 결정론 **경로**만 요구하므로 위반은 아니다. "
+                 + (f"🔴 **원인은 우리가 아니다 — `seed`는 실려 있다.** 이 회차 `AI_RUN` "
+                    f"원장 실측: {', '.join(f'`{v}`' for v in usage['observed_params'])}. "
+                    "표준 OpenAI API의 `seed`는 **best-effort**라 동일 seed·temperature 0.0에도 "
+                    "동일 출력을 보장하지 않는다(4차 D6′ · 99 ㊼)"
+                    if usage["observed_params"]
+                    else "⚠ 이 회차는 원장에서 `generation_params`를 관측하지 못했다 — "
+                         "`seed` 적재 여부를 이 표로 말할 수 없다"),
+                 "중간(외부 성질)"],
             ],
         ),
         "",
