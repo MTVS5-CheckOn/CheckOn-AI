@@ -916,14 +916,6 @@ W 번호도 `W1`~`W10`의 실제 표기를 놓치는 하이픈 필수 grep 패�
 | `X-Request-Id` | `request_id` | 요청 추적 키. 바디에는 중복하지 않는다 |
 | `Idempotency-Key` | `idempotency_key` | 같은 키+같은 바디는 최초 202 응답을 재반환하고, 같은 키+다른 바디는 409 `IDEMPOTENCY_CONFLICT` |
 
-⚠ **같은 키+같은 바디의 상태코드는 구현과 정본 문구가 갈려 있다.** counsel 구현은 최초
-응답을 **202로 재반환**하고(`api/routers/counsel.py:637-639`), `04_api_contract.md` §2.3은
-"기존 결과를 **200**으로 반환"이라고 적혀 있다. 이 초안은 **구현(202)** 을 따랐다 —
-A가 04에 옮길 때 둘 중 하나로 통일해 달라. 통일 전까지 BE는 202를 전제로 구현한다.
-
-**후속 정본 동기화:** `04_api_contract.md` §2.3은 이후 비동기 멱등 재반환을 최초와 같은
-202로 확정했다. 위 이력 문단은 삭제하지 않고 남기며, BE의 현재 기준은 **202**다.
-
 외부 HTTP 바디는 내부 command의 헤더 파생 3필드를 제외한 투영이다
 (`contracts/problem_generation.py:83-131`, 이 문서 §2-1의 B HTTP 경계 확정).
 
@@ -1036,12 +1028,17 @@ LLM 예외는 `runtime/errors.py:142-173`의 `domain_error_for()` 표를 **인�
 
 plain `LlmError`와 파싱·필드 오류를 503으로 뭉개지 않는다. 벤더가 살아 있는데 우리
 요청·스키마가 틀린 경우라 “잠시 후 다시” 문구가 거짓이 된다. 반대로
-`ProblemWorkflowConfigurationError`는 `LlmError`가 아니므로 `domain_error_for()` 대상이
-아니며 아래 v1 미지원 요청의 400 경계로 보낸다.
+`ProblemWorkflowConfigurationError` 계열은 `DomainException`이며 라우터가 매핑하지 않고
+`api/app.py`의 예외 핸들러가 잡는다.
 
-`ProblemWorkflowConfigurationError`는 `ValueError` 하위라 `DomainException`이 아니다 —
-그대로 올리면 `api/app.py`의 일반 예외 핸들러가 잡아 500 `INTERNAL`이 된다.
-**라우터가 `SnapshotInvalid`(400 `INVALID_SCHEMA`)로 변환한다.**
+| 예외 | wire 결과 |
+| --- | --- |
+| `ProblemWorkflowConfigurationError` | 400 `INVALID_SCHEMA` |
+| `ProblemTenantMismatch` | 403 `TENANT_MISMATCH` |
+| `ProblemSourceUnsupported` | 400 `INVALID_SCHEMA` + `detail.reason=source_procurement_not_implemented` |
+| `ProblemExecutionContextMismatch` | 500 `INTERNAL` — 내부 조립 버그 |
+
+이 계열을 통째로 400으로 바꾸면 403과 `source_procurement_not_implemented`가 뭉개진다.
 
 #### 2-19.4 v1 지원 한계 — BE 선검사 필요
 
