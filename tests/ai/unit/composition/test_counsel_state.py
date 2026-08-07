@@ -20,16 +20,17 @@ from ai.contracts.composition import DraftStatus, StudentResult
 
 _HASH = "sha256:" + "a" * 64
 
-#: langgraph_state §1.2 CounselPackState 코드블록에서 손으로 옮긴 필드 집합.
-#: 🔴 **이것은 「문서 대조」가 아니다 — 손으로 옮긴 두 번째 사본이다**(99 #07).
-#: 아래 단정은 `set(model_fields) == 이 집합`, 즉 **코드 ↔ 손사본**이라 **문서가 바뀌어도
-#: red가 안 난다.** 잡는 방향은 하나뿐이다:
-#:   ✅ **코드 → 문서** — 모델에 필드를 더하면 red가 나 문서를 고치게 만든다
-#:   🔴 **문서 → 코드** — 문서만 바뀌면 **조용하다**
-#: ⚠ 이름(`..._match_doc_exactly`)이 **양방향으로 읽힌다** — 검사의 이름이 실제로 보는
-#:   것보다 넓다. 🔴 **문서를 실제로 파싱하는 형태는
-#:   `tests/ai/contract/test_doc_enum_parity.py`에 있다** — §1.2 코드블록도 그렇게
-#:   읽으려면 블록 파싱이 필요하고, 그건 #07로 등재만 했다(이 PR 범위 밖).
+#: langgraph_state §1.2 CounselPackState 코드블록의 필드 집합(손 작성).
+#: ✅ **(8/11 · 99 #07 해소) 「문서 → 코드」 방향은 이제 다른 파일이 지킨다** —
+#: `tests/ai/contract/test_doc_enum_parity.py::test_documented_codeblock_fields_match_the_model`
+#: 이 §1.2 코드블록을 **실제로 파싱해** `CounselPackState.model_fields`와 대조한다.
+#: 붙이자마자 **진짜 갈림을 찾았다** — 문서에 `state_schema_version`이 빠져 있었고
+#: 여기 손사본은 코드를 따라 그 값을 갖고 있어서 `코드 == 코드`로 조용했다.
+#:
+#: ⚠ **그래서 이 집합은 왜 남아 있나** — 여기가 지키는 것은 **필드 이름 집합이 아니라
+#: 기본값·불변식**이다(아래 단정들). 이름 대조만 놓고 보면 위 파서와 중복이지만,
+#: 중복이 **정본이 둘**이라는 뜻은 아니다 — 파서 쪽이 문서를 읽는 유일한 자리다.
+#: 🔴 이름 집합이 갈리면 **두 파일이 같이 red**가 난다. 그때 고칠 곳은 문서다.
 _DOC_FIELDS = {
     "state_schema_version",
     "tenant_id",

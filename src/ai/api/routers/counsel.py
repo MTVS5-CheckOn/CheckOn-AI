@@ -458,9 +458,15 @@ def counsel_versions() -> VersionSet:
 
     🔴 **`prompt_version`을 싣는다(8/7 · 99 ㊔).** 종전에는 넷만 채워 응답의
     `meta.versions.prompt`가 `null`이었는데, **같은 실행의 `AI_RUN`에는 `"0.2"`가 있었다** —
-    응답과 원장이 다른 답을 했다. 04 §2.2는 *"`prompt`는 LLM 미사용 실행(감지·진단)에서
-    null"* 이라고 못 박았고 counsel은 LLM을 쓴다. `imports`는 이미 싣고 있어 **counsel만
-    빠져 있었다.**
+    응답과 원장이 다른 답을 했다. 04 §2.2는 `prompt`를 **프롬프트를 쓰지 않는 capability
+    에서만 null**로 규정하고(선언 축) counsel은 프롬프트를 쓴다. `imports`는 이미 싣고
+    있어 **counsel만 빠져 있었다.**
+
+    ⚠ **(8/11) 인용문을 04의 현행 문면으로 고쳤다.** 종전에는 *"`prompt`는 **LLM 미사용
+    실행**(감지·진단)에서 null"* 로 인용했는데, 04 §2.2가 8/10에 **그 표현을 폐기**했다
+    (ⓐ*"LLM을 안 쓰는 capability"* / ⓑ*"호출이 0인 실행"* 둘로 읽혀 오독을 낳았다 ·
+    99 ㊧). **인용은 원문이 바뀌면 같이 바뀌어야 한다** — 안 고치면 여기가 폐기된 표현의
+    마지막 서식지가 된다(99 #12).
 
     ⚠ **counsel은 프롬프트가 둘인데 이 필드는 하나다.** `VersionSet.prompt_version`은
     단일 `str | None`이고 `contracts/execution.py`는 양자 승인 파일이라 늘릴 수 없다.
@@ -941,7 +947,16 @@ async def _record_refine_run(
                 created_at=_clock(),
                 model_provider=last.provider if last is not None else None,
                 model_name=last.model if last is not None else None,
-                generation_params=COUNSEL_GEN_PARAMS,
+                # 🔴 **사용 축이다**(#144 · 04 §2.2 8/10 확정) — 이 턴이 **실제로 쓴**
+                #    샘플링 파라미터다. 상수로 두면 LLM을 안 부른 턴(생성 전 차단·장애)에
+                #    *"그 값으로 돌렸다"* 는 **거짓**이 남는다.
+                #    ⚠ 종전엔 이 한 줄만 무조건이라 **같은 행 안에서 축이 갈렸다** —
+                #      바로 위 두 줄은 이미 조건부였다. `worker.py`가 셋 다 조건부로
+                #      두고 *"한 행 안에서 축이 갈리면 읽는 쪽이 어느 쪽으로도 읽는다"* 고
+                #      경고까지 적어 뒀는데 **refine만 안 따랐다**(99 #11 ⓒ · 8/07 해소).
+                generation_params=(
+                    COUNSEL_GEN_PARAMS if last is not None else None
+                ),
             ),
             calls,
         )

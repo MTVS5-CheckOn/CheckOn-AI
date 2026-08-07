@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 import pytest
+from counsel_text import draft
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
@@ -38,7 +39,7 @@ _HEADERS = {
 }
 
 #: 이 요청의 근거로 통과하는 본문 — `_REQUEST`의 facts에서 나온 수치만 쓴다.
-_GROUNDED = "지문 42개를 함께 살펴봤습니다."
+_GROUNDED = draft("지문 42개를 함께 살펴봤습니다.")
 
 
 class _FailingWriter:
@@ -162,7 +163,7 @@ def test_the_failed_turn_still_lands_in_the_ledger() -> None:
 def test_gate_exhaustion_is_still_two_hundred() -> None:
     """🔴 회귀 방지 — 판단까지 5xx로 올리면 불변식 4 위반이다(리뷰 반려 사유)."""
     set_counsel_provider(
-        FakeCounselProvider(drafts=[_GROUNDED, "정답률이 88%까지 올랐습니다."])
+        FakeCounselProvider(drafts=[_GROUNDED, draft("정답률이 88%까지 올랐습니다.")])
     )
     with _client() as client:
         job_id = client.post(

@@ -33,6 +33,7 @@ from ai.composition.counsel.provider import (
     PlanUnparsedError,
     RedactionBlockedError,
     max_chars_for,
+    min_chars_for,
 )
 from ai.composition.counsel.state import CounselPackState
 from ai.composition.counsel.stores import DraftRecord, DraftResultStore
@@ -191,6 +192,7 @@ def build_counsel_graph(
 
         # ②③ generate_draft → gate_check (게이트 실패 시 재생성 ≤ regen_max)
         max_chars = max_chars_for(context)
+        min_chars = min_chars_for(context)  # 하한도 같은 자리에서 파생(99 #13)
         last_reason = ""
         #: 이 학생에 대해 전송이 한 번이라도 있었나 — `quota_consumed`의 판정 근거다.
         #: 🔴 **단위는 "인터랙티브 생성 1건"이지 호출 수가 아니다.** 게이트 재생성으로 3번
@@ -250,7 +252,9 @@ def build_counsel_graph(
             call_id = log.last_success_id(execution_context.execution_id)
             if call_id is not None:
                 call_ids[student_ref] = call_id
-            gate = check_counsel_gate(text, context, max_chars=max_chars)
+            gate = check_counsel_gate(
+                text, context, max_chars=max_chars, min_chars=min_chars
+            )
             if gate.passed:
                 # ④ record — **게이트 통과 직후** 본문을 영속한다. 순서가 곧 불변식 1이다
                 #    (LLM 산출물은 게이트를 거쳐야 저장된다).

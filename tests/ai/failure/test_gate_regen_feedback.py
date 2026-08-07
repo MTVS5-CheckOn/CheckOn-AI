@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from counsel_text import draft
 from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.composition.briefing import make_brief
@@ -48,7 +49,7 @@ _REGEN_MAX = 3
 #: 게이트에 반드시 걸리는 본문 — 근거에 없는 숫자(불변식 1·2).
 _UNGROUNDED = "정답률이 83%까지 올랐습니다."
 #: 게이트를 통과하는 본문 — 컨텍스트가 제공한 수치만 쓴다.
-_GROUNDED = "이번 주 정답률은 62%였습니다. 다음 주에는 오답 정리를 함께 해보겠습니다."
+_GROUNDED = draft("이번 주 정답률은 62%였습니다. 다음 주에는 오답 정리를 함께 해보겠습니다.")
 
 
 def _context(student_ref: str = "st_1") -> DraftContext:

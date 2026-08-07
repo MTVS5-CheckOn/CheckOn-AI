@@ -19,6 +19,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from counsel_text import draft
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -326,7 +327,7 @@ def test_counsel_run_is_recorded_even_with_zero_llm_calls() -> None:
     runs = InMemoryRunStore()
     _run_counsel_pack(
         ["st_1"],
-        provider=FakeCounselProvider(drafts=["정답률은 62%였습니다."]),
+        provider=FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")]),
         run_store=runs,
     )
 
@@ -487,7 +488,7 @@ def test_quota_counts_one_per_generated_student() -> None:
     final = _invoke_graph(
         {r: _context(r) for r in refs},
         refs,
-        provider=FakeCounselProvider(drafts=["정답률은 62%였습니다."]),
+        provider=FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")]),
     )
     assert final["quota_consumed"] == 2
 
@@ -500,7 +501,7 @@ def test_quota_counts_one_even_when_gate_retries_three_times() -> None:
     """
     refs = ["st_1"]
     # 근거에 없는 수치(88%) → SourceGrounding 실패 → regen_max까지 재시도 후 소진.
-    provider = FakeCounselProvider(drafts=["정답률이 88%까지 올랐습니다."])
+    provider = FakeCounselProvider(drafts=[draft("정답률이 88%까지 올랐습니다.")])
     final = _invoke_graph({r: _context(r) for r in refs}, refs, provider=provider)
 
     # 재생성 3회 = 시도 4회(`range(regen_max + 1)`) — 호출 수가 몇이든 quota는 1이다.

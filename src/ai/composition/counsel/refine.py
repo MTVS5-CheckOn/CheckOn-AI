@@ -26,7 +26,12 @@ from typing import Final
 import yaml  # type: ignore[import-untyped]
 
 from ai.composition.counsel.gate import check_counsel_gate
-from ai.composition.counsel.provider import DraftWriter, RedactionBlockedError, max_chars_for
+from ai.composition.counsel.provider import (
+    DraftWriter,
+    RedactionBlockedError,
+    max_chars_for,
+    min_chars_for,
+)
 from ai.composition.gate_feedback import instruction_for
 from ai.contracts.composition import DraftContext
 from ai.contracts.execution import ExecutionContext
@@ -56,6 +61,9 @@ _GATE_REASON_TO_BLOCK: Final[dict[str, BlockedReason]] = {
     # ── 아래부터 ㊴ 수렴분: 맞는 enum 값이 없어 tone_violation으로 모은다 ──
     "internal_term": BlockedReason.TONE_VIOLATION,  # 지시문 누출(#113)
     "too_long": BlockedReason.TONE_VIOLATION,
+    # 🔴 `too_long`과 **같은 축**이라 같은 값으로 모은다(99 #13). 길이는 톤 규칙이
+    #   정하는 것이고 `BlockedReason`에 길이 전용 값이 없다 — ㊴ 수렴분과 같은 처지다.
+    "too_short": BlockedReason.TONE_VIOLATION,
     "symbol": BlockedReason.TONE_VIOLATION,
     "token_leak": BlockedReason.TONE_VIOLATION,
     "empty": BlockedReason.TONE_VIOLATION,
@@ -187,6 +195,7 @@ async def refine_draft(
         return RefineOutcome(applied=False, blocked_reason=BlockedReason.PII_EXPOSURE)
 
     max_chars = max_chars_for(context)
+    min_chars = min_chars_for(context)  # 하한도 같은 자리에서 파생(99 #13)
     last_reason = ""
     # 🔴 **재생성 N회 = 시도 N+1회.** 초안 경로(`graph.py`)와 **같은 `_REGEN_MAX`를 받으므로
     # 해석도 같아야 한다** — 종전 `range(regen_max)`는 여기만 시도 3회(재생성 2회)라
@@ -210,7 +219,9 @@ async def refine_draft(
             # ⚠ `except` 절 순서가 계약이다 — `RedactionBlockedError`도 `LlmError` 하위라
             # 아래보다 먼저 와야 한다.
             raise RedactionUncertain("컨텍스트 마스킹 불확실 — 전송하지 않았다") from exc
-        gate = check_counsel_gate(text, context, max_chars=max_chars)
+        gate = check_counsel_gate(
+            text, context, max_chars=max_chars, min_chars=min_chars
+        )
         if gate.passed:
             return RefineOutcome(applied=True, text=text)
         last_reason = gate.reason

@@ -42,6 +42,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from counsel_text import draft
 from langchain_core.runnables import RunnableConfig
 
 import ai.composition.counsel.assembly as assembly
@@ -85,7 +86,7 @@ from ai.db.store_factory import (
 )
 
 _NOW = datetime(2026, 8, 7, 3, 0, tzinfo=UTC)
-_DRAFT_TEXT = "정답률은 62%였습니다."
+_DRAFT_TEXT = draft("정답률은 62%였습니다.")
 _CIRCUIT = 3
 
 
