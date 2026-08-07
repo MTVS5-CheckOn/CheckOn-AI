@@ -37,6 +37,8 @@ from ai.contracts.classify import (
 from ai.contracts.counsel import InquirySentiment, InquiryTopic, InquiryUrgency
 from ai.contracts.execution import ExecutionContext, VersionSet
 from ai.contracts.llm import (
+    CallOutcome,
+    LlmError,
     LLMRequest,
     LLMResult,
     ParseFailed,
@@ -164,8 +166,24 @@ async def classify(
             # 재시도해도 같은 프롬프트라 즉시 수렴한다(09 §1-10 ③ 재시도 대상 제외).
             logger.info("classify.tripwire_blocked inquiry_ref=%s", request.inquiry_ref)
             return _unclassified(request.inquiry_ref, _FALLBACK_TRIPWIRE)
+        # 🔴 **장애를 판단으로 둔갑시키지 않는다**(99 G) — `counsel/provider.py`가 이 자리를
+        #    이미 막아 뒀는데 classify만 빠져 있었다. 인용:
+        #      *"outcome≠OK를 빈 문자열로 삼키면 장애가 게이트 실패로 **오분류**된다 —
+        #       그러면 서킷 카운터도 안 오르고 알럿이 뜨지 않는다."*
+        #    여기서는 `parse_exhausted`(= *"LLM 출력이 스키마를 못 채웠다"* · error_codes §6)로
+        #    둔갑해 **벤더가 죽은 것이 모델 품질 문제로 기록된다.**
+        # ⚠ `_unclassified()`로 수렴시키지 않는다 — 위 모듈 주석의 판정 그대로다("장애는
+        #    폴백이 아니라 503"). 라우터가 #119의 `domain_error_for`로 받아 503/504/500을 낸다.
+        # ⚠ 루프 **안에서** 던진다 — `continue`로 흘리면 같은 프롬프트를 3번 보낸다.
+        #    장애는 재시도로 안 풀린다(그 구분이 이 분기의 요지다).
+        if result.outcome is not CallOutcome.OK:
+            raise LlmError(f"classify 호출 실패 outcome={result.outcome.value}")
+        text = (result.text or "").strip()
+        if not text:
+            # 실제로 겪었다 — `max_completion_tokens` 문제로 빈 응답이 왔다(99 ⓟ).
+            raise LlmError("classify 응답이 비었다")
         try:
-            output = parse(result.text or "", ClassifyLlmOutput)
+            output = parse(text, ClassifyLlmOutput)
         except ParseFailed:
             # ⚠ 예외 메시지·로그에 본문을 싣지 않는다 — masked_text조차 남기지 않는다(B-3).
             logger.warning(

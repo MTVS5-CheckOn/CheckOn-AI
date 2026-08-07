@@ -119,9 +119,21 @@ ai/
 ├── api/                                ★v3 — HTTP 노출 계층(B 확인 완료)
 │   ├── app.py                          [공통 계약]  FastAPI 앱 팩토리 · 예외 핸들러 — 여러 라우터 공용이라 양자
 │   ├── envelope.py                     [공통 계약]  공통 응답 조립(data·error·meta envelope) — 〃
+│   ├── version_scope.py                [박진희]★   실패 응답의 버전 스코프 — ⚠ **소비자가 A·B 둘**
 │   └── routers/                                    ← 라우터는 해당 capability 오너를 따름
 │       └── detect.py                   [박진희]    감지 라우터 (POST /v1/detect)
 │
+
+> ★ **`api/version_scope.py`(8/8 · #128 신설 · #129 등재) — 소유는 A 단독, 소비자는 A·B 둘.**
+> 각 라우터가 `VERSION_SCOPE = RouterScope(접두, versions)`를 노출하고 `app.py`가 모은다(99 ㊓).
+> B의 pg 라우터도 `RouterScope`를 import하므로 **`RouterScope` 시그니처 변경은 B 라우터를
+> 깨뜨린다 — 바꾸려면 통보가 선행**이다.
+> ⚠ **양자로 승격하지 않았다** — 양자 13곳은 이 문서가 고정한 목록이고 늘리는 것은 B 협의
+> 사항이다. 지금은 *"A 소유 · 공용 소비"* 로 적는다.
+> 🔴 **같은 자리가 셋째다** — 잡 원장(99 ㊐ · `agents/job_store.py`)·`reset_counsel_stores`(㊒)에
+> 이어서다. 로그 63이 세운 규율의 세 번째 사례: **"공용은 소유 위치가 아니라 소비자 수로
+> 정해진다."** 소유권은 *"고쳐도 되는가"* 를 답하지만 *"혼자 정해도 되는가"* 는 답하지 않는다.
+
 ├── db/                                 ★v4 — 저장 계층(D-②, A+B 공통 계약)
 │   ├── base.py                         [공통 계약]  DeclarativeBase · naming convention — 양자
 │   ├── models.py                       [공통 계약]  ERD 26테이블 ORM(B 문제·진단 포함) — 양자
