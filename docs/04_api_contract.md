@@ -81,6 +81,33 @@
 
 실패 시 `data: null`, `error: {"code", "message", "detail"}`. **meta.versions는 항상 실린다** — 재현성·디버깅의 기준.
 
+#### 🔴 `meta.execution_id` — 원장 키이거나 상관 ID다 `[확정 · 8/7]`
+
+**정의:** `meta.execution_id`는 **그 응답이 말하는 실행의 원장 키**(`AI_RUN.execution_id`)다. 그 값으로 원장을 조회할 수 있고, **같은 잡을 여러 번 조회해도 같은 값**이다. 응답을 만들 때마다 새로 발급하는 값이 **아니다**. 🔴 **단, 잡을 만들지 않는 성공 경로**(counsel `template_only`·근거 0건 `rejected_insufficient` 등)는 워커도 LLM도 타지 않아 **원장에 행이 없다.** 그 경우에는 **응답들을 묶는 상관 ID**가 실리며 **그 값으로는 원장을 못 찾는다** — 안정성(같은 잡의 반복 조회가 같은 값)만 보장된다. ⚠ **BE는 이 값으로 원장을 조회하기 전에 아래 표에서 그 엔드포인트의 부류를 확인해야 한다.**
+
+⚠ **비대칭이 있다** — `error_envelope`는 실행 전 오류(헤더 누락 등)에 `execution_id: null`을 허용하는데 `success_envelope(execution_id: str)`에는 **그 자리가 없다.** 그래서 성공 응답에서 *"가리킬 실행이 없다"* 를 `null`로 표현하지 못하고 위의 **상관 ID**로 대신한다.
+
+**엔드포인트별 부류** (8/7 종단 실측):
+
+| 엔드포인트 | 부류 | 근거 |
+| --- | --- | --- |
+| `POST/GET /v1/counsel/drafts` — 잡 생성분 | 🔴 **원장 키** | `WorkerJob.execution_id` = `AI_RUN.execution_id`. POST·GET1·GET2·AI_RUN **전부 같다** |
+| `POST /v1/counsel/drafts/{id}/refine` | 🔴 **원장 키** | 그 턴이 하나의 실행이고 `_record_refine_run`이 그 값으로 원장을 쓴다 |
+| `POST/GET /v1/counsel/drafts` — `template_only`·근거 0건 | ⚠ **상관 ID** | 워커·LLM 미실행 ⇒ **AI_RUN 0건**. 반복 조회는 같은 값 |
+| `POST /v1/detect` · `POST /v1/classify` | 🔴 **원장 키** | 동기 실행이라 그 값이 곧 `ExecutionContext`의 키다 |
+| `POST /v1/problems` · `GET /v1/problems/{job_id}` | 🔴 **원장 키** | 잡을 **항상** 만든다(잡 없는 성공 경로 없음). ⚠ `GET`은 현재 응답마다 새로 발급 — **아래 미정합** |
+| `POST/GET /v1/imports` | ⚠ **상관 ID** | 이 축은 **원장을 쓰지 않는다**(라우터·워커에 `AI_RUN` 참조 0건 · 99 ㉾). `job_id`가 그대로 실리며 반복 조회는 같은 값 |
+| `POST /v1/confirmations` | ⚠ **미정합** | 원장을 쓰지 않는데 **호출마다 새 값**이라 상관 ID로도 기능하지 않는다 — 아래 |
+
+🔴 **아직 이 규정과 어긋나는 자리 둘** `[미정합 · 수정 대기]` — 계약이 정본이고 구현을 여기 맞춘다:
+
+| 자리 | 현재 동작 | 처방 |
+| --- | --- | --- |
+| `GET /v1/problems/{job_id}` | 응답마다 새 값 | `job.execution_id`(같은 파일 `POST`가 이미 그 형태) · **B 소유** |
+| `POST /v1/confirmations` | 호출마다 새 값 | **안정적인 값**으로. 무엇으로 할지는 판정 — 이 축은 원장이 없어 *"가리킬 실행이 없다"* 가 정상이다 |
+
+**비대칭 해소 판정** `[제안 · B 협의]` — ⓐ `success_envelope`가 `str | None`을 받게 한다(**응답 스키마가 바뀌고 `api/envelope.py`는 양자**) · **ⓑ 위 정의대로 «원장 키이거나 상관 ID»로 규정한다(권고)** — 스키마를 안 흔들고 *"meta는 항상 실린다"* 는 기존 규약도 유지된다. ⚠ ⓐ를 고르면 양자 파일이 열리므로 **B 승인 전에는 ⓑ가 현행**이다.
+
 **(7/15) 공통 버전 세트는 6종으로 통일** — 이 §2.2와 ERD의 `AI_RUN`이 각각 4종씩 서로 다르게 적고 있어(§2.2=threshold·contract / ERD=prompt·schema) 합집합으로 맞췄다.
 
 **[PART_A+PART_B] 승인 확장:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이며, `AI_RUN` 컬럼·`meta.versions`와 1:1이다. 현재 정식 키 집합은 공통 6종(`pipeline`·`engine`·`threshold`·`prompt`·`schema`·`contract`) + [PART_B] 실행 전용 nullable 4종(`graph`·`taxonomy`·`verify_config`·`difficulty_calib`)인 **총 10종**이다. 위 JSON은 특정 capability의 예시이며, nullable 값은 실행 종류에 따라 달라진다.
