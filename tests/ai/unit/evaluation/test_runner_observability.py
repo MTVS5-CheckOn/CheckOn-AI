@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from ai.evaluation.classify_eval import (
@@ -16,6 +18,8 @@ from ai.evaluation.classify_eval import (
     render_confusion,
 )
 from ai.evaluation.counsel_llm_smoke import (
+    _pii_scan,
+    _verdict,
     compare_reproduction,
     empty_response_rows,
     render_s5_verdict,
@@ -228,3 +232,94 @@ def test_verdict_names_which_side_was_empty() -> None:
 def test_blank_only_output_is_not_a_produced_one() -> None:
     """공백만 있는 산출도 빈 것으로 본다 — `empty_response_rows`와 같은 규칙이다."""
     assert compare_reproduction("   ", "   ").comparable is False
+
+
+# ── ㊪ 안전 판정의 축 분리 ─────────────────────────────────────────
+
+
+def _smoke_data(*, uncertain: int, token_residue: int) -> dict[str, Any]:
+    """`_verdict`가 읽는 최소 형태 — 안전 축 외에는 전부 깨끗하게 둔다.
+
+    ⚠ S3는 빈 목록이라 차단 미탐 0이고, S1은 폴백 0, S2는 전부 산출이다. 그래야
+    판정이 갈리는 이유가 **`pii` 두 값 하나뿐**이 된다.
+    """
+    return {
+        "s1": {
+            "rows": [
+                {
+                    "gate_passed": True,
+                    "attempts": 1,
+                    "elapsed_ms": 100,
+                    "outcome": "ok",
+                    "fallback_used": False,
+                    "mask_residue": False,
+                }
+            ]
+        },
+        "s2": {"rows": [{"draft_status": "generated", "text": "초안"}]},
+        "s3": {"rows": []},
+        "pii": {
+            "llm_texts": 2,
+            "uncertain": uncertain,
+            "masked": uncertain,
+            "token_residue": token_residue,
+        },
+    }
+
+
+def test_fail_closed_is_not_a_safety_violation() -> None:
+    """🔴 `uncertain`은 **막은 것**이다 — 안전 위반이 아니라 가용성 문제다 (99 ㊪).
+
+    4차(8/7)가 이 형태로 틀렸다: 안전 위반 실측이 0인데 `uncertain=4`(전부 정상 어휘
+    오탐)가 `token_residue`와 합산돼 *"안전 불변식이 깨졌다"* 가 됐다.
+    **fail-closed가 작동할수록 「데모 불가」가 되는 판정**이었다.
+    """
+    verdict = _verdict(_smoke_data(uncertain=99, token_residue=0))
+    assert verdict.startswith("**데모 가능**"), verdict
+    assert "가용성 경고" in verdict, verdict
+    assert "99건" in verdict, verdict
+
+
+def test_token_residue_is_a_safety_violation() -> None:
+    """⚠ 반대 축은 살아 있어야 한다 — `⟪⟫`가 **학부모 문장에 남은 것**은 일어난 일이다.
+
+    축을 가르면서 안전 축까지 느슨해지면 정반대 사고다.
+    """
+    verdict = _verdict(_smoke_data(uncertain=0, token_residue=1))
+    assert verdict.startswith("**데모 불가**"), verdict
+    assert "마스킹 토큰 잔존 1건" in verdict, verdict
+
+
+def test_a_clean_run_is_demo_ready() -> None:
+    """둘 다 0이면 조건 없는 「데모 가능」 — 경고 문구가 붙지 않는다."""
+    verdict = _verdict(_smoke_data(uncertain=0, token_residue=0))
+    assert verdict.startswith("**데모 가능**"), verdict
+    assert "가용성 경고" not in verdict, verdict
+
+
+def test_uncertain_does_not_mask_a_real_residue() -> None:
+    """🔴 둘이 동시에 있으면 **안전이 이긴다** — 가용성 경고가 안전 위반을 덮지 않는다."""
+    verdict = _verdict(_smoke_data(uncertain=99, token_residue=1))
+    assert verdict.startswith("**데모 불가**"), verdict
+
+
+def test_pii_scan_keeps_the_fragment_that_was_masked() -> None:
+    """🔴 건수만 남기면 **오탐/진탐을 영원히 못 가른다**(4차가 그랬다 · 99 ㊪).
+
+    ⚠ 여기서 쓰는 문자열은 실 산출이 아니라 **형태 확인용**이다 — `uncertain_detail`이
+    조각과 문맥을 담는지만 본다.
+    """
+    data = {
+        "s1": {"rows": [{"text": "이번 주 제출을 이어가는 태도가 좋았습니다."}]},
+        "s2": {"rows": []},
+        "s3": {"rows": []},
+    }
+    scan = _pii_scan(data)
+    assert scan["llm_texts"] == 1
+    if not scan["uncertain"]:
+        pytest.skip("이 문장이 더는 fail-closed를 만들지 않는다 — 조각 형태만 검사한다")
+    detail = scan["uncertain_detail"]
+    assert len(detail) == scan["uncertain"]
+    hits = detail[0]["hits"]
+    assert hits, "불확실인데 조각이 비었다 — 무엇이 걸렸는지 알 수 없다"
+    assert all(h["fragment"] and h["context"] for h in hits), hits
