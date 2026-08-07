@@ -661,7 +661,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 | `correct` | bool | solve만 | 정답률(R1·R6) | |
 | `duration_sec` | int | solve만 | 풀이시간(R4) | 없으면 R4 미적용(대체 신호) |
 | `passage_word_count` | int | 지문형만 | **어절 정규화** | 국어 특화의 핵심 필드 |
-| `area_tag` / `type_tag` | enum | 있으면 | 유형별 정답률(R6)·약점 지도 | 미태깅 허용 — 태깅 제안이 채움. **area 값(수능 6영역): `reading(독서)·literature(문학)·speech(화법)·writing(작문)·language(언어/문법)·media(매체)`** · **type 값(평가원 5축): `fact·infer·critic·concept·apply`** — 🔴 **`apply`는 v1 미산출·예약**이다(99 ㊣). 학습 이벤트에는 **보내도 된다**(받아서 R6 집계·표시까지 한다). **출제 요청(`POST /v1/problems`의 `type_tags`)에 보내면 400 `type_tag_not_supported`** `[제안 · B 구현 대기]` + `subject_track: common·elective` 메타 · `item_format: v1은 mcq만`(short·essay 예약) — Open-11 확정(7/15) |
+| `area_tag` / `type_tag` | enum | 있으면 | 유형별 정답률(R6)·약점 지도 | 미태깅 허용 — 태깅 제안이 채움. **area 값(수능 6영역): `reading(독서)·literature(문학)·speech(화법)·writing(작문)·language(언어/문법)·media(매체)`** · **type 값(평가원 5축): `fact·infer·critic·concept·apply`** — 🔴 **`apply`는 v1 미산출·예약**이다(99 ㊣). 학습 이벤트에는 **보내도 된다**(받아서 R6 집계·표시까지 한다). **출제 요청(`POST /v1/problems`의 `type_tags`)에 보내면 400 `type_tag_not_supported`** `[제안 · B 구현 대기]` — 🔴 **구현 전인 지금은 400이 아니다.** 실측(8/9 · 99 ㊨): `POST /v1/problems`가 **HTTP 500 `INTERNAL`**(envelope는 정상)을 내고, 잡은 만들어져 `failed`/`problem_worker_internal`로 수렴하지만 **`job_id`가 응답에 없어 조회할 수 없다.** 🔴 **400을 기대한 핸들링은 아직 성립하지 않는다 — 그때까지 `type_tags`에 `apply`를 보내지 마라** + `subject_track: common·elective` 메타 · `item_format: v1은 mcq만`(short·essay 예약) — Open-11 확정(7/15) |
 | `assignment_title_text` | string | 있으면 | **태깅 제안(ⓒ) 입력** | ⚠ `[Open-4b]` 제공 불가 시 기능 자체 불가 |
 | `source` | enum `trackA·trackB·studentHome` | ✅ | 품질 가중 | |
 
