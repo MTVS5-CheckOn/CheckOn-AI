@@ -154,22 +154,24 @@ def test_v1_type_tags_is_the_single_source() -> None:
     )
 
 
-def test_the_guard_would_catch_a_violation() -> None:
+def test_the_guard_would_catch_a_violation(tmp_path: Path) -> None:
     """⚠ **가드가 실제로 잡는지**를 이 파일 안에서 확인한다 — 뒤집기의 상시화.
 
     뒤집기가 세 번 헛돌았다(로그 70 · #122·#126·#133). *"red가 났는가"* 이전에
     *"검사가 그 형태를 보긴 하는가"* 를 코드로 남긴다.
-    """
-    import tempfile
 
-    source = (
+    ⚠ `tempfile.NamedTemporaryFile`을 쓰지 마라 — **win32에서는 열려 있는 동안 그 경로를
+    다시 열 수 없다**(`O_TEMPORARY` 배타 잠금 → `PermissionError`). CI가 win32이고
+    로컬(posix)에서는 통과하므로 **로컬에서 안 잡힌다**(#134 실측). `tmp_path`는 pytest가
+    주는 실제 디렉터리라 잠금이 없다.
+    """
+    sample = tmp_path / "violation_sample.py"
+    sample.write_text(
         "from ai.contracts.taxonomy import TypeTag\n"
-        "X = {TypeTag.FACT, TypeTag.INFER, TypeTag.CRITIC}\n"
+        "X = {TypeTag.FACT, TypeTag.INFER, TypeTag.CRITIC}\n",
+        encoding="utf-8",
     )
-    with tempfile.NamedTemporaryFile("w", suffix=".py", encoding="utf-8") as handle:
-        handle.write(source)
-        handle.flush()
-        found = _member_literals(Path(handle.name))
+    found = _member_literals(sample)
     assert found == [(2, 3)], f"가드가 위반 형태를 못 본다: {found}"
 
 
