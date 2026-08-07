@@ -94,7 +94,9 @@
 | `POST/GET /v1/counsel/drafts` — 잡 생성분 | 🔴 **원장 키** | `WorkerJob.execution_id` = `AI_RUN.execution_id`. POST·GET1·GET2·AI_RUN **전부 같다** |
 | `POST /v1/counsel/drafts/{id}/refine` | 🔴 **원장 키** | 그 턴이 하나의 실행이고 `_record_refine_run`이 그 값으로 원장을 쓴다 |
 | `POST/GET /v1/counsel/drafts` — `template_only`·근거 0건 | ⚠ **상관 ID** | 워커·LLM 미실행 ⇒ **AI_RUN 0건**. 반복 조회는 같은 값 |
-| `POST /v1/detect` · `POST /v1/classify` | 🔴 **원장 키** | 동기 실행이라 그 값이 곧 `ExecutionContext`의 키다 |
+| `POST /v1/detect` | 🔴 **원장 키** | 동기 실행이라 그 값이 곧 `ExecutionContext`의 키다 |
+| `POST /v1/classify` — **비캐시**(LLM 호출) | 🔴 **원장 키** | 위와 같다 |
+| `POST /v1/classify` — 🔴 **캐시 히트** | ⚠ **미정합** | `classify.py:163`이 **`record_run`(`:197`)보다 앞에서 early-return**한다 ⇒ 그 실행의 `AI_RUN` 행이 **없다.** 그런데 값은 그 요청이 만든 새 `uuid4`라 상관 ID로도 안정적이지 않다 — 아래 |
 | `POST /v1/problems` · `GET /v1/problems/{job_id}` | 🔴 **원장 키** | 잡을 **항상** 만든다(잡 없는 성공 경로 없음). ⚠ `GET`은 현재 응답마다 새로 발급 — **아래 미정합** |
 | `POST/GET /v1/imports` | ⚠ **상관 ID** | 이 축은 **원장을 쓰지 않는다**(라우터·워커에 `AI_RUN` 참조 0건 · 99 ㉾). `job_id`가 그대로 실리며 반복 조회는 같은 값 |
 | `POST /v1/confirmations` | ⚠ **미정합** | 원장을 쓰지 않는데 **호출마다 새 값**이라 상관 ID로도 기능하지 않는다 — 아래 |
@@ -105,6 +107,7 @@
 | --- | --- | --- |
 | `GET /v1/problems/{job_id}` | 응답마다 새 값 | `job.execution_id`(같은 파일 `POST`가 이미 그 형태) · **B 소유** |
 | `POST /v1/confirmations` | 호출마다 새 값 | **안정적인 값**으로. 무엇으로 할지는 판정 — 이 축은 원장이 없어 *"가리킬 실행이 없다"* 가 정상이다 |
+| `POST /v1/classify` — 캐시 히트 | 호출마다 새 값 · 원장 행 없음 | **캐시 히트도 원장을 남기거나**(예측 재사용도 실행이다) **상관 ID임을 명시하거나** — 판정은 별건이다. ⚠ 🔴 **#141이 이 자리를 「원장 키」로 잘못 적었다** — 99 ㊮의 판정을 그대로 승격시켰는데 그 판정이 캐시 히트를 안 봤다 |
 
 **비대칭 해소 판정** `[제안 · B 협의]` — ⓐ `success_envelope`가 `str | None`을 받게 한다(**응답 스키마가 바뀌고 `api/envelope.py`는 양자**) · **ⓑ 위 정의대로 «원장 키이거나 상관 ID»로 규정한다(권고)** — 스키마를 안 흔들고 *"meta는 항상 실린다"* 는 기존 규약도 유지된다. ⚠ ⓐ를 고르면 양자 파일이 열리므로 **B 승인 전에는 ⓑ가 현행**이다.
 
@@ -572,15 +575,30 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
   "inquiry": {
     "inquiry_ref": "iq_884",             // BE 원본 문의 논리 참조 — AI에겐 불투명 키
     "topic": "grade",                    // grade | schedule | counsel_request | etc — 🔴 8/5 complaint 제거(§3.5)
-    "urgency": "immediate",              // immediate | normal — 완충 강화 입력
+    "urgency": "immediate",              // immediate | normal — 🔴 **BE 소유 축(인박스 정렬·SLA).**
+                                         //   **AI 톤에는 쓰지 않는다** — 받아서 쓰지 않는 값이다(8/6 판정).
+                                         //   ⚠ `immediate`와 `normal`의 **산출은 바이트 동일**하다 —
+                                         //     「완충이 강해진 초안」을 기대하지 마라.
+                                         //   근거: sensitivity 기본값이 이미 최대 완충이라 올릴 여지가 없고,
+                                         //   문의 하나가 강사의 학부모별 톤 설정을 뒤집으면 안 되며,
+                                         //   톤 축이 되면 24조합이 48이 돼 tone_map 로더가 깨진다
+                                         //   (`contracts/counsel.py` InquiryUrgency 근거 ⓐⓑⓒ · 99 ㊰)
     "received_at": "2026-07-31T14:20:00+09:00",
     "text_masked": "요즘 아이가 힘들어하는 것 같은데…"   // redaction 통과분 (불변식 3)
   },
   "student_ref": "st_8f2a", "parent_ref": "pa_9c1d", "class_ref": "cl_a1",  // 전부 가명
-  "labels": ["narrative", "anxiety_sensitive"],        // 확정 라벨 — 톤 게이트 입력(05 매핑)
+  "labels": ["narrative", "anxious"],                  // 🔴 **4축 enum 값만** — alias 없음. 그 밖은 400
+                                                       //   comm: data|narrative · sensitivity: anxious|direct
+                                                       //   interest: grade|attitude|admission · frequency: frequent|monthly
+                                                       //   ⚠ **선택이다** — 누락 축은 기본값(narrative·anxious·grade·monthly)
   "dismissed_suggestions": [{ "axis": "frequency", "value": "monthly" }],   // 재제안 억제
   "context": {                                         // 인용 가능한 사실의 전체 우주
-    "snapshot_hash": "sha256:…",                       // 재현성 축(AI_RUN · 불변식 8)
+    "snapshot_hash": "sha256:…",                       // 재현성 축(불변식 8) — 🔴 **약속 vs 현재**(㊩)
+                                                       //   🔴 **현재 소비되지 않는다.** `AI_RUN.input_snapshot_hash`에
+                                                       //   들어가는 것은 **AI가 자기 `DraftContext`를 직렬화해 만든
+                                                       //   해시**(`content_hash(contexts)` = `job.payload_hash`)다.
+                                                       //   ⇒ **이 값으로 원장을 조회하면 0건이다**(src 소비처 0 · 99 ㊱)
+                                                       //   ⚠ 필드는 필수(`NonEmptyStr`)로 남는다 — 빼면 파괴적이다
     "period_label": "2026년 7월",
     "facts": [{ "record_id": "le_2041", "summary": "6월 지문 42개·312문항" }]
   }
@@ -599,9 +617,11 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
       "draft_status": "generated",          // generated | template_only | rejected_insufficient | llm_failed | gate_exhausted
       "text": "어머님, 먼저 세심하게…",       // 게이트 통과본만 — 미통과는 text 없음 + 사유
       "citations": [                        // **항상 1건 이상** — 근거 없는 초안은 존재 불가(불변식 2)
+                                            // 🔴 **각주가 아니다** — 아래 규약 참조
         { "cite_id": "L1", "record_id": "le_2041", "summary": "6월 지문 42개·312문항" }
       ],
-      "labels_applied": ["narrative", "anxiety_sensitive"],
+      "labels_applied": ["narrative", "anxious", "grade", "monthly"],   // 🔴 **항상 4값**(4축 전수)
+                                                       //   요청이 2개만 보내도 기본값으로 채운 4축이 나온다 — 에코가 아니다
       "label_suggestions": [],              // ⚠ v1 상수 [] — 생성기 미구현(99 D ㊲)
       "status_reason": null,                // 거부·실패 사유 코드(error_codes §2.1)
       "generated_at": "2026-07-31T14:24:11+09:00"
@@ -614,12 +634,17 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 // ④ POST /v1/counsel/drafts/{job_id}/refine — 다듬기 (대상 키 = ①이 돌려준 job_id · 동기 · 매 턴 게이트 전체 재통과)
 // 요청  { "instruction": "정답률이 오르고 있다고 강조해서 써줘", "turn_no": 3 }
 // 반영  { "applied": true,  "text": "…", "citations": [ … ] }
-// 차단  { "applied": false, "blocked_reason": "comparison_exposure", "message": "…" }
+// 차단  { "applied": false, "blocked_reason": "comparison_exposure" }   // ⚠ `message` 없다(8/5 제거 · 아래 규약)
 ```
 
 **규약**
 
 - **잡 성공 ≠ 초안 존재.** `status="succeeded"` + `result.draft_status="rejected_insufficient"`는 **정상 조합**이다(데이터 부족은 에러가 아니다 — 불변식 4). 화면은 "아직 데이터를 모으는 중이에요"를 그린다.
+- 🔴 **`citations[]`는 「이 초안이 참고한 근거 목록」이지 「본문 문장의 각주」가 아니다** (8/7 명시).
+  - **본문 문장과의 대응이 없다.** 라우터가 요청의 `context.facts` **전수**를 그대로 싣는다(`_citations_of`) — **초안 본문을 한 글자도 안 본다.** ⇒ BE가 fact 5건을 보내고 LLM이 1건만 언급해도 **5건 전부** 실린다.
+  - 🔴 **FE가 각주(「이 문장의 근거」)로 렌더하면 화면이 거짓이 된다.** `cite_id`는 **순서 키**일 뿐이다(7/31 handoff ① 통보분과 같은 내용이며, 그때 통보한 것은 *앵커 미지원*이고 여기서 명시하는 것은 *목록이 본문과 무관하다*는 것이다).
+  - **왜 이 형태인가:** 본문 인라인 앵커(`#Ln`)는 `#`이 counsel 게이트의 금지 기호라 **v1.1**이다(99 ㊳). 실측(8/7 · 4차 원문): 실 LLM 초안 본문 **5건 중 0건**에 `record_id`·`le_` 흔적이 남았다 ⇒ **본문에서 뽑아 거르는 것이 불가능**하다.
+  - ⚠ **refine 반영 턴도 같은 목록을 재사용한다.** 강사가 *"이 부분 빼줘"* 로 그 근거를 지워도 목록은 그대로다.
 - **`citations[]`는 ≥1이 타입 계약**이다. 인용 가능한 근거(`record_id`가 있는 fact)가 0건이면 **LLM 호출 전에** `rejected_insufficient`로 끊는다 — 게이트를 통과한 초안을 만들어 놓고 근거가 없어 버리는 낭비를 만들지 않는다.
 - **`refine` 차단도 200**이다(`applied:false` + `blocked_reason`). `GateRejected`를 5xx로 올리면 리뷰 반려(불변식 4 · error_codes §4).
 - 🔴 **차단 문구는 AI가 주지 않는다(8/5).** `blocked_reason` 8종에 대한 표시 문구는 `part_a/06_refine_policy.md` §4 표가 원본이며 **BE가 매핑**한다 — 초안 `draft_status`·classify 폴백과 같은 규약이다(`error_codes` §2.1 "백엔드 표시 문구" 열 · §2.7 규칙 3). ⚠ **종전 응답의 `message` 필드는 제거됐다.**
@@ -645,7 +670,22 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
     - ⚠ **정정값을 얻으려고 `POST /v1/classify`를 다시 부르지 말 것.** classify는 `(tenant_id, inquiry_ref)` 캐시가 있어 **저장된 예측**을 그대로 돌려준다(§3.5) — 이는 **예측 고정 원칙**(예측이 소실되면 평가셋의 (입력·예측·정답) 3요소가 깨진다)의 결과이지 버그가 아니다.
     - ⇒ 이후 `POST /v1/counsel/drafts`에 싣는 `inquiry.topic`은 **BE가 보관한 정정값**이다.
 - **턴 상한은 AI가 판정하지 않는다.** `turn_no`는 로그·이력용으로 받기만 한다 — "세션 턴 상한 없음, 월 할당이 자연 상한"(`part_a/06` §1)이고 할당 집행은 전부 백엔드 Billing이다(7/15 BE-4).
-- **v1 구현 범위 정정 3건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다.
+- **v1 구현 범위 정정 5건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다 — ① `citations` 각주형(앵커는 v1.1) · ② `label_suggestions[]` 항상 빈 배열 · ③ `draft_status` 4종 유지 · 🔴 **④ 4축 라벨 값 표기 정정** · ⑤ `labels[]`는 선택(누락 축은 기본값).
+  > 🔴 **(8/7 정정) 종전 표기는 「3건」이었다** — handoff는 **5건**이고, 빠진 ④가 정확히 이 절의 예시를 틀리게 만든 항목이다. **BE에는 7/31에 통보했는데 04를 안 고쳤다** — `anxiety_sensitive`(존재하지 않는 값)가 예시에 남아 그대로 호출하면 **400**이었다. *통보와 계약 반영은 다른 사건이다.*
+
+#### 🔴 v1 지원 한계 — BE가 알아야 하는 것 (약속 vs 현재)
+
+⚠ **§3.11과 같은 형식이다** — 계약이 약속한 것과 **구현 전인 지금의 동작**을 함께 적는다(㊩). 아래는 **8/7 종단 실측**이다.
+
+| 한계 | 🔴 **현재 동작** |
+| --- | --- |
+| **읽기 모델 축출** | `GET`·`refine`이 보는 것은 **인메모리 LRU 캐시**이고 상한은 **256건**이다(`_MAX_CACHED_JOBS`). 넘으면 가장 오래된 항목이 밀려 **404 `NOT_FOUND`** 가 난다. 🔴 **「없어졌다」가 아니라 「캐시에서 밀렸다」다** — 실측: 축출 후 `GET` 404인데 **잡 원장 1건 · 초안 본문 1건이 그대로 살아 있다** |
+| **`GET`/`refine` 비대칭** | 두 캐시(`_view_cache`·`_drafts`)가 **독립으로 축출**된다 ⇒ 실측: 같은 `job_id`에 **`GET`은 404인데 `refine`은 200**이다. 한쪽이 되면 다른 쪽도 된다고 가정하지 마라 |
+| **테넌트 격리 없음(캐시 한정)** | 상한이 **전역**이라 **다른 테넌트의 트래픽이 내 항목을 밀어낼 수 있다.** ⚠ 데이터 격리는 지켜진다(키에 `tenant_id`가 있다) — 밀려나는 것이 격리와 무관하게 일어난다 |
+| **재시작** | 초안 본문·컨텍스트·팩 결과 저장소가 **인메모리 고정**이다(`store_backend=pg`여도). 재시작하면 **사라진다.** ⚠ 잡 원장·멱등·실행 원장은 PG로 **살아남는다** — **비대칭이다** |
+| **멱등 재전송** | 멱등 저장소가 PG면 재시작을 견뎌 같은 키에 **202 + 같은 `job_id`** 가 돌아온다. 🔴 그런데 그 `job_id`의 **캐시는 사라져 `GET`이 404**다 — *"만들어졌다는데 조회가 안 된다"* 가 이 조합이다 |
+
+🔴 **재시작 후 복구가 보장되는 것으로 해석하지 마라.** 영속(`DRAFT_REVISION` 이관)은 06 §7 후속이고 **이 문서는 현재 동작을 적는다.**
 
 ### 3.11 `/v1/problems` — 문제 생성 (202 · **요청 단위 = 세트 1개**)
 
