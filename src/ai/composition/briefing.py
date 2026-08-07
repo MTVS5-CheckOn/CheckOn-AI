@@ -138,16 +138,29 @@ async def make_brief(
             result = await completer.complete(request, context)
             # 🔴 **두 검사를 `try` 안에 둔다**(99 ㊝) — 밖에 두면 `except LlmError`가 못 받고
             #    `Brief(text="")`가 `min_length=1`에 걸려 **`ValidationError`가 detect까지
-            #    올라간다**(실측: 빈 응답 1건 → `POST /v1/detect` 500).
+            #    올라간다**(대역 실측 · `POST /v1/detect` 500).
+            # ⚠ **실 provider는 이 조건을 만들지 않는다** — `openai_compat.py:224`가 빈·공백
+            #    응답을 `ParseFailed`로 올리고 그건 `LlmError` 하위라 아래 절이 이미 받는다.
+            #    즉 여기 두 검사는 **계약을 안 지키는 provider에 대한 방어**이지 겪은 사고의
+            #    재발 방지가 아니다(8/8 정정 — 99 ㊝).
             # ⚠ classify와 **처방이 다르다** — 거긴 `raise`가 밖으로 나가는 게 맞았지만
             #    (라우터가 5xx로 변환) 브리핑은 **분기표 ⑥ "어떤 실패든 감지 판정 무변"**
             #    이라 폴백으로 수렴해야 한다. 같은 어휘(`LlmError`)로 던지되 **여기서 받는다.**
             # ⚠ 두 검사를 한 줄로 합치지 않는다 — 뒤집기가 각각 red가 되어야 한다(#122).
+            # ⚠ **도달 불가 방어**(99 ㉴ · 8/8 재확인) — `src` 전 provider가
+            #    `outcome=CallOutcome.OK`만 반환하고, 게이트웨이는 실패를 **예외로 re-raise**한다
+            #    (non-OK outcome은 `LLM_CALL` **기록용**이지 반환값이 아니다). 그래도 두는 이유는
+            #    **대칭**이다 — counsel·classify가 같은 자리를 막았고 한 줄이 싸다(#129 근거).
+            #    🔴 이 표기가 없으면 다음 사람이 "이 분기가 도는구나"로 읽는다(B 요청 · 8/8).
             if result.outcome is not CallOutcome.OK:
                 raise LlmError(f"브리핑 호출 실패 outcome={result.outcome.value}")
             text = (result.text or "").strip()
             if not text:
-                # 실제로 겪었다 — `max_completion_tokens` 문제로 빈 응답이 왔다(99 ⓟ).
+                # ⚠ **겪은 사고의 재발 방지가 아니다**(8/8 정정) — 이 저장소에 *"브리핑이 빈
+                #    응답을 받았다"* 는 실측 기록이 없다. 종전 주석이 근거로 든 99 ⓟ는 env 접두
+                #    교체 항목이고, 토큰 건(ⓤ)의 실제 사건은 **400 거부**였으며, *"0자 = 빈 응답"*
+                #    해석은 ㊼가 **게이트 소진**으로 되돌렸다. 여기 검사는 `openai_compat`의
+                #    `ParseFailed` 경계를 **안 지나는 provider**에 대한 방어다.
                 raise LlmError("브리핑 응답이 비었다")
         except RedactionBlocked:
             # 🔴 `LlmError`보다 **먼저** 받는다 — RedactionBlocked는 LlmError의 서브클래스라
