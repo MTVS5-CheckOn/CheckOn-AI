@@ -597,7 +597,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
                                                        //   🔴 **현재 소비되지 않는다.** `AI_RUN.input_snapshot_hash`에
                                                        //   들어가는 것은 **AI가 자기 `DraftContext`를 직렬화해 만든
                                                        //   해시**(`content_hash(contexts)` = `job.payload_hash`)다.
-                                                       //   ⇒ **이 값으로 원장을 조회하면 0건이다**(src 소비처 0 · 99 ㊱)
+                                                       //   ⇒ **이 값으로 원장을 조회하면 0건이다**(src 소비처 0 · 99 ㊺)
                                                        //   ⚠ 필드는 필수(`NonEmptyStr`)로 남는다 — 빼면 파괴적이다
     "period_label": "2026년 7월",
     "facts": [{ "record_id": "le_2041", "summary": "6월 지문 42개·312문항" }]
