@@ -229,8 +229,16 @@ class CounselPackRunner:
             #    AI_RUN은 호출 0건이어도 남긴다 — 불변식 8은 "모든 실행"을 기록하며, CI 기본
             #    `FakeCounselProvider`는 게이트웨이를 타지 않아 호출이 실제로 0건이다.
             # 🔴 **성공·서킷 개방·해시 불일치·미분류 실패가 모두 여기를 지난다.** 종전에는
-            #    `ainvoke` 뒤에만 있어서 `_run_guarded`가 잡는 5종이 **전부** 원장을
-            #    건너뛰었다(8/7 실측: 서킷 개방 시 AI_RUN 0 · 수집기에 호출 3건 방치).
+            #    `ainvoke` 뒤에만 있어서 그 **넷**이 원장을 건너뛰었다
+            #    (8/7 실측: 서킷 개방 시 AI_RUN 0 · 수집기에 호출 3건 방치).
+            #    ⚠ **(8/7 정정) 종전 문면은 「`_run_guarded`가 잡는 5종이 전부」였는데
+            #      넷을 다섯으로 부풀린 것이다.** `_run_guarded`는 5절이지만 그중 둘
+            #      (`bundle_missing`·`tenant_mismatch`)은 `_execution_context` **앞**에서
+            #      죽어 **원장에 남을 실행이 없다** — 그게 정상이고
+            #      `test_ledger_survives_every_failure.py`의
+            #      `test_no_ledger_before_the_execution_starts`가 그것을 고정한다
+            #      (*"실행이 없는데 실행 기록을 만드는 것"* 을 막는다).
+            #      🔴 **코드를 옮기지 마라 — 옮기면 그 테스트가 red다.**
             #    ⚠ `except` 절을 추가해 때우지 않았다 — 복제가 둘이면 경로는 셋이다(#119).
             await self._record_execution(context, swallow_errors=failed)
 
