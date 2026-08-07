@@ -428,3 +428,75 @@ def test_an_empty_emphasis_is_not_the_same_event_as_a_missing_one(
     assert record.plan_dropped >= 1, (
         f"드롭 건수가 {record.plan_dropped} — 사유만 있고 규모가 없으면 추적이 안 된다"
     )
+
+
+# ── ㊮ meta.execution_id는 응답마다 만드는 값이 아니다 ─────────────
+
+
+def test_two_gets_return_the_same_execution_id(client: TestClient) -> None:
+    """🔴 같은 잡을 두 번 GET하면 `meta.execution_id`가 **같다** (99 ㊮).
+
+    ⚠ **이게 진짜 단정이다.** AST 가드(`test_execution_id_identity.py`)는 *"그 자리에서
+    만들었나"* 라는 **형태**만 보고, 변수에 담아 넘기면 통과한다 — 실제로 POST가 정확히
+    그 형태였다. 이건 **행동**을 본다.
+    """
+    set_counsel_provider(FakeCounselProvider(drafts=["이번 기간 학습 상황을 정리했습니다."]))
+    job_id = str(_post(client).json()["data"]["job_id"])
+    headers = {"X-Tenant-Id": _HEADERS["X-Tenant-Id"]}
+    first = client.get(f"/v1/counsel/drafts/{job_id}", headers=headers)
+    second = client.get(f"/v1/counsel/drafts/{job_id}", headers=headers)
+    assert first.status_code == second.status_code == 200
+    assert first.json()["meta"]["execution_id"] == second.json()["meta"]["execution_id"], (
+        "같은 잡을 두 번 GET했는데 execution_id가 다르다 — 응답마다 새로 만들고 있다"
+    )
+
+
+def test_the_response_execution_id_is_the_ledger_key(client: TestClient) -> None:
+    """🔴 POST·GET의 `meta.execution_id`가 **`AI_RUN`의 실행**이다 (99 ㊮).
+
+    실측(8/7 · 수정 전): POST·GET1·GET2·`AI_RUN`이 **4종**이었다 — 재현 추적 키가
+    아무것도 못 가리켰다. 정본은 `WorkerJob.execution_id`이고 `worker.py`가 그 값으로
+    `AI_RUN`을 쓴다.
+    """
+    set_counsel_provider(FakeCounselProvider(drafts=["이번 기간 학습 상황을 정리했습니다."]))
+    posted = _post(client).json()
+    job_id = str(posted["data"]["job_id"])
+    got = client.get(
+        f"/v1/counsel/drafts/{job_id}", headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]}
+    ).json()
+
+    run_store = counsel_router._run_store
+    assert isinstance(run_store, InMemoryRunStore)
+    ledger = {str(run.execution_id) for run in run_store.runs.values()}
+    assert ledger, "AI_RUN이 비었다 — 워커가 안 돌았으면 이 단정이 아무것도 검증 못 한다"
+    assert posted["meta"]["execution_id"] in ledger, (
+        f"POST의 execution_id가 원장에 없다: {posted['meta']['execution_id']} ∉ {ledger}"
+    )
+    assert got["meta"]["execution_id"] in ledger, (
+        f"GET의 execution_id가 원장에 없다: {got['meta']['execution_id']} ∉ {ledger}"
+    )
+
+
+def test_a_job_less_path_still_returns_a_stable_id(client: TestClient) -> None:
+    """⚠ **잡이 없는 경로**(`template_only`)도 두 번 GET이 같다 — 원장 행은 없다.
+
+    🔴 `schedule` 문의는 워커도 LLM도 안 타므로 **`AI_RUN`에 행 자체가 없다.** 없는 실행을
+    가리키는 값을 지어내는 대신 POST가 만든 **상관 ID 하나를 재사용**한다 — 최소한
+    응답들끼리는 묶인다. ⚠ 그 값은 **원장 키가 아니다**(㊮에 그 비대칭을 등재했다).
+    """
+    set_counsel_provider(FakeCounselProvider(drafts=["쓰이지 않는다"]))
+    posted = _post(client, inquiry={**_REQUEST["inquiry"], "topic": "schedule"}).json()
+    job_id = str(posted["data"]["job_id"])
+    headers = {"X-Tenant-Id": _HEADERS["X-Tenant-Id"]}
+    first = client.get(f"/v1/counsel/drafts/{job_id}", headers=headers).json()
+    second = client.get(f"/v1/counsel/drafts/{job_id}", headers=headers).json()
+
+    ids = {
+        posted["meta"]["execution_id"],
+        first["meta"]["execution_id"],
+        second["meta"]["execution_id"],
+    }
+    assert len(ids) == 1, f"잡이 없는 경로에서 값이 갈렸다: {ids}"
+    run_store = counsel_router._run_store
+    assert isinstance(run_store, InMemoryRunStore)
+    assert not run_store.runs, "template_only인데 AI_RUN이 생겼다 — 전제가 깨졌다"

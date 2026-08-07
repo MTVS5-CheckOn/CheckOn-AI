@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import (
     AsyncIterator,
     Callable,
@@ -86,6 +87,19 @@ from ai.db.store_factory import (
 _NOW = datetime(2026, 8, 7, 3, 0, tzinfo=UTC)
 _DRAFT_TEXT = "정답률은 62%였습니다."
 _CIRCUIT = 3
+
+
+def _cached_view(
+    view: CounselDraftJobView, *, execution_id: uuid.UUID | None = None
+) -> counsel_router._CachedView:  # noqa: SLF001
+    """`_view_cache`가 담는 값 — 뷰 + 실행 원장 키(99 ㊮).
+
+    ⚠ 테스트가 POST를 안 거치고 캐시를 직접 채울 때 쓴다. `execution_id`가 `None`이면
+    원장에 행이 없는 경우(`template_only` 계열)를 흉내 낸다.
+    """
+    return counsel_router._CachedView(  # noqa: SLF001
+        view=view, execution_id=execution_id, correlation_id=uuid.uuid4()
+    )
 
 
 def _run[T](coro: Coroutine[object, object, T]) -> T:
@@ -601,7 +615,10 @@ def test_get_reflects_the_phase_the_job_has_now() -> None:
         cached = CounselDraftJobView(
             job_id=str(job.job_id), status=JobPhase.QUEUED.value, result=None
         )
-        counsel_router._view_cache.put(("t1", str(job.job_id)), cached)  # noqa: SLF001
+        counsel_router._view_cache.put(  # noqa: SLF001
+            ("t1", str(job.job_id)),
+            _cached_view(cached, execution_id=job.execution_id),
+        )
         # 그 뒤에 잡이 끝난다(다음 요청의 워커가 돌렸다고 하자).
         sv = counsel_router._build_supervisor()  # noqa: SLF001
         leased = await sv.lease_next(
@@ -658,7 +675,9 @@ def test_get_hides_other_tenants_jobs_even_after_refresh() -> None:
         status=JobPhase.SUCCEEDED.value,
         result=None,
     )
-    counsel_router._view_cache.put(("t-other", view.job_id), view)  # noqa: SLF001
+    counsel_router._view_cache.put(  # noqa: SLF001
+        ("t-other", view.job_id), _cached_view(view)
+    )
 
     with TestClient(create_app()) as client:
         response = client.get(
@@ -781,7 +800,7 @@ def test_the_real_router_caches_are_bounded() -> None:
         result=None,
     )
     for i in range(limit + 8):
-        counsel_router._view_cache.put(("t1", f"job-{i}"), view)  # noqa: SLF001
+        counsel_router._view_cache.put(("t1", f"job-{i}"), _cached_view(view))  # noqa: SLF001
 
     assert len(counsel_router._view_cache) == limit, (  # noqa: SLF001
         f"라우터 뷰 캐시가 상한 없이 자란다: {len(counsel_router._view_cache)}개 — "  # noqa: SLF001

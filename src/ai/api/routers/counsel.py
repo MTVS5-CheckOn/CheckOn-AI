@@ -225,7 +225,40 @@ class _JobCache[V]:
 #:
 #: ⚠ **영속은 이 PR이 아니다**(`_DraftState` docstring과 같은 판정) — 프로세스 공용
 #: 캐시까지가 v1이고, PG 이관 시 자리를 넘긴다.
-_view_cache: _JobCache[CounselDraftJobView] = _JobCache("counsel_view")
+@dataclass(frozen=True)
+class _CachedView:
+    """GET이 돌려줄 뷰 + **그 잡의 실행 원장 키**(99 ㊮).
+
+    🔴 `execution_id`를 뷰와 **함께** 캐시한다 — GET이 그 자리에서 `uuid.uuid4()`를
+    만들면 같은 잡을 두 번 GET할 때 값이 달라지고, 셋 중 어느 것도 `AI_RUN`의 실행이
+    아니다(실측 8/7: POST·GET1·GET2·AI_RUN이 **4종**). `meta.execution_id`는
+    **그 응답이 말하는 실행의 원장 키**이지 응답마다 만드는 값이 아니다.
+
+    ⚠ **`None`이 정직한 경우가 있다** — `template_only`·근거 0건은 워커도 LLM도 안 타서
+    **원장에 행이 없다**. 그때는 없는 실행을 가리키는 값을 지어내는 대신 POST 시점에
+    만든 값 하나를 **재사용**한다(아래 `_envelope_execution_id`) — 최소한 **두 번 GET이
+    같아진다**. ⚠ 그 값은 상관 ID이지 원장 키가 아니고, 그 사실을 여기 적어 둔다.
+    ⚠ 선례는 `routers/problem.py::_CachedView`(view + versions)다.
+    """
+
+    view: CounselDraftJobView
+    execution_id: uuid.UUID | None
+    #: 원장 키가 없을 때 응답들을 묶는 상관 ID — POST가 한 번 만들고 GET이 재사용한다.
+    correlation_id: uuid.UUID
+
+    def envelope_execution_id(self) -> str:
+        """`meta.execution_id`에 실을 값 — **원장 키가 있으면 그것**, 없으면 상관 ID.
+
+        ⚠ `success_envelope(execution_id: str)`는 `str`이라 `None`을 못 싣는다
+        (`api/envelope.py`는 **양자**라 이 PR이 안 건드린다). `error_envelope`는 계약상
+        *"실행 전 오류라 execution_id가 없으면 null"* 을 이미 허용하는데 성공 응답에는
+        그 자리가 없다 — **그 비대칭은 99 ㊮에 등재만** 하고 여기서는 안정성(두 번 GET이
+        같다)을 먼저 확보한다.
+        """
+        return str(self.execution_id or self.correlation_id)
+
+
+_view_cache: _JobCache[_CachedView] = _JobCache("counsel_view")
 
 
 @dataclass
@@ -241,18 +274,32 @@ class _DraftState:
     citations: tuple[Citation, ...]
     text: str
 
+    #: 🔴 최초 요청의 입력 스냅숏 해시(99 ㉭). refine 원장(`AI_RUN.input_snapshot_hash`)이
+    #: 이 값을 쓴다 — 종전에는 `"sha256:refine"` 리터럴이라 **아무 입력도 특정하지 못했다.**
+    #: 출처는 여기뿐이다 — `RefineRequest`는 `instruction`·`turn_no` 둘뿐이고
+    #: `DraftContext`에도 `snapshot_hash`가 없다.
+    #:
+    #: 🔴 **기본값이 없다.** 종전 `= ""`는 **계약을 위반하는 값**이었다 —
+    #: `contracts/execution.py`의 `input_snapshot_hash`는 `Field(min_length=1)`이라
+    #: 빈 문자열이 무효다. 그리고 `_refine_execution_context(...)` 호출이 **`try` 블록
+    #: 밖**에 있어(`failed = True` 앞) `ValidationError`가 `_record_refine_run`도 안 지나고
+    #: `_unhandled`로 간다 — **500 + 원장 0건**이다(㊝과 같은 형태:
+    #: `Brief(text="")` → `min_length=1` → 핸들러 밖).
+    #: ⚠ 기본값을 없애면 빠뜨렸을 때 **생성 시점 `TypeError`** 로 즉시 죽는다 — 조용하지 않다.
+    #: ⚠ 지금은 도달 불가다(생성 지점이 `:700` 한 곳이고 항상 채운다) — **잠재 결함**을
+    #:   막는 것이고, 규칙은 *"기본값이 계약을 위반하는 값이면 빠뜨림이 조용한 게 아니라
+    #:   500이 된다"* 이다.
+    snapshot_hash: str
+
     #: 🔴 최초 생성이 고른 **검증 통과 강조점**(99 ㉮). 없으면 refine이 매 턴 강조점 없이
     #: 다시 써서 *"1턴에 강조한 것이 2턴에 사라지는"* 상태가 된다 — 강사가 다듬기를 한 번만
     #: 눌러도 **매번** 그렇다.
     #: ⚠ **빈 값이 「강조점 없음」인지 「안 쟀음」인지는 여기서 안 갈린다** — 사유는
     #: `CounselPackResultRecord.plan_outcome`이 든다(㉲). 이 필드만 보고 판단하지 마라.
+    #: ⚠ **기본값 `()`는 그대로 둔다** — 위 `snapshot_hash`와 성격이 다르다. `()`는
+    #:   **계약상 유효한 값**(강조점 없음)이고 `""`는 무효였다. 「유효한 기본값」과
+    #:   「계약을 위반하는 기본값」을 같이 취급하지 않는다.
     emphasis: tuple[str, ...] = ()
-
-    #: 🔴 최초 요청의 입력 스냅숏 해시(99 ㉭). refine 원장(`AI_RUN.input_snapshot_hash`)이
-    #: 이 값을 쓴다 — 종전에는 `"sha256:refine"` 리터럴이라 **아무 입력도 특정하지 못했다.**
-    #: ⚠ 기본값이 빈 문자열인 이유는 refine 요청 바디에 이 값이 **없기 때문**이다
-    #: (`RefineRequest`는 `instruction`·`turn_no` 둘뿐) — 출처가 여기밖에 없다.
-    snapshot_hash: str = ""
 
 
 #: refine 읽기 모델 — `(tenant_id, job_id) → 초안 상태`. 키가 job_id인 이유는
@@ -533,8 +580,18 @@ def _build_supervisor() -> Supervisor:
 
 async def _generate(
     request: CounselDraftRequest, *, tenant_id: str
-) -> CounselDraftJobView:
+) -> tuple[CounselDraftJobView, uuid.UUID | None]:
     """문의 1건 → 초안 1건. 워커는 기존 counsel_pack을 N=1로 재사용한다(99 D ㉛).
+
+    🔴 **잡의 `execution_id`를 함께 돌려준다**(99 ㊮) — 응답의 `meta.execution_id`는
+    **그 응답이 말하는 실행의 원장 키**여야 하는데, 종전에는 라우터가 `uuid.uuid4()`를
+    그 자리에서 만들어 넣어 **AI_RUN의 어느 행도 가리키지 않았다.** 정본은 이미
+    `WorkerJob.execution_id`에 있고 `worker.py`가 그 값으로 AI_RUN을 쓴다.
+    ⚠ 선례는 `routers/problem.py::_generate`의 `tuple[ProblemJobView, WorkerJob]`이다 —
+      같은 저장소에서 한쪽만 view만 돌려주던 것이 이 갈림의 형태다.
+
+    ⚠ **`None`이 정직한 경우가 있다** — 아래 ①②(`template_only`·근거 0건)는 워커도 LLM도
+    안 타므로 **원장에 행 자체가 없다.** 없는 실행을 가리키는 값을 지어내지 않는다.
 
     🔴 **근거 선검사가 LLM 호출보다 앞이다.** 인용 가능한 근거(`record_id` 있는 fact)가
     0건이면 게이트를 통과한 초안을 만들어 놓고 `citations`가 비어 버리는 낭비가 되므로,
@@ -560,7 +617,7 @@ async def _generate(
     #
     #    LLM 0회 · 잡 적재 없음 · `_drafts` 미등록(초안이 없으니 refine 대상이 아니다).
     if request.inquiry.topic in _NO_DATA_TOPICS:
-        return CounselDraftJobView(
+        view = CounselDraftJobView(
             job_id=str(uuid.uuid4()),
             status=JobPhase.SUCCEEDED.value,
             result=CounselDraftResult(
@@ -570,10 +627,11 @@ async def _generate(
                 generated_at=_clock(),
             ),
         )
+        return view, None  # 워커·LLM 미실행 — 원장에 행이 없다
 
     # ② 근거 0건 — 여기부터는 **데이터 유관 문의**다.
     if not request.context.citable_facts():
-        return CounselDraftJobView(
+        view = CounselDraftJobView(
             job_id=str(uuid.uuid4()),
             status=JobPhase.SUCCEEDED.value,
             result=CounselDraftResult(
@@ -583,6 +641,7 @@ async def _generate(
                 generated_at=_clock(),
             ),
         )
+        return view, None  # 워커·LLM 미실행 — 원장에 행이 없다
 
     supervisor = _build_supervisor()
     context = _draft_context(request)
@@ -630,14 +689,20 @@ async def _generate(
             # 아직 안 돌았다(queued·leased·running·paused) 또는 취소됐다. **결과가 없다는
             # 것과 실패는 다르다** — `result=None` + 잡 phase가 정직한 표현이다
             # (error_codes §2.1 "queued/generating → 스피너", 계약 `result`가 옵셔널).
-            return CounselDraftJobView(
-                job_id=view_job_id, status=mine.phase.value, result=None
+            return (
+                CounselDraftJobView(
+                    job_id=view_job_id, status=mine.phase.value, result=None
+                ),
+                job.execution_id,
             )
         result = await _wire_result(
             runner, mine, request, applied, job_id=view_job_id, tenant_id=tenant_id
         )
-        return CounselDraftJobView(
-            job_id=view_job_id, status=mine.phase.value, result=result
+        return (
+            CounselDraftJobView(
+                job_id=view_job_id, status=mine.phase.value, result=result
+            ),
+            job.execution_id,
         )
 
 
@@ -759,13 +824,17 @@ async def post_counsel_draft(request: Request, response: Response) -> dict[str, 
             "같은 Idempotency-Key에 다른 바디", {"idempotency_key": idempotency_key}
         )
 
-    execution_id = uuid.uuid4()
-    view = await _generate(draft_request, tenant_id=tenant_id)
-    _view_cache.put((tenant_id, view.job_id), view)
+    view, execution_id = await _generate(draft_request, tenant_id=tenant_id)
+    cached = _CachedView(
+        view=view, execution_id=execution_id, correlation_id=uuid.uuid4()
+    )
+    _view_cache.put((tenant_id, view.job_id), cached)
 
     envelope = success_envelope(
         data={"job_id": view.job_id, "status": view.status},
-        execution_id=str(execution_id),
+        # 🔴 잡의 실행 원장 키다(99 ㊮) — 종전에는 이 자리에서 만든 `uuid.uuid4()`라
+        #    AI_RUN의 어느 행도 가리키지 않았다.
+        execution_id=cached.envelope_execution_id(),
         versions=counsel_versions(),
     )
     await _idempotency_store.put(
@@ -829,11 +898,18 @@ async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
     cached = _view_cache.get((tenant_id, job_id))
     if cached is None:  # 존재 은닉 — 다른 테넌트의 job_id도 여기로 떨어진다
         raise NotFound("job_id 부재", {"job_id": job_id})
-    view = await _refresh_view(cached, tenant_id=tenant_id)
-    _view_cache.put((tenant_id, job_id), view)
+    view = await _refresh_view(cached.view, tenant_id=tenant_id)
+    # 🔴 실행 키·상관 ID는 **POST가 정한 값을 그대로 들고 간다** — 갱신 대상은 phase뿐이다.
+    #    여기서 새로 만들면 같은 잡을 두 번 GET할 때 값이 달라진다(99 ㊮ 실측).
+    refreshed = _CachedView(
+        view=view,
+        execution_id=cached.execution_id,
+        correlation_id=cached.correlation_id,
+    )
+    _view_cache.put((tenant_id, job_id), refreshed)
     return success_envelope(
         data=view.model_dump(mode="json"),
-        execution_id=str(uuid.uuid4()),
+        execution_id=refreshed.envelope_execution_id(),
         versions=counsel_versions(),
     )
 
