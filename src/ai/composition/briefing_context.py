@@ -100,7 +100,32 @@ class BriefingContext:
     facts: tuple[EvidenceFact, ...]
     evidence_summaries: tuple[str, ...]
     fallback_text: str
-    """게이트 소진·LLM 실패 시 되돌아갈 엔진 결정론 템플릿(signal.brief.text)."""
+    """게이트 소진·LLM 실패 시 되돌아갈 엔진 결정론 템플릿(`signal.brief.text`).
+
+    🔴 **비면 폴백 자체가 예외가 된다** — `_fallback()`이 `Brief(text=fallback_text)`를
+    만드는데 `Brief.text`는 `min_length=1`이라 `ValidationError`가 나고, 그게 하필
+    `except LlmError` **핸들러 안**이라 ㊝과 똑같이 `/v1/detect`까지 올라간다.
+    **폴백 경로가 마지막 미방어 문이었다**(99 ㊠ ②).
+
+    ⚠ **지금까지 안전했던 것은 계약이 아니라 우연이다** — `:225`·`:239`가
+    `signal.brief.text`에서 채우고 그 값이 `Brief.text`(`min_length=1`)를 이미 통과한
+    것이라 **전이적으로** 비지 않았다. 그 전이 관계가 끊기면(다른 출처가 생기면) 조용히
+    깨진다. 아래 `__post_init__`이 그걸 계약으로 바꾼다.
+    """
+
+    def __post_init__(self) -> None:
+        """`fallback_text` 비어 있음 금지 — `counsel`의 `NonEmptyStr`과 같은 제약.
+
+        ⚠ **`@dataclass(frozen=True)`를 유지한다** — Pydantic 전환은 이 타입이 신호마다
+        만들어지는 핫 경로(`:225`·`:239`)라 **동작 변화 0을 증명할 수 없다**(#124 판단).
+        검사만 하고 값을 고치지 않는다(frozen이라 대입도 안 된다).
+        """
+        if not self.fallback_text.strip():
+            raise ValueError(
+                "fallback_text가 비면 _fallback()이 Brief.text의 min_length=1에 걸려 "
+                "폴백 자체가 예외가 된다 — 그 예외는 except LlmError 핸들러 안에서 나므로 "
+                "/v1/detect까지 올라간다(99 ㊝·㊠ ②)"
+            )
 
     def allowed_numbers(self) -> frozenset[str]:
         """이 컨텍스트가 실제로 제공한 수치 집합(EXACT). 파생 표기의 숫자만 허용된다."""

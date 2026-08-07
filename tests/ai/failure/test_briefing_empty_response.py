@@ -277,3 +277,50 @@ def test_the_counsel_gate_does_catch_emptiness() -> None:
     result = check_counsel_gate("", context=context, max_chars=360)
     assert result.passed is False
     assert result.reason == "empty"
+
+
+# ── ㊠ ② 폴백 경로 — 마지막 미방어 문 ──────────────────────────────
+
+
+@pytest.mark.parametrize("text", ["", "   "])
+def test_an_empty_fallback_text_is_rejected_at_construction(text: str) -> None:
+    """🔴 **폴백이 비면 폴백 자체가 예외가 된다** — 생성 시점에 막는다(㊠ ②).
+
+    `_fallback()`이 `Brief(text=ctx.fallback_text)`를 만드는데 `Brief.text`는
+    `min_length=1`이다. 비면 `ValidationError`가 나고, 그게 하필 **`except LlmError`
+    핸들러 안**이라 ㊝과 **똑같이** `/v1/detect`까지 올라간다.
+
+    ⚠ **지금까지 안전했던 것은 계약이 아니라 우연이다** — `briefing_context.py:225·239`가
+    `signal.brief.text`에서 채우고 그 값이 이미 `min_length=1`을 통과했기 때문에
+    **전이적으로** 비지 않았다. 이 검사가 그 전이 관계를 **계약으로** 바꾼다.
+    """
+    with pytest.raises(ValueError, match="fallback_text"):
+        BriefingContext(
+            signal_type=SignalType.ACC_DROP,
+            display_label="정답률 하락",
+            lifecycle=Lifecycle.NEW,
+            segment=Segment.NORMAL,
+            facts=(),
+            evidence_summaries=(),
+            fallback_text=text,
+        )
+
+
+def test_the_fallback_path_still_works_with_a_normal_text() -> None:
+    """✅ **대조군** — 정상 폴백은 그대로 산다(프로덕션 경로 무변경 증명).
+
+    ⚠ 기존 테스트 2174건이 하나도 안 깨진 것이 더 강한 증명이지만, 그건 이 파일에
+    안 남으므로 여기 대조군을 둔다.
+    """
+    brief, reason = _run(
+        make_brief(
+            _context(),
+            _Provider(CallOutcome.OK, ""),
+            context=_execution_context(),
+            now=lambda: 0.0,
+            deadline=45.0,
+        )
+    )
+    assert brief.fallback_used is True
+    assert brief.text == _context().fallback_text
+    assert reason == "llm_failed"
