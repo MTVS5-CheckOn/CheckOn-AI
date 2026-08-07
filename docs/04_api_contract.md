@@ -111,6 +111,16 @@
 
 **비대칭 해소 판정** `[제안 · B 협의]` — ⓐ `success_envelope`가 `str | None`을 받게 한다(**응답 스키마가 바뀌고 `api/envelope.py`는 양자**) · **ⓑ 위 정의대로 «원장 키이거나 상관 ID»로 규정한다(권고)** — 스키마를 안 흔들고 *"meta는 항상 실린다"* 는 기존 규약도 유지된다. ⚠ ⓐ를 고르면 양자 파일이 열리므로 **B 승인 전에는 ⓑ가 현행**이다.
 
+#### 🔴 재현 보장의 범위 — 경로별로 갈린다 `[확정 · 8/9]`
+
+**약속:** 같은 입력·같은 버전 세트면 같은 출력이 나온다(불변식 8 · `contracts/execution.py`의 `VersionSet` docstring).
+
+🔴 **현재 — 그 조건이 성립해도 LLM 경로는 바이트 동일이 아니다.** 같은 출력의 조건에는 `generation_params`(`seed`·`temperature`)도 드는데, **LLM 경로의 `seed`는 서버 best-effort**다(99 ㊼ 실측 8/7: 요청에 `seed=20260805`가 실렸는데 같은 입력이 358자/361자로 갈렸다). ⇒ **BE는 「같은 요청 = 같은 초안 문면」을 전제로 캐시·비교 로직을 만들면 안 된다.**
+
+⚠ **불변식 8이 죽는 게 아니라 경로별로 갈린다** — **결정론 경로(게이트·판정·산식)는 그대로 바이트 동일**이다. 신호 발화·게이트 통과·라벨 확정·채점은 LLM이 아니라 결정론 코드가 정하므로(불변식 1) 같은 입력에 같은 결과가 나온다. **재현이 아예 안 되는 것이 아니라 LLM이 만든 문면만 흔들린다.**
+
+⚠ **우리가 못 바꾸는 부분이다** — 요청에 `seed`를 싣는 것까지가 우리 몫이고(8/6부터 `deterministic_params()`가 전 경로 공유) 서버가 그걸 존중하는지는 벤더 성질이다.
+
 **(7/15) 공통 버전 세트는 6종으로 통일** — 이 §2.2와 ERD의 `AI_RUN`이 각각 4종씩 서로 다르게 적고 있어(§2.2=threshold·contract / ERD=prompt·schema) 합집합으로 맞췄다.
 
 **[PART_A+PART_B] 승인 확장:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이며, `AI_RUN` 컬럼·`meta.versions`와 1:1이다. 현재 정식 키 집합은 공통 6종(`pipeline`·`engine`·`threshold`·`prompt`·`schema`·`contract`) + [PART_B] 실행 전용 nullable 4종(`graph`·`taxonomy`·`verify_config`·`difficulty_calib`)인 **총 10종**이다. 위 JSON은 특정 capability의 예시이며, nullable 값은 실행 종류에 따라 달라진다.
