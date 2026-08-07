@@ -277,7 +277,12 @@ def _build_ledger(
         created_at=_clock(),
         model_provider=last.provider if last is not None else None,
         model_name=last.model if last is not None else None,
-        generation_params=BRIEF_GEN_PARAMS,
+        # 🔴 **사용 축이다**(99 ㊧ 계열 · 8/7 판정) — 이 실행이 **실제로 쓴**
+        #    샘플링 파라미터다. LLM을 안 부른 실행(캐시 히트·Fake·폴백)에
+        #    상수를 적어 두면 *"그 값으로 돌렸다"* 는 **거짓**이 된다.
+        #    ⚠ 같은 행의 `model_provider`·`model_name`이 이미 조건부다 —
+        #      한 행 안에서 축이 갈리면 읽는 쪽이 어느 쪽으로도 읽는다.
+        generation_params=BRIEF_GEN_PARAMS if last is not None else None,
     )
     return LedgerWrite(
         run=run,
