@@ -342,6 +342,54 @@ def test_successful_classify_still_records_and_stores(
     assert _pending_calls() == 0
 
 
+def test_cache_hit_also_records_a_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🔴 **캐시 히트도 원장을 남긴다** — 성공 경로의 두 번째 종류 (99 ㊮ · #143 회귀).
+
+    ⚠ **위 테스트 한 종류로는 이 성질이 증명되지 않았다.** 이 파일 머리말이 실패 쪽에
+    대해 *"성질은 한 종류로 증명되지 않는다"* 고 적고 파라미터화했는데, **성공 쪽은
+    캐시 미스 하나뿐**이었다 — 규율을 적은 자리와 적용한 자리가 갈렸다.
+    #143이 캐시 히트의 원장 누락을 고쳤을 때 **테스트가 0개**였고, 캐시 조회를 `try`
+    밖으로 되돌려도 **2233개가 전부 초록**이었다(8/7 실측).
+
+    🔴 **「행 수」만 세지 않는다.** 행이 늘어도 **응답이 가리키는 값**이 그 행이 아니면
+    결함은 그대로다 — 종전이 정확히 그 상태였다(AI_RUN은 1건 있는데 2회차 응답의
+    `execution_id`는 그 행이 아니었다). 단정은 **`meta.execution_id` ∈ 원장**이다.
+
+    ⚠ 이 파일에 두는 이유: 파일명은 *"failure"* 지만 **성공 경로 회귀가 이미 위에
+    살고 있고**(`test_successful_classify_still_records_and_stores`) 축이 **원장**이다.
+    캐시 축(`test_classify_persistence.py`)에 두면 원장 축과 멀어진다.
+    ⚠ 파라미터화하지 않은 이유: 두 종류의 차이가 **값이 아니라 호출 시퀀스**(1회 vs 2회)라
+    한 파라미터에 담으면 읽기 어려워진다. 실패 쪽은 예외 **종류**가 축이라 달랐다.
+    """
+    store = InMemoryRunStore()
+    classify_router.set_classify_run_store(store)
+    set_counsel_provider(FakeCounselProvider())
+    body = {"inquiry_ref": "iq_cache_ledger", "body_text": "성적이 궁금합니다."}
+    with TestClient(create_app()) as client:
+        first = client.post("/v1/classify", json=body, headers=_HEADERS)
+        second = client.post(
+            "/v1/classify", json=body, headers={**_HEADERS, "X-Request-Id": "rq-2"}
+        )
+
+    assert first.status_code == second.status_code == 200
+    ledger = {str(run.execution_id) for run in store.runs.values()}
+    miss_id = first.json()["meta"]["execution_id"]
+    hit_id = second.json()["meta"]["execution_id"]
+
+    assert miss_id in ledger, f"캐시 미스의 execution_id가 원장에 없다: {miss_id}"
+    assert hit_id in ledger, (
+        f"🔴 캐시 히트의 execution_id가 원장에 없다: {hit_id} ∉ {ledger}\n"
+        "예측 재사용도 실행이다(불변식 8) — 응답을 냈고 어떤 버전으로 냈는지가 재현 "
+        "대상이다. 캐시 조회가 `try` 밖에 있으면 `finally`의 원장 적재를 건너뛴다."
+    )
+    assert miss_id != hit_id, (
+        "두 회차가 같은 execution_id다 — 캐시가 실행을 재사용하는 설계라면 그것대로 "
+        "맞지만 지금 설계가 아니다(회차마다 새 execution_id)"
+    )
+    assert len(store.runs) == 2, f"AI_RUN이 2건이어야 한다: {len(store.runs)}건"
+    assert _pending_calls() == 0
+
+
 # ── C · 비동기 워커 (같은 형태 4번째) ────────────────────────────
 #
 # 🔴 **여기가 셋 중 가장 나쁘다.** 서킷은 연속 N학생 LLM 실패 뒤 열린다 — 그 시점
