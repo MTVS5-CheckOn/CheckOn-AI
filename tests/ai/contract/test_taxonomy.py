@@ -9,7 +9,9 @@ import pytest
 
 from ai.contracts.taxonomy import (
     COMMON_AREAS,
+    RESERVED_TYPE_TAGS,
     SUPPORTED_ITEM_FORMATS,
+    V1_TYPE_TAGS,
     AreaTag,
     ItemFormat,
     ItemTags,
@@ -36,8 +38,20 @@ def test_subject_track_values_frozen() -> None:
 
 
 def test_type_tag_values_frozen() -> None:
-    """인지 유형 — 어휘집 §3."""
-    assert {tag.value for tag in TypeTag} == {"fact", "infer", "critic", "concept"}
+    """인지 유형 — 어휘집 §3. **평가원 5축** · `apply`는 예약값(99 ㊣).
+
+    ⚠ `item_format`의 `short`·`essay`와 같은 예약이지만 처방이 다르다 — `apply`는
+    **입력으로 받고 표시까지 하되 산출·출제 요청만 막는다**(문마다 답이 다르다).
+    """
+    assert {tag.value for tag in TypeTag} == {
+        "fact",
+        "infer",
+        "critic",
+        "concept",
+        "apply",
+    }
+    assert {tag.value for tag in V1_TYPE_TAGS} == {"fact", "infer", "critic", "concept"}
+    assert RESERVED_TYPE_TAGS == frozenset({TypeTag.APPLY})
 
 
 def test_item_format_values_frozen() -> None:
