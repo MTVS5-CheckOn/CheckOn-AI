@@ -59,7 +59,18 @@ def check_brief_gate(
     *,
     max_length: int = MAX_BRIEF_LENGTH,
 ) -> GateResult:
-    """브리핑 한 줄의 왜곡 검사. 통과분만 [표시]로 나간다."""
+    """브리핑 한 줄의 왜곡 검사. 통과분만 [표시]로 나간다.
+
+    🔴 **`empty`가 맨 앞이다**(8/8 · 99 ㊠ ①). 종전에는 빈 문자열이 **어느 검사에도 안
+    걸려 통과**했다 — 게이트가 *"무엇이 있으면 안 되는가"* 만 보고 *"무엇이 있어야 하는가"*
+    는 안 봤기 때문이다. `counsel/gate.py`는 처음부터 같은 자리에 `empty`가 있었다.
+
+    ⚠ **맨 앞에 넣어도 기존 사유가 하나도 안 바뀐다** — 빈 문자열이 지금 걸리는 검사가
+    없으므로 이 분기가 가로채는 입력이 없다. 그래도 **뒤에 끼우지 않은 이유**는
+    `counsel/gate.py` docstring의 판정 그대로다: *"검사 순서가 곧 계약"*.
+    """
+    if not text.strip():
+        return GateResult(passed=False, reason="empty")
     if "⟪" in text or "⟫" in text:
         return GateResult(passed=False, reason="token_leak")
     symbol = _SYMBOL_RE.search(text)

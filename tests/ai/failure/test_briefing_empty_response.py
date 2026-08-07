@@ -223,18 +223,22 @@ def test_a_failed_outcome_never_looks_like_a_normal_brief() -> None:
 
 
 @pytest.mark.parametrize("text", ["", "   "])
-def test_the_brief_gate_does_not_catch_emptiness(text: str) -> None:
-    """⚠ **게이트는 빈 문자열을 통과시킨다** — 그게 이 결함이 여기까지 온 이유다.
+def test_the_brief_gate_now_catches_emptiness(text: str) -> None:
+    """✅ **㊠ ① 닫힘(8/8)** — 게이트가 빈 문자열을 `empty`로 막는다.
 
-    게이트는 *"무엇이 있으면 안 되는가"* 만 본다. 🔴 **이 PR은 게이트를 고치지 않았다** —
-    `check_brief_gate`는 왜곡 검사이고 *"비었는가"* 가 그 책임인지 애매하며, 고치면
-    counsel·문항 게이트까지 함께 봐야 한다(99 ㊠에 선택지로 올렸다).
+    ⚠ **이 테스트는 뒤집힌 것이다.** #131에서는 `passed is True`를 단정하며
+    *"이 단정이 red가 되면 누군가 브리핑 게이트에 빈 검사를 넣은 것이고, 그때는 ㊠를
+    닫으면 된다"* 고 적어 뒀다 — 그 red가 났고, 그래서 닫았다.
 
-    ⚠ 대신 **`check_counsel_gate`는 빈 문자열을 `empty`로 막는다**(실측) — 게이트 계열이
-    이미 갈려 있다는 사실을 여기 남긴다. 이 단정이 red가 되면 누군가 브리핑 게이트에
-    빈 검사를 넣은 것이고, 그때는 ㊠를 닫으면 된다.
+    🔴 **두 방어선이 겹치는 것이 정상이다.** ㊝이 provider 경계에서 이미 막았고 이건
+    두 번째다. 어느 하나를 뺄 이유를 만들지 마라 — 프로덕션 briefing은 첫 번째가,
+    대역 측정(㊢ · `briefing_preview`)은 두 번째가 지킨다.
     """
-    assert check_brief_gate(text, frozenset()).passed is True
+    result = check_brief_gate(text, frozenset())
+    assert result.passed is False
+    assert result.reason == "empty", (
+        f"사유가 {result.reason!r}다 — counsel과 같은 `empty`여야 한다(새 어휘 금지)"
+    )
 
 
 def test_the_counsel_gate_does_catch_emptiness() -> None:
@@ -273,3 +277,50 @@ def test_the_counsel_gate_does_catch_emptiness() -> None:
     result = check_counsel_gate("", context=context, max_chars=360)
     assert result.passed is False
     assert result.reason == "empty"
+
+
+# ── ㊠ ② 폴백 경로 — 마지막 미방어 문 ──────────────────────────────
+
+
+@pytest.mark.parametrize("text", ["", "   "])
+def test_an_empty_fallback_text_is_rejected_at_construction(text: str) -> None:
+    """🔴 **폴백이 비면 폴백 자체가 예외가 된다** — 생성 시점에 막는다(㊠ ②).
+
+    `_fallback()`이 `Brief(text=ctx.fallback_text)`를 만드는데 `Brief.text`는
+    `min_length=1`이다. 비면 `ValidationError`가 나고, 그게 하필 **`except LlmError`
+    핸들러 안**이라 ㊝과 **똑같이** `/v1/detect`까지 올라간다.
+
+    ⚠ **지금까지 안전했던 것은 계약이 아니라 우연이다** — `briefing_context.py:225·239`가
+    `signal.brief.text`에서 채우고 그 값이 이미 `min_length=1`을 통과했기 때문에
+    **전이적으로** 비지 않았다. 이 검사가 그 전이 관계를 **계약으로** 바꾼다.
+    """
+    with pytest.raises(ValueError, match="fallback_text"):
+        BriefingContext(
+            signal_type=SignalType.ACC_DROP,
+            display_label="정답률 하락",
+            lifecycle=Lifecycle.NEW,
+            segment=Segment.NORMAL,
+            facts=(),
+            evidence_summaries=(),
+            fallback_text=text,
+        )
+
+
+def test_the_fallback_path_still_works_with_a_normal_text() -> None:
+    """✅ **대조군** — 정상 폴백은 그대로 산다(프로덕션 경로 무변경 증명).
+
+    ⚠ 기존 테스트 2174건이 하나도 안 깨진 것이 더 강한 증명이지만, 그건 이 파일에
+    안 남으므로 여기 대조군을 둔다.
+    """
+    brief, reason = _run(
+        make_brief(
+            _context(),
+            _Provider(CallOutcome.OK, ""),
+            context=_execution_context(),
+            now=lambda: 0.0,
+            deadline=45.0,
+        )
+    )
+    assert brief.fallback_used is True
+    assert brief.text == _context().fallback_text
+    assert reason == "llm_failed"
