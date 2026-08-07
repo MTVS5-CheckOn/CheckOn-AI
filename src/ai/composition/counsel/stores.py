@@ -13,6 +13,7 @@ ORM 컬럼과의 값 대조 테스트**를 양쪽에 건다.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final, Protocol
 from uuid import UUID
@@ -114,6 +115,18 @@ class CounselPackResultRecord(BaseModel):
     #: 모르며, 그걸 `ok`로 읽는 것은 거짓이 아니라 "그때는 안 쟀다"에 가장 가깝다.
     plan_outcome: PlanOutcome = PlanOutcome.OK
     plan_dropped: int = 0
+
+    #: 학생별 **검증 통과 강조점** — `state.emphasis_points`가 밖으로 나오는 경로다(99 ㉮).
+    #: 🔴 refine이 이 값을 못 받아서 **다듬기 턴마다 강조점이 사라졌다.** 최초 생성은
+    #: `graph.py:201`에서 `state`를 직접 읽지만 refine은 라우터가 부르고, 라우터가 볼 수
+    #: 있는 것은 결과 계약뿐이라 **여기 없으면 도달 경로가 없다.**
+    #: ⚠ `plan_outcome`과 **같은 이유·같은 형태**다 — 잡이 끝나면 체크포인트는 재개 대상이
+    #: 아니라 사후에 읽을 사람이 없다(㉲). 기본값도 같은 이유로 둔다(기존 레코드 호환).
+    #: 🔴 **빈 값이 「없음」인지 「안 쟀음」인지는 `plan_outcome`이 가른다** — `OK`+빈 값은
+    #: 고를 게 없었던 것, `ALL_DROPPED`는 전량 드롭, `LLM_FAILED`·`UNPARSED`는 plan 실패다.
+    #: 이 필드 하나만 보고 판단하지 마라.
+    #: ⚠ 타입은 `graph.py:201`이 넘기는 것과 같다(`tuple[str, ...]`) — 새 타입을 만들지 않았다.
+    emphasis_points: Mapping[str, tuple[str, ...]] = {}
 
 
 class AgentStepRecord(BaseModel):

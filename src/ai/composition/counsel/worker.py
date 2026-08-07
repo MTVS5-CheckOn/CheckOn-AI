@@ -365,6 +365,12 @@ class CounselPackRunner:
                 # 경로다(잡이 끝나면 체크포인트는 재개 대상이 아니다 · 99 ㉲).
                 plan_outcome=final["plan_outcome"],
                 plan_dropped=final["plan_dropped"],
+                # 🔴 강조점 **값**도 같은 이유로 내보낸다(99 ㉮) — 사유(`plan_outcome`)만
+                # 나가고 값이 안 나가서 refine이 매 턴 강조점 없이 다시 썼다.
+                emphasis_points={
+                    ref: tuple(points)
+                    for ref, points in final["emphasis_points"].items()
+                },
             )
         )
 

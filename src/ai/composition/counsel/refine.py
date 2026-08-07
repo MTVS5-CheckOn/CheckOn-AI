@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -122,6 +123,7 @@ async def refine_draft(
     execution_context: ExecutionContext,
     regen_max: int,
     previous_text: str = "",
+    emphasis: Sequence[str] = (),
 ) -> RefineOutcome:
     """지시를 반영해 초안을 다시 만든다 — **매 턴 게이트 전체 재통과**(06 §1).
 
@@ -146,6 +148,17 @@ async def refine_draft(
     턴1의 "짧게"가 턴2에서 되살아난다 — 다듬기가 누적되지 않는다. 기본값이 빈 문자열인
     이유는 호출자(라우터)가 아직 초안을 모를 수 있어서가 아니라, **이 파라미터가 없던
     시절의 동작을 명시적으로 재현할 수 있게** 두기 위함이다(테스트가 대조군으로 쓴다).
+
+    🔴 `emphasis`는 **최초 생성이 고른 검증 통과 강조점**이다(99 ㉮). 안 넘기면 다듬기
+    턴마다 강조점 없이 다시 쓰므로 *"1턴에 강조한 것이 2턴에 사라진다"* — 강사가 refine을
+    한 번이라도 누르면 **매번** 그렇다. 최초 생성(`graph.py:201`)이 같은 인자로 같은 값을
+    넘기므로 **프롬프트 문면도 같다**(`prompt.render_emphasis_block`).
+
+    ⚠ **기본값 `()`는 「강조점 없음」이 아니라 「안 넘겼음」이다.** 지금까지의 상태가 정확히
+    후자였고 그게 이 결함이다 — 둘이 같은 값이라 **코드에서 구분되지 않는다.**
+    「없음」의 사유는 별도 축이 든다(`CounselPackResultRecord.plan_outcome` · ㉲):
+    `OK`+빈 값은 고를 게 없었던 것, `ALL_DROPPED`는 전량 드롭, `LLM_FAILED`·`UNPARSED`는
+    plan 실패다. **이 함수는 사유를 모른다** — 호출자가 값을 넘길 책임을 진다.
     """
     # 🔴 `regen_max=0`이면 루프가 0회 — LLM을 한 번도 안 부르고 "상한 소진"으로 차단된다.
     # 강사에게는 게이트가 막은 것으로 보이는데 실은 아무것도 시도하지 않았다.
@@ -182,6 +195,9 @@ async def refine_draft(
             text = await writer.write(
                 context=context,
                 execution_context=execution_context,
+                # 🔴 최초 생성과 **같은 인자**다(`graph.py:201`) — 문면이 갈리면
+                #    "같은 강조점인데 턴마다 다른 글"이 된다.
+                emphasis=emphasis,
                 gate_feedback=instruction_for(last_reason),
                 refine_instruction=instruction,
                 previous_text=previous_text,
