@@ -165,7 +165,19 @@ def _view_body(job: ImportJob) -> dict[str, Any]:
         mapping_preview=job.preview,
     )
     return success_envelope(
-        view.model_dump(mode="json"), execution_id=job.job_id, versions=import_versions()
+        view.model_dump(mode="json"),
+        # 🔴 **의도적으로 `job_id`다 — 이 축은 원장을 쓰지 않는다**(99 ㊯ · 04 §2.2
+        #    「상관 ID」 부류). 라우터·조사 워커 어디에도 `AI_RUN`·`ExecutionContext`
+        #    참조가 없고(99 ㉾), `ImportJob`에는 `execution_id` 필드 자체가 없다.
+        #    ⇒ *"가리킬 실행이 없다"* 가 정상 상태이고, `job_id`는 **안정적**이라
+        #    (반복 조회가 같은 값) 상관 ID로 기능한다 — counsel의 `correlation_id`와
+        #    같은 역할이다.
+        # ⚠ **`str()`이 없는 것도 의도다** — `ImportJob.job_id`는 이미 `str`이라
+        #    변환이 무의미하다(다른 라우터는 `UUID`를 들고 있어 `str(...)`이 필요하다).
+        #    형태가 갈려 보이지만 **타입이 다른 것**이지 표기 실수가 아니다.
+        # 🔴 ㉾가 해소돼 이 축이 원장을 남기게 되면 **여기를 그 `execution_id`로 바꾼다.**
+        execution_id=job.job_id,
+        versions=import_versions(),
     )
 
 
