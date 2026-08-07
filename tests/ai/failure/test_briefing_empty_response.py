@@ -223,18 +223,22 @@ def test_a_failed_outcome_never_looks_like_a_normal_brief() -> None:
 
 
 @pytest.mark.parametrize("text", ["", "   "])
-def test_the_brief_gate_does_not_catch_emptiness(text: str) -> None:
-    """⚠ **게이트는 빈 문자열을 통과시킨다** — 그게 이 결함이 여기까지 온 이유다.
+def test_the_brief_gate_now_catches_emptiness(text: str) -> None:
+    """✅ **㊠ ① 닫힘(8/8)** — 게이트가 빈 문자열을 `empty`로 막는다.
 
-    게이트는 *"무엇이 있으면 안 되는가"* 만 본다. 🔴 **이 PR은 게이트를 고치지 않았다** —
-    `check_brief_gate`는 왜곡 검사이고 *"비었는가"* 가 그 책임인지 애매하며, 고치면
-    counsel·문항 게이트까지 함께 봐야 한다(99 ㊠에 선택지로 올렸다).
+    ⚠ **이 테스트는 뒤집힌 것이다.** #131에서는 `passed is True`를 단정하며
+    *"이 단정이 red가 되면 누군가 브리핑 게이트에 빈 검사를 넣은 것이고, 그때는 ㊠를
+    닫으면 된다"* 고 적어 뒀다 — 그 red가 났고, 그래서 닫았다.
 
-    ⚠ 대신 **`check_counsel_gate`는 빈 문자열을 `empty`로 막는다**(실측) — 게이트 계열이
-    이미 갈려 있다는 사실을 여기 남긴다. 이 단정이 red가 되면 누군가 브리핑 게이트에
-    빈 검사를 넣은 것이고, 그때는 ㊠를 닫으면 된다.
+    🔴 **두 방어선이 겹치는 것이 정상이다.** ㊝이 provider 경계에서 이미 막았고 이건
+    두 번째다. 어느 하나를 뺄 이유를 만들지 마라 — 프로덕션 briefing은 첫 번째가,
+    대역 측정(㊢ · `briefing_preview`)은 두 번째가 지킨다.
     """
-    assert check_brief_gate(text, frozenset()).passed is True
+    result = check_brief_gate(text, frozenset())
+    assert result.passed is False
+    assert result.reason == "empty", (
+        f"사유가 {result.reason!r}다 — counsel과 같은 `empty`여야 한다(새 어휘 금지)"
+    )
 
 
 def test_the_counsel_gate_does_catch_emptiness() -> None:
