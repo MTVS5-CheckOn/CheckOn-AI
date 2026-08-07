@@ -796,32 +796,75 @@ def s3_failures(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _verdict(data: dict[str, Any]) -> str:
-    """"데모 가능/불가" 한 줄 — 안전 불변식과 산출 품질을 나눠 판정한다."""
+    """"데모 가능/불가" 한 줄 — **안전 · 가용성 · 품질을 나눠** 판정한다.
+
+    🔴 **`uncertain`을 안전 축에서 뺐다(8/9 · 99 ㊪).** 종전 코드는 이랬다::
+
+        leaked = data["pii"]["uncertain"] + data["pii"]["token_residue"]
+        safe   = not misses and not leaked
+
+    두 값은 **성격이 반대다.**
+
+      · `token_residue` — `⟪⟫`가 **학부모 문장에 남았다.** 일어난 일이고 🔴 **안전 위반**이다
+      · `uncertain`     — 마스킹 불확실로 **전송을 막았다.** 막은 일이고 ✅ **안전이 작동**했다
+
+    합산하면 **fail-closed가 작동할수록 「데모 불가」가 된다** — 장치가 제 일을 할수록
+    위반 건수가 커지는 판정이다. 4차(8/7)가 정확히 그렇게 나왔다: 안전 위반 실측은
+    0인데 `uncertain=4`(전부 정상 어휘 오탐)가 더해져 *"안전 불변식이 깨졌다"* 가 됐다.
+
+    ⚠ **㉵에서 고친 것과 같은 형태이고 같은 파일 옆 함수다.** 거기서는 `_s3_misses`가
+    **장애 행**(판정 자체가 없던 행)을 차단 미탐으로 세던 것을 분모에서 뺐다 — *"일어나지
+    않은 것을 일어난 것으로 세지 않는다"*. 이번은 *"막은 것을 일어난 것으로 세지 않는다"* 다.
+    ㉵가 고친 규율이 옆 함수에 적용되지 않았다.
+
+    🔴 **`uncertain`을 버리는 게 아니라 축을 옮긴다.** fail-closed가 자주 걸리면 제품이
+    안 돈다(정상 지시가 전송조차 못 된다) — **가용성** 축에서 경고로 보고한다.
+
+    ⚠ **오탐 전제가 아니다.** 진탐(LLM이 실제 실명을 냈는데 불확실로 걸린 것)이면 그건
+    안전 위반이다 — 그래서 `uncertain_detail`을 남겨(`_pii_scan`) **사람이 조각을 보고
+    가르게** 했다. 이 함수는 건수로 자동 판정하지 않고 **가용성으로 보고**한다.
+    """
     misses = _s3_misses(data["s3"]["rows"])
-    leaked = data["pii"]["uncertain"] + data["pii"]["token_residue"]
+    pii = data["pii"]
+    residue = pii["token_residue"]
+    uncertain = pii["uncertain"]
     summary = _s1_summary(data["s1"]["rows"])
     produced = [
         r for r in data["s2"]["rows"] if r["draft_status"] not in (None, "failed")
     ]
-    safe = not misses and not leaked
-    quality = summary["fallback"] == 0 and len(produced) == len(data["s2"]["rows"])
+    missing = len(data["s2"]["rows"]) - len(produced)
 
-    if safe and quality:
-        return (
-            "**데모 가능** — 안전 불변식(차단 미탐 0 · 실명 잔존 0)이 실서버에서도 지켜졌고, "
-            "브리핑·초안·refine 전 구간이 폴백 없이 산출됐다. 단 §8 결함 D1~D3(관측·역추적 "
-            "배선)은 데모 화면에 안 보일 뿐 남아 있다."
+    safe = not misses and not residue
+    availability: list[str] = []
+    if uncertain:
+        availability.append(
+            f"redaction 오탐으로 전송이 막힌 출력 {uncertain}건(fail-closed 작동 — "
+            "조각은 원문 JSON의 `pii.uncertain_detail`)"
         )
-    if safe:
+    if summary["fallback"]:
+        availability.append(f"S1 폴백 {summary['fallback']}건")
+
+    if not safe:
         return (
-            "**데모 가능(조건부)** — 안전 불변식은 실서버에서도 지켜졌다(차단 미탐 0 · "
-            f"실명 잔존 0). 다만 산출 품질에 구멍이 있다: S1 폴백 {summary['fallback']}건 · "
-            f"S2 산출 {len(produced)}/{len(data['s2']['rows'])}건. §8 결함을 먼저 본다."
+            f"**데모 불가** — 안전 불변식이 깨졌다: 차단 미탐 {len(misses)}건 · "
+            f"마스킹 토큰 잔존 {residue}건. 원인 해소 전에는 실 데이터로 시연하지 않는다."
         )
-    return (
-        f"**데모 불가** — 안전 불변식이 깨졌다: 차단 미탐 {len(misses)}건 · "
-        f"마스킹 불확실·잔존 {leaked}건. 원인 해소 전에는 실 데이터로 시연하지 않는다."
+
+    head = (
+        "**데모 가능** — 안전 불변식이 실서버에서도 지켜졌다(차단 미탐 0 · 실명 잔존 0 · "
+        "마스킹 토큰 잔존 0)."
     )
+    if not availability and not missing:
+        return (
+            f"{head} 브리핑·초안·refine 전 구간이 폴백 없이 산출됐다. 단 §8 결함 "
+            "D1~D3(관측·역추적 배선)은 데모 화면에 안 보일 뿐 남아 있다."
+        )
+    tail = []
+    if availability:
+        tail.append("🔴 **가용성 경고** — " + " · ".join(availability))
+    if missing:
+        tail.append(f"⚠ **산출 품질** — S2 미산출 {missing}건")
+    return f"{head} 다만 " + " / ".join(tail) + ". §8 결함을 먼저 본다."
 
 
 def _table(headers: list[str], rows: list[list[str]]) -> str:
@@ -1055,11 +1098,26 @@ def _render(data: dict[str, Any]) -> str:
             ["항목", "값"],
             [
                 ["검사한 LLM 출력", f"{pii['llm_texts']}건"],
-                ["마스킹 **불확실**(fail-closed 대상)", f"**{pii['uncertain']}건**"],
+                [
+                    "⟪⟫ 토큰 잔존 — 🔴 **안전 축**",
+                    f"**{pii['token_residue']}건**",
+                ],
+                [
+                    "마스킹 **불확실**(fail-closed 작동) — ⚠ **가용성 축**",
+                    f"**{pii['uncertain']}건** — 조각은 원문 JSON `pii.uncertain_detail`",
+                ],
                 ["마스킹이 실제로 걸린 출력", f"{pii['masked']}건"],
-                ["⟪⟫ 토큰 잔존", f"**{pii['token_residue']}건**"],
             ],
         ),
+        "",
+        "> 🔴 **두 줄은 성격이 반대다.** `토큰 잔존`은 **일어난 일**(⟪⟫가 학부모 문장에 "
+        "남았다)이고 `불확실`은 **막은 일**(전송 자체를 안 했다)이다. 합산하면 "
+        "**fail-closed가 작동할수록 「데모 불가」가 된다** — 4차(8/7)가 그렇게 나왔다"
+        "(99 ㊪). 불확실 건은 안전이 아니라 **가용성** 문제로 읽어라.",
+        "",
+        "> ⚠ **불확실이 곧 오탐은 아니다.** LLM이 실제 실명을 냈는데 불확실로 걸렸다면 "
+        "그건 안전 위반이다 — `uncertain_detail`의 조각을 **사람이 보고 갈라야** 한다. "
+        "건수만으로 판정하지 않는다.",
         "",
         "## 8. 발견 결함",
         "",
