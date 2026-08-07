@@ -2,6 +2,7 @@
 
 import asyncio
 
+import pytest
 from fake_graph_context import FakeGraphContextService
 
 from ai.contracts.graphrag import (
@@ -28,6 +29,7 @@ from ai.problem_generation.domain.difficulty import (
     estimate_t1_difficulty,
     needs_difficulty_regeneration,
 )
+from ai.problem_generation.domain.policy import ReservedTypeTagWeight
 from ai.problem_generation.domain.rules import RuleValidator
 from ai.problem_generation.infrastructure.config import (
     load_banned_topics,
@@ -185,3 +187,40 @@ def test_cross_gate_and_t1_difficulty_are_code_determined() -> None:
     )
     assert not mismatch.passed
     assert len(mismatch.failed_checks) == 3
+
+
+def test_reserved_type_tag_weight_lookup_is_an_error_not_a_zero() -> None:
+    """🔴 예약 태그의 가중치 조회는 **명시적 오류**다 — `.get(tag, 0.0)`이 아니다 (99 ㊣).
+
+    가산 0은 *"적용·창의는 난이도 가산이 없다"* 는 **없는 사실**이다. 조용히 통과하면 그
+    문항이 난이도 밴드까지 달고 나간다 — 누락이 예외가 아니라 **오염**이 되는 형태다.
+
+    ⚠ `ValueError` 계열인 것도 단정한다. `LookupError`·`KeyError`로 만들면 같은 파트의
+    세 `except`(workflow `_existing_result` · memory_store 두 `get`)가 삼킬 수 있다.
+    """
+    weights = load_verify_config().difficulty_weights
+
+    assert TypeTag.APPLY not in weights.type_tag
+    with pytest.raises(ReservedTypeTagWeight) as caught:
+        weights.weight_for(TypeTag.APPLY)
+    assert isinstance(caught.value, ValueError)
+    assert not isinstance(caught.value, LookupError), (
+        "예외가 LookupError 계열이면 같은 파트의 except 절이 조용히 삼킬 수 있다"
+    )
+
+    # 대조군 — v1 태그는 그대로 조회된다(가드가 전부를 막는 것이 아니다).
+    assert weights.weight_for(TypeTag.CONCEPT) == weights.type_tag[TypeTag.CONCEPT]
+
+
+def test_difficulty_estimation_refuses_a_reserved_type_tag_item() -> None:
+    """🔴 산식이 예약 태그 문항을 **0 가산으로 통과시키지 않는다.**
+
+    요청 문(`enqueue.reject_unsupported_type_tags`)이 이미 400으로 끊으므로 여기는 도달
+    불가 방어다 — 도달했다는 것은 그 문이 뚫렸다는 뜻이고, 그때 조용한 통과보다 실패가
+    정직하다.
+    """
+    config = load_verify_config()
+    item = _item().model_copy(update={"type_tag": TypeTag.APPLY})
+
+    with pytest.raises(ReservedTypeTagWeight):
+        estimate_t1_difficulty(item=item, solve=_solve(), config=config)

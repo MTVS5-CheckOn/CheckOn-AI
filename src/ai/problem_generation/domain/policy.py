@@ -68,6 +68,16 @@ class SentenceComplexityWeights(BaseModel):
     advanced: float
 
 
+class ReservedTypeTagWeight(ValueError):
+    """예약 태그의 난이도 가중치를 조회했다 — v1엔 그 값이 없다 (99 ㊣).
+
+    ⚠ **`LookupError`·`KeyError` 계열로 만들지 마라.** 같은 파트에 그걸 삼키는 절이 셋이다
+    (`application/workflow.py`의 `_existing_result` · `infrastructure/memory_store.py`의
+    두 `get`). 폴백을 거부해 놓고 예외를 **삼켜지는 종류**로 만들면 같은 실수를 한 층
+    아래에서 반복한다.
+    """
+
+
 class DifficultyWeights(BaseModel):
     """T1 난이도 추정의 코드 소유 외부 값."""
 
@@ -91,6 +101,31 @@ class DifficultyWeights(BaseModel):
                 "— 예약 태그는 가중치를 갖지 않는다"
             )
         return self
+
+    def weight_for(self, tag: TypeTag) -> float:
+        """유형 가중치를 조회한다 — **누락은 예외이지 0이 아니다.**
+
+        🔴 **위 완전성 검사와 이 조회가 같은 클래스에 산다.** 검사를 좁히는 사람이 그 검사에
+        기대던 자리를 찾아다니지 않아도 되게 하려는 것이다 — 규율로 남기면 다음 사람이
+        기억해야 하고, 구조로 두면 기억할 필요가 없다(99 ㊣).
+
+        ⚠ `.get(tag, 0.0)`을 쓰지 마라. `verify_config.yaml`에 `apply: 0.0`을 미리 넣는 것을
+        기각한 것과 같은 이유다 — 가산 0은 *"적용·창의는 난이도 가산이 없다"* 는 **없는
+        사실**이고, 조용히 통과해 그 문항이 난이도까지 달고 나간다. 🔴 폴백이 있는 룩업은
+        누락이 예외가 아니라 **오염**이다(#134 블로커 ② 실증).
+
+        ⚠ **도달 불가 방어다** — 요청 문(`enqueue.reject_unsupported_type_tags`)이 예약
+        태그를 400으로 끊으므로, 여기 도달했다는 것은 그 문이 뚫렸다는 뜻이다. 그래서 4xx로
+        올리지 않는다(BE에게 고칠 것 없는 요청을 고치라고 말하게 된다).
+        """
+
+        try:
+            return self.type_tag[tag]
+        except KeyError as error:
+            raise ReservedTypeTagWeight(
+                f"예약 태그 {tag.value}에는 난이도 가중치가 없다 "
+                "— v1 산출 축이 아니다(요청 문에서 걸러졌어야 한다)"
+            ) from error
 
 
 class VerifyConfig(BaseModel):
