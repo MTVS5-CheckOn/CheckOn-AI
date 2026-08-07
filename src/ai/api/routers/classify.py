@@ -157,19 +157,30 @@ async def post_classify(request: Request) -> dict[str, Any]:
     # ① 캐시 — 같은 `(tenant_id, inquiry_ref)`는 저장분을 돌려주고 **LLM을 안 부른다**
     #    (04:132 "분류·태깅(캐시)" · 04:418 태깅 선례). 재시도가 멱등키 없이 안전해지고,
     #    서버가 seed를 존중하는지 미확인인 상태(99 ㊼)에서도 같은 문의엔 같은 답이 나간다.
-    cached = await inquiry_class_store().get(
-        tenant_id=tenant_id, inquiry_ref=classify_request.inquiry_ref
-    )
-    if cached is not None:
-        return success_envelope(
-            data=_to_result(classify_request.inquiry_ref, cached).model_dump(mode="json"),
-            execution_id=str(execution_id),
-            versions=versions,
-        )
-
     #: 🔴 refine과 **같은 형태**다(counsel.py) — 부수효과를 `except` 절 안에 두지 않는다.
     failed = True
     try:
+        # 🔴 **캐시 조회가 `try` 안이다**(99 ㊮ 잔여 · 8/7). 종전에는 이 블록이 `try`
+        #    **앞**에 있어 캐시 히트가 아래 `finally`의 원장 적재를 **건너뛰었고**,
+        #    그러면서 `meta.execution_id`에는 그 요청이 만든 새 `uuid4`를 실었다 —
+        #    **원장에 없는 값**이고 두 번 부르면 값도 다르다(실측: 2회차가 AI_RUN에 없음).
+        #    **예측 재사용도 실행이다** — 응답을 냈고, 어떤 버전으로 냈는지가 재현 대상이다.
+        #    ⚠ 선례가 둘 있다: `counsel/worker.py:229` *"AI_RUN은 호출 0건이어도 남긴다 —
+        #    불변식 8은 「모든 실행」을 기록"* · `routers/detect.py`의 `persist_ledger`가
+        #    브리핑 호출 0건이어도 무조건 적재한다.
+        if (
+            cached := await inquiry_class_store().get(
+                tenant_id=tenant_id, inquiry_ref=classify_request.inquiry_ref
+            )
+        ) is not None:
+            failed = False
+            return success_envelope(
+                data=_to_result(
+                    classify_request.inquiry_ref, cached
+                ).model_dump(mode="json"),
+                execution_id=str(execution_id),
+                versions=versions,
+            )
         result = await classify(
             classify_request, build_classify_gateway(), context=context
         )
