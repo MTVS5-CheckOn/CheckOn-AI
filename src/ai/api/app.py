@@ -26,6 +26,7 @@ from ai.api.routers.detect import VERSION_SCOPE as _detect_scope
 from ai.api.routers.detect import router as detect_router
 from ai.api.routers.imports import VERSION_SCOPE as _imports_scope
 from ai.api.routers.imports import router as imports_router
+from ai.api.routers.problem import VERSION_SCOPE as _problems_scope
 from ai.api.routers.problem import router as problem_router
 from ai.api.version_scope import RouterScope, resolve_versions
 from ai.runtime.errors import DomainException
@@ -43,6 +44,7 @@ ROUTER_VERSION_SCOPES: tuple[RouterScope, ...] = (
     _counsel_scope,
     _classify_scope,
     _confirmations_scope,
+    _problems_scope,
 )
 
 

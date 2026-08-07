@@ -8,7 +8,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
+from typing import Any, Final
 
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
+from ai.api.version_scope import RouterScope
 from ai.contracts.agents import JobPhase, WorkerJob
 from ai.contracts.diagnosis import DiagnosisResult
 from ai.contracts.execution import VersionSet
@@ -56,6 +57,27 @@ from ai.runtime.errors import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def problem_failure_versions() -> VersionSet:
+    """실패 응답용 정적 버전 세트 — 실행 config 확정 전에도 나간다(04 §2.2 A판정 · 99 ㊓).
+
+    🔴 `taxonomy_version`은 요청 **바디**에서 오므로 헤더 누락·JSON 파싱 실패 시점엔 아직
+    모른다. 없는 값을 지어내지 않고 `None`으로 둔다 — counsel 실패 응답의 `threshold=None`과
+    같은 판단이다("그 실행이 v3를 썼다"는 없는 사실을 만들지 않는다).
+    """
+
+    return problem_versions(
+        taxonomy_version=None,
+        verify_config_version=load_verify_config().version,
+    )
+
+
+#: 이 라우터가 응답하는 경로 접두와 그 버전 세트 — `api/app.py`가 **실패 응답**에 쓴다(99 ㊓).
+#: 🔴 접두를 여기 두는 이유: **경로를 바꾸는 사람과 접두를 고치는 사람이 같아야 한다.**
+#:  `app.py`에 박으면 다른 파일이라 조용히 갈린다.
+#: `/v1/problems`·`/{job_id}` 둘을 한 접두가 덮는다.
+VERSION_SCOPE: Final = RouterScope("/v1/problems", problem_failure_versions)
 
 _POST_ENDPOINT = "/v1/problems"
 _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id", "Idempotency-Key")
@@ -411,6 +433,7 @@ async def get_problem(job_id: str, request: Request) -> dict[str, Any]:
 
 
 __all__ = [
+    "VERSION_SCOPE",
     "ProblemJobView",
     "ProblemProviderNotWired",
     "ProblemServicesNotWired",
@@ -418,6 +441,7 @@ __all__ = [
     "bootstrap_problem_providers",
     "get_problem",
     "post_problem",
+    "problem_failure_versions",
     "require_problem_providers",
     "require_problem_services",
     "reset_problem_router",

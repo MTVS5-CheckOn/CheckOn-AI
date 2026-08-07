@@ -337,11 +337,16 @@ class ProblemGenerationRunner:
 
 def problem_versions(
     *,
-    taxonomy_version: str,
+    taxonomy_version: str | None,
     verify_config_version: str,
     prompt_version: str | None = None,
 ) -> VersionSet:
-    """응답과 AI_RUN이 공유하는 PG 버전 세트."""
+    """응답과 AI_RUN이 공유하는 PG 버전 세트.
+
+    🔴 `taxonomy_version`이 `None`일 수 있는 이유는 **실패 응답** 때문이다 — 헤더 누락·
+    스키마 위반은 요청 바디를 읽기 전에 나므로 그 시점엔 taxonomy를 모른다(04 §2.2 A판정).
+    **기본값은 두지 않았다** — 성공 경로에서 실수로 빠뜨리면 타입 검사가 잡는다.
+    """
 
     resolved_prompt = prompt_version or load_prompt_template(_ITEM_PROMPT_ID).version
     return VersionSet(
