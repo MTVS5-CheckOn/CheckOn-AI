@@ -617,6 +617,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
       "draft_status": "generated",          // generated | template_only | rejected_insufficient | llm_failed | gate_exhausted
       "text": "어머님, 먼저 세심하게…",       // 게이트 통과본만 — 미통과는 text 없음 + 사유
       "citations": [                        // **항상 1건 이상** — 근거 없는 초안은 존재 불가(불변식 2)
+                                            // 🔴 **각주가 아니다** — 아래 규약 참조
         { "cite_id": "L1", "record_id": "le_2041", "summary": "6월 지문 42개·312문항" }
       ],
       "labels_applied": ["narrative", "anxious", "grade", "monthly"],   // 🔴 **항상 4값**(4축 전수)
@@ -633,12 +634,17 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 // ④ POST /v1/counsel/drafts/{job_id}/refine — 다듬기 (대상 키 = ①이 돌려준 job_id · 동기 · 매 턴 게이트 전체 재통과)
 // 요청  { "instruction": "정답률이 오르고 있다고 강조해서 써줘", "turn_no": 3 }
 // 반영  { "applied": true,  "text": "…", "citations": [ … ] }
-// 차단  { "applied": false, "blocked_reason": "comparison_exposure", "message": "…" }
+// 차단  { "applied": false, "blocked_reason": "comparison_exposure" }   // ⚠ `message` 없다(8/5 제거 · 아래 규약)
 ```
 
 **규약**
 
 - **잡 성공 ≠ 초안 존재.** `status="succeeded"` + `result.draft_status="rejected_insufficient"`는 **정상 조합**이다(데이터 부족은 에러가 아니다 — 불변식 4). 화면은 "아직 데이터를 모으는 중이에요"를 그린다.
+- 🔴 **`citations[]`는 「이 초안이 참고한 근거 목록」이지 「본문 문장의 각주」가 아니다** (8/7 명시).
+  - **본문 문장과의 대응이 없다.** 라우터가 요청의 `context.facts` **전수**를 그대로 싣는다(`_citations_of`) — **초안 본문을 한 글자도 안 본다.** ⇒ BE가 fact 5건을 보내고 LLM이 1건만 언급해도 **5건 전부** 실린다.
+  - 🔴 **FE가 각주(「이 문장의 근거」)로 렌더하면 화면이 거짓이 된다.** `cite_id`는 **순서 키**일 뿐이다(7/31 handoff ① 통보분과 같은 내용이며, 그때 통보한 것은 *앵커 미지원*이고 여기서 명시하는 것은 *목록이 본문과 무관하다*는 것이다).
+  - **왜 이 형태인가:** 본문 인라인 앵커(`#Ln`)는 `#`이 counsel 게이트의 금지 기호라 **v1.1**이다(99 ㊳). 실측(8/7 · 4차 원문): 실 LLM 초안 본문 **5건 중 0건**에 `record_id`·`le_` 흔적이 남았다 ⇒ **본문에서 뽑아 거르는 것이 불가능**하다.
+  - ⚠ **refine 반영 턴도 같은 목록을 재사용한다.** 강사가 *"이 부분 빼줘"* 로 그 근거를 지워도 목록은 그대로다.
 - **`citations[]`는 ≥1이 타입 계약**이다. 인용 가능한 근거(`record_id`가 있는 fact)가 0건이면 **LLM 호출 전에** `rejected_insufficient`로 끊는다 — 게이트를 통과한 초안을 만들어 놓고 근거가 없어 버리는 낭비를 만들지 않는다.
 - **`refine` 차단도 200**이다(`applied:false` + `blocked_reason`). `GateRejected`를 5xx로 올리면 리뷰 반려(불변식 4 · error_codes §4).
 - 🔴 **차단 문구는 AI가 주지 않는다(8/5).** `blocked_reason` 8종에 대한 표시 문구는 `part_a/06_refine_policy.md` §4 표가 원본이며 **BE가 매핑**한다 — 초안 `draft_status`·classify 폴백과 같은 규약이다(`error_codes` §2.1 "백엔드 표시 문구" 열 · §2.7 규칙 3). ⚠ **종전 응답의 `message` 필드는 제거됐다.**
