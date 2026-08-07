@@ -22,6 +22,7 @@ from ai.api.routers.counsel import router as counsel_router
 from ai.api.routers.detect import detection_versions
 from ai.api.routers.detect import router as detect_router
 from ai.api.routers.imports import router as imports_router
+from ai.api.routers.problem import router as problem_router
 from ai.runtime.errors import DomainException
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ def create_app() -> FastAPI:
     app.include_router(classify_router)  # ⚠ 양자 승인 파일 수정(라우터 등록) — 위와 동일, B 리뷰
     # ⚠ 양자 승인 파일 수정(라우터 등록) — 위와 동일, B 리뷰
     app.include_router(confirmations_router)
+    # ⚠ 양자 승인 파일 수정(라우터 등록) — counsel 선례, A 리뷰
+    app.include_router(problem_router)
 
     @app.middleware("http")
     async def _echo_request_id(
