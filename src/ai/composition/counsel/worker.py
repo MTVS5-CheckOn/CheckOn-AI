@@ -112,7 +112,26 @@ class CounselPackRunner:
         self._lease_owner = lease_owner
         self._new_id = new_id
         self._now = now
-        #: 실행 원장(AI_RUN·LLM_CALL) — 적재 실패는 fail-open이다(관측이지 게이트 아님).
+        #: 실행 원장(AI_RUN·LLM_CALL) — 🔴 **적재 실패의 축은 경로마다 다르다**(8/11 실측):
+        #:
+        #:     성공 경로  `_record_execution(..., swallow_errors=False)` → 예외가 올라가
+        #:                `_run_guarded`가 잡아 잡을 `worker_internal_error`로 떨군다
+        #:                ⇒ **fail-closed**
+        #:     실패 경로  `swallow_errors=True` → 삼키고 로그만 남긴다 ⇒ **fail-open**
+        #:
+        #: ⚠ **종전 주석은 *"적재 실패는 fail-open이다(관측이지 게이트 아님)"* 였고 그건
+        #: 성공 경로에서 **코드와 반대**였다**(99 ㉹). 주석은 자동 검출이 안 되므로 코드가
+        #: 바뀌어도 조용하다 — 읽는 사람이 코드와 반대로 알고 있었다.
+        #:
+        #: **왜 갈라 두는가:** 실패 경로에서 적재 오류를 올리면 **원인 예외를 덮는다** —
+        #: *"LLM이 죽었다"* 가 *"원장이 죽었다"* 로 뒤집혀 진단이 반대로 간다
+        #: (`_record_execution` docstring). 성공 경로에는 덮을 원인 예외가 없으므로
+        #: 원장을 못 남긴 채 성공으로 응답하지 않는다(감지 원장의 D-② 판단과 같다 —
+        #: *"저장이 목적인데 실패를 삼키면 평가셋이 쌓이는 줄 알았는데 비어 있다"*).
+        #:
+        #: ⚠ **classify·detect도 같은 판정이다** — `classify.py`는 *"실패 경로에서만
+        #: 적재 오류를 삼킨다"*, `detect.py`는 캐시(fail-open)·원장(fail-closed)·
+        #: LLM_CALL(fail-open)을 갈라 적었다. **세 곳 중 이 주석만 틀렸다.**
         self._runs = run_store or build_run_store()
         #: LLM 호출 수집기 — 게이트웨이 조립부 recorder의 기본값과 **같은 인스턴스**여야
         #: 한다(공용 싱글턴). 다른 걸 꽂으면 버킷이 갈려 수집분이 영속되지 않는다.
@@ -175,6 +194,32 @@ class CounselPackRunner:
         )
 
     async def _execute(self, job: WorkerJob) -> WorkerJob:
+        """잡 하나를 실행한다.
+
+        🔴 **원장의 경계는 `_execution_context`다** (99 ㉺ · 8/11 확정):
+
+        > **`_execution_context(job)`가 만들어지면 실행이 시작된 것이고, 그때부터
+        > 무슨 일이 나든 `AI_RUN`을 남긴다. 그 앞에서 죽으면 남길 실행이 없다.**
+
+        ⚠ **자의적인 선이 아니다 — 근거가 테스트에 이미 서 있었다.**
+        `test_ledger_survives_every_failure.py::test_no_ledger_before_the_execution_starts`
+        가 `bundle_missing`·`tenant_mismatch` 둘을 파라미터화해 *"실행이 없는데 실행
+        기록을 만드는 것"* 을 막는다. 🔴 **그 근거가 테스트에만 있어서 워커를 읽는
+        사람에게 안 보였고**, 그래서 99에 *"그 선이 자의적이지 않다는 근거가 필요하다"* 로
+        등재돼 있었다. 근거는 코드 옆에 있어야 한다.
+
+        선 앞뒤:
+
+            앞 (원장 없음)   `ContextBundleMissingError`   묶음이 없다 — 실행할 것이 없다
+                             `TenantMismatchError`         남의 묶음이다 — 실행하면 안 된다
+            ────────────── `context = _execution_context(job)` ──────────────
+            뒤 (원장 남김)   `ContextHashMismatchError`    🔴 **재개 경로에서만 난다** —
+                             체크포인트에 `cursor`가 있다는 건 **이전 실행이 이미 돌았다**는
+                             뜻이고, 이번 호출도 재개를 시도한 **실행**이다. 그래프가
+                             `ainvoke`까지 안 갔어도 원장을 남기는 것이 맞다
+                             (`_resume_input` 참조)
+                             서킷 개방 · 미분류 실패도 여기 뒤다
+        """
         bundle = await self._contexts.get(job.payload_ref, tenant_id=job.tenant_id)
         if bundle is None:
             raise ContextBundleMissingError(job.payload_ref)
