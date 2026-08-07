@@ -27,12 +27,12 @@ from __future__ import annotations
 
 import importlib.util
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Final
 
 import pytest
 from fastapi.testclient import TestClient
 
-from ai.api.app import create_app
+from ai.api.app import ROUTER_VERSION_SCOPES, create_app
 from ai.api.routers.classify import reset_inquiry_class_store
 from ai.api.routers.counsel import reset_counsel_stores
 from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
@@ -97,34 +97,70 @@ def _versions(response: Any) -> dict[str, Any]:  # noqa: ANN401 — httpx.Respon
 # ── 실패 응답이 자기 것을 단다 ─────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    ("label", "method", "path", "body", "engine_prefix"),
-    [
-        ("detect", "POST", "/v1/detect", {"bad": 1}, "detection-rules-"),
-        ("classify", "POST", "/v1/classify", {"bad": 1}, "classify-"),
-        ("counsel", "GET", f"/v1/counsel/drafts/{_ABSENT_JOB}", None, "counsel-pack-"),
-        ("imports", "POST", "/v1/imports", {"bad": 1}, "import-"),
-        ("confirmations", "POST", "/v1/confirmations", {"bad": 1}, "classify-"),
-    ],
-)
-def test_failure_response_carries_its_own_engine_version(
-    label: str, method: str, path: str, body: dict[str, Any] | None, engine_prefix: str
-) -> None:
-    """🔴 각 엔드포인트의 실패 응답이 **자기 engine**을 단다.
+#: 접두 → 그 라우터의 **실패를 내는 대표 요청** `(메서드, 경로, 바디)`.
+#:
+#: 🔴 **이 매핑은 목록이지만 「빠뜨림」은 검출된다** — 아래 테스트가 **등록된 접두 전수**를
+#: 돌면서 매핑에 없는 접두를 **red**로 만든다. 그게 목록형과 전칭의 실제 차이다: 목록은
+#: 남지만 **조용히 빠지지는 않는다**(로그 67 — 전칭이 불가능하면 빠뜨림을 검출한다).
+#:
+#: ⚠ **`RouterScope`에 메서드·바디를 넣지 않는다** — 계약을 테스트 편의로 오염시킨다.
+#: 경로마다 실패를 내는 법이 다른 것은 **테스트의 문제**이지 계약의 문제가 아니다.
+_FAILURE_REQUESTS: Final[dict[str, tuple[str, str, dict[str, Any] | None]]] = {
+    "/v1/detect": ("POST", "/v1/detect", {"bad": 1}),
+    "/v1/classify": ("POST", "/v1/classify", {"bad": 1}),
+    "/v1/counsel": ("GET", f"/v1/counsel/drafts/{_ABSENT_JOB}", None),
+    "/v1/imports": ("POST", "/v1/imports", {"bad": 1}),
+    "/v1/confirmations": ("POST", "/v1/confirmations", {"bad": 1}),
+    "/v1/problems": ("POST", "/v1/problems", {"bad": 1}),
+}
 
-    ⚠ `confirmations`가 `classify-`인 것은 **의도다** — 확정 회신은 분류의 정정 경로라
-    같은 capability이고, `classify_versions()`를 빌려 쓴다(그 라우터의 주석 참조).
+
+def test_every_registered_prefix_has_a_failure_request() -> None:
+    """🔴 **등록된 접두 전수**가 위 매핑에 있다 — 빠뜨리면 red다.
+
+    새 라우터가 붙으면 *"실패 응답이 자기 engine을 단다"* 검사가 **그 경로엔 안 돌던**
+    것이 종전 형태였다(5개 하드코딩). 이 단정이 그 침묵을 없앤다.
     """
+    prefixes = {scope.prefix for scope in ROUTER_VERSION_SCOPES}
+    assert prefixes, "ROUTER_VERSION_SCOPES가 비었다 — 검사가 끊긴 것이다"
+    missing = sorted(prefixes - set(_FAILURE_REQUESTS))
+    assert not missing, (
+        f"실패 요청 매핑이 없는 접두: {missing}\n"
+        "그 경로는 '실패 응답이 자기 engine을 단다' 검사를 **안 받는다**(99 ㊓). "
+        "_FAILURE_REQUESTS에 (메서드, 경로, 실패를 내는 바디)를 추가하라 — "
+        "대개 `{\"bad\": 1}` 같은 스키마 위반 바디면 400이 난다."
+    )
+
+
+@pytest.mark.parametrize(
+    "scope", ROUTER_VERSION_SCOPES, ids=lambda s: s.prefix.replace("/", "_")
+)
+def test_failure_response_carries_its_own_engine_version(scope: Any) -> None:  # noqa: ANN401
+    """🔴 각 엔드포인트의 실패 응답이 **자기 스코프가 말하는 engine**을 단다.
+
+    ⚠ **기대값을 문자열로 박지 않는다** — `scope.versions().engine_version`에서 가져온다.
+    박으면 또 목록형이고, `confirmations`처럼 **접두와 engine이 다른** 경우
+    (`/v1/confirmations` → `classify-0.1` · 의도다)를 손으로 관리하게 된다.
+    """
+    method, path, body = _FAILURE_REQUESTS[scope.prefix]
+    expected = scope.versions().engine_version
+
     with TestClient(create_app(), raise_server_exceptions=False) as client:
         response = client.request(
-            method, path, json=body, headers={**_HEADERS, "Idempotency-Key": f"k-{label}"}
+            method,
+            path,
+            json=body,
+            headers={**_HEADERS, "Idempotency-Key": f"k{scope.prefix}"},
         )
 
-    assert response.status_code >= 400, f"{label}이 실패 응답을 안 냈다: {response.status_code}"
+    assert response.status_code >= 400, (
+        f"{scope.prefix}가 실패 응답을 안 냈다: {response.status_code} — "
+        "_FAILURE_REQUESTS의 바디가 더 이상 스키마를 위반하지 않는 것일 수 있다"
+    )
     engine = _versions(response)["engine"]
-    assert engine.startswith(engine_prefix), (
-        f"{label}의 실패 응답이 engine={engine!r}을 단다 — {engine_prefix}* 여야 한다. "
-        "app.py의 예외 핸들러가 남의 엔드포인트 버전을 하드코딩하고 있다(99 ㊓)"
+    assert engine == expected, (
+        f"{scope.prefix}의 실패 응답이 engine={engine!r}인데 그 스코프는 {expected!r}를 "
+        "말한다 — app.py의 예외 핸들러가 남의 엔드포인트 버전을 단다(99 ㊓)"
     )
 
 
