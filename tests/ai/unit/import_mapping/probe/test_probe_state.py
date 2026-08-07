@@ -19,9 +19,11 @@ from ai.import_mapping.probe.state import (
 
 _PROFILE_ID = UUID("00000000-0000-4000-8000-000000000001")
 
-# §2.2를 손으로 옮긴 기대 필드 집합.
-# ⚠ **같은 한계다** — 코드 ↔ 손사본이라 **문서가 바뀌면 조용하다**(99 #07 ·
-#   `tests/ai/unit/composition/test_counsel_state.py`에 상세).
+# §2.2 코드블록의 기대 필드 집합(손 작성).
+# ✅ **(8/11 · 99 #07 해소) 「문서 → 코드」 방향은 `test_doc_enum_parity.py`가 지킨다** —
+#   §2.2를 실제로 파싱해 `MappingProbeState.model_fields`와 대조한다. 붙이자마자
+#   문서에 `state_schema_version`이 빠진 것을 찾았다(여기 손사본엔 있었다 — `코드 ==
+#   코드`라 조용했다). 여기가 지키는 것은 **기본값·불변 상수**다(아래 단정들).
 _EXPECTED_STATE_FIELDS = {
     "state_schema_version",
     "tenant_id",

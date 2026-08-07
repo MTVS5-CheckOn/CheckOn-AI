@@ -145,7 +145,32 @@ def parse_plan_response(text: str, student_refs: Sequence[str]) -> dict[str, lis
 
 
 class RedactionBlockedError(LlmError):
-    """마스킹 불확실 — 전송하지 않았다(fail-closed · 불변식 3)."""
+    """마스킹 불확실 — 전송하지 않았다(fail-closed · 불변식 3).
+
+    ⚠ **`contracts/llm.RedactionBlocked`와 이름이 겹친다. 같은 개념·다른 층이다**
+    (99 ㉳ · 8/11 조사).
+
+        이 예외      **전송 전** 차단 — `redact()`가 uncertain이면 `gateway.complete()`를
+                     **부르기 전에** raise한다(`write():238` · `plan():288`)
+        contracts    **게이트웨이 안** 차단 — 트레이스 마스킹 훅이 raise하고
+                     (`runtime/trace_masking.py:84`) `_exception_outcome`이
+                     `CallOutcome.REDACTION_BLOCKED`로 분류한다
+
+    🔴 **「분류가 샌다」가 아니다** — 99 ㉳가 *"provider 쪽 예외는 그 분류를 못 받는다"* 로
+    등재됐는데, **못 받는 게 아니라 그 층을 안 탄다.** 실측(8/11):
+
+        정상 경로         LLM_CALL 1행 · outcome=ok
+        이 예외 발생 시   LLM_CALL **0행** — 게이트웨이를 안 불렀으니 분류할 호출이 없다
+                          (`REDACTION_BLOCKED`로 남은 건 0 · plan 경로도 동일)
+
+    ⚠ **그럼 이 안전 사건은 어디 남는가** — **자기 층의 축에 남는다.** 그래프가 이 예외를
+    잡아 학생 노드는 `fail_reason="redaction_blocked"`, plan 노드는
+    `PlanOutcome.REDACTION_BLOCKED`로 적는다(#146이 만든 값). **원장의 `CallOutcome`이
+    아니라 state·결과 레코드가 든다** — 층마다 자기 축에 기록하는 것이고 누락이 아니다.
+
+    ⚠ **이름 통합은 하지 않았다** — `contracts/llm.py`가 양자 승인 파일이고, 통합해도
+    위 층 구분은 그대로 남아 **오히려 한 이름이 두 층을 뜻하게 된다.**
+    """
 
 
 class PlanUnparsedError(LlmError):

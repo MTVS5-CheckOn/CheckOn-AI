@@ -28,6 +28,8 @@ class StudentResult(BaseModel):
     fail_reason: str | None
 
 class CounselPackState(BaseModel):
+    state_schema_version: Literal["counsel_pack.v1"]   # 체크포인트 스키마 식별자
+
     # 불변 입력 (기동 시 고정 — 재개해도 안 바뀜)
     tenant_id: str
     class_ref: str
@@ -105,6 +107,7 @@ class ProbeStep(BaseModel):
     observation_masked: str                    # 도구 반환 = 마스킹 통과분만 (구조적 차단)
 
 class MappingProbeState(BaseModel):
+    state_schema_version: Literal["mapping_probe.v1"]  # 체크포인트 스키마 식별자
     tenant_id: str
     source_profile_id: UUID
     sheets_meta: dict                          # 헤더·타입·샘플 통계 (원본 행 아님)
