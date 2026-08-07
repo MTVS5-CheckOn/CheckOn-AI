@@ -1057,9 +1057,9 @@ provider는 실패를 **예외로 올린다.** 반환값의 `outcome`은 `OK` �
 이 계열을 통째로 400으로 바꾸면 403과 `source_procurement_not_implemented`가 뭉개진다.
 
 **난이도 보정 버전 확인:** v1은 난이도 보정을 쓰지 않아 `difficulty_calib_version`이
-`null`이다(`difficulty_regen_enabled=false`). `DifficultyCalib` 저장소·소비 배선이 없고
-`difficulty_band_map`은 별도 버전 없이 `verify-config.v1`에 포함된다. 이는
-`04_api_contract.md` §2.2 문구와 갈리므로 A 확인 대상이다.
+`null`이다(`difficulty_regen_enabled: false` · `DifficultyCalib` 저장소 미배선). 실패
+응답에서는 `taxonomy_version`도 `null`이다. 요청 바디에 따라 갈리는 값은 그 시점에
+정적이지 않다(`04_api_contract.md` §2.2 A 판정 “엔드포인트가 아는 정적 앱 버전”).
 
 #### 2-19.4 v1 지원 한계 — BE 선검사 필요
 
