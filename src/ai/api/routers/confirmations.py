@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import Any, Final
 
 from fastapi import APIRouter, Request
 from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
+from ai.api.version_scope import RouterScope
 from ai.composition.classify.classifier import classify_versions
 from ai.contracts.confirmations import (
     ConfirmationAction,
@@ -185,6 +186,17 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
         versions=classify_versions(),
     )
 
+
+
+#: 이 라우터가 응답하는 경로 접두와 그 버전 세트 — `api/app.py`가 **실패 응답**에 쓴다(99 ㊓).
+#: 🔴 접두를 여기 두는 이유: **경로를 바꾸는 사람과 접두를 고치는 사람이 같아야 한다.**
+#:  `app.py`에 박으면 다른 파일이라 조용히 갈린다.
+#: 🔴 **`classify_versions`를 빌려 쓴다 — 확인했고 의도다.**
+#:  확정 회신은 **분류의 정정 경로**라 같은 capability이고(모듈 docstring: *"평가셋 루프를
+#:  닫는다"*), 성공 응답(`:185`)도 이미 같은 것을 쓴다. `engine=classify-0.1`이 맞다.
+#:  ⚠ `VersionSet`에는 엔드포인트를 가르는 필드가 없다 — 두 경로를 구분해야 할 일이
+#:  생기면 그건 계약 변경이다(양자 · 99 ㊚).
+VERSION_SCOPE: Final = RouterScope("/v1/confirmations", classify_versions)
 
 __all__ = [
     "ACTION_NOT_SUPPORTED",

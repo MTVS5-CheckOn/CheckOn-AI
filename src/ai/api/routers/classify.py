@@ -15,12 +15,13 @@ from __future__ import annotations
 import logging
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
 from fastapi import APIRouter, Request
 from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
+from ai.api.version_scope import RouterScope
 from ai.composition.classify.classifier import (
     CLASSIFY_GEN_PARAMS,
     classify,
@@ -232,5 +233,14 @@ async def post_classify(request: Request) -> dict[str, Any]:
         versions=versions,
     )
 
+
+
+#: 이 라우터가 응답하는 경로 접두와 그 버전 세트 — `api/app.py`가 **실패 응답**에 쓴다(99 ㊓).
+#: 🔴 접두를 여기 두는 이유: **경로를 바꾸는 사람과 접두를 고치는 사람이 같아야 한다.**
+#:  `app.py`에 박으면 다른 파일이라 조용히 갈린다.
+#: ⚠ `classify_versions`는 `composition/classify/classifier.py`에 있다 — **옮기지 않았다.**
+#:  프롬프트 버전이 그 모듈에 살아서 버전 세트도 거기 있는 것이 맞다. 라우터는 import해서
+#:  스코프에 싣기만 한다.
+VERSION_SCOPE: Final = RouterScope("/v1/classify", classify_versions)
 
 __all__ = ["router", "set_classify_run_store"]
