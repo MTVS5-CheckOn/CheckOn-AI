@@ -17,7 +17,15 @@ from problem_snapshot import SnapshotDiagnosisFake
 
 from ai.contracts.diagnosis import DiagnosisResult, DiagnosisStatus
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
-from ai.contracts.llm import LlmUnavailable, ModelRole
+from ai.contracts.llm import (
+    FieldMissing,
+    LlmError,
+    LlmTimeout,
+    LlmUnavailable,
+    ModelRole,
+    ParseFailed,
+    RedactionBlocked,
+)
 from ai.contracts.problem_generation import (
     Answer,
     Choice,
@@ -313,6 +321,22 @@ def test_generation_failures_stop_at_three_attempts_without_fourth_call() -> Non
     assert not harness.verifier_provider.requests
 
 
+def test_plain_llm_error_during_generation_exhausts_generation_budget() -> None:
+    harness = _WorkflowHarness(
+        generator_steps=tuple(LlmError("plain provider failure") for _ in range(3)),
+        verifier_steps=(),
+    )
+
+    result = _run(harness, harness.request())
+
+    assert result.status is ProblemSetStatus.FAILED
+    assert result.items[0].status is ProblemItemStatus.DROPPED
+    assert result.items[0].failure_reason is ProblemFailureReason.GENERATION_EXHAUSTED
+    assert result.items[0].attempt_no == 3
+    assert len(harness.generator_provider.requests) == 3
+    assert not harness.verifier_provider.requests
+
+
 def test_same_set_duplicate_stem_is_rejected_within_shared_attempt_budget() -> None:
     duplicate = _item_json("동일문두")
     harness = _WorkflowHarness(
@@ -523,6 +547,62 @@ def test_verifier_outage_is_domain_result_not_execution_exception() -> None:
     assert result.items[0].status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
     stored = asyncio.run(harness.items.list_all())[0]
     assert stored.item is not None
+
+
+def test_cross_solve_redaction_blocked_does_not_retry() -> None:
+    harness = _WorkflowHarness(
+        generator_steps=(_item_json("마스킹차단"),),
+        verifier_steps=(RedactionBlocked("redaction blocked"),),
+    )
+
+    result = _run(harness, harness.request())
+
+    assert result.items[0].status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
+    assert len(harness.generator_provider.requests) == 1
+    assert len(harness.verifier_provider.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "error_type",
+    [ParseFailed, FieldMissing],
+    ids=["ParseFailed", "FieldMissing"],
+)
+def test_cross_solve_parse_errors_exhaust_retry_budget(
+    error_type: type[ParseFailed],
+) -> None:
+    harness = _WorkflowHarness(
+        generator_steps=tuple(_item_json(f"파싱재시도-{attempt}") for attempt in range(3)),
+        verifier_steps=tuple(error_type("invalid structured output") for _ in range(3)),
+    )
+
+    result = _run(harness, harness.request())
+
+    assert result.items[0].status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
+    assert result.items[0].attempt_no == 3
+    assert len(harness.generator_provider.requests) == 3
+    assert len(harness.verifier_provider.requests) == 3
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        LlmTimeout("timeout"),
+        LlmUnavailable("unavailable"),
+        LlmError("plain provider failure"),
+    ],
+    ids=["LlmTimeout", "LlmUnavailable", "LlmError"],
+)
+def test_cross_solve_service_errors_do_not_retry(error: LlmError) -> None:
+    harness = _WorkflowHarness(
+        generator_steps=(_item_json("서비스불가"),),
+        verifier_steps=(error,),
+    )
+
+    result = _run(harness, harness.request())
+
+    assert result.items[0].status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
+    assert len(harness.generator_provider.requests) == 1
+    assert len(harness.verifier_provider.requests) == 1
 
 
 def test_attempt_is_checkpointed_before_external_generation_call() -> None:

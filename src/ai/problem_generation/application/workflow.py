@@ -24,8 +24,7 @@ from ai.contracts.graphrag import (
     GraphContextService,
 )
 from ai.contracts.llm import (
-    LlmTimeout,
-    LlmUnavailable,
+    LlmError,
     ParseFailed,
     RedactionBlocked,
 )
@@ -315,7 +314,7 @@ class ProblemGenerationWorkflow:
                     reason=ProblemFailureReason.GENERATION_EXHAUSTED,
                     detail="redaction 불확실로 생성 호출이 차단됨",
                 )
-            except (LlmTimeout, LlmUnavailable, ParseFailed) as error:
+            except LlmError as error:
                 feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
                     failed_checks=(f"generator:{type(error).__name__}",)
                 )
@@ -359,14 +358,6 @@ class ProblemGenerationWorkflow:
                     item=item,
                     detail="교차 풀이 redaction 불확실",
                 )
-            except (LlmTimeout, LlmUnavailable) as error:
-                if state.fallback_ref is not None:
-                    return await self._restore_fallback(state)
-                return await self._finalize_verification_unavailable(
-                    state,
-                    item=item,
-                    detail=f"교차 풀이 서비스 불가: {type(error).__name__}",
-                )
             except ParseFailed as error:
                 feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
                     failed_checks=(f"verifier:{type(error).__name__}",),
@@ -381,6 +372,14 @@ class ProblemGenerationWorkflow:
                         detail=f"교차 풀이 파싱 시도 소진: {type(error).__name__}",
                     )
                 return {}
+            except LlmError as error:
+                if state.fallback_ref is not None:
+                    return await self._restore_fallback(state)
+                return await self._finalize_verification_unavailable(
+                    state,
+                    item=item,
+                    detail=f"교차 풀이 서비스 불가: {type(error).__name__}",
+                )
 
             cross_result = validate_cross_solve(
                 item,
