@@ -13,6 +13,7 @@ from fake_graph_context import (
 )
 from fake_provider import FakeProvider, FakeStep
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.errors import GraphRecursionError
 from problem_snapshot import SnapshotDiagnosisFake
 
 from ai.contracts.diagnosis import DiagnosisResult, DiagnosisStatus
@@ -52,6 +53,7 @@ from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.evaluation.fake_snapshot import fixture_stable
 from ai.llm.determinism import DETERMINISTIC_TEMPERATURE, LLM_SEED
 from ai.llm.gateway import LlmGateway
+from ai.problem_generation.application import workflow as workflow_module
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import ProblemGenerator
 from ai.problem_generation.application.workflow import (
@@ -61,6 +63,7 @@ from ai.problem_generation.application.workflow import (
     ProblemSourceUnsupported,
     ProblemTenantMismatch,
     ProblemWorkflowConfigurationError,
+    graph_recursion_limit,
 )
 from ai.problem_generation.domain.identity import problem_item_id
 from ai.problem_generation.domain.models import TargetPlan
@@ -883,3 +886,53 @@ def test_workflow_rejects_capability_mismatch_as_internal_error() -> None:
     assert type(error) is ProblemExecutionContextMismatch
     assert error.code == "INTERNAL"
     assert error.http_status == 500
+
+
+def test_graph_recursion_limit_is_derived_not_borrowed_from_the_library() -> None:
+    """🔴 그래프 super-step 상한을 **계약 상한에서 유도한다** (불변식 6 · 99 #08 ⓑ).
+
+    실측(langgraph 1.2.9 · `_internal/_config.py:32`): 기본값이 **10007**이고
+    `LANGGRAPH_DEFAULT_RECURSION_LIMIT` **환경변수로 덮인다** — 상한이 저장소 밖에 있다.
+    ⚠ 종전 langgraph는 이 값이 **25**였다. 핀이 되돌아가면 계약 최대(`count=20`)가
+    라이브러리 기본값을 넘어 **정상 요청이 `GraphRecursionError`로 죽는다.**
+    그래서 「지금 안 죽는다」가 아니라 「유도값을 명시했다」가 이 테스트의 주장이다.
+    """
+    config = load_verify_config()
+
+    one = graph_recursion_limit(count=1, config=config)
+    two = graph_recursion_limit(count=2, config=config)
+    per_slot = two - one
+
+    # 한 슬롯은 최악의 경우 (최초 + 재생성) + 난이도 재생성만큼 돈다.
+    assert per_slot == (config.item_attempt_limit + config.difficulty_regen_max) * 2
+    assert one > per_slot, "여유분이 없으면 START·종단 판정에서 잘린다"
+
+    # 🔴 계약 최대(`count` ≤ 20)가 종전 라이브러리 기본값(25)을 이미 넘는다.
+    largest = graph_recursion_limit(count=20, config=config)
+    assert largest > 25, (
+        "계약 최대 요청이 종전 langgraph 기본값 25를 넘는다 — 유도값을 안 실으면 "
+        "라이브러리 핀 하나로 정상 요청이 GraphRecursionError로 죽는다"
+    )
+    # 선형이라 요청 크기와 무관하게 「한 슬롯 최악」만 알면 된다.
+    assert largest == one + 19 * per_slot
+
+
+def test_the_recursion_limit_actually_reaches_the_graph() -> None:
+    """🔴 **유도값이 실제로 그래프에 전달되는지**를 뒤집어서 본다.
+
+    상한을 계산만 하고 `ainvoke` config에 안 실으면 이 값은 **선언만 있고 소비가 0**이다
+    (99 ㊺ 부류). 유도 함수를 최소값으로 바꿔치면 실행이 `GraphRecursionError`로 끊겨야
+    한다 — 안 끊기면 config 키가 그래프에 닿지 않는 것이다.
+    """
+    harness = _WorkflowHarness(
+        generator_steps=(_item_json("한계"),),
+        verifier_steps=(_solve_json(),),
+    )
+    request = harness.request(count=1, target_source=TargetSource.TEACHER_MANUAL)
+
+    with (
+        pytest.MonkeyPatch.context() as patch,
+        pytest.raises(GraphRecursionError),
+    ):
+        patch.setattr(workflow_module, "graph_recursion_limit", lambda **_: 1)
+        asyncio.run(harness.workflow.run(request, harness.context()))
