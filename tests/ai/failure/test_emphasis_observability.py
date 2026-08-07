@@ -218,21 +218,13 @@ def test_the_whole_chain_runs_through_the_assembly_root() -> None:
 # ── ㉲ 강조점 0건의 이유를 남긴다 ──────────────────────────────────
 
 
-def test_the_five_reasons_are_distinguishable() -> None:
-    """🔴 **다섯** 이유가 값으로 구분된다 — 산출물만 보고 다섯을 가를 수 있어야 한다.
-
-    ⚠ **(8/7) 넷에서 다섯이 됐다**(99 #05) — `redaction_blocked`가 종전에는
-    `llm_failed`에 묶여 있었다. **봐야 할 곳이 다르다**: `llm_failed`는 업스트림,
-    `redaction_blocked`는 **BE가 보낸 컨텍스트**다.
-    ⚠ 값 문자열이 student 노드의 `fail_reason="redaction_blocked"`와 **같다** —
-      한 결함이 어느 노드에서 나느냐에 따라 다르게 기록되던 것을 맞춘 것이다.
-    """
+def test_the_four_reasons_are_distinguishable() -> None:
+    """🔴 네 이유가 **값으로** 구분된다 — 산출물만 보고 넷을 가를 수 있어야 한다."""
     assert {outcome.value for outcome in PlanOutcome} == {
         "ok",
         "llm_failed",
         "unparsed",
         "all_dropped",
-        "redaction_blocked",
     }
 
 
@@ -241,7 +233,6 @@ def test_the_five_reasons_are_distinguishable() -> None:
     [
         ("ok", PlanOutcome.OK),
         ("llm_failed", PlanOutcome.LLM_FAILED),
-        ("redaction_blocked", PlanOutcome.REDACTION_BLOCKED),
         ("unparsed", PlanOutcome.UNPARSED),
         ("all_dropped", PlanOutcome.ALL_DROPPED),
         ("nothing_to_say", PlanOutcome.OK),
@@ -250,7 +241,7 @@ def test_the_five_reasons_are_distinguishable() -> None:
 def test_the_graph_records_why_emphasis_is_empty(
     scenario: str, expected: PlanOutcome
 ) -> None:
-    """🔴 그래프가 **다섯** 경우를 **state에** 남긴다 — 진짜 0건(`nothing_to_say`)은 `ok`다.
+    """🔴 그래프가 네 경우를 **state에** 남긴다 — 진짜 0건(`nothing_to_say`)은 `ok`다.
 
     ⚠ 분모는 **잡**이다. plan은 잡당 1회 사건이라 `StudentResult`·`AGENT_STEP`이 아니라
     잡 단위 state 필드에 남긴다(99 ㊻ⓑ 규율 · 그래프가 이미 같은 근거로 plan 실패를
@@ -260,7 +251,7 @@ def test_the_graph_records_why_emphasis_is_empty(
 
     state = run_plan_scenario(scenario)
     assert state.plan_outcome is expected, (
-        f"{scenario}에서 plan_outcome이 {state.plan_outcome}로 나왔다 — 다섯 이유가 "
+        f"{scenario}에서 plan_outcome이 {state.plan_outcome}로 나왔다 — 네 이유가 "
         "구분되지 않으면 '강조점이 왜 없지'에 답할 수 없다(㉲)"
     )
 

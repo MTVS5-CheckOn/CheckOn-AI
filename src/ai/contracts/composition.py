@@ -246,31 +246,7 @@ class PlanOutcome(StrEnum):
     """정상 — 강조점이 0건이면 **진짜로 없었던 것**이다(모델이 비워 뒀다)."""
 
     LLM_FAILED = "llm_failed"
-    """plan 호출이 실패했다 — **전송 오류**(`LlmTimeout`·`LlmUnavailable`).
-
-    ⚠ **(8/7 정정) 종전 문면은 `outcome≠OK`·마스킹 fail-closed도 여기 넣었다.**
-    · `outcome≠OK`는 **도달 불가 방어**다 — 전 provider가 `OK`만 반환한다(99 ㉴ 전수 실측).
-    · **마스킹 fail-closed는 `REDACTION_BLOCKED`로 분리했다**(아래 · 99 #05).
-    """
-
-    REDACTION_BLOCKED = "redaction_blocked"
-    """plan 프롬프트의 **마스킹이 불확실해 전송하지 않았다**(fail-closed · 불변식 3).
-
-    🔴 **`llm_failed`와 갈라야 하는 이유는 「봐야 할 곳」이 다르기 때문이다** —
-    `llm_failed`를 본 사람은 **벤더·네트워크**를 보지만, 실제 원인은 *"우리 프롬프트에
-    마스킹 안 되는 값이 섞였다"* 이고 봐야 할 곳은 **BE가 보낸 컨텍스트**다.
-
-    🔴 **파급이 학생 단위보다 크다.** `assemble_plan_prompt(contexts, student_refs)`는
-    **잡의 모든 학생 컨텍스트를 한 프롬프트에** 담으므로, 한 학생의 fact 하나가
-    불확실해도 **잡 전체가 무강조**가 된다(student 노드는 그 학생 하나만 실패한다).
-    ⚠ 그런데 종전에는 **plan 쪽이 더 뭉개져 있었다** — student는 같은 예외를
-    `fail_reason="redaction_blocked"`로 **구분**하는데 plan만 `llm_failed`로 묶었다.
-    **값 문자열을 student와 같게 둔 것**이 그 대칭이다.
-
-    ⚠ **안전 결함이 아니다** — 전송 전 차단이고(불변식 3 준수) plan 실패는 **무강조
-    진행**이라 초안은 계속 만들어진다. 이건 **관측 축**이다.
-    ⚠ 실 LLM 4차(8/7)에서 이 경로는 **관측된 적 없다** — 도달 가능하되 미실증이다.
-    """
+    """plan 호출이 실패했다(전송 오류·outcome≠OK·마스킹 fail-closed)."""
 
     UNPARSED = "unparsed"
     """응답은 왔는데 **형식을 안 지켜** 파싱 결과가 0건이다 — 프롬프트 준수 문제."""
