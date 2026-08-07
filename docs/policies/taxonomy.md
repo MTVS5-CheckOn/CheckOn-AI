@@ -59,7 +59,21 @@ v1 자동 문제생성의 `ProblemRequest.area_tag`는 **세트당 하나**다. 
 
 ## 3. `type_tag` — 인지 유형 (area와 직교, 변경 없음)
 
-`fact`(사실 확인) | `infer`(추론) | `critic`(비판·평가) | `concept`(개념·지식). 모든 area와 조합 가능 — 예: `literature × infer`(화자 정서 추론), `language × concept`(음운 규칙 지식).
+`fact`(사실 확인) | `infer`(추론) | `critic`(비판·평가) | `concept`(개념·지식) | **`apply`(적용·창의 — 🔴 v1 미산출 · 어휘 예약)**. 모든 area와 조합 가능 — 예: `literature × infer`(화자 정서 추론), `language × concept`(음운 규칙 지식).
+
+🔴 **`apply` 예약(8/8 · 99 ㊣) — 평가원 5축을 계약에 담되 v1 산출은 4종이다.** `item_format`의 `short`·`essay`와 같은 예약이지만 **처방이 다르다** — `item_format`은 요청 파라미터라 우리가 만들지 않지만 `type_tag`는 **여러 문으로 들어온다.** 문마다 답이 다르다:
+
+| 문 | v1 처방 | 근거 |
+| --- | --- | --- |
+| **산출**(우리가 만든다) | **안 낸다** | 골든셋에 `apply` 표본이 없어 검증 불가(99 ㊛). ⚠ 실측상 **산출하는 자리 자체가 없다** — `composition/classify/`에 `TypeTag` 참조 0건 |
+| **출제 요청**(BE → `ProblemRequest.type_tags`) | **400 `type_tag_not_supported`** `[제안]` | 주체 3분할 — 호출자가 요청을 고쳐야 한다(`source_procurement_not_implemented` 선례). **구현은 B 몫** |
+| **학습 이벤트**(BE → `LearningEvent.type_tag`) | 🔴 **받는다** | 강사가 매긴 태그가 흘러온 것이고 **우리 v1 범위와 무관한 사실**이다. 막으면 구현 범위 때문에 데이터를 왜곡하고 ㊛의 재료를 만들 경로를 닫는다 |
+| **완전성 검사**(`difficulty_weights`) | 가중치를 **안 갖는다** | 보정 미배선(`difficulty_regen_enabled: false`)인데 `0.0`을 넣으면 *"적용·창의는 난이도 가산 0"* 이라는 **없는 사실**이 생긴다 |
+| **표시 라벨**(`_TYPE_KO`) | 🔴 **갖는다**(`"적용"`) | 학습 이벤트를 받는 이상 R6 브리핑까지 흘러간다. 라벨이 없으면 `.get()` 폴백이 **영문**이라 *"문학·apply"* 가 학부모 문장에 섞이고 **게이트가 못 막는다** |
+
+⚠ **아래 §5의 「소비처 4곳 동시 개정 필수」는 이 예약에 해당하지 않는다** — 그 규약은 **산출 어휘가 바뀔 때**의 것이고, 예약은 **산출을 안 늘린다.** 실제로 이 개정은 4곳 중 어디도 안 건드렸다(태깅 프롬프트·골든셋·threshold 시트·표시 매핑 중 **표시 매핑만** 라벨을 얻었고 그건 누출 방지다).
+
+**여는 조건:** 99 ㊛ 태깅 골든셋에 `apply` 표본이 쌓이고 baseline이 정해질 때. 그날 `V1_TYPE_TAGS`가 자동으로 넓어지고 `verify_config.yaml`이 red를 내서 가중치를 같이 넣게 된다.
 
 ## 4. `item_format` — 문항 형식 (신규 축)
 

@@ -85,7 +85,7 @@
 
 **[PART_A+PART_B] 승인 확장:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이며, `AI_RUN` 컬럼·`meta.versions`와 1:1이다. 현재 정식 키 집합은 공통 6종(`pipeline`·`engine`·`threshold`·`prompt`·`schema`·`contract`) + [PART_B] 실행 전용 nullable 4종(`graph`·`taxonomy`·`verify_config`·`difficulty_calib`)인 **총 10종**이다. 위 JSON은 특정 capability의 예시이며, nullable 값은 실행 종류에 따라 달라진다.
 
-nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 **LLM 미사용 실행**에서 null · `graph`·`taxonomy`·`verify_config`는 관련 [PART_B] 실행 외에는 null · `difficulty_calib`은 `problem_generation` 외에는 null.
+nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 **LLM 미사용 실행**에서 null · `graph`·`taxonomy`·`verify_config`는 관련 [PART_B] 실행 외에는 null · `difficulty_calib`은 **난이도 보정을 실제로 적용한 실행에서만** 채워진다 — `problem_generation` 외에는 항상 null이고, **v1은 보정 미배선(`difficulty_regen_enabled: false`)이라 pg도 null**이다. ⚠ **(8/8 정정)** 종전 표기는 *"`problem_generation` 외에는 null"* 이라 **capability 축**으로 읽혔는데, 이 키는 `prompt`와 같은 **사용 축**이다 — *"pg면 채워야 하는 것"* 으로 읽히던 것을 바로잡는다.
 
 > 🔴 **(8/8 정정) 위 괄호가 `(감지·진단)`이었는데 감지는 LLM을 쓴다.** 경보 브리핑 문장화(ⓐ)가 **선형 LLM 1콜**이고(위 §1 표 · `part_a/01_pipeline.md` ⓐ) 이 문서 자신도 `brief`를 *"LLM 생성 + 왜곡 게이트 통과분"* 이라고 적는다. 그 괄호는 **브리핑이 붙기 전**에 쓰였고, 그동안 `/v1/detect`의 응답과 `AI_RUN`이 **둘 다 `prompt=null`** 인 채로 프롬프트 `0.2`를 쓰고 있었다 — *"그때 어떤 프롬프트로 브리핑을 만들었나"* 를 원장에서 못 읽었다(불변식 8). 지금은 `briefing.PROMPT_VERSION`을 싣는다. ⚠ **브리핑이 폴백으로 LLM을 안 탄 실행에서도 싣는다** — 버전 세트는 *"이 실행이 어떤 버전으로 조립됐나"* 이고, 실제 사용 여부는 신호별 `brief.fallback_used`가 따로 말한다.
 
@@ -456,7 +456,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
   "data": {
     "suggestion_id": "uuid",
     "area_tag": "reading",             // 수능 6영역 enum (Open-11 확정 7/15): reading·literature·speech·writing·language·media
-    "type_tag": "infer",               // fact | infer | critic | concept
+    "type_tag": "infer",               // fact | infer | critic | concept | apply(v1 미산출·예약)
     "item_format": "mcq",              // mcq | short | essay
     "confidence": 0.92,
     "cached": true                     // true = 같은 명명 패턴 캐시 히트 (LLM 호출 0회 — 비용 없음)
@@ -661,7 +661,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 | `correct` | bool | solve만 | 정답률(R1·R6) | |
 | `duration_sec` | int | solve만 | 풀이시간(R4) | 없으면 R4 미적용(대체 신호) |
 | `passage_word_count` | int | 지문형만 | **어절 정규화** | 국어 특화의 핵심 필드 |
-| `area_tag` / `type_tag` | enum | 있으면 | 유형별 정답률(R6)·약점 지도 | 미태깅 허용 — 태깅 제안이 채움. **area 값(수능 6영역): `reading(독서)·literature(문학)·speech(화법)·writing(작문)·language(언어/문법)·media(매체)`** + `subject_track: common·elective` 메타 · `item_format: v1은 mcq만`(short·essay 예약) — Open-11 확정(7/15) |
+| `area_tag` / `type_tag` | enum | 있으면 | 유형별 정답률(R6)·약점 지도 | 미태깅 허용 — 태깅 제안이 채움. **area 값(수능 6영역): `reading(독서)·literature(문학)·speech(화법)·writing(작문)·language(언어/문법)·media(매체)`** · **type 값(평가원 5축): `fact·infer·critic·concept·apply`** — 🔴 **`apply`는 v1 미산출·예약**이다(99 ㊣). 학습 이벤트에는 **보내도 된다**(받아서 R6 집계·표시까지 한다). **출제 요청(`POST /v1/problems`의 `type_tags`)에 보내면 400 `type_tag_not_supported`** `[제안 · B 구현 대기]` + `subject_track: common·elective` 메타 · `item_format: v1은 mcq만`(short·essay 예약) — Open-11 확정(7/15) |
 | `assignment_title_text` | string | 있으면 | **태깅 제안(ⓒ) 입력** | ⚠ `[Open-4b]` 제공 불가 시 기능 자체 불가 |
 | `source` | enum `trackA·trackB·studentHome` | ✅ | 품질 가중 | |
 

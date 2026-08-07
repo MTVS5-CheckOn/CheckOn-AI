@@ -53,11 +53,22 @@ _AREA_KO: dict[AreaTag, str] = {
     AreaTag.LANGUAGE: "언어",
     AreaTag.MEDIA: "매체",
 }
+#: 🔴 **`TypeTag` 전 항목을 덮어야 한다 — 예약 태그도 포함이다**(99 ㊣).
+#: `_r6_facts`가 `.get(tag, tag.value)`로 읽으므로 **누락은 `KeyError`가 아니라 영문
+#: 누출**이다: `"문학·apply"` 가 프롬프트에 실리고 학부모 문장이 된다. 🔴 브리핑 게이트가
+#: **못 막는다** — `_SYMBOL_RE`에 영문이 없고 금칙어도 숫자도 아니다(8/8 실증: 그 문장이
+#: `check_brief_gate`를 `passed=True`로 통과했다).
+#: ⚠ **표시 어휘를 갖는 것과 산출을 허용하는 것은 다른 축이다** — `V1_TYPE_TAGS`가 아니라
+#: `TypeTag` 전체가 기준이다. 받은 것은 사람이 읽을 수 있게 표시한다.
 _TYPE_KO: dict[TypeTag, str] = {
     TypeTag.FACT: "사실",
     TypeTag.INFER: "추론",
     TypeTag.CRITIC: "비판",
     TypeTag.CONCEPT: "개념",
+    #: ⚠ 평가원 용어는 **「적용·창의」** 이나 `_r6_facts`가 `f"{area}·{type_}"` 로 조립하므로
+    #: 그대로 쓰면 `"문학·적용·창의"` 가 되어 **구분자가 모호해진다.** 기존 넷이 전부 2글자인
+    #: 것도 같은 이유로 보인다 — 짧은 형을 쓴다.
+    TypeTag.APPLY: "적용",
 }
 
 #: 세그먼트 → 프롬프트용 한글 맥락(강사에게 배경으로만 제공, 문장 강제 아님).

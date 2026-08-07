@@ -9,6 +9,7 @@
 """
 
 from enum import StrEnum
+from typing import Final
 
 from pydantic import BaseModel, ConfigDict
 
@@ -54,7 +55,33 @@ class SubjectTrack(StrEnum):
 
 
 class TypeTag(StrEnum):
-    """인지 유형 — 어휘집 §3. area와 직교하며 모든 area와 조합 가능."""
+    """인지 유형 — 어휘집 §3. area와 직교하며 모든 area와 조합 가능.
+
+    🔴 **평가원 5축을 계약에 담되 v1 산출은 4종이다** — `APPLY`는 **어휘 예약**(99 ㊣).
+
+    ⚠ `item_format`의 `short`·`essay`와 같은 예약이지만 **처방이 다르다.**
+    `item_format`은 요청 파라미터라 우리가 만들지 않지만 `type_tag`는 **여러 문으로
+    들어온다.** 문마다 답이 다르다(8/8 전수 실측):
+
+      · **산출**(우리가 만든다) — **안 낸다.** 골든셋에 `apply` 표본이 없어 검증 불가(㊛).
+        ⚠ 실측상 **지금은 산출하는 자리 자체가 없다** — `composition/classify/`에 `TypeTag`
+        참조가 **0건**이고, 태그 제안(`kind: tag`)은 400 `kind_not_implemented`다
+      · **출제 요청**(BE → `ProblemRequest.type_tags`) — **400 `type_tag_not_supported`.**
+        주체 3분할상 호출자가 요청을 고쳐야 한다(`source_procurement_not_implemented` 선례).
+        ⚠ **구현은 B 몫**이고 이 PR은 `error_codes`에 `[제안]`으로 자리만 잡는다
+      · **학습 이벤트**(BE → `LearningEvent.type_tag`) — 🔴 **받는다.** 강사가 매긴 태그가
+        흘러온 것이고 **우리 v1 범위와 무관한 사실**이다. 막으면 구현 범위 때문에 데이터를
+        왜곡하고(㉡·㊢ 부류) ㊛의 재료를 만들 경로를 닫는다
+      · **완전성 검사**(설정 · `difficulty_weights`) — 예약 태그는 **가중치를 안 갖는다**
+      · **표시 라벨**(`_TYPE_KO`) — 🔴 **갖는다.** 학습 이벤트를 받는 이상 R6 브리핑까지
+        흘러가고(`LearningEvent` → `features.cells` → `_r6_facts`), 라벨이 없으면
+        `.get()` 폴백이 **enum 값(영문)** 이라 *"문학·apply"* 가 학부모 문장에 섞인다
+
+    🔴 **문마다 답이 다른 것이 이 예약의 전부다** — 하나로 뭉치면 어느 하나를 잘못 막는다.
+    **입력은 받고 출력은 안 하되, 받은 것은 사람이 읽을 수 있게 표시한다.**
+
+    **여는 조건:** ㊛ 태깅 골든셋에 `apply` 표본이 쌓이고 baseline이 정해질 때.
+    """
 
     FACT = "fact"
     """사실 확인."""
@@ -67,6 +94,24 @@ class TypeTag(StrEnum):
 
     CONCEPT = "concept"
     """개념·지식 — 예: language × concept(음운 규칙 지식)."""
+
+    APPLY = "apply"
+    """적용·창의 — 🔴 **v1 미산출 · 출제 요청 미수용 · 어휘 예약.** 표시 라벨은 갖는다.
+
+    ⚠ **맨 뒤에 둔다** — 앞 넷의 값·순서는 DB·골든셋·설정 YAML에 문자열로 살아 있다.
+    """
+
+
+#: 🔴 **예약을 명시하고 v1을 뺄셈으로 유도한다.** 반대로 4종을 나열하면 새 값이 생길 때
+#: **조용히 지원 목록에 안 들어가고**(fail-open) 아무도 모른다 — 이 저장소가 목록형으로
+#: 아홉 번 당한 그 형태다(로그 67). 뺄셈이면 새 값은 기본이 **「지원」** 이고, 예약하려면
+#: **여기 명시적으로 적어야** 한다.
+RESERVED_TYPE_TAGS: Final = frozenset({TypeTag.APPLY})
+
+#: v1이 실제로 산출·수용하는 축. 🔴 **소비처가 이것 하나를 참조한다** — 4종 목록을 여러
+#: 곳에 복제하면 한 곳만 고쳐진다(`test_type_tag_reservation`의 AST 가드가 잡는다).
+#: ⚠ **표시 라벨은 이 집합이 아니라 `TypeTag` 전체를 덮어야 한다** — 예약도 표시된다.
+V1_TYPE_TAGS: Final = frozenset(TypeTag) - RESERVED_TYPE_TAGS
 
 
 class ItemFormat(StrEnum):
