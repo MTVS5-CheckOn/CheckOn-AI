@@ -68,7 +68,7 @@ def test_draft_echoing_the_period_label_passes_gate() -> None:
     result = check_counsel_gate(
         f"{_PERIOD} 학습 상황을 전해 드립니다. 이번 주 정답률은 62%였습니다.",
         context,
-        max_chars=max_chars_for(context),
+        max_chars=max_chars_for(context), min_chars=0,
     )
     assert result.passed, result.reason
 
@@ -82,7 +82,7 @@ def test_number_outside_every_source_is_still_rejected() -> None:
     """역케이스 — 창작 수치 차단은 불변이다(불변식 1·2). ㉘ 수정이 게이트를 무르게 하지 않는다."""
     context = _context()
     result = check_counsel_gate(
-        "정답률이 83%까지 올랐습니다.", context, max_chars=max_chars_for(context)
+        "정답률이 83%까지 올랐습니다.", context, max_chars=max_chars_for(context), min_chars=0
     )
     assert not result.passed
     assert result.reason == "ungrounded_number:83"

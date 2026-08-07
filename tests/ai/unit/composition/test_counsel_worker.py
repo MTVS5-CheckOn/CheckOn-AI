@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
+from counsel_text import draft
 from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.agents.job_store import InMemoryJobStore, StaleLeaseError
@@ -145,7 +146,7 @@ def _harness(
     supervisor = _supervisor()
     contexts = InMemoryContextStore()
     sink = InMemoryAgentStepSink()
-    fake = provider or FakeCounselProvider(drafts=["정답률은 62%였습니다."])
+    fake = provider or FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")])
     runner = CounselPackRunner(
         supervisor=supervisor,
         context_store=contexts,
@@ -188,7 +189,7 @@ def test_enqueue_then_run_succeeds() -> None:
 def test_partial_failure_still_succeeds() -> None:
     """"N명 중 M명 생성"은 failed가 아니라 succeeded + summary(error_codes §2.5)."""
     refs = ["st_1", "st_2"]
-    provider = FakeCounselProvider(drafts=["정답률이 88%까지 올랐습니다."])  # 게이트 소진
+    provider = FakeCounselProvider(drafts=[draft("정답률이 88%까지 올랐습니다.")])  # 게이트 소진
     supervisor, runner, contexts, sink = _harness(refs, provider=provider)
     enqueuer = CounselPackEnqueuer(
         supervisor=supervisor, context_store=contexts, new_id=_counter(), now=lambda: _NOW

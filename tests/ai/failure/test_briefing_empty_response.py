@@ -274,7 +274,7 @@ def test_the_counsel_gate_does_catch_emptiness() -> None:
         period_label="2026년 8월",
         fallback_text="f",
     )
-    result = check_counsel_gate("", context=context, max_chars=360)
+    result = check_counsel_gate("", context=context, max_chars=360, min_chars=0)
     assert result.passed is False
     assert result.reason == "empty"
 

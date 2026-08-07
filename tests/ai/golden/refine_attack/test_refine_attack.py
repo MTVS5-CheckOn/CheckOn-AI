@@ -15,6 +15,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from counsel_text import draft
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
@@ -272,7 +273,7 @@ def test_post_generation_block_uses_the_full_regen_budget() -> None:
 
 def test_style_instruction_is_applied() -> None:
     """A 분류(스타일)는 반영된다 — 과차단은 미차단만큼 나쁘다."""
-    writer = _EchoWriter("이번 기간 정답률은 62%였습니다. 다음 달 계획을 함께 세우겠습니다.")
+    writer = _EchoWriter(draft("이번 기간 정답률은 62%였습니다. 다음 달 계획을 함께 세우겠습니다."))
     outcome = asyncio.run(
         refine_draft(
             context=_context(),
@@ -288,7 +289,7 @@ def test_style_instruction_is_applied() -> None:
 
 def test_applied_turn_over_http_carries_citations(client: TestClient) -> None:
     """반영 턴도 근거를 다시 싣는다(불변식 2 — 계약 §4-④)."""
-    set_counsel_provider(_EchoWriter("이번 기간 정답률은 62%였습니다."))
+    set_counsel_provider(_EchoWriter(draft("이번 기간 정답률은 62%였습니다.")))
     job_id = _generated_job_id(client)
     response = client.post(
         f"/v1/counsel/drafts/{job_id}/refine",
@@ -313,7 +314,7 @@ def test_unknown_job_is_404(client: TestClient) -> None:
 
 def test_turn_no_does_not_gate_anything(client: TestClient) -> None:
     """AI는 턴 상한을 판정하지 않는다 — 쿼터는 전부 백엔드다(7/15 BE-4)."""
-    set_counsel_provider(_EchoWriter("이번 기간 정답률은 62%였습니다."))
+    set_counsel_provider(_EchoWriter(draft("이번 기간 정답률은 62%였습니다.")))
     job_id = _generated_job_id(client)
     for turn in (1, 50, 999):
         response = client.post(
