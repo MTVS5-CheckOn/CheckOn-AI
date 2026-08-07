@@ -20,6 +20,8 @@ from ai.import_mapping.probe.state import (
 _PROFILE_ID = UUID("00000000-0000-4000-8000-000000000001")
 
 # §2.2를 손으로 옮긴 기대 필드 집합.
+# ⚠ **같은 한계다** — 코드 ↔ 손사본이라 **문서가 바뀌면 조용하다**(99 #07 ·
+#   `tests/ai/unit/composition/test_counsel_state.py`에 상세).
 _EXPECTED_STATE_FIELDS = {
     "state_schema_version",
     "tenant_id",

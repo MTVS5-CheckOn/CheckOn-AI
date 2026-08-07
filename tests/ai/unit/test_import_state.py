@@ -18,6 +18,8 @@ from ai.import_mapping.state import (
 )
 
 #: 10_import_spec §2 그림을 손으로 옮긴 기대표 — 이 값이 곧 계약이다.
+#: ⚠ **같은 한계다** — `ALL_TRANSITIONS`(코드) ↔ 손사본이라 **그림이 바뀌면 조용하다**
+#:   (99 #07). 코드가 바뀌면 red가 나는 방향만 지킨다.
 _EXPECTED: dict[S, set[S]] = {
     S.PROFILING: {S.INFERRING, S.PREVIEW_READY, S.FAILED},
     S.INFERRING: {S.PROBING, S.PREVIEW_READY, S.FAILED},

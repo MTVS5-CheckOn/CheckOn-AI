@@ -123,8 +123,9 @@ class CounselPackResultRecord(BaseModel):
     #: ⚠ `plan_outcome`과 **같은 이유·같은 형태**다 — 잡이 끝나면 체크포인트는 재개 대상이
     #: 아니라 사후에 읽을 사람이 없다(㉲). 기본값도 같은 이유로 둔다(기존 레코드 호환).
     #: 🔴 **빈 값이 「없음」인지 「안 쟀음」인지는 `plan_outcome`이 가른다** — `OK`+빈 값은
-    #: 고를 게 없었던 것, `ALL_DROPPED`는 전량 드롭, `LLM_FAILED`·`UNPARSED`는 plan 실패다.
-    #: 이 필드 하나만 보고 판단하지 마라.
+    #: 고를 게 없었던 것, `ALL_DROPPED`는 전량 드롭, `LLM_FAILED`·`UNPARSED`는 plan 실패,
+    #: `REDACTION_BLOCKED`는 **마스킹 불확실로 미전송**이다(99 #05 — `LLM_FAILED`와 갈라 둔
+    #: 값이라 같은 묶음에 넣지 않는다). 이 필드 하나만 보고 판단하지 마라.
     #: ⚠ 타입은 `graph.py:201`이 넘기는 것과 같다(`tuple[str, ...]`) — 새 타입을 만들지 않았다.
     emphasis_points: Mapping[str, tuple[str, ...]] = {}
 

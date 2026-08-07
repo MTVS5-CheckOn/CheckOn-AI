@@ -354,17 +354,7 @@ erDiagram
 
   AI_RUN {
     uuid execution_id PK
-    varchar tenant_id "teacher alias · 격리 키"
-    varchar capability "detection|composition|import_mapping"
-    varchar pipeline_version
-    varchar engine_version
-    varchar prompt_version "LLM 미사용 시 null"
-    varchar schema_version
-    varchar model_provider
-    varchar model_name
-    jsonb generation_params
-    varchar input_snapshot_hash "재현성 키"
-    timestamptz created_at
+    varchar tenant_id "격리 키 — 🔴 컬럼 정본은 06_erd.md의 AI_RUN 블록이다"
   }
   AGENT_RUN {
     uuid id PK
@@ -605,6 +595,12 @@ erDiagram
     uuid llm_call_id FK
   }
 ```
+
+> 🔴 **`AI_RUN`의 컬럼 정본은 [`docs/06_erd.md`](../06_erd.md)의 `AI_RUN` 블록이다** — 여기는 **관계만** 그린다(8/9 · 99 #02 판정 ⓑ · B 지지).
+>
+> **왜 하나로 두는가:** 같은 목록이 두 곳에 있으면 갈린다(`policies/error_codes.md` §7이 이미 세운 원칙). ⚠ **실제로 갈려 있었다** — 이 블록의 `capability`가 `detection|composition|import_mapping` **3종**이었는데 `contracts/execution.py`의 `Capability`는 **5종**이다(`diagnosis`·`problem_generation`이 빠졌다). 🔴 **갈린 방향이 「A 문서에서 B의 값이 빠지는 쪽」이었다** — B가 지적한 대로 *"A 문서에 B 값이 사는 형태는 **갱신 동기가 없는 쪽에 정본이 있는 것**"* 이다. `verify_config`·`taxonomy` 등 version 컬럼 5개도 통째로 없었다.
+>
+> ⚠ **06 쪽 하나를 `tests/ai/contract/test_doc_enum_parity.py`가 지킨다** — `varchar capability "…"` 주석과 `Capability` 멤버가 갈리면 red다. **정본을 하나로 줄인 것과 그 하나를 대조로 잠근 것이 짝**이고, 둘 중 하나만 하면 값이 없다.
 
 > **양자 승인 대상:** `EVIDENCE_ITEM` 구조 · `LLM_CALL` 지표 필드(기존) + **`TAG_SUGGESTION`의 area/type enum**(B의 약점 지도와 공용 어휘). `ENGINE_REGISTRY`·`THRESHOLD_CONFIG`·`AGENT_*`는 A 단독.
 

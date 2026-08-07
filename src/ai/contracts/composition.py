@@ -235,7 +235,7 @@ class DraftStatus(StrEnum):
 class PlanOutcome(StrEnum):
     """plan 노드의 결과 사유 — **강조점 0건의 이유**를 가른다(`langgraph_state` §1.2 · 99 ㉲).
 
-    산출물만 보면 네 경우가 같다. 종전에 남는 것은 `logger.info` 두 줄뿐이라
+    산출물만 보면 다섯 경우가 같다. 종전에 남는 것은 `logger.info` 두 줄뿐이라
     *"강조점이 왜 없지"* 를 물었을 때 볼 것이 없었다.
 
     ⚠ **분모는 잡이다** — plan은 잡당 1회 사건이라 `StudentResult`가 아니라 잡 단위
