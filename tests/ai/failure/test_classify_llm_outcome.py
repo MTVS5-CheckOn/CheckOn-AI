@@ -194,3 +194,68 @@ def test_redaction_blocked_is_a_subclass_of_llm_error() -> None:
     """
     assert issubclass(RedactionBlocked, LlmError)
     assert not issubclass(LlmError, RedactionBlocked)
+
+
+# ── HTTP 층: 변환 경계가 실제로 이 경로에서 도는가 ─────────────────
+
+
+def test_http_layer_turns_the_failure_into_a_gateway_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """🔴 올린 장애가 `/v1/classify`에서 **5xx로 나가고 AI_RUN이 남는다**.
+
+    #119가 이 라우터에 `domain_error_for` 변환 경계와 `finally` 원장을 붙였다 — 이 PR이
+    던지기 시작한 예외가 **그 경계에 실제로 닿는지**를 본다. 닿지 않으면 이 PR은
+    *"예외를 만들었는데 아무도 안 받는"* 상태다.
+
+    ⚠ **주입 seam이 없다** — 라우터가 `build_classify_gateway()`를 직접 부른다. 그래서
+    그 팩토리를 monkeypatch한다(라우터에 seam을 새로 뚫는 것은 이 PR의 범위 밖이다).
+
+    ⚠ **`outcome≠OK`는 plain `LlmError`라 500이다**(`error_codes` §4 매핑표) — counsel과
+    대칭을 맞춘 결과다. 여기서는 `LlmTimeout`(504)으로 경계 자체가 도는지를 본다.
+    `outcome=TIMEOUT`이 504가 아니라 500이 되는 것은 **실무상 도달하지 않지만**(99 ㉴ —
+    게이트웨이가 타입 예외로 re-raise한다) 도달하게 되면 다시 판정해야 한다.
+    """
+    import importlib.util
+
+    from fastapi.testclient import TestClient
+
+    from ai.api.app import create_app
+    from ai.api.routers import classify as classify_router
+    from ai.api.routers.counsel import set_counsel_provider
+    from ai.composition.counsel.provider import FakeCounselProvider
+    from ai.contracts.llm import LlmTimeout
+    from ai.db.repositories.run_store import InMemoryRunStore
+
+    spec = importlib.util.spec_from_file_location(
+        "tr", "tests/ai/integration/test_classify_router.py"
+    )
+    assert spec is not None and spec.loader is not None
+    router_test = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(router_test)
+
+    class _TimeoutGateway:
+        async def complete(
+            self, request: LLMRequest, context: ExecutionContext
+        ) -> LLMResult:
+            del request, context
+            raise LlmTimeout("업스트림 무응답")
+
+    store = InMemoryRunStore()
+    classify_router.reset_inquiry_class_store()
+    classify_router.set_classify_run_store(store)
+    monkeypatch.setattr(classify_router, "build_classify_gateway", _TimeoutGateway)
+    set_counsel_provider(FakeCounselProvider())  # counsel 기동 가드
+
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        response = client.post(
+            "/v1/classify", json=router_test._REQUEST, headers=router_test._HEADERS
+        )
+
+    assert response.status_code == 504, (
+        f"LlmTimeout이 {response.status_code}로 나갔다 — #119의 변환 경계가 이 경로에서 "
+        "안 도는 것이다(error_codes §4: LlmTimeout → 504 TIMEOUT)"
+    )
+    assert response.json()["error"]["code"] == "TIMEOUT"
+    #: #119의 `finally` 원장 — 장애 턴도 AI_RUN이 남는다(불변식 8).
+    assert store.runs, "장애 응답에서 AI_RUN이 안 남았다 — #119의 finally가 이 경로에 없다"
