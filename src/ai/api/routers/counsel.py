@@ -941,7 +941,16 @@ async def _record_refine_run(
                 created_at=_clock(),
                 model_provider=last.provider if last is not None else None,
                 model_name=last.model if last is not None else None,
-                generation_params=COUNSEL_GEN_PARAMS,
+                # 🔴 **사용 축이다**(#144 · 04 §2.2 8/10 확정) — 이 턴이 **실제로 쓴**
+                #    샘플링 파라미터다. 상수로 두면 LLM을 안 부른 턴(생성 전 차단·장애)에
+                #    *"그 값으로 돌렸다"* 는 **거짓**이 남는다.
+                #    ⚠ 종전엔 이 한 줄만 무조건이라 **같은 행 안에서 축이 갈렸다** —
+                #      바로 위 두 줄은 이미 조건부였다. `worker.py`가 셋 다 조건부로
+                #      두고 *"한 행 안에서 축이 갈리면 읽는 쪽이 어느 쪽으로도 읽는다"* 고
+                #      경고까지 적어 뒀는데 **refine만 안 따랐다**(99 #11 ⓒ · 8/07 해소).
+                generation_params=(
+                    COUNSEL_GEN_PARAMS if last is not None else None
+                ),
             ),
             calls,
         )
