@@ -283,7 +283,11 @@ def _all_llm_error_types() -> set[type[LlmError]]:
             continue
         discovered.add(error_type)
         pending.extend(error_type.__subclasses__())
-    return discovered
+    return {
+        error_type
+        for error_type in discovered
+        if error_type.__module__ == LlmError.__module__
+    }
 
 
 def _route_params(
@@ -306,7 +310,7 @@ def test_llm_error_route_tables_cover_recursive_hierarchy() -> None:
         missing = discovered - routes.keys()
         unexpected = routes.keys() - discovered
         assert not missing and not unexpected, (
-            f"LlmError 전칭 표 {table_name}가 계층과 다르다. "
+            f"contracts.llm의 LlmError 전칭 표 {table_name}가 계층과 다르다. "
             f"표에 없는 예외={sorted(cls.__name__ for cls in missing)}, "
             f"계층에 없는 표 항목={sorted(cls.__name__ for cls in unexpected)}. "
             f"tests/ai/unit/problem_generation/test_workflow.py의 {table_name}에 "
