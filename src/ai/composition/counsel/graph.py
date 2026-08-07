@@ -139,6 +139,17 @@ def build_counsel_graph(
         except PlanUnparsedError as exc:
             logger.info("plan 응답 형식 위반 — 무강조 진행 detail=%s", exc)
             return {"emphasis_points": {}, "plan_outcome": PlanOutcome.UNPARSED}
+        # 🔴 **`RedactionBlockedError`도 `LlmError` 하위라 여기가 `LlmError`보다 먼저다** —
+        #    student 노드·`refine.py`가 이미 같은 순서 규약을 쓴다. 종전에는 이 절이 없어
+        #    **plan만** 마스킹 차단을 `llm_failed`로 묶었다(99 #05).
+        #    ⚠ 값 문자열을 student의 `fail_reason="redaction_blocked"`와 **같게** 뒀다 —
+        #      한 결함이 어느 노드에서 나느냐에 따라 다르게 기록되던 것을 맞춘 것이다.
+        except RedactionBlockedError:  # fail-closed — 미전송(불변식 3)
+            logger.info("plan 프롬프트 마스킹 불확실 — 미전송 · 무강조 진행")
+            return {
+                "emphasis_points": {},
+                "plan_outcome": PlanOutcome.REDACTION_BLOCKED,
+            }
         except LlmError as exc:  # plan 실패 = 무강조 진행(초안은 계속 만든다)
             logger.info("plan 실패 — 무강조 진행 reason=%s", type(exc).__name__)
             return {"emphasis_points": {}, "plan_outcome": PlanOutcome.LLM_FAILED}

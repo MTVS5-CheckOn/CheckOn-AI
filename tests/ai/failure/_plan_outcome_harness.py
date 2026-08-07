@@ -17,7 +17,10 @@ from uuid import UUID
 from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.composition.counsel.graph import build_counsel_graph
-from ai.composition.counsel.provider import PlanUnparsedError
+from ai.composition.counsel.provider import (
+    PlanUnparsedError,
+    RedactionBlockedError,
+)
 from ai.composition.counsel.state import CounselPackState
 from ai.composition.counsel.stores import InMemoryDraftResultStore
 from ai.contracts.composition import (
@@ -42,6 +45,10 @@ _PLANS: dict[str, dict[str, list[str]] | Exception] = {
     "ok": {"st_1": ["정답률 흐름 (record_id=le_2041)"]},
     # 호출 자체가 실패한다.
     "llm_failed": LlmUnavailable("plan 업스트림 장애"),
+    # 🔴 마스킹 불확실 — **전송 자체를 안 했다**(fail-closed · 불변식 3).
+    #    ⚠ `RedactionBlockedError`도 `LlmError` 하위라, 그래프의 절 순서가 뒤집히면
+    #      `llm_failed`로 뭉개진다 — 이 시나리오가 그 순서를 고정한다(99 #05).
+    "redaction_blocked": RedactionBlockedError("plan 프롬프트의 마스킹이 불확실하다"),
     # 응답은 왔는데 형식을 안 지켰다 — planner가 갈라서 올린다(그래프는 dict로는 못 안다).
     "unparsed": PlanUnparsedError("plan 응답이 형식을 지키지 않았다 — 파싱 0건(응답 24자)"),
     # 파싱은 됐는데 전부 없는 record_id다 → 근거 검증에서 전량 드롭.
