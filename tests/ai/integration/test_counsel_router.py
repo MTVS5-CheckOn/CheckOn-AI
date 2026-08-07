@@ -22,6 +22,7 @@ from ai.composition.counsel.provider import FakeCounselProvider
 from ai.composition.counsel.stores import InMemoryPackResultStore
 from ai.contracts.composition import DraftContext, PlanOutcome
 from ai.contracts.execution import ExecutionContext
+from ai.db.repositories.run_store import InMemoryRunStore
 from ai.db.store_factory import reset_shared_agent_runtime
 
 _HEADERS = {
@@ -369,6 +370,32 @@ def test_refine_inherits_the_emphasis_the_first_draft_chose(client: TestClient) 
     assert refined[0] == initial[0], (
         f"refine이 다른 강조점을 받았다: 최초={initial[0]!r} refine={refined[0]!r}"
     )
+
+
+def test_refine_ledger_carries_the_real_input_snapshot(client: TestClient) -> None:
+    """🔴 refine 원장의 `input_snapshot_hash`가 **원 POST와 같은 실제 해시**다 (99 ㉭).
+
+    종전에는 `"sha256:refine"` 리터럴이라 **아무 입력도 특정하지 못했다** — 계약이
+    *"그때 그 입력을 특정한다"*(불변식 8)고 선언한 컬럼이다.
+
+    ⚠ 값의 출처는 `job.payload_hash`(`= content_hash(contexts)`)이고 **워커가 쓰는 값과
+    같다** — 그래서 POST와 refine의 AI_RUN이 같은 스냅숏을 가리킨다.
+    """
+    set_counsel_provider(
+        _EmphasisSpy(drafts=["이번 기간 학습 상황을 정리해 드립니다."])
+    )
+    _refine_once(client)
+
+    run_store = counsel_router._run_store
+    assert isinstance(run_store, InMemoryRunStore)
+    hashes = [run.input_snapshot_hash for run in run_store.runs.values()]
+    assert len(hashes) >= 2, f"AI_RUN이 둘 미만이다({len(hashes)}) — 경로가 안 돌았다"
+    assert "sha256:refine" not in hashes, "리터럴이 남아 있다 — 아무 입력도 특정 못 한다"
+    assert len(set(hashes)) == 1, (
+        f"POST와 refine의 입력 스냅숏이 다르다: {sorted(set(hashes))} — 같은 스냅숏 위의 "
+        "다음 턴이므로 같은 값이어야 한다"
+    )
+    assert all(h.startswith("sha256:") and len(h) > 20 for h in hashes), hashes
 
 
 def test_an_empty_emphasis_is_not_the_same_event_as_a_missing_one(

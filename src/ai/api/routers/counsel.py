@@ -248,6 +248,11 @@ class _DraftState:
     #: `CounselPackResultRecord.plan_outcome`이 든다(㉲). 이 필드만 보고 판단하지 마라.
     emphasis: tuple[str, ...] = ()
 
+    #: 🔴 최초 요청의 입력 스냅숏 해시(99 ㉭). refine 원장(`AI_RUN.input_snapshot_hash`)이
+    #: 이 값을 쓴다 — 종전에는 `"sha256:refine"` 리터럴이라 **아무 입력도 특정하지 못했다.**
+    #: ⚠ 기본값이 빈 문자열인 이유는 refine 요청 바디에 이 값이 **없기 때문**이다
+    #: (`RefineRequest`는 `instruction`·`turn_no` 둘뿐) — 출처가 여기밖에 없다.
+    snapshot_hash: str = ""
 
 
 #: refine 읽기 모델 — `(tenant_id, job_id) → 초안 상태`. 키가 job_id인 이유는
@@ -501,13 +506,15 @@ REFINE_BLOCK_MESSAGES: dict[BlockedReason, str] = {
 }
 
 
-def _refine_execution_context(execution_id: uuid.UUID, tenant_id: str) -> ExecutionContext:
+def _refine_execution_context(
+    execution_id: uuid.UUID, tenant_id: str, input_snapshot_hash: str
+) -> ExecutionContext:
     """refine 턴의 실행 컨텍스트 — LLM 호출 기록이 함께 받는다(불변식 8)."""
     return ExecutionContext(
         execution_id=execution_id,
         tenant_id=tenant_id,
         capability=Capability.COMPOSITION,
-        input_snapshot_hash="sha256:refine",
+        input_snapshot_hash=input_snapshot_hash,
         versions=counsel_versions(),
     )
 
@@ -697,6 +704,11 @@ async def _wire_result(
                 # 🔴 최초 생성이 고른 강조점을 refine이 이어받는다(99 ㉮). 값이 state 밖으로
                 #    나오는 경로는 결과 계약뿐이다 — `pack.emphasis_points`(㉲와 같은 자리).
                 emphasis=tuple(pack.emphasis_points.get(student.student_ref, ())),
+                # 🔴 refine 원장이 쓸 입력 스냅숏(99 ㉭). **워커가 쓴 값과 같은 값**이다
+                #    (`worker.py`의 `input_snapshot_hash=job.payload_hash` ·
+                #    `payload_hash = content_hash(contexts)`) — 그래서 POST와 refine의
+                #    `AI_RUN.input_snapshot_hash`가 **일치**한다. 같은 스냅숏 위의 다음 턴이다.
+                snapshot_hash=job.payload_hash,
             ),
         )
     return CounselDraftResult(
@@ -889,7 +901,9 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
         raise NotFound("job_id 부재", {"job_id": job_id})
 
     execution_id = uuid.uuid4()
-    refine_context = _refine_execution_context(execution_id, tenant_id)
+    refine_context = _refine_execution_context(
+        execution_id, tenant_id, state.snapshot_hash
+    )
     #: 🔴 `finally`가 성공·차단·**모든 종류의 실패**를 지나게 하려고 둔 플래그다.
     #:  실패 경로에서만 적재 오류를 삼킨다(성공·차단은 fail-closed 그대로).
     failed = True
