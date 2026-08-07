@@ -8,16 +8,20 @@ CI 기본은 Fake provider다 — 실 LLM 호출 0(`imports` 라우터 선례와
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Any, Final
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
+from ai.api.routers import counsel as counsel_router
 from ai.api.routers.counsel import reset_counsel_stores, set_counsel_provider
 from ai.composition.counsel.provider import FakeCounselProvider
+from ai.composition.counsel.stores import InMemoryPackResultStore
+from ai.contracts.composition import DraftContext, PlanOutcome
+from ai.contracts.execution import ExecutionContext
 from ai.db.store_factory import reset_shared_agent_runtime
 
 _HEADERS = {
@@ -279,4 +283,121 @@ def test_counsel_routes_are_registered_in_the_app() -> None:
     assert "/v1/counsel/drafts/{job_id}/refine" in paths
     assert not any("{draft_id}" in path for path in paths), (
         "refine 대상 키는 job_id다 — draft_id는 어떤 응답에도 실리지 않는다(04 §3.9)"
+    )
+
+
+# ── ㉮·㉭ refine이 잃어버리던 것 둘 ────────────────────────────────
+
+
+class _EmphasisSpy(FakeCounselProvider):
+    """`write`가 받은 `emphasis`를 그대로 기록한다 — **프롬프트 입력을 관측**한다.
+
+    🔴 "파라미터가 전달된다"를 단정하지 않는다. 최초 생성과 refine이 **같은 값**을 받는지가
+    주장이고, 갈리면 *"같은 강조점인데 턴마다 다른 글"* 이 된다.
+    """
+
+    def __init__(
+        self,
+        *,
+        drafts: Sequence[str],
+        emphasis: Mapping[str, list[str]] | None = None,
+    ) -> None:
+        super().__init__(drafts=list(drafts), emphasis=emphasis)
+        self.seen: list[tuple[str, tuple[str, ...]]] = []
+
+    async def write(
+        self,
+        *,
+        context: DraftContext,
+        execution_context: ExecutionContext,
+        emphasis: Sequence[str] = (),
+        gate_feedback: str = "",
+        refine_instruction: str = "",
+        previous_text: str = "",
+    ) -> str:
+        self.seen.append(
+            ("refine" if refine_instruction else "initial", tuple(emphasis))
+        )
+        return await super().write(
+            context=context,
+            execution_context=execution_context,
+            emphasis=emphasis,
+            gate_feedback=gate_feedback,
+            refine_instruction=refine_instruction,
+            previous_text=previous_text,
+        )
+
+
+#: 근거 실존 검증(`grounding.ground_emphasis`)을 **통과하는** 형태 — `record_id=…`가 있어야
+#: 하고 그 ID가 컨텍스트에 실재해야 한다(`_REQUEST`의 facts). ⚠ 형태가 틀리면
+#: `all_dropped`로 떨어져 강조점이 0건이 되고, 그러면 아래 테스트가 **아무것도 검증하지
+#: 않으면서 통과**한다 — 그래서 최초 생성 쪽 비어 있음을 먼저 단정한다.
+_GROUNDED_EMPHASIS: Final = "제출 습관 유지를 짚는다 (record_id=le_2077)"
+
+
+def _refine_once(client: TestClient) -> str:
+    """POST → refine 1턴. `job_id`."""
+    job_id = str(_post(client).json()["data"]["job_id"])
+    client.post(
+        f"/v1/counsel/drafts/{job_id}/refine",
+        json={"instruction": "조금 더 따뜻하게 써줘", "turn_no": 1},
+        headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"], "X-Request-Id": "r2"},
+    )
+    return job_id
+
+
+def test_refine_inherits_the_emphasis_the_first_draft_chose(client: TestClient) -> None:
+    """🔴 refine이 **최초 생성과 같은 강조점**을 받는다 (99 ㉮).
+
+    없으면 다듬기 턴마다 강조점 없이 다시 써서 *"1턴에 강조한 것이 2턴에 사라진다"* —
+    강사가 refine을 한 번이라도 누르면 **매번** 그렇다.
+    """
+    provider = _EmphasisSpy(
+        drafts=["이번 기간 학습 상황을 정리해 드립니다."],
+        emphasis={_REQUEST["student_ref"]: [_GROUNDED_EMPHASIS]},
+    )
+    set_counsel_provider(provider)
+    _refine_once(client)
+
+    initial = [points for who, points in provider.seen if who == "initial"]
+    refined = [points for who, points in provider.seen if who == "refine"]
+    assert initial and initial[0], (
+        "최초 생성이 강조점을 못 받았다 — 대역 설정이나 ground_emphasis 형식이 깨졌다. "
+        "이 상태로는 refine 단정이 아무것도 검증하지 않는다"
+    )
+    assert refined, "refine이 writer를 안 불렀다"
+    assert refined[0] == initial[0], (
+        f"refine이 다른 강조점을 받았다: 최초={initial[0]!r} refine={refined[0]!r}"
+    )
+
+
+def test_an_empty_emphasis_is_not_the_same_event_as_a_missing_one(
+    client: TestClient,
+) -> None:
+    """⚠ **강조점 0건의 사유가 남는다** — 「없음」과 「안 넘겼음」이 값으로는 같다.
+
+    🔴 사유는 다른 축이 든다(`plan_outcome` · 99 ㉲). 이 대조가 없으면 이 PR이 고친 결함이
+    **다시 숨는다** — refine이 `()`를 받은 것이 정상인지 회귀인지 구분되지 않는다.
+    """
+    provider = _EmphasisSpy(drafts=["이번 기간 학습 상황을 정리해 드립니다."])
+    set_counsel_provider(provider)
+    _refine_once(client)
+
+    pack_store = counsel_router._pack_store
+    assert isinstance(pack_store, InMemoryPackResultStore)
+    record = next(iter(pack_store._rows.values()))
+    # ⚠ 이 대역의 기본 plan은 `record_id=le_{student_ref}`를 만들어 **실존하지 않는다** —
+    #   `ground_emphasis`가 전량 드롭한다. 즉 여기서 값이 빈 것은 **전량 드롭**이다.
+    assert not record.emphasis_points, "전량 드롭인데 강조점이 남았다"
+    refined = [points for who, points in provider.seen if who == "refine"]
+    assert refined and refined[0] == (), refined
+
+    # 🔴 **값은 비었는데 「왜」가 남아 있다** — 이 쌍이 「안 넘겼음」과 구분되는 지점이다.
+    #    값 하나만 보면 이 PR이 고친 결함과 구분되지 않는다.
+    assert record.plan_outcome is not PlanOutcome.OK, (
+        "전량 드롭인데 사유가 OK다 — 「고를 게 없었다」와 「날조를 버렸다」가 뭉쳤다"
+    )
+    assert record.plan_outcome is PlanOutcome.ALL_DROPPED, record.plan_outcome
+    assert record.plan_dropped >= 1, (
+        f"드롭 건수가 {record.plan_dropped} — 사유만 있고 규모가 없으면 추적이 안 된다"
     )

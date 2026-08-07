@@ -241,6 +241,14 @@ class _DraftState:
     citations: tuple[Citation, ...]
     text: str
 
+    #: 🔴 최초 생성이 고른 **검증 통과 강조점**(99 ㉮). 없으면 refine이 매 턴 강조점 없이
+    #: 다시 써서 *"1턴에 강조한 것이 2턴에 사라지는"* 상태가 된다 — 강사가 다듬기를 한 번만
+    #: 눌러도 **매번** 그렇다.
+    #: ⚠ **빈 값이 「강조점 없음」인지 「안 쟀음」인지는 여기서 안 갈린다** — 사유는
+    #: `CounselPackResultRecord.plan_outcome`이 든다(㉲). 이 필드만 보고 판단하지 마라.
+    emphasis: tuple[str, ...] = ()
+
+
 
 #: refine 읽기 모델 — `(tenant_id, job_id) → 초안 상태`. 키가 job_id인 이유는
 #: 문의 1건 = 잡 1개 = 초안 1개(pack N=1 · 99 D ㉛)라 별도 draft_id를 노출할 필요가
@@ -683,7 +691,12 @@ async def _wire_result(
         _drafts.put(
             (tenant_id, job_id),
             _DraftState(
-                context=_draft_context(request), citations=citations, text=record.content
+                context=_draft_context(request),
+                citations=citations,
+                text=record.content,
+                # 🔴 최초 생성이 고른 강조점을 refine이 이어받는다(99 ㉮). 값이 state 밖으로
+                #    나오는 경로는 결과 계약뿐이다 — `pack.emphasis_points`(㉲와 같은 자리).
+                emphasis=tuple(pack.emphasis_points.get(student.student_ref, ())),
             ),
         )
     return CounselDraftResult(
@@ -884,6 +897,8 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
         outcome = await refine_draft(
             context=state.context,
             instruction=refine_request.instruction,
+            # 🔴 최초 생성이 고른 강조점을 이어받는다(99 ㉮) — 없으면 턴마다 사라진다.
+            emphasis=state.emphasis,
             # 🔴 전역 `_provider`를 직접 읽지 않는다. POST 경로는 이미 이걸 쓰는데
             # **refine만 우회**하고 있었다 — #108이 "조용한 Fake 금지"를 세웠는데 이 한 줄이
             # 빠져 CI는 초록이었다(같은 패턴 5번째). 가드는 `test_provider_access_guard`.
