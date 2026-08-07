@@ -39,6 +39,7 @@ from pydantic import ValidationError
 
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
+from ai.api.version_scope import RouterScope
 from ai.composition.counsel.assembly import (
     build_counsel_llm_provider,
     build_counsel_provider,
@@ -938,6 +939,13 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
         versions=counsel_versions(),
     )
 
+
+
+#: 이 라우터가 응답하는 경로 접두와 그 버전 세트 — `api/app.py`가 **실패 응답**에 쓴다(99 ㊓).
+#: 🔴 접두를 여기 두는 이유: **경로를 바꾸는 사람과 접두를 고치는 사람이 같아야 한다.**
+#:  `app.py`에 박으면 다른 파일이라 조용히 갈린다.
+#: `/v1/counsel/drafts`·`/{job_id}`·`/refine` 셋을 한 접두가 덮는다.
+VERSION_SCOPE: Final = RouterScope("/v1/counsel", counsel_versions)
 
 __all__ = [
     "CounselProviderNotWired",

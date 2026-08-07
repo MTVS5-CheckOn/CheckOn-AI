@@ -16,15 +16,33 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from ai.api.envelope import error_envelope
+from ai.api.routers.classify import VERSION_SCOPE as _classify_scope
 from ai.api.routers.classify import router as classify_router
+from ai.api.routers.confirmations import VERSION_SCOPE as _confirmations_scope
 from ai.api.routers.confirmations import router as confirmations_router
+from ai.api.routers.counsel import VERSION_SCOPE as _counsel_scope
 from ai.api.routers.counsel import router as counsel_router
-from ai.api.routers.detect import detection_versions
+from ai.api.routers.detect import VERSION_SCOPE as _detect_scope
 from ai.api.routers.detect import router as detect_router
+from ai.api.routers.imports import VERSION_SCOPE as _imports_scope
 from ai.api.routers.imports import router as imports_router
+from ai.api.version_scope import RouterScope, resolve_versions
 from ai.runtime.errors import DomainException
 
 logger = logging.getLogger(__name__)
+
+#: ⚠ 양자 승인 파일 수정(실패 응답 버전 스코프 · 99 ㊓) — 라우터 등록과 같은 취급, B 리뷰.
+#: 🔴 **접두 문자열은 여기 없다** — 각 라우터 모듈의 `VERSION_SCOPE`가 갖는다(경로를 바꾸는
+#:  사람과 접두를 고치는 사람이 같아야 한다). 여기는 **등록과 스코프를 한 자리에 묶기만** 한다.
+#: ⚠ 라우터를 include하면서 여기 스코프를 빠뜨리면 그 엔드포인트의 실패 응답이 **남의 버전을
+#:  단다** — `tests/ai/contract/test_version_scope_registry.py`가 잡는다.
+ROUTER_VERSION_SCOPES: tuple[RouterScope, ...] = (
+    _detect_scope,
+    _imports_scope,
+    _counsel_scope,
+    _classify_scope,
+    _confirmations_scope,
+)
 
 
 def create_app() -> FastAPI:
@@ -62,18 +80,29 @@ def create_app() -> FastAPI:
                 request.headers.get("X-Request-Id"),
                 exc.detail,
             )
-        # 실패에도 meta.versions를 싣는다(04 §2.2 A판정) — 정적 엔드포인트 버전.
+        # 실패에도 meta.versions를 싣는다(04 §2.2 A판정) — **그 엔드포인트의** 정적 버전.
         return JSONResponse(
             status_code=exc.http_status,
-            content=error_envelope(exc.code, exc.message, detail, detection_versions()),
+            content=error_envelope(
+                exc.code,
+                exc.message,
+                detail,
+                resolve_versions(request.url.path, ROUTER_VERSION_SCOPES),
+            ),
         )
 
     @app.exception_handler(Exception)
-    async def _unhandled(_request: Request, _exc: Exception) -> JSONResponse:
+    async def _unhandled(request: Request, _exc: Exception) -> JSONResponse:
         # 미분류 예외 — 내부 상세를 응답에 싣지 않는다(로그만). error_codes §1: 500 INTERNAL.
+        # 🔴 여기도 요청 경로로 고른다 — 이쪽이 더 빠지기 쉽고, 하필 가장 급할 때 원장이
+        #    엉뚱한 엔진을 가리키게 된다(99 ㊓).
         return JSONResponse(
             status_code=500,
-            content=error_envelope("INTERNAL", "내부 서버 오류", versions=detection_versions()),
+            content=error_envelope(
+                "INTERNAL",
+                "내부 서버 오류",
+                versions=resolve_versions(request.url.path, ROUTER_VERSION_SCOPES),
+            ),
         )
 
     return app
