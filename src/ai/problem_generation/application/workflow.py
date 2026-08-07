@@ -306,6 +306,8 @@ class ProblemGenerationWorkflow:
                     retry_context=retry_context,
                     execution_context=execution_context,
                 )
+            # 생성은 파싱 실패와 서비스 실패가 같은 재생성 예산을 쓴다.
+            # 교차 풀이는 파싱 실패만 재시도하므로 아래 교차 풀이 분기와 의도적으로 다르다.
             except RedactionBlocked:
                 if state.fallback_ref is not None:
                     return await self._restore_fallback(state)
@@ -350,6 +352,7 @@ class ProblemGenerationWorkflow:
                     target_skill_node_id=target.skill_node_id,
                     execution_context=execution_context,
                 )
+            # 교차 풀이는 ParseFailed만 재시도한다. LlmError보다 반드시 먼저 잡아야 한다.
             except RedactionBlocked:
                 if state.fallback_ref is not None:
                     return await self._restore_fallback(state)
