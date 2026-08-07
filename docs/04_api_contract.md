@@ -575,7 +575,14 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
   "inquiry": {
     "inquiry_ref": "iq_884",             // BE 원본 문의 논리 참조 — AI에겐 불투명 키
     "topic": "grade",                    // grade | schedule | counsel_request | etc — 🔴 8/5 complaint 제거(§3.5)
-    "urgency": "immediate",              // immediate | normal — 완충 강화 입력
+    "urgency": "immediate",              // immediate | normal — 🔴 **BE 소유 축(인박스 정렬·SLA).**
+                                         //   **AI 톤에는 쓰지 않는다** — 받아서 쓰지 않는 값이다(8/6 판정).
+                                         //   ⚠ `immediate`와 `normal`의 **산출은 바이트 동일**하다 —
+                                         //     「완충이 강해진 초안」을 기대하지 마라.
+                                         //   근거: sensitivity 기본값이 이미 최대 완충이라 올릴 여지가 없고,
+                                         //   문의 하나가 강사의 학부모별 톤 설정을 뒤집으면 안 되며,
+                                         //   톤 축이 되면 24조합이 48이 돼 tone_map 로더가 깨진다
+                                         //   (`contracts/counsel.py` InquiryUrgency 근거 ⓐⓑⓒ · 99 ㊰)
     "received_at": "2026-07-31T14:20:00+09:00",
     "text_masked": "요즘 아이가 힘들어하는 것 같은데…"   // redaction 통과분 (불변식 3)
   },
@@ -586,7 +593,12 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
                                                        //   ⚠ **선택이다** — 누락 축은 기본값(narrative·anxious·grade·monthly)
   "dismissed_suggestions": [{ "axis": "frequency", "value": "monthly" }],   // 재제안 억제
   "context": {                                         // 인용 가능한 사실의 전체 우주
-    "snapshot_hash": "sha256:…",                       // 재현성 축(AI_RUN · 불변식 8)
+    "snapshot_hash": "sha256:…",                       // 재현성 축(불변식 8) — 🔴 **약속 vs 현재**(㊩)
+                                                       //   🔴 **현재 소비되지 않는다.** `AI_RUN.input_snapshot_hash`에
+                                                       //   들어가는 것은 **AI가 자기 `DraftContext`를 직렬화해 만든
+                                                       //   해시**(`content_hash(contexts)` = `job.payload_hash`)다.
+                                                       //   ⇒ **이 값으로 원장을 조회하면 0건이다**(src 소비처 0 · 99 ㊱)
+                                                       //   ⚠ 필드는 필수(`NonEmptyStr`)로 남는다 — 빼면 파괴적이다
     "period_label": "2026년 7월",
     "facts": [{ "record_id": "le_2041", "summary": "6월 지문 42개·312문항" }]
   }
