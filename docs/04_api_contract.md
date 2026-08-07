@@ -79,7 +79,9 @@
 }
 ```
 
-실패 시 `data: null`, `error: {"code", "message", "detail"}`. **meta.versions는 항상 실린다** — 재현성·디버깅의 기준.
+실패 시 `data: null`, `error: {"code", "message", "detail"}`. **등록된 경로의 응답에는 `meta.versions`가 항상 실린다** — 재현성·디버깅의 기준.
+
+⚠ 🔴 **「항상」에 범위를 적는다(8/10 · 99 ㊜).** **등록 안 된 경로는 이 규약 밖이다** — Starlette가 **라우트 매칭 전에** 자기 404를 내므로 우리 예외 핸들러가 아예 안 탄다. 실측: `GET /v1/nope` → `404 {"detail": "Not Found"}` (envelope·`meta` 없음 · `405`도 같다). **BE는 이 형태를 받으면 「버전을 못 읽었다」가 아니라 「경로가 틀렸다」로 읽어야 한다.** 필요한 정보가 버전이 아니라 경로이므로 **envelope를 씌우지 않는다**(그러려면 `api/app.py`에 핸들러를 더해야 하고 그 파일은 양자 승인이다 — 얻는 것이 그만큼 크지 않다). 🔴 종전에 이 문장이 **범위 없는 「항상」** 이라 다음 사람이 그걸 근거로 쓸 수 있었다 — 그게 이 안건의 전부다.
 
 #### 🔴 `meta.execution_id` — 원장 키이거나 상관 ID다 `[확정 · 8/7]`
 
@@ -107,7 +109,8 @@
 | --- | --- | --- |
 | `GET /v1/problems/{job_id}` | 응답마다 새 값 | `job.execution_id`(같은 파일 `POST`가 이미 그 형태) · **B 소유** |
 | `POST /v1/confirmations` | 호출마다 새 값 | **안정적인 값**으로. 무엇으로 할지는 판정 — 이 축은 원장이 없어 *"가리킬 실행이 없다"* 가 정상이다 |
-| `POST /v1/classify` — 캐시 히트의 `prompt` | `prompt: "v1"` | ⚠ **위 §2.2가 *"`prompt`는 LLM 미사용 실행에서 null"* 이라 규정**하는데 캐시 히트는 LLM을 안 부르고도 값이 실린다. 🔴 고치면 **응답의 `meta.versions.prompt`가 바뀐다** — 판정 대기(99 ㊮) |
+
+✅ **(8/10 해소) 셋째 자리였던 「classify 캐시 히트의 `prompt`」는 결함이 아니었다** — 🔴 **틀린 것은 코드가 아니라 위 문장이었다.** 종전 §2.2가 *"`prompt`는 **LLM 미사용 실행**에서 null"* 이라 적어 캐시 히트(호출 0건)가 위반으로 보였는데, `meta.versions`는 **선언 축**이고 classify는 프롬프트를 쓰는 capability다 ⇒ `prompt: "v1"` 이 **맞다.** 응답을 `null`로 바꿨다면 **같은 엔드포인트가 캐시 유무에 따라 다른 버전을 말하게** 되고, `classify_versions()`가 *"`prompt_version`을 **반드시 채운다**"* 를 ㊔ 선례로 적어 둔 것도 되살아난다. **문장을 고쳐 계약을 참으로 만들었다** — 응답 변경 **0건**(99 ㊧·㊮).
 
 **비대칭 해소 판정** `[제안 · B 협의]` — ⓐ `success_envelope`가 `str | None`을 받게 한다(**응답 스키마가 바뀌고 `api/envelope.py`는 양자**) · **ⓑ 위 정의대로 «원장 키이거나 상관 ID»로 규정한다(권고)** — 스키마를 안 흔들고 *"meta는 항상 실린다"* 는 기존 규약도 유지된다. ⚠ ⓐ를 고르면 양자 파일이 열리므로 **B 승인 전에는 ⓑ가 현행**이다.
 
@@ -125,7 +128,35 @@
 
 **[PART_A+PART_B] 승인 확장:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이며, `AI_RUN` 컬럼·`meta.versions`와 1:1이다. 현재 정식 키 집합은 공통 6종(`pipeline`·`engine`·`threshold`·`prompt`·`schema`·`contract`) + [PART_B] 실행 전용 nullable 4종(`graph`·`taxonomy`·`verify_config`·`difficulty_calib`)인 **총 10종**이다. 위 JSON은 특정 capability의 예시이며, nullable 값은 실행 종류에 따라 달라진다.
 
-nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`는 감지 임계값 시트 버전이라 detection 외에는 null · `prompt`는 **LLM 미사용 실행**에서 null · `graph`·`taxonomy`·`verify_config`는 관련 [PART_B] 실행 외에는 null · `difficulty_calib`은 **난이도 보정을 실제로 적용한 실행에서만** 채워진다 — `problem_generation` 외에는 항상 null이고, **v1은 보정 미배선(`difficulty_regen_enabled: false`)이라 pg도 null**이다. ⚠ **(8/8 정정)** 종전 표기는 *"`problem_generation` 외에는 null"* 이라 **capability 축**으로 읽혔는데, 이 키는 `prompt`와 같은 **사용 축**이다 — *"pg면 채워야 하는 것"* 으로 읽히던 것을 바로잡는다.
+#### 🔴 이 값은 「무엇의」 버전인가 — 두 축을 가른다 `[확정 · 8/10]`
+
+> **`meta.versions`의 열 키는 「이 응답을 낸 엔드포인트/capability가 어느 버전 위에서 도는가」다 — 선언 축이다.**
+> **`null`은 「이 capability에 해당 없음」이지 「이번 실행이 안 썼음」이 아니다.**
+
+🔴 **이 축은 고른 것이 아니라 강제된 것이다.** 실패 응답에도 `meta.versions`가 실리는데(A판정 7/22), 실행 전 오류(헤더 누락·JSON 파싱 실패)는 **실행이 0인 시점**이다 — 거기서 *"이번 실행이 실제로 쓴 버전"* 은 존재하지 않는다. `api/envelope.py`가 *"versions는 **엔드포인트의 정적 버전**으로 채운다"* 라 적고 `problem_failure_versions()`가 *"**실행 config 확정 전에도** 나간다"* 라 적은 것이 같은 사실이다.
+
+**`AI_RUN`은 컬럼이 두 종류다:**
+
+| | 컬럼 | 축 | 응답에 나가나 |
+| --- | --- | --- | --- |
+| **선언** | `VersionSet` **열 키** 전부 | 엔드포인트/capability | ✅ **`meta.versions`와 같은 값**(㊔ — 응답과 원장이 다른 답을 하면 안 된다) |
+| **사용** | `model_provider` · `model_name` · `generation_params` | 이 실행이 **실제로** 호출한 것 | 🔴 **안 나간다** — `RunMetadata`에만 있다 |
+
+⚠ **#144가 바꾼 것은 아래 셋뿐이고 위 열 키는 안 건드렸다** — 그래서 **응답은 갈리지 않았다.** 종단 실측(8/10 · 같은 `inquiry_ref` 2회): 응답 `meta.versions`가 **두 회차 완전히 동일**하고 원장의 `model_provider`·`generation_params`만 캐시 히트에서 `null`이 됐다.
+
+⚠ 🔴 **「LLM 미사용 실행」이라는 표현을 쓰지 않는다.** 그 말이 ⓐ*"LLM을 안 쓰는 capability"* / ⓑ*"호출이 0인 실행"* 둘로 읽혔고 실제로 오독을 낳았다(99 ㊧·#11 ⓓ). 선언 축 키의 조건은 **언제나 capability(또는 그 기능의 배선 여부)** 로 적는다.
+
+**키별 조건 — 전부 선언 축이다:**
+
+| 키 | `null`인 경우 |
+| --- | --- |
+| `pipeline` · `engine` · `schema` · `contract` | 없음(필수) |
+| `threshold` | 감지 임계값 시트를 쓰는 capability(detection) 외 |
+| `prompt` | **프롬프트를 쓰지 않는 capability** 외 — ⚠ 종전 *"LLM 미사용 실행"* 표기를 고친 것이다. counsel·classify·detect·imports·pg는 전부 프롬프트를 쓰므로 **호출 0건인 실행에서도 채운다**(캐시 히트 포함) |
+| `graph` · `taxonomy` · `verify_config` | 관련 [PART_B] capability 외 |
+| `difficulty_calib` | `problem_generation` 외에는 항상 null이고, **v1은 보정 미배선(`difficulty_regen_enabled: false`)이라 pg도 null**이다 |
+
+⚠ **(8/10) `difficulty_calib`의 축 표기를 다시 고쳤다 — 다만 8/8 정정의 「내용」은 유지한다.** 8/8이 *"pg여도 null이다"* 로 바로잡은 것은 **맞고 그대로 둔다.** 고치는 것은 그 근거의 **표기**다 — 8/8은 그것을 *"실제로 적용한 **실행**에서만"* 이라 적었는데, 그 문장 자신이 든 근거(`difficulty_regen_enabled: false`)는 **실행이 아니라 빌드 설정**이다. 즉 조건은 「이 실행이 보정을 했는가」가 아니라 「이 빌드에 보정이 배선됐는가」다. **내용은 같고 축 이름만 틀렸다.**
 
 > 🔴 **(8/8 정정) 위 괄호가 `(감지·진단)`이었는데 감지는 LLM을 쓴다.** 경보 브리핑 문장화(ⓐ)가 **선형 LLM 1콜**이고(위 §1 표 · `part_a/01_pipeline.md` ⓐ) 이 문서 자신도 `brief`를 *"LLM 생성 + 왜곡 게이트 통과분"* 이라고 적는다. 그 괄호는 **브리핑이 붙기 전**에 쓰였고, 그동안 `/v1/detect`의 응답과 `AI_RUN`이 **둘 다 `prompt=null`** 인 채로 프롬프트 `0.2`를 쓰고 있었다 — *"그때 어떤 프롬프트로 브리핑을 만들었나"* 를 원장에서 못 읽었다(불변식 8). 지금은 `briefing.PROMPT_VERSION`을 싣는다. ⚠ **브리핑이 폴백으로 LLM을 안 탄 실행에서도 싣는다** — 버전 세트는 *"이 실행이 어떤 버전으로 조립됐나"* 이고, 실제 사용 여부는 신호별 `brief.fallback_used`가 따로 말한다.
 
