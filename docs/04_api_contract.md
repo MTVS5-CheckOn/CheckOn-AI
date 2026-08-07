@@ -94,7 +94,9 @@
 | `POST/GET /v1/counsel/drafts` — 잡 생성분 | 🔴 **원장 키** | `WorkerJob.execution_id` = `AI_RUN.execution_id`. POST·GET1·GET2·AI_RUN **전부 같다** |
 | `POST /v1/counsel/drafts/{id}/refine` | 🔴 **원장 키** | 그 턴이 하나의 실행이고 `_record_refine_run`이 그 값으로 원장을 쓴다 |
 | `POST/GET /v1/counsel/drafts` — `template_only`·근거 0건 | ⚠ **상관 ID** | 워커·LLM 미실행 ⇒ **AI_RUN 0건**. 반복 조회는 같은 값 |
-| `POST /v1/detect` · `POST /v1/classify` | 🔴 **원장 키** | 동기 실행이라 그 값이 곧 `ExecutionContext`의 키다 |
+| `POST /v1/detect` | 🔴 **원장 키** | 동기 실행이라 그 값이 곧 `ExecutionContext`의 키다 |
+| `POST /v1/classify` — **비캐시**(LLM 호출) | 🔴 **원장 키** | 위와 같다 |
+| `POST /v1/classify` — 🔴 **캐시 히트** | ⚠ **미정합** | `classify.py:163`이 **`record_run`(`:197`)보다 앞에서 early-return**한다 ⇒ 그 실행의 `AI_RUN` 행이 **없다.** 그런데 값은 그 요청이 만든 새 `uuid4`라 상관 ID로도 안정적이지 않다 — 아래 |
 | `POST /v1/problems` · `GET /v1/problems/{job_id}` | 🔴 **원장 키** | 잡을 **항상** 만든다(잡 없는 성공 경로 없음). ⚠ `GET`은 현재 응답마다 새로 발급 — **아래 미정합** |
 | `POST/GET /v1/imports` | ⚠ **상관 ID** | 이 축은 **원장을 쓰지 않는다**(라우터·워커에 `AI_RUN` 참조 0건 · 99 ㉾). `job_id`가 그대로 실리며 반복 조회는 같은 값 |
 | `POST /v1/confirmations` | ⚠ **미정합** | 원장을 쓰지 않는데 **호출마다 새 값**이라 상관 ID로도 기능하지 않는다 — 아래 |
@@ -105,6 +107,7 @@
 | --- | --- | --- |
 | `GET /v1/problems/{job_id}` | 응답마다 새 값 | `job.execution_id`(같은 파일 `POST`가 이미 그 형태) · **B 소유** |
 | `POST /v1/confirmations` | 호출마다 새 값 | **안정적인 값**으로. 무엇으로 할지는 판정 — 이 축은 원장이 없어 *"가리킬 실행이 없다"* 가 정상이다 |
+| `POST /v1/classify` — 캐시 히트 | 호출마다 새 값 · 원장 행 없음 | **캐시 히트도 원장을 남기거나**(예측 재사용도 실행이다) **상관 ID임을 명시하거나** — 판정은 별건이다. ⚠ 🔴 **#141이 이 자리를 「원장 키」로 잘못 적었다** — 99 ㊮의 판정을 그대로 승격시켰는데 그 판정이 캐시 히트를 안 봤다 |
 
 **비대칭 해소 판정** `[제안 · B 협의]` — ⓐ `success_envelope`가 `str | None`을 받게 한다(**응답 스키마가 바뀌고 `api/envelope.py`는 양자**) · **ⓑ 위 정의대로 «원장 키이거나 상관 ID»로 규정한다(권고)** — 스키마를 안 흔들고 *"meta는 항상 실린다"* 는 기존 규약도 유지된다. ⚠ ⓐ를 고르면 양자 파일이 열리므로 **B 승인 전에는 ⓑ가 현행**이다.
 
