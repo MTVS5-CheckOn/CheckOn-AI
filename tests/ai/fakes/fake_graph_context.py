@@ -19,7 +19,11 @@ type FakeGraphStep = tuple[str, ...] | ContextPack | Exception
 
 
 class FakeGraphContextService:
-    """요청 순서대로 근거 참조 또는 예외를 소비한다."""
+    """🔴 이 대역은 실 구현이 하지 않는 것을 한다 — 방어 검증용이지 재현이 아니다.
+
+    이 대역이 만든 조건을 '프로덕션에서 일어난다'로 읽지 마라.
+    요청 순서대로 근거 참조 또는 예외를 소비한다.
+    """
 
     def __init__(
         self,
