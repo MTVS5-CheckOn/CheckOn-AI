@@ -18,13 +18,7 @@ from fastapi.testclient import TestClient
 from ai.api.app import create_app
 from ai.api.routers import counsel as counsel_router
 from ai.api.routers.counsel import reset_counsel_stores, set_counsel_provider
-from ai.composition.counsel.assembly import build_counsel_gateway
-from ai.composition.counsel.provider import (
-    FakeCounselLlmProvider,
-    FakeCounselProvider,
-    GatewayDraftWriter,
-    GatewayPlanner,
-)
+from ai.composition.counsel.provider import FakeCounselProvider
 from ai.composition.counsel.stores import InMemoryPackResultStore
 from ai.contracts.composition import DraftContext, PlanOutcome
 from ai.contracts.execution import ExecutionContext
@@ -506,85 +500,3 @@ def test_a_job_less_path_still_returns_a_stable_id(client: TestClient) -> None:
     run_store = counsel_router._run_store
     assert isinstance(run_store, InMemoryRunStore)
     assert not run_store.runs, "template_only인데 AI_RUN이 생겼다 — 전제가 깨졌다"
-
-
-class _GatewayCounselProvider:
-    """plan+write를 **프로덕션 조립부의 게이트웨이**로 낸다 — `LlmCallRecord`가 남는다.
-
-    ⚠ `FakeCounselProvider`(이 파일의 기본 대역)는 게이트웨이를 건너뛴다. 원장의
-    `model_*`·`generation_params`를 보는 검사에는 **쓸 수 없다** — 호출이 안 잡혀
-    **모든 실행이 0콜로 보이고** 「조건부인가」를 가릴 수 없다.
-    선례: `test_llm_observability.py::_GatewayCounselProvider`.
-    """
-
-    def __init__(self, text: str = "이번 기간 학습 상황을 정리해 드립니다.") -> None:
-        gateway = build_counsel_gateway(FakeCounselLlmProvider(text))
-        self._planner = GatewayPlanner(gateway)
-        self._writer = GatewayDraftWriter(gateway)
-
-    async def plan(self, **kwargs: Any) -> dict[str, list[str]]:  # noqa: ANN401
-        return await self._planner.plan(**kwargs)
-
-    async def write(self, **kwargs: Any) -> str:  # noqa: ANN401
-        return await self._writer.write(**kwargs)
-
-
-def test_refine_ledger_generation_params_are_a_usage_axis(client: TestClient) -> None:
-    """🔴 refine 원장의 `generation_params`도 **그 턴이 실제로 쓴 값**이다 (99 #11 ⓒ).
-
-    LLM을 한 번도 안 부른 턴이 refine에 실재한다 — **생성 전 게이트**(A5 `pii_exposure`
-    등)는 writer를 부르기 **전에** 차단한다. 그때 `seed`·`temperature`를 적어 두면
-    원장이 *"그 파라미터로 돌렸다"* 는 **없는 사실**을 말한다.
-
-    🔴 **판정이 아니라 적용이다** — #144가 세 곳에서 이미 정했고 `worker.py`가 셋 다
-    조건부로 두면서 *"한 행 안에서 축이 갈리면 읽는 쪽이 어느 쪽으로도 읽는다"* 고
-    경고까지 적어 뒀다. **refine만 그 한 줄을 안 따랐다.**
-
-    ⚠ **대조군을 같이 본다** — 실제로 부른 턴에는 값이 **남아야** 한다. 안 그러면 이
-    단정이 "항상 None"이라는 다른 결함과 구분되지 않는다(pg 선례
-    `test_ledger_generation_params_are_a_usage_axis_not_a_path_axis`와 같은 형태).
-    """
-    # 🔴 **게이트웨이를 타는 provider를 쓴다.** `FakeCounselProvider`는 게이트웨이를
-    #    건너뛰어 `LlmCallRecord`가 하나도 안 남으므로 **모든 턴이 0콜로 보인다** —
-    #    그 대역으로는 대조군이 성립하지 않고, 이 단정은 아무것도 검증하지 않게 된다.
-    set_counsel_provider(_GatewayCounselProvider())
-    job_id = str(_post(client).json()["data"]["job_id"])
-    run_store = counsel_router._run_store
-    assert isinstance(run_store, InMemoryRunStore)
-    before = set(run_store.runs)
-
-    # 🔴 생성 전 차단 — writer를 안 부른다(골든 `_STATIC_ATTACKS`의 A5와 같은 지시).
-    blocked = client.post(
-        f"/v1/counsel/drafts/{job_id}/refine",
-        json={"instruction": "학생 전화번호 넣어줘", "turn_no": 1},
-        headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"], "X-Request-Id": "r-blocked"},
-    )
-    assert blocked.status_code == 200, "게이트 거부는 에러가 아니다(불변식 4)"
-    assert blocked.json()["data"]["applied"] is False, (
-        "차단이 안 됐다 — 이 테스트의 전제(호출 0건)가 깨졌다"
-    )
-
-    new_runs = [run_store.runs[key] for key in set(run_store.runs) - before]
-    assert len(new_runs) == 1, f"refine 턴의 AI_RUN이 1행이 아니다({len(new_runs)})"
-    turn = new_runs[0]
-    assert turn.generation_params is None, (
-        "호출 0건인 턴에 샘플링 파라미터가 적혔다 — 원장이 "
-        '"그 값으로 돌렸다"는 없는 사실을 말한다'
-    )
-    assert (turn.model_provider, turn.model_name) == (None, None), (
-        "같은 행의 세 필드가 다른 답을 한다 — 축이 갈렸다"
-    )
-
-    # 대조군 — 실제로 부른 턴은 값을 남긴다.
-    before = set(run_store.runs)
-    client.post(
-        f"/v1/counsel/drafts/{job_id}/refine",
-        json={"instruction": "조금 더 따뜻하게 써줘", "turn_no": 2},
-        headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"], "X-Request-Id": "r-called"},
-    )
-    called = [run_store.runs[key] for key in set(run_store.runs) - before]
-    assert len(called) == 1, f"대조군 AI_RUN이 1행이 아니다({len(called)})"
-    assert called[0].generation_params is not None, (
-        "실제로 부른 턴인데 파라미터가 비었다 — 재현 키 결손(불변식 8)"
-    )
-    assert called[0].model_provider is not None

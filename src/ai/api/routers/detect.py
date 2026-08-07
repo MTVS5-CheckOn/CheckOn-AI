@@ -163,13 +163,7 @@ def reset_idempotency_store() -> None:
 
 
 def detection_versions(config: ThresholdConfig | None = None) -> VersionSet:
-    """detection **엔드포인트**의 버전 세트 — threshold는 config 버전, B 키는 None.
-
-    ⚠ **(8/10) 「실행/엔드포인트」로 적혀 있던 것을 「엔드포인트」로 좁혔다** — 슬래시로
-    두 축을 붙여 둔 것이 축이 안 정해졌다는 증거였다(99 ㊧). `VersionSet` 열 키는
-    **선언 축**이다: *"이 엔드포인트가 어느 버전 위에서 도는가"* 이지 *"이번 실행이 실제로
-    무엇을 썼는가"* 가 아니다. 사용 축은 `AI_RUN`의 `model_provider`·`model_name`·
-    `generation_params` 셋이고 **응답에 나가지 않는다**(04 §2.2 8/10 확정).
+    """detection 실행/엔드포인트의 버전 세트 — threshold는 config 버전, B 키는 None.
 
     config가 없으면(실행 전 오류의 meta.versions 조립) 기본 config로 정적 버전을 낸다
     (04 §2.2 A판정 — 실패 응답도 이 엔드포인트의 버전을 싣는다).
