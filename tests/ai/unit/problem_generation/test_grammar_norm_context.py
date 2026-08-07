@@ -9,8 +9,16 @@ from typing import Any
 import pytest
 
 from ai.contracts.graphrag import ContextLockedFields, GraphContextRequest
-from ai.contracts.problem_generation import TargetSource
+from ai.contracts.problem_generation import (
+    Answer,
+    Choice,
+    EvidenceAnchor,
+    EvidenceKind,
+    GeneratedItem,
+    TargetSource,
+)
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
+from ai.problem_generation.application.generator import hydrate_evidence_quotes
 from ai.problem_generation.domain.rules import has_reference_data
 from ai.problem_generation.infrastructure.grammar_norm import (
     count_node_matches,
@@ -75,6 +83,40 @@ def test_unmapped_node_returns_context_without_reference_data() -> None:
     assert not has_reference_data(context)
     assert context.retrieval_trace["allowed_evidence_refs"] == []
     assert context.retrieval_trace["evidence_anchors"] == []
+
+
+def test_generator_hydrates_omitted_quote_from_approved_context() -> None:
+    context = asyncio.run(
+        GrammarNormGraphContextService().resolve_generation_context(_request())
+    )
+    refs = context.retrieval_trace["allowed_evidence_refs"]
+    assert isinstance(refs, list)
+    ref = refs[4]
+    assert isinstance(ref, str)
+    item = GeneratedItem(
+        area_tag=AreaTag.LANGUAGE,
+        type_tag=TypeTag.INFER,
+        item_format=ItemFormat.MCQ,
+        skill_node_id=_NODE,
+        stem="음운 변동에 대한 설명으로 옳은 것을 고르시오.",
+        choices=tuple(
+            Choice(
+                no=no,
+                text=f"선택지 {no}",
+                why_wrong=None if no == 1 else "근거와 다르다.",
+            )
+            for no in range(1, 6)
+        ),
+        answer=Answer(correct_no=1),
+        rationale="승인된 규정에 따른다.",
+        evidence=(EvidenceAnchor(kind=EvidenceKind.GRAMMAR_RULE, ref=ref),),
+    )
+
+    hydrated = hydrate_evidence_quotes(item, context)
+
+    quote = hydrated.evidence[0].quote
+    assert quote is not None
+    assert "‘ㄷ, ㅌ’ 받침 뒤에" in quote
 
 
 def test_loader_uses_one_process_wide_csv_read(

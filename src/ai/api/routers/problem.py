@@ -17,6 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
 from ai.contracts.agents import JobPhase, WorkerJob
+from ai.contracts.diagnosis import DiagnosisResult
 from ai.contracts.execution import VersionSet
 from ai.contracts.graphrag import GraphContextService
 from ai.contracts.problem_generation import (
@@ -41,6 +42,9 @@ from ai.problem_generation.assembly import (
 )
 from ai.problem_generation.enqueue import ProblemGenerationEnqueuer
 from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.graph_context import (
+    GrammarNormGraphContextService,
+)
 from ai.problem_generation.provider import ProblemProviders, build_problem_providers
 from ai.runtime.errors import (
     DomainException,
@@ -128,7 +132,9 @@ def bootstrap_problem_providers() -> None:
 
 def _startup() -> None:
     bootstrap_problem_providers()
+    bootstrap_problem_services()
     require_problem_providers()
+    require_problem_services()
 
 
 router.add_event_handler("startup", _startup)
@@ -142,6 +148,29 @@ def set_problem_services(
     global _graph_context, _diagnosis
     _graph_context = graph_context
     _diagnosis = diagnosis
+
+
+async def _diagnosis_not_wired(_request: ProblemRequest) -> DiagnosisResult:
+    raise ProblemServicesNotWired(
+        "weakness_auto 진단 서비스가 배선되지 않았다 — 명시 주입이 필요하다"
+    )
+
+
+def bootstrap_problem_services() -> None:
+    """기동 시 실 어문규범 GraphContext를 멱등 조립한다."""
+
+    if _graph_context is not None:
+        return
+    set_problem_services(
+        graph_context=GrammarNormGraphContextService(),
+        diagnosis=_diagnosis or _diagnosis_not_wired,
+    )
+
+
+def require_problem_services() -> tuple[GraphContextService, DiagnosisCallable]:
+    """배선된 실 근거층과 주입된 진단 seam을 반환한다."""
+
+    return _require_services()
 
 
 def set_problem_stores(stores: ProblemRuntimeStores) -> None:
@@ -385,10 +414,12 @@ __all__ = [
     "ProblemJobView",
     "ProblemProviderNotWired",
     "ProblemServicesNotWired",
+    "bootstrap_problem_services",
     "bootstrap_problem_providers",
     "get_problem",
     "post_problem",
     "require_problem_providers",
+    "require_problem_services",
     "reset_problem_router",
     "router",
     "set_problem_idempotency_store",

@@ -102,7 +102,33 @@ class ProblemGenerator:
             ),
             execution_context,
         )
-        return parse(require_successful_text(result), GeneratedItem)
+        item = parse(require_successful_text(result), GeneratedItem)
+        return hydrate_evidence_quotes(item, context_pack)
+
+
+def hydrate_evidence_quotes(
+    item: GeneratedItem, context_pack: ContextPack
+) -> GeneratedItem:
+    """LLM이 생략한 quote를 승인된 ContextPack 원문으로 결정론 보완한다."""
+
+    raw_anchors = context_pack.retrieval_trace.get("evidence_anchors")
+    if not isinstance(raw_anchors, list):
+        return item
+    quotes: dict[str, str] = {}
+    for raw in raw_anchors:
+        if not isinstance(raw, dict):
+            continue
+        ref = raw.get("ref")
+        quote = raw.get("quote")
+        if isinstance(ref, str) and isinstance(quote, str) and quote:
+            quotes[ref] = quote
+    evidence = tuple(
+        anchor.model_copy(update={"quote": quotes[anchor.ref]})
+        if anchor.quote is None and anchor.ref in quotes
+        else anchor
+        for anchor in item.evidence
+    )
+    return item.model_copy(update={"evidence": evidence})
 
 
 def build_candidate_snapshot(
