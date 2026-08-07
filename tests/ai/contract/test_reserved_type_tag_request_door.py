@@ -1,31 +1,29 @@
-"""🔴 예약 태그(`apply`)가 **출제 요청 문**에서 거절돼야 한다 (99 ㊨).
+"""🔴 예약 태그(`apply`)가 **출제 요청 문**에서 거절된다 (99 ㊨ · #01).
 
 #134가 `TypeTag.APPLY`를 계약에 넣으면서 **다섯 문 중 하나가 안 닫혔다.** 04·`error_codes`·
 `policies/taxonomy.md`·`contracts/taxonomy.py`가 전부 *"출제 요청에 보내면 400
-`type_tag_not_supported`"* 라고 적었는데 **400이 안 난다.** 구현은 B 몫(소유·새 동작)이고
-이 파일은 **구멍을 red로 세워 두는 것**이 전부다.
+`type_tag_not_supported`"* 라고 적었는데 **400이 안 났다.** A가 이 파일을 `xfail(strict=True)`로
+세워 두었고(#136), B 구현으로 마커를 지웠다.
 
-## 도달 체인 (8/9 실측 — 추론이 아니다)
+## 그때 무엇이 났는가 (8/9 실측 — 이 파일이 세워진 이유)
 
-    ProblemRequest.model_validate   통과 (enum이 유효하다 · 라우터에 v1 allowlist가 없다)
-    workflow.py:536  소스 게이트     통과 (area_tag·passage만 본다)
+    ProblemRequest.model_validate   통과 (enum이 유효하다 · 어디에도 v1 allowlist가 없다)
+    workflow.py 소스 게이트          통과 (area_tag·passage만 본다)
     generator                        `"type_tag": "apply"` 로 생성
     rules.py 요청 일치 검사          통과 (요청도 apply다)
     difficulty.py:22                 weights.type_tag[item.type_tag] → 🔴 KeyError
-    workflow.py 어느 except도 안 잡음 (LookupError 절은 _item_store.get 전용 · 다른 스코프)
-    assembly.py:238 except Exception → 잡을 failed로 표시하고 **재던진다**
-    routers/problem.py:336           run_next()를 POST 안에서 **동기 실행**하고 감싸지 않는다
-    api/app.py _unhandled            → **HTTP 500**
+    assembly.py  except Exception   → 잡을 failed로 적고 **재던진다**
+    api/app.py   _unhandled         → **HTTP 500** · 잡은 남는데 job_id가 응답에 없다(고아 잡)
 
-🔴 **우리가 열었다.** `policy.py`의 완전성 검사를 `set(V1_TYPE_TAGS)`로 좁히면서 **설정
-로딩은 통과시키고 런타임 조회(`difficulty.py:22`의 dict 인덱싱)는 안 막았다.** 원래 검사가
-지키던 것은 설정 파일 하나가 아니라 **그 설정을 인덱싱하는 모든 자리**였다.
+## 지금 무엇이 나는가
 
-## 왜 `xfail(strict=True)`인가
+    enqueue.py::reject_unsupported_type_tags → 400 INVALID_SCHEMA
+      detail.reason = "type_tag_not_supported" · 요청 태그와 v1 지원 목록 동봉
+    🔴 **잡도 요청 레코드도 만들어지지 않는다** — 거절이 `put()`보다 앞이다.
 
-선례는 `test_version_scope_purity.py`(#133)다. **화이트리스트가 아니다** — strict라
-**B 구현이 머지되는 순간 XPASS로 red**가 나고, 그때 마커를 지우면 초록이다. 화이트리스트는
-영원히 조용하지만 이건 **고쳐지면 시끄럽다.** `skip`으로 바꾸지 마라 — skip은 조용하다.
+🔴 **거절 자리가 「잡을 만들기 전」인 것이 이 파일의 두 번째 주장이다.** 주체 3분할상
+호출자가 고칠 요청이라 4xx이고, 잡을 만들면 **실패 원장만 늘어난다**(99 #01 — 남은 자리는
+`source_procurement_not_implemented` 하나).
 """
 
 from __future__ import annotations
@@ -35,7 +33,6 @@ from pathlib import Path
 from typing import Any, Final
 
 import httpx
-import pytest
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
@@ -59,6 +56,8 @@ from ai.contracts.taxonomy import (
 from ai.db.repositories.run_store import InMemoryRunStore
 from ai.db.store_factory import reset_shared_agent_runtime
 from ai.problem_generation.assembly import problem_runtime_stores
+from ai.problem_generation.enqueue import ProblemRequestStore
+from ai.problem_generation.infrastructure.config import load_verify_config
 from ai.problem_generation.provider import ProblemProviders
 
 _FAKES_DIR = Path(__file__).parents[1] / "fakes"
@@ -72,21 +71,6 @@ _HEADERS: Final = {
     "X-Tenant-Id": "tenant-reserved-tag",
     "X-Request-Id": "request-reserved-tag",
 }
-
-#: 🔴 **작업 1 ③④의 실측**(8/9 · `f99bec0`). 추론이 아니라 관측이다 — B가 이걸 보고
-#: 고치고, 고친 뒤 무엇이 바뀌었는지 이 문장과 대조한다.
-_PENDING_B_FIX_REASON: Final = (
-    "예약 태그 거절이 아직 없다 — 라우터(`routers/problem.py::_problem_request`)가 "
-    "`ProblemRequest.model_validate()`의 enum 검증만 쓰므로 `apply`가 그대로 통과한다. "
-    "🔴 실측(8/9 · f99bec0 · 대역 provider): POST /v1/problems 가 **HTTP 500 "
-    "`INTERNAL`**(envelope·meta.versions는 정상, `data=null`, `error.detail=null`)을 내고, "
-    "잡은 **만들어져 `phase=failed` / `error_code='problem_worker_internal'`로 수렴하지만 "
-    "`job_id`가 응답에 없어 BE가 조회할 수 없다**(고아 잡). 원인은 "
-    "`difficulty.py:22`의 `weights.type_tag[item.type_tag]` KeyError이고 "
-    "`assembly.py:238`이 잡을 실패로 적은 뒤 재던져 `_unhandled`까지 간다. "
-    "대조군 `type_tags=[\"infer\"]`는 같은 배선에서 202 → succeeded로 정상 통과한다. "
-    "🔴 strict=True다 — B 구현이 머지되면 이 xfail이 XPASS로 red가 되고, 그때 마커를 지운다."
-)
 
 
 async def _unused_diagnosis(_: ProblemRequest) -> DiagnosisResult:
@@ -153,7 +137,28 @@ def _solve_result_json() -> str:
     ).model_dump_json()
 
 
-def _prepare(item_type: TypeTag) -> None:
+class _RecordingRequestStore:
+    """`put()` 호출을 세는 대역 — *"잡을 만들기 전에 끊겼는가"* 의 관측 지점.
+
+    ⚠ 잡보다 **요청 저장이 먼저**다(`enqueue.py`) — `put`이 0회면 그 뒤의 `WorkerJob`도
+    만들어지지 않았다. 저장소 내부 키 형식에 기대지 않으려고 스파이로 본다.
+    """
+
+    def __init__(self, inner: ProblemRequestStore) -> None:
+        self._inner = inner
+        self.puts: list[ProblemRequest] = []
+
+    async def put(self, request: ProblemRequest) -> str:
+        self.puts.append(request)
+        return await self._inner.put(request)
+
+    async def get(
+        self, request_ref: str, *, tenant_id: str
+    ) -> ProblemRequest | None:
+        return await self._inner.get(request_ref, tenant_id=tenant_id)
+
+
+def _prepare(item_type: TypeTag) -> _RecordingRequestStore:
     reset_shared_agent_runtime()
     problem_router.reset_problem_router()
     problem_router.set_problem_providers(
@@ -170,12 +175,16 @@ def _prepare(item_type: TypeTag) -> None:
     problem_router.set_problem_services(
         graph_context=FakeGraphContextService(), diagnosis=_unused_diagnosis
     )
-    problem_router.set_problem_stores(problem_runtime_stores())
+    requests = _RecordingRequestStore(problem_runtime_stores().requests)
+    problem_router.set_problem_stores(problem_runtime_stores(request_store=requests))
     problem_router.set_problem_run_store(InMemoryRunStore())
+    return requests
 
 
-def _post(type_tag: str, item_type: TypeTag) -> httpx.Response:
-    _prepare(item_type)
+def _post(
+    type_tag: str, item_type: TypeTag
+) -> tuple[httpx.Response, _RecordingRequestStore]:
+    requests = _prepare(item_type)
     # ⚠ `raise_server_exceptions=False` — 서버 예외를 다시 던지지 않고 **실제 응답**을
     #   보게 한다. BE가 받는 것이 무엇인지가 이 테스트의 주장이다.
     with TestClient(create_app(), raise_server_exceptions=False) as client:
@@ -184,7 +193,7 @@ def _post(type_tag: str, item_type: TypeTag) -> httpx.Response:
             headers={**_HEADERS, "Idempotency-Key": f"idem-{type_tag}"},
             json=_body(type_tags=(type_tag,)),
         )
-    return response
+    return response, requests
 
 
 def test_the_reservation_premise_holds() -> None:
@@ -204,32 +213,66 @@ def test_a_v1_type_tag_is_accepted_end_to_end() -> None:
     🔴 이게 없으면 *"400이 안 나는 게 요청이 잘못돼서"* 인지 구분이 안 된다. 요청 형태
     (`area_tag`·`manual_targets`·헤더·대역 배선)가 유효하다는 것을 여기서 못 박는다.
     """
-    response = _post("infer", TypeTag.INFER)
+    response, requests = _post("infer", TypeTag.INFER)
     assert response.status_code == 202, (
         f"대조군이 202가 아니다({response.status_code}) — 요청 형태나 대역 배선이 깨졌다. "
         "본건 테스트의 결과를 믿을 수 없다"
     )
     assert response.json()["data"]["job_id"]
+    assert len(requests.puts) == 1, (
+        "대조군에서 요청 저장이 일어나지 않았다 — 스파이가 배선되지 않았다면 아래 "
+        "「거절은 잡보다 앞이다」 단정이 **아무것도 안 보고 초록**이 된다"
+    )
 
 
-@pytest.mark.xfail(strict=True, reason=_PENDING_B_FIX_REASON)
 def test_a_reserved_type_tag_is_rejected_at_the_request_door() -> None:
-    """🔴 예약 태그가 든 출제 요청은 **400**이어야 한다.
+    """🔴 예약 태그가 든 출제 요청은 **400**이다.
 
-    🔴 **거절은 잡을 만들기 전에 나야 한다.** 주체 3분할상 이건 **호출자가 고칠 요청**이라
-    4xx이고, 잡을 만들면 **실패 원장만 늘어난다.** 지금은 실제로 그렇게 되고 있다 —
-    잡이 `failed`로 남는데 `job_id`가 응답에 없어 **BE는 그 잡의 존재조차 모른다.**
-
-    ⚠ **상태 코드만 단정한다.** 사유 코드 `type_tag_not_supported`는 아직 **`[제안]`**
-    (`error_codes` §6)이고 B가 다른 코드를 고를 수 있다 — 계약이 코드보다 앞서 나가면
-    B의 선택을 이 테스트가 막는다. 사유 코드까지 잠그는 것은 그 코드가 확정된 뒤다.
+    주체 3분할상 이건 **호출자가 고칠 요청**이라 4xx다. `detail`에 요청 태그와 v1 지원
+    목록을 실어 BE가 **무엇으로 바꿀지** 알게 한다(`error_codes` §6).
     """
-    response = _post("apply", TypeTag.APPLY)
+    response, _requests = _post("apply", TypeTag.APPLY)
     assert response.status_code == 400, (
         f"예약 태그가 출제 요청 문을 통과한다 — HTTP {response.status_code}가 나왔다.\n"
         f"  body = {response.text[:400]}\n"
-        "🔴 400이어야 한다(주체 3분할 — 호출자가 고칠 요청이다). 고치는 위치는 라우터 "
-        "요청 경계(`routers/problem.py::_problem_request`)이고, 지금은 "
-        "`ProblemRequest.model_validate()`의 enum 검증뿐이라 예약 태그가 그대로 통과한다. "
-        "사유 코드는 `type_tag_not_supported` [제안 · error_codes §6]."
+        "🔴 400이어야 한다(주체 3분할 — 호출자가 고칠 요청이다). 거절 자리는 "
+        "`problem_generation/enqueue.py::reject_unsupported_type_tags`다."
+    )
+    body = response.json()
+    assert body["data"] is None
+    assert body["error"]["code"] == "INVALID_SCHEMA"
+    assert body["error"]["detail"] == {
+        "reason": "type_tag_not_supported",
+        "type_tags": ["apply"],
+        "supported": sorted(tag.value for tag in V1_TYPE_TAGS),
+    }, (
+        "사유 코드·detail이 계약과 다르다 — 04 §3.11과 `error_codes` §6이 이 형태를 "
+        "적고 있다. 바꾸려면 문서를 같이 바꿔라"
+    )
+
+
+def test_the_rejection_lands_before_the_job_exists() -> None:
+    """🔴 **거절은 잡을 만들기 전에 난다** — 4xx가 실패 원장을 남기지 않는다(99 #01).
+
+    ⚠ 이게 이 수정의 절반이다. 워크플로에서 거절했다면 400은 나지만 **잡이 만들어졌다가
+    실패로 수렴**하고, 원장을 읽는 사람이 *"이 테넌트에 실패가 많다"* 로 오독한다.
+    `enqueue()`의 요청 저장(`put`)이 잡 생성보다 앞이므로 `put` 0회가 그 증거다.
+    """
+    _response, requests = _post("apply", TypeTag.APPLY)
+    assert requests.puts == [], (
+        "예약 태그 요청이 저장까지 갔다 — 거절이 `enqueue()` 최상단보다 뒤에 있다. "
+        "그러면 잡도 만들어지고 실패 잡이 원장에 남는다"
+    )
+
+
+def test_the_door_and_the_difficulty_weights_agree() -> None:
+    """🔴 **문이 허용하는 집합 == 가중치가 존재하는 집합.**
+
+    이 둘이 갈리는 순간이 `difficulty.py`의 KeyError가 돌아오는 순간이다(#134 실측).
+    한쪽만 넓히는 PR을 여기서 잡는다 — 예약을 여는 날에도 `V1_TYPE_TAGS`가 넓어지면
+    `verify_config.yaml`이 red를 내서 가중치를 같이 넣게 된다.
+    """
+    weights = load_verify_config().difficulty_weights
+    assert set(weights.type_tag) == set(V1_TYPE_TAGS), (
+        "요청 문이 받는 태그와 난이도 가중치 키가 다르다 — 받은 뒤 조회에서 터진다"
     )
