@@ -210,7 +210,7 @@ DomainException (base)
 ├─ ProblemTenantMismatch            → 403 TENANT_MISMATCH
 ├─ ProblemSourceUnsupported         → 400 INVALID_SCHEMA
 │                                     + 사유 source_procurement_not_implemented (§6)
-└─ (problem_generation 실행 컨텍스트 오류 — 이름 미정) → 500 INTERNAL
+└─ ProblemExecutionContextMismatch   → 500 INTERNAL
                                       `problem_generation/workflow.py:496`
 ```
 
@@ -221,9 +221,6 @@ DomainException (base)
 
 주체 3분할 그대로다 — **아무도 못 바꾸는 것은 5xx**다. 4xx는 *"BE가 요청을 고치면 된다"* 를
 뜻하는데, 조립 실수는 BE가 무엇을 고쳐도 같은 응답이 나온다.
-
-⚠ **이 줄에만 예외 이름이 없다** — B가 `DomainException`을 그대로 쓴다고 회신했다. 트리는
-이름 자리라 우선 위치만 잡아 뒀다(99 ㊕ — 이름을 붙일지 B 판정 대기).
 
 🔴 **(8/6) 트리의 이름은 runtime 매핑 예외다.** `contracts.llm`의 `LlmUnavailable`·
 `LlmTimeout`은 이 경계가 **받아 변환하는 입력**이며(아래 7/22 A 판정), **이름을 갈라 둔
