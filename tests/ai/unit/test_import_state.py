@@ -17,9 +17,21 @@ from ai.import_mapping.state import (
     can_transition,
 )
 
-#: 10_import_spec §2 그림을 손으로 옮긴 기대표 — 이 값이 곧 계약이다.
-#: ⚠ **같은 한계다** — `ALL_TRANSITIONS`(코드) ↔ 손사본이라 **그림이 바뀌면 조용하다**
-#:   (99 #07). 코드가 바뀌면 red가 나는 방향만 지킨다.
+#: `part_a/10_import_spec.md` §2 그림을 손으로 옮긴 기대표 — 이 값이 곧 계약이다.
+#: 🔴 **여기는 자동 대조를 못 건다 — 셋 중 이것만 남았다**(8/11 · 99 #07).
+#: §1.2·§2.2는 python 코드블록이라 파싱해 걸었는데(`test_doc_enum_parity.py`),
+#: **이 §2는 ASCII 아트이고 전이가 세 곳에 흩어져 있다:**
+#:
+#:     그림   POST → profiling → inferring → [probing] → preview_ready → done
+#:            (임의 단계 실패) ─────────────▶ failed        ← "임의 단계"가 산문이다
+#:     표     inferring 실패 → preview_ready 폴백           ← 그림에 없는 엣지
+#:     불릿   캐시 hit: profiling → preview_ready 직행       ← 그림에 없는 엣지
+#:
+#: ⇒ **그림만 정규식으로 훑으면 엣지 둘이 빠진 「기대표」가 나오고**, 그걸로 코드와
+#: 대조하면 **정상 전이가 위반으로 잡힌다.** 억지로 걸면 틀린 검사를 세우는 것이다.
+#: ⚠ **못 거는 것은 못 건다고 적는다**(로그 67) — 이 표는 **코드 → 그림** 방향만
+#: 지킨다(`ALL_TRANSITIONS`가 바뀌면 red). **그림만 바뀌면 여전히 조용하다.**
+#: 여는 조건: §2를 mermaid `stateDiagram`으로 바꾸고 세 곳의 엣지를 그림에 합치는 것.
 _EXPECTED: dict[S, set[S]] = {
     S.PROFILING: {S.INFERRING, S.PREVIEW_READY, S.FAILED},
     S.INFERRING: {S.PROBING, S.PREVIEW_READY, S.FAILED},

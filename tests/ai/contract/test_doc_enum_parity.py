@@ -36,10 +36,13 @@ from pathlib import Path
 from typing import Final, NamedTuple
 
 import pytest
+from pydantic import BaseModel
 
+from ai.composition.counsel.state import CounselPackState
 from ai.contracts.agents import JobPhase, PriorityClass, WorkerKind
 from ai.contracts.composition import PlanOutcome
 from ai.contracts.execution import Capability
+from ai.import_mapping.probe.state import MappingProbeState
 
 _DOCS: Final = Path(__file__).resolve().parents[3] / "docs"
 
@@ -75,6 +78,68 @@ def _table_values(doc: Path, start: str, end: str) -> set[str]:
     if i < 0 or j < 0:
         return set()
     return set(_QUOTED_TABLE_CELL.findall(text[i:j]))
+
+
+# ── ⓒ python 코드블록 — `class X(BaseModel):` 의 필드 이름 (99 #07) ──
+
+
+class _FieldPair(NamedTuple):
+    """문서 코드블록의 필드 집합과 그것이 정본으로 삼는 모델."""
+
+    label: str
+    doc: Path
+    heading: str
+    class_name: str
+    model: type[BaseModel]
+
+
+#: 코드블록 안의 `    name: type` 한 줄 — 들여쓰기 4칸이 클래스 본문 필드다.
+#: ⚠ 주석 줄(`# …`)·빈 줄·중첩 클래스 선언은 자연히 안 걸린다.
+_FIELD_LINE: Final = re.compile(r"^ {4}(\w+)\s*:", re.MULTILINE)
+
+_FIELD_PAIRS: Final = (
+    _FieldPair(
+        "counsel_pack_state",
+        _DOCS / "policies" / "langgraph_state.md",
+        "### 1.2 State (Pydantic)",
+        "CounselPackState",
+        CounselPackState,
+    ),
+    _FieldPair(
+        "mapping_probe_state",
+        _DOCS / "policies" / "langgraph_state.md",
+        "### 2.2 State",
+        "MappingProbeState",
+        MappingProbeState,
+    ),
+)
+
+
+def _codeblock_fields(doc: Path, heading: str, class_name: str) -> set[str]:
+    """`heading` 뒤 첫 python 코드블록에서 `class_name`의 필드 이름을 뽑는다.
+
+    🔴 **클래스 경계를 지킨다** — 같은 코드블록에 클래스가 둘 이상 있다(§1.2는
+    `StudentResult` + `CounselPackState`). 블록 전체를 훑으면 남의 필드가 섞인다.
+    """
+    text = doc.read_text(encoding="utf-8")
+    start = text.find(heading)
+    if start < 0:
+        return set()
+    open_fence = text.find("```", start)
+    close_fence = text.find("```", open_fence + 3) if open_fence >= 0 else -1
+    if open_fence < 0 or close_fence < 0:
+        return set()
+    block = text[text.find("\n", open_fence) + 1 : close_fence]
+
+    marker = f"class {class_name}"
+    class_at = block.find(marker)
+    if class_at < 0:
+        return set()
+    tail = block[block.find("\n", class_at) + 1 :]
+    # 다음 최상위 선언(`class …`)에서 자른다 — 들여쓰기 0이 클래스 본문의 끝이다.
+    next_class = re.search(r"^\S", tail, re.MULTILINE)
+    body = tail[: next_class.start()] if next_class else tail
+    return set(_FIELD_LINE.findall(body))
 
 
 # ── ⓑ mermaid ERD — `varchar col "a|b|c"` ─────────────────────────
@@ -115,6 +180,34 @@ def test_the_scan_finds_documented_value_sets() -> None:
             f"{pair.doc.name}에서 `varchar {pair.label} \"…\"` 주석을 못 찾았다 — "
             "검사가 끊겼다"
         )
+    for field_pair in _FIELD_PAIRS:
+        assert _codeblock_fields(
+            field_pair.doc, field_pair.heading, field_pair.class_name
+        ), (
+            f"{field_pair.doc.name}의 {field_pair.heading!r} 코드블록에서 "
+            f"`{field_pair.class_name}`의 필드를 하나도 못 찾았다 — **검사가 끊긴 것**이다"
+        )
+
+
+@pytest.mark.parametrize("pair", _FIELD_PAIRS, ids=[p.label for p in _FIELD_PAIRS])
+def test_documented_codeblock_fields_match_the_model(pair: _FieldPair) -> None:
+    """🔴 문서 코드블록의 필드 집합 == 모델 필드. **문서를 읽어서** 비교한다 (99 #07).
+
+    #150이 *"형식이 일정하지 않아 이 PR 범위를 넘는다"* 며 미룬 것이다. python 코드블록
+    둘(§1.2·§2.2)은 형식이 일정해서 걸 수 있었다.
+
+    ⚠ **이 검사가 대체하는 것:** `test_counsel_state.py`·`test_probe_state.py`가 각각
+    **손으로 옮긴 필드 집합**과 `model_fields`를 비교하고 있었다 — 반대편이 코드 상수라
+    `코드 == 코드`이고 **문서가 바뀌면 조용했다.** 이제 문서를 읽는다.
+    """
+    documented = _codeblock_fields(pair.doc, pair.heading, pair.class_name)
+    coded = set(pair.model.model_fields)
+    assert documented == coded, (
+        f"{pair.doc.name} {pair.heading!r}의 `{pair.class_name}`과 코드가 갈렸다.\n"
+        f"  문서에만: {sorted(documented - coded)}\n"
+        f"  코드에만: {sorted(coded - documented)}\n"
+        "🔴 필드를 더하거나 뺐으면 문서 코드블록도 같이 고친다."
+    )
 
 
 @pytest.mark.parametrize(
