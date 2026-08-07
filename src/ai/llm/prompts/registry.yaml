@@ -6,12 +6,12 @@ prompts:
     template: problem_generation/passage.txt
     response_schema_name: PassageDraft
   - prompt_id: pg.items.v1
-    version: v1
+    version: v2
     role: generator
     template: problem_generation/items.txt
     response_schema_name: GeneratedItem
   - prompt_id: pg.cross_solve.v1
-    version: v1
+    version: v2
     role: verifier
     template: problem_generation/cross_solve.txt
     response_schema_name: SolveResult

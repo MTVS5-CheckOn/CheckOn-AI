@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -46,6 +44,9 @@ from ai.llm.providers.openai_compat import OpenAiSettings, get_llm_settings
 from ai.llm.structured import parse
 from ai.problem_generation.bootstrap import build_problem_workflow
 from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.graph_context import (
+    GrammarNormGraphContextService,
+)
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
@@ -61,13 +62,8 @@ from ai.runtime.tracing import external_tracing_active
 
 pytestmark = pytest.mark.integration
 
-_FAKES_DIR = Path(__file__).parents[1] / "fakes"
-sys.path.insert(0, str(_FAKES_DIR))
-
-from fake_graph_context import FakeGraphContextService  # noqa: E402
-
 _GRAPH_VERSION = "curriculum-graph.v1"
-_SKILL_NODE_ID = "grammar.sentence-structure"
+_SKILL_NODE_ID = "language.grammar.phonological_change"
 _SNAPSHOT_HASH = "snapshot-pg-real-llm-smoke"
 _TAXONOMY_VERSION = "taxonomy-v1"
 _KST = ZoneInfo("Asia/Seoul")
@@ -103,6 +99,7 @@ class RealLlmSmokeObservation:
     generator_completions: tuple[LLMResult, ...]
     verifier_completions: tuple[LLMResult, ...]
     parsed_items: tuple[GeneratedItem, ...]
+    generated_items: tuple[GeneratedItem, ...]
 
 
 class _ObservingProvider:
@@ -178,7 +175,7 @@ def _execution_context() -> ExecutionContext:
             engine_version="engine-v1",
             schema_version="schema-v1",
             contract_version="contract-v1",
-            prompt_version="v1",
+            prompt_version="v2",
             graph_version=_GRAPH_VERSION,
             taxonomy_version=_TAXONOMY_VERSION,
             verify_config_version="verify-config.v1",
@@ -250,6 +247,7 @@ async def run_real_llm_smoke() -> RealLlmSmokeObservation:
     )
     records: list[LlmCallRecord] = []
     verify_config = load_verify_config()
+    item_store = InMemoryProblemItemStore()
     gateway = build_problem_gateway(
         verify_config=verify_config,
         recorder=lambda record, _context: records.append(record),
@@ -257,10 +255,10 @@ async def run_real_llm_smoke() -> RealLlmSmokeObservation:
     )
     workflow = build_problem_workflow(
         gateway=gateway,
-        graph_context=FakeGraphContextService(),
+        graph_context=GrammarNormGraphContextService(),
         diagnosis=_diagnose,
         candidate_store=InMemoryCandidateStore(),
-        item_store=InMemoryProblemItemStore(),
+        item_store=item_store,
         checkpointer=InMemorySaver(),
         verify_config=verify_config,
     )
@@ -285,6 +283,14 @@ async def run_real_llm_smoke() -> RealLlmSmokeObservation:
         raise RealLlmSmokeUnavailable("verifier provider 미가용")
 
     parsed_items = _parse_generated_items(tuple(generator.completions))
+    generated_items: list[GeneratedItem] = []
+    for slot_index in range(len(outcome.items)):
+        try:
+            stored = await item_store.get(outcome.set_id, slot_index)
+        except LookupError:
+            continue
+        if stored.item is not None:
+            generated_items.append(stored.item)
     generator_endpoint, generator_model, verifier_endpoint, verifier_model = (
         _provider_endpoints(local_settings, provider_settings)
     )
@@ -303,6 +309,7 @@ async def run_real_llm_smoke() -> RealLlmSmokeObservation:
         generator_completions=tuple(generator.completions),
         verifier_completions=tuple(verifier.completions),
         parsed_items=parsed_items,
+        generated_items=tuple(generated_items),
     )
 
 
@@ -330,6 +337,8 @@ def test_t1_problem_generation_real_llm_roundtrip() -> None:
     item = observation.parsed_items[-1]
     assert len(item.choices) == 5
     assert 1 <= item.answer.correct_no <= 5
+    assert observation.generated_items
+    assert observation.generated_items[0].evidence[0].quote is not None
 
 
 __all__ = [

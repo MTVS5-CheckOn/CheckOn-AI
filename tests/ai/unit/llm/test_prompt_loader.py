@@ -36,6 +36,16 @@ def test_problem_generation_registry_has_three_versioned_prompts() -> None:
     assert registry.get("pg.cross_solve.v1").role is ModelRole.VERIFIER
 
 
+def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
+    registry = load_prompt_registry(REGISTRY_PATH)
+    template = load_prompt_template("pg.items.v1", REGISTRY_PATH, TEMPLATES_ROOT)
+
+    assert "사람 이름을 쓰지 않고 학생 A·갑·을 같은 비인명 표기" in template.content
+    assert "교차 풀이가 fail-closed로 차단" in template.content
+    assert template.version == "v2"
+    assert registry.get("pg.cross_solve.v1").version == "v2"
+
+
 @pytest.mark.parametrize(
     ("prompt_id", "expected_variables"),
     [

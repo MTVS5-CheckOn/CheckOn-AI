@@ -2,10 +2,11 @@
 
 import asyncio
 
+import pytest
 from fake_provider import FakeProvider
 
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
-from ai.contracts.llm import ModelRole
+from ai.contracts.llm import ModelRole, RedactionBlocked
 from ai.contracts.problem_generation import (
     Answer,
     Choice,
@@ -18,6 +19,7 @@ from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.llm.determinism import DETERMINISTIC_TEMPERATURE, LLM_SEED
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
+from ai.runtime.redaction import RedactionResult, redact
 
 
 def test_cross_solver_sends_only_blind_item() -> None:
@@ -97,3 +99,82 @@ def test_cross_solver_sends_only_blind_item() -> None:
     assert generation_params is not None
     assert generation_params.temperature == DETERMINISTIC_TEMPERATURE
     assert generation_params.seed == LLM_SEED
+
+
+def test_cross_solver_blocks_generated_item_with_person_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    solve = SolveResult(
+        chosen=1,
+        reasoning="독립 풀이",
+        confidence=0.9,
+        target_skill_node_id="grammar.node-1",
+        measured_skill_node_id="grammar.node-1",
+        aligned=True,
+        alignment_confidence=0.9,
+        alignment_reason="목표와 일치",
+    )
+    provider = FakeProvider((solve.model_dump_json(),), name="fake-verifier")
+    gateway = LlmGateway(
+        {ModelRole.VERIFIER: provider},
+        transport_retry={ModelRole.VERIFIER: 0},
+    )
+    solver = BlindCrossSolver(gateway)
+    item = GeneratedItem(
+        area_tag=AreaTag.LANGUAGE,
+        type_tag=TypeTag.CONCEPT,
+        item_format=ItemFormat.MCQ,
+        skill_node_id="grammar.node-1",
+        stem="김철수가 학교에 갔다. 밑줄 친 표현으로 적절한 것을 고르시오.",
+        choices=tuple(
+            Choice(
+                no=no,
+                text=f"선지 {no}",
+                why_wrong=None if no == 1 else f"오답 근거 {no}",
+            )
+            for no in range(1, 6)
+        ),
+        answer=Answer(correct_no=1),
+        rationale="비공개 해설 원문",
+        evidence=(
+            EvidenceAnchor(
+                kind=EvidenceKind.GRAMMAR_RULE,
+                ref="grammar:rule-1",
+            ),
+        ),
+    )
+    context = ExecutionContext(
+        execution_id="11111111-1111-1111-1111-111111111111",
+        tenant_id="tenant-a",
+        capability=Capability.PROBLEM_GENERATION,
+        input_snapshot_hash="sha256:test",
+        versions=VersionSet(
+            pipeline_version="pipeline-v1",
+            engine_version="engine-v1",
+            schema_version="schema-v1",
+            contract_version="contract-v1",
+        ),
+    )
+    observed: list[RedactionResult] = []
+
+    def _record_redaction(text: str) -> RedactionResult:
+        result = redact(text)
+        observed.append(result)
+        return result
+
+    monkeypatch.setattr(
+        "ai.problem_generation.application.cross_solver.redact",
+        _record_redaction,
+    )
+
+    with pytest.raises(RedactionBlocked):
+        asyncio.run(
+            solver.solve(
+                item=item,
+                target_skill_node_id="grammar.node-1",
+                execution_context=context,
+            )
+        )
+
+    assert observed and observed[0].uncertain is True
+    assert not provider.requests

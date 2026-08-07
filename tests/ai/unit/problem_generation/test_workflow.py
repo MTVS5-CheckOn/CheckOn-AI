@@ -26,6 +26,8 @@ from ai.contracts.problem_generation import (
     EvidenceKind,
     GeneratedItem,
     ItemResult,
+    PassageDomain,
+    PassageRequest,
     ProblemFailureReason,
     ProblemGenerationState,
     ProblemItemStatus,
@@ -33,7 +35,7 @@ from ai.contracts.problem_generation import (
     ProblemSetResult,
     ProblemSetStatus,
     ReviewReason,
-    SetStopReason,
+    SentenceComplexity,
     SolveResult,
     TargetKind,
     TargetSource,
@@ -45,7 +47,11 @@ from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import ProblemGenerator
 from ai.problem_generation.application.workflow import (
+    SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
+    ProblemExecutionContextMismatch,
     ProblemGenerationWorkflow,
+    ProblemSourceUnsupported,
+    ProblemTenantMismatch,
     ProblemWorkflowConfigurationError,
 )
 from ai.problem_generation.domain.identity import problem_item_id
@@ -56,6 +62,9 @@ from ai.problem_generation.domain.policy import (
     VerifyConfig,
 )
 from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.graph_context import (
+    GrammarNormGraphContextService,
+)
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
@@ -167,7 +176,7 @@ class _WorkflowHarness:
                 engine_version="engine-v1",
                 schema_version="schema-v1",
                 contract_version="contract-v1",
-                prompt_version="v1",
+                prompt_version="v2",
                 graph_version=_GRAPH_VERSION,
                 taxonomy_version=_TAXONOMY_VERSION,
                 verify_config_version="verify-config.v1",
@@ -494,16 +503,10 @@ def test_missing_reference_data_is_fail_closed_and_stops_after_streak() -> None:
         graph_steps=((),),
     )
 
-    result = _run(harness, harness.request(count=5))
+    result = asyncio.run(harness.workflow.run(harness.request(count=5), harness.context()))
 
-    assert result.status is ProblemSetStatus.FAILED
-    assert result.stop_reason is SetStopReason.VERIFIER_OUTAGE
-    assert result.processed_count == 3
-    assert result.unstarted_count == 2
-    assert all(
-        item.status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
-        for item in result.items
-    )
+    assert result.outcome == "rejected_insufficient"
+    assert result.status == "rejected_insufficient"
     assert not harness.generator_provider.requests
     assert not harness.verifier_provider.requests
 
@@ -645,7 +648,25 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
     assert not harness.generator_provider.requests
 
 
-def test_workflow_rejects_requests_needing_unimplemented_material_source() -> None:
+@pytest.mark.parametrize(
+    "request_update",
+    (
+        {"area_tag": AreaTag.READING},
+        {
+            "area_tag": AreaTag.READING,
+            "passage": PassageRequest(
+                domain=PassageDomain.SCIENCE,
+                word_count=500,
+                sentence_complexity=SentenceComplexity.STANDARD,
+                paragraph_count=3,
+                banned_topics_version="pg-banned-topics.v1",
+            ),
+        },
+    ),
+)
+def test_workflow_rejects_requests_needing_unimplemented_material_source(
+    request_update: dict[str, object],
+) -> None:
     """자료 조달 방식이 '자료 없음'인 요청만 받는다 — `05` §1.0·§1.2.
 
     트랙 제한이 아니다. 게이트·프롬프트는 전 영역 공용이고, 막는 것은
@@ -656,14 +677,80 @@ def test_workflow_rejects_requests_needing_unimplemented_material_source() -> No
         generator_steps=(),
         verifier_steps=(),
     )
-    unsupported = harness.request().model_copy(
-        update={"area_tag": AreaTag.READING}
-    )
+    unsupported = harness.request().model_copy(update=request_update)
 
-    with pytest.raises(
-        ProblemWorkflowConfigurationError,
-        match="자료 조달 방식이",
-    ):
+    with pytest.raises(ProblemSourceUnsupported) as raised:
         asyncio.run(harness.workflow.run(unsupported, harness.context()))
 
+    error = raised.value
+    assert type(error) is ProblemSourceUnsupported
+    assert error.code == "INVALID_SCHEMA"
+    assert error.http_status == 400
+    assert error.detail == {
+        "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
+        "area_tag": AreaTag.READING.value,
+        "passage": unsupported.passage is not None,
+    }
     assert not harness.generator_provider.requests
+
+
+def test_unmapped_reference_node_converges_to_rejected_insufficient() -> None:
+    harness = _WorkflowHarness(generator_steps=(), verifier_steps=())
+    workflow = ProblemGenerationWorkflow(
+        diagnosis=harness.diagnosis,
+        graph_context=GrammarNormGraphContextService(),
+        generator=harness.generator,
+        cross_solver=harness.cross_solver,
+        candidate_store=harness.candidates,
+        item_store=harness.items,
+        checkpointer=InMemorySaver(),
+    )
+
+    result = asyncio.run(workflow.run(harness.request(), harness.context()))
+
+    assert result.outcome == "rejected_insufficient"
+    assert result.status == "rejected_insufficient"
+    assert not harness.generator_provider.requests
+
+
+def test_workflow_rejects_tenant_mismatch_with_typed_forbidden_error() -> None:
+    harness = _WorkflowHarness(generator_steps=(), verifier_steps=())
+    mismatched = harness.context().model_copy(update={"tenant_id": "tenant-b"})
+
+    with pytest.raises(ProblemTenantMismatch) as raised:
+        asyncio.run(harness.workflow.run(harness.request(), mismatched))
+
+    error = raised.value
+    assert type(error) is ProblemTenantMismatch
+    assert error.code == "TENANT_MISMATCH"
+    assert error.http_status == 403
+
+
+def test_workflow_rejects_input_mismatch_with_configuration_error() -> None:
+    harness = _WorkflowHarness(generator_steps=(), verifier_steps=())
+    mismatched = harness.context().model_copy(
+        update={"input_snapshot_hash": "sha256:different"}
+    )
+
+    with pytest.raises(ProblemWorkflowConfigurationError) as raised:
+        asyncio.run(harness.workflow.run(harness.request(), mismatched))
+
+    error = raised.value
+    assert type(error) is ProblemWorkflowConfigurationError
+    assert error.code == "INVALID_SCHEMA"
+    assert error.http_status == 400
+
+
+def test_workflow_rejects_capability_mismatch_as_internal_error() -> None:
+    harness = _WorkflowHarness(generator_steps=(), verifier_steps=())
+    mismatched = harness.context().model_copy(
+        update={"capability": Capability.COMPOSITION}
+    )
+
+    with pytest.raises(ProblemExecutionContextMismatch) as raised:
+        asyncio.run(harness.workflow.run(harness.request(), mismatched))
+
+    error = raised.value
+    assert type(error) is ProblemExecutionContextMismatch
+    assert error.code == "INTERNAL"
+    assert error.http_status == 500

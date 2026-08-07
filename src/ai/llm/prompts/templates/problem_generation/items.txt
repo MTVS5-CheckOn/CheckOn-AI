@@ -20,6 +20,8 @@ $retry_context_json
 4. rationale은 evidence의 승인된 근거만 사용한다.
 5. evidence는 최소 1개이며 ContextPack의 EvidencePack 앵커만 참조한다.
 6. 아래 스키마의 JSON 객체 하나만 반환한다.
+7. 예시 인물이 필요하면 사람 이름을 쓰지 않고 학생 A·갑·을 같은 비인명 표기를 쓴다.
+   인명은 개인정보 마스킹에 걸려 교차 풀이가 fail-closed로 차단된다.
 
 스키마 — 필드명을 바꾸거나 새 필드를 추가하지 않는다:
 
