@@ -36,6 +36,11 @@ class VersionSet(BaseModel):
 
     이 버전 세트 + input_snapshot_hash가 같으면 같은 출력이 나와야 한다.
     API 응답의 meta.versions로도 항상 실린다 (04_api_contract.md §2.2).
+
+    🔴 같은 출력의 조건에는 `generation_params`(seed·temperature)도 든다.
+    ⚠ LLM 경로의 seed는 서버 best-effort라 이 조건이 성립해도 **바이트 동일은 보장되지
+    않는다**(99 ㊼). 결정론 경로(게이트·판정·산식)는 그래도 **바이트 동일**이다 —
+    불변식 8이 죽는 게 아니라 **경로별로 갈린다.**
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
