@@ -274,18 +274,32 @@ class _DraftState:
     citations: tuple[Citation, ...]
     text: str
 
+    #: 🔴 최초 요청의 입력 스냅숏 해시(99 ㉭). refine 원장(`AI_RUN.input_snapshot_hash`)이
+    #: 이 값을 쓴다 — 종전에는 `"sha256:refine"` 리터럴이라 **아무 입력도 특정하지 못했다.**
+    #: 출처는 여기뿐이다 — `RefineRequest`는 `instruction`·`turn_no` 둘뿐이고
+    #: `DraftContext`에도 `snapshot_hash`가 없다.
+    #:
+    #: 🔴 **기본값이 없다.** 종전 `= ""`는 **계약을 위반하는 값**이었다 —
+    #: `contracts/execution.py`의 `input_snapshot_hash`는 `Field(min_length=1)`이라
+    #: 빈 문자열이 무효다. 그리고 `_refine_execution_context(...)` 호출이 **`try` 블록
+    #: 밖**에 있어(`failed = True` 앞) `ValidationError`가 `_record_refine_run`도 안 지나고
+    #: `_unhandled`로 간다 — **500 + 원장 0건**이다(㊝과 같은 형태:
+    #: `Brief(text="")` → `min_length=1` → 핸들러 밖).
+    #: ⚠ 기본값을 없애면 빠뜨렸을 때 **생성 시점 `TypeError`** 로 즉시 죽는다 — 조용하지 않다.
+    #: ⚠ 지금은 도달 불가다(생성 지점이 `:700` 한 곳이고 항상 채운다) — **잠재 결함**을
+    #:   막는 것이고, 규칙은 *"기본값이 계약을 위반하는 값이면 빠뜨림이 조용한 게 아니라
+    #:   500이 된다"* 이다.
+    snapshot_hash: str
 
     #: 🔴 최초 생성이 고른 **검증 통과 강조점**(99 ㉮). 없으면 refine이 매 턴 강조점 없이
     #: 다시 써서 *"1턴에 강조한 것이 2턴에 사라지는"* 상태가 된다 — 강사가 다듬기를 한 번만
     #: 눌러도 **매번** 그렇다.
     #: ⚠ **빈 값이 「강조점 없음」인지 「안 쟀음」인지는 여기서 안 갈린다** — 사유는
     #: `CounselPackResultRecord.plan_outcome`이 든다(㉲). 이 필드만 보고 판단하지 마라.
+    #: ⚠ **기본값 `()`는 그대로 둔다** — 위 `snapshot_hash`와 성격이 다르다. `()`는
+    #:   **계약상 유효한 값**(강조점 없음)이고 `""`는 무효였다. 「유효한 기본값」과
+    #:   「계약을 위반하는 기본값」을 같이 취급하지 않는다.
     emphasis: tuple[str, ...] = ()
-    #: 🔴 최초 요청의 입력 스냅숏 해시(99 ㉭). refine 원장(`AI_RUN.input_snapshot_hash`)이
-    #: 이 값을 쓴다 — 종전에는 `"sha256:refine"` 리터럴이라 **아무 입력도 특정하지 못했다.**
-    #: ⚠ 기본값이 빈 문자열인 이유는 refine 요청 바디에 이 값이 **없기 때문**이다
-    #: (`RefineRequest`는 `instruction`·`turn_no` 둘뿐) — 출처가 여기밖에 없다.
-    snapshot_hash: str = ""
 
 
 #: refine 읽기 모델 — `(tenant_id, job_id) → 초안 상태`. 키가 job_id인 이유는
