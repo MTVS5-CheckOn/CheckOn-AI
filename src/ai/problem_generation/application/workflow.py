@@ -126,6 +126,10 @@ class GraphContextUnavailable(GraphContextError):
     """GraphRAG 기준 자료 또는 서비스가 일시적으로 없음."""
 
 
+class GraphContextReferenceInsufficient(GraphContextError):
+    """자동 개인화 목표에 승인된 기준 자료가 없음."""
+
+
 
 @dataclass(frozen=True, slots=True)
 class _AttemptFeedback:
@@ -202,10 +206,15 @@ class ProblemGenerationWorkflow:
             execution_context=execution_context,
             targets=prepared,
         )
-        result = await graph.ainvoke(
-            initial,
-            config={"configurable": {"thread_id": str(set_id)}},
-        )
+        try:
+            result = await graph.ainvoke(
+                initial,
+                config={"configurable": {"thread_id": str(set_id)}},
+            )
+        except GraphContextReferenceInsufficient:
+            return RejectedInsufficientOutcome(
+                status_reason="출제 목표에 승인된 기준 자료가 없다"
+            )
         final_state = ProblemGenerationState.model_validate(result)
         return final_state.to_result()
 
@@ -276,6 +285,11 @@ class ProblemGenerationWorkflow:
             if not has_reference_data(context_pack):
                 if state.fallback_ref is not None:
                     return await self._restore_fallback(state)
+                if (
+                    request.target_source is TargetSource.WEAKNESS_AUTO
+                    and state.cursor == 0
+                ):
+                    raise GraphContextReferenceInsufficient
                 return await self._finalize_verification_unavailable(
                     state,
                     item=None,

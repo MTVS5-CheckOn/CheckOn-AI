@@ -36,7 +36,6 @@ from ai.contracts.problem_generation import (
     ProblemSetStatus,
     ReviewReason,
     SentenceComplexity,
-    SetStopReason,
     SolveResult,
     TargetKind,
     TargetSource,
@@ -63,6 +62,9 @@ from ai.problem_generation.domain.policy import (
     VerifyConfig,
 )
 from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.graph_context import (
+    GrammarNormGraphContextService,
+)
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
@@ -501,16 +503,10 @@ def test_missing_reference_data_is_fail_closed_and_stops_after_streak() -> None:
         graph_steps=((),),
     )
 
-    result = _run(harness, harness.request(count=5))
+    result = asyncio.run(harness.workflow.run(harness.request(count=5), harness.context()))
 
-    assert result.status is ProblemSetStatus.FAILED
-    assert result.stop_reason is SetStopReason.VERIFIER_OUTAGE
-    assert result.processed_count == 3
-    assert result.unstarted_count == 2
-    assert all(
-        item.status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
-        for item in result.items
-    )
+    assert result.outcome == "rejected_insufficient"
+    assert result.status == "rejected_insufficient"
     assert not harness.generator_provider.requests
     assert not harness.verifier_provider.requests
 
@@ -695,6 +691,25 @@ def test_workflow_rejects_requests_needing_unimplemented_material_source(
         "area_tag": AreaTag.READING.value,
         "passage": unsupported.passage is not None,
     }
+    assert not harness.generator_provider.requests
+
+
+def test_unmapped_reference_node_converges_to_rejected_insufficient() -> None:
+    harness = _WorkflowHarness(generator_steps=(), verifier_steps=())
+    workflow = ProblemGenerationWorkflow(
+        diagnosis=harness.diagnosis,
+        graph_context=GrammarNormGraphContextService(),
+        generator=harness.generator,
+        cross_solver=harness.cross_solver,
+        candidate_store=harness.candidates,
+        item_store=harness.items,
+        checkpointer=InMemorySaver(),
+    )
+
+    result = asyncio.run(workflow.run(harness.request(), harness.context()))
+
+    assert result.outcome == "rejected_insufficient"
+    assert result.status == "rejected_insufficient"
     assert not harness.generator_provider.requests
 
 
