@@ -23,12 +23,13 @@ import logging
 import time
 import uuid
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Final
 
 from fastapi import APIRouter, Request
 from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
+from ai.api.version_scope import RouterScope
 from ai.composition.briefing import BRIEF_GEN_PARAMS, make_brief
 from ai.composition.briefing import PROMPT_VERSION as BRIEF_PROMPT_VERSION
 from ai.composition.briefing_context import build_contexts
@@ -441,3 +442,10 @@ async def post_detect(request: Request) -> dict[str, Any]:
         response_body=envelope,
     )
     return envelope
+
+#: 이 라우터가 응답하는 경로 접두와 그 버전 세트 — `api/app.py`가 **실패 응답**에 쓴다(99 ㊓).
+#: 🔴 접두를 여기 두는 이유: **경로를 바꾸는 사람과 접두를 고치는 사람이 같아야 한다.**
+#:  `app.py`에 박으면 다른 파일이라 조용히 갈린다.
+#: 감지는 `config`를 받는 유일한 축이라 인자에 기본값이 있다 — 실패 응답은 기본 config로
+#:  조립된다(04 §2.2 A판정 "기본 config의 threshold").
+VERSION_SCOPE: Final = RouterScope("/v1/detect", detection_versions)
