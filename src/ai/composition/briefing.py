@@ -31,6 +31,7 @@ from ai.composition.gate_feedback import instruction_for, render_feedback_block
 from ai.contracts.detection import Brief
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import (
+    CallOutcome,
     LlmError,
     LLMProvider,
     LLMRequest,
@@ -135,6 +136,19 @@ async def make_brief(
         )
         try:
             result = await completer.complete(request, context)
+            # 🔴 **두 검사를 `try` 안에 둔다**(99 ㊝) — 밖에 두면 `except LlmError`가 못 받고
+            #    `Brief(text="")`가 `min_length=1`에 걸려 **`ValidationError`가 detect까지
+            #    올라간다**(실측: 빈 응답 1건 → `POST /v1/detect` 500).
+            # ⚠ classify와 **처방이 다르다** — 거긴 `raise`가 밖으로 나가는 게 맞았지만
+            #    (라우터가 5xx로 변환) 브리핑은 **분기표 ⑥ "어떤 실패든 감지 판정 무변"**
+            #    이라 폴백으로 수렴해야 한다. 같은 어휘(`LlmError`)로 던지되 **여기서 받는다.**
+            # ⚠ 두 검사를 한 줄로 합치지 않는다 — 뒤집기가 각각 red가 되어야 한다(#122).
+            if result.outcome is not CallOutcome.OK:
+                raise LlmError(f"브리핑 호출 실패 outcome={result.outcome.value}")
+            text = (result.text or "").strip()
+            if not text:
+                # 실제로 겪었다 — `max_completion_tokens` 문제로 빈 응답이 왔다(99 ⓟ).
+                raise LlmError("브리핑 응답이 비었다")
         except RedactionBlocked:
             # 🔴 `LlmError`보다 **먼저** 받는다 — RedactionBlocked는 LlmError의 서브클래스라
             # 순서가 뒤바뀌면 "재시도 금지+알럿"(error_codes §3)이 llm_failed로 뭉개진다.
@@ -144,7 +158,6 @@ async def make_brief(
             # LlmError 베이스로 받는다 — `openai_compat`은 4xx(컨텍스트 한도 초과 등)를
             # **plain LlmError**로 올리므로 좁은 튜플이면 결정론 판정이 멀쩡한 채 500이 된다.
             return _fallback(ctx), "llm_failed"  # 재시도 없이 즉시
-        text = (result.text or "").strip()
         gate = check_brief_gate(text, allowed)
         if gate.passed:
             return (
