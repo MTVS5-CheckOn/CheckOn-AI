@@ -571,3 +571,38 @@ def test_failed_path_ledger_error_does_not_replace_the_original_error() -> None:
             await runner.run_next(tenant_id=job.tenant_id)
 
     _run(scenario())
+
+
+def test_ledger_generation_params_are_a_usage_axis_not_a_path_axis() -> None:
+    """🔴 `AI_RUN.generation_params`는 **그 실행이 실제로 쓴 값**이다 (99 ㊼ · A 8/9 통일).
+
+    LLM을 한 번도 안 부른 실행이 pg에도 실재한다 — R-1 기준 자료가 없으면 생성 호출
+    **전에** 수렴한다. 그때 `seed`·`temperature`를 적어 두면 원장이 *"그 파라미터로
+    돌렸다"* 는 없는 사실을 말하고, 그 컬럼을 재현 키로 읽는 사람이 속는다.
+
+    ⚠ 대조군을 같이 본다 — 실제로 부른 실행에서는 값이 **남아야** 한다. 안 그러면 이
+    단정은 "항상 None"이라는 다른 결함과 구분되지 않는다.
+    """
+    run_store, _stores, generator, verifier = _prepare()
+    problem_router.set_problem_services(
+        graph_context=FakeGraphContextService(((),)), diagnosis=_unused_diagnosis
+    )
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+
+    assert posted.status_code == 202
+    assert not generator.requests, "기준 자료 없음 경로가 생성 LLM을 불렀다 — 전제가 깨졌다"
+    assert not verifier.requests
+    run = next(iter(run_store.runs.values()))
+    assert run.generation_params is None
+    assert run.model_provider is None
+    assert run.model_name is None
+
+    # 대조군 — 실제로 부른 실행은 값을 남긴다.
+    called_store, _s, _g, _v = _prepare()
+    with TestClient(create_app()) as client:
+        assert client.post("/v1/problems", headers=_HEADERS, json=_body()).status_code == 202
+    called = next(iter(called_store.runs.values()))
+    assert called.generation_params is not None
+    assert called.model_provider is not None
