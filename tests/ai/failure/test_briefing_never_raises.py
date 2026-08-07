@@ -12,19 +12,41 @@
 
 ⇒ 대신 **전제를 여기서 고정한다.** 이 전제가 깨지는 날(브리핑이 예외를 올리기 시작하면)
 red가 나고, 그때는 워커와 같은 `finally` 전환이 필요하다. 99 ㉷.
+
+🔴 **(8/8 정정) 이 파일의 원래 형태가 틀렸다 — 로그 67.**
+
+> *"예외를 안 올린다"를 특정 예외 목록으로 증명하면, 목록 밖 예외는 증명이 아니라 사각이다.*
+
+아래 `_FAILURES`는 `LlmError` **5종 목록**이었고, 실제로 브리핑을 죽인 것은
+**`ValidationError`** 였다 — 빈 응답이 `Brief(text="")`에 들어가 `min_length=1`에 걸렸다.
+목록 밖이라 이 파일이 **8주간 못 잡았다.** ⚠ **(8/8 정정) 그 8주간 실제로 500이 나지는
+않았다** — `openai_compat`이 빈 응답을 `ParseFailed`(⊂ `LlmError`)로 올려 우연히 막고
+있었다. **방어가 아니라 우연이 지켜 준 것**이고, 그 사실이 *"잠갔다"* 고 기록돼 있었다(99 ㊝).
+
+⇒ **목록을 늘리지 않고 형태를 바꿨다.** 아래 `test_no_response_shape_escapes_briefing`이
+`outcome × text`의 **곱집합**(계약상 가능한 응답 공간)을 훑고, 단정이
+`pytest.raises(...)`가 아니라 **"아무 예외도 안 나온다"** 다. `_FAILURES` 목록은
+**대조군으로 남긴다** — 유효하되 **그 목록이 전부가 아니다.**
+
+⚠ **「전수를 세라」가 항상 목록을 만들라는 뜻은 아니다** — 목록이 유한할 때만 그렇고,
+아닐 때는 **전칭을 검사하는 형태**를 찾아야 한다. 다음 사람이 여기 예외를 하나 더
+추가하고 싶어지면, 그건 목록이 부족하다는 신호이지 목록을 늘릴 이유가 아니다.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
+from typing import Final
 
 import pytest
 
 from ai.composition.briefing import make_brief
 from ai.composition.briefing_context import BriefingContext, EvidenceFact
-from ai.contracts.detection import Lifecycle, SignalType
+from ai.contracts.detection import Brief, Lifecycle, SignalType
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import (
+    CallOutcome,
     LlmError,
     LLMRequest,
     LLMResult,
@@ -32,12 +54,14 @@ from ai.contracts.llm import (
     LlmUnavailable,
     ParseFailed,
     RedactionBlocked,
+    TokenUsage,
 )
 from ai.db.repositories.run_store import default_llm_call_collector
 from ai.detection.segments import Segment
 
-#: 🔴 브리핑 위쪽이 낼 수 있는 것 전수 — 하나라도 라우터까지 올라오면 `detect.py:399`의
-#: `take()`를 건너뛰어 수집기가 샌다.
+#: 브리핑 위쪽이 낼 수 있는 **예외** 목록 — 대조군이다.
+#: ⚠ **이 목록이 전부가 아니다**(로그 67). 실제로 detect를 죽인 것은 여기 없는
+#: `ValidationError`였다. 전칭 검사는 아래 곱집합 테스트가 한다.
 _FAILURES = [
     LlmTimeout("t"),
     LlmUnavailable("u"),
@@ -144,3 +168,109 @@ def test_the_detect_router_still_takes_after_briefing() -> None:
     assert "finally:" not in source, (
         "detect.py에 finally가 생겼다 — 배치가 바뀌었으면 99 ㉷를 다시 판정하라"
     )
+
+
+# ── 🔴 목록이 아니라 전칭 (로그 67) ────────────────────────────────
+
+#: 계약상 가능한 응답 공간 — `LLMResult`가 실을 수 있는 조합의 곱집합.
+#: ⚠ 표본이 아니라 **공간을 훑는다**(#116의 redaction 커버리지 매트릭스와 같은 발상).
+_TEXTS: Final = ("정답률이 낮아졌어요.", "", "   ", None)
+
+
+class _ShapeProvider:
+    """`LLMProvider` 대역 — 주어진 `(outcome, text)`를 **예외 없이** 그대로 낸다.
+
+    ⚠ **이 대역은 실 provider가 하지 않는 것을 한다** — `openai_compat`은 실패를 전부
+    **예외로 올리고 `outcome=OK`만 반환**한다(99 ㉴). 여기서 non-OK·빈 본문을 반환하는 것은
+    **방어 검증용이지 재현이 아니다.** 🔴 이 대역으로 얻은 실측을 *"프로덕션에서 이렇게
+    된다"* 로 옮겨 적으면 안 된다 — 8/8에 실제로 그렇게 적었다가 되돌렸다(99 ㊝ · 로그 69).
+    ⚠ **대역을 실 provider에 맞게 조이지 마라** — 방어를 검증하려면 대역이 **계약을 어겨야**
+    한다. 고칠 것이 있다면 이 docstring이지 대역의 동작이 아니다.
+    """
+
+    name = "shape"
+
+    def __init__(self, outcome: CallOutcome, text: str | None) -> None:
+        self._outcome = outcome
+        self._text = text
+
+    async def complete(self, request: LLMRequest, context: ExecutionContext) -> LLMResult:
+        del request, context
+        return LLMResult(
+            outcome=self._outcome,
+            text=self._text,
+            provider=self.name,
+            model="m",
+            usage=TokenUsage(tokens_in=0, tokens_out=0, cost_usd=0.0),
+            latency_ms=1,
+        )
+
+
+@pytest.mark.parametrize("outcome", list(CallOutcome), ids=lambda o: o.value)
+@pytest.mark.parametrize("text", _TEXTS, ids=lambda t: repr(t))
+def test_no_response_shape_escapes_briefing(
+    outcome: CallOutcome, text: str | None
+) -> None:
+    """🔴 **어떤 응답 모양에서도 예외가 안 나온다** — 목록이 아니라 곱집합이다(로그 67).
+
+    ⚠ 단정이 `pytest.raises`가 **아니다.** *"이 예외들은 안 나온다"* 가 아니라
+    *"아무 예외도 안 나온다"* 를 본다 — 그 차이가 `ValidationError`를 8주간 놓친 이유다.
+
+    ⚠ 브리핑은 **항상 `Brief`를 돌려준다**(폴백이든 아니든). 그 계약이 지켜지는지까지
+    본다 — 예외만 안 나오고 `None`이 나오면 호출부가 다음 줄에서 죽는다.
+    """
+    brief, reason = asyncio.run(
+        make_brief(
+            _context(),
+            _ShapeProvider(outcome, text),
+            context=_execution_context(),
+            now=lambda: 0.0,
+            deadline=45.0,
+        )
+    )
+    assert isinstance(brief, Brief), "브리핑이 Brief를 안 돌려줬다"
+    assert brief.text, "빈 문장이 나왔다 — Brief.text의 min_length=1이 유일한 방어선이다"
+    assert reason, "사유 라벨이 비었다 — 로그가 무엇이 일어났는지 못 남긴다"
+
+
+def test_the_detect_route_survives_every_response_shape() -> None:
+    """🔴 **종단** — 어떤 응답 모양에서도 `POST /v1/detect`가 200이다(분기표 ⑥).
+
+    단위 테스트만으로는 부족하다 — `_apply_briefing`이 `make_brief`를 감싸지 않으므로
+    거기서 새는 것이 있으면 **라우트가 죽는다.** 대역으로 재현했다(99 ㊝ · 빈 응답 → 500).
+
+    ⚠ 곱집합 전부를 HTTP로 돌리면 느리다 — **가장 위험한 셋**만 태운다(빈 문자열·공백·
+    `None`). `outcome` 축은 위 단위 테스트가 전수로 본다.
+    """
+    import importlib.util
+
+    from fastapi.testclient import TestClient
+
+    from ai.api.app import create_app
+    from ai.api.routers import detect as detect_router
+    from ai.api.routers.counsel import set_counsel_provider
+    from ai.composition.counsel.provider import FakeCounselProvider
+
+    spec = importlib.util.spec_from_file_location(
+        "t", "tests/ai/integration/test_idempotency_restart.py"
+    )
+    assert spec is not None and spec.loader is not None
+    detect_test = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(detect_test)
+
+    for text in ("", "   ", None):
+        detect_router.reset_detection_store()
+        detect_router.reset_idempotency_store()
+        detect_router.set_brief_provider(_ShapeProvider(CallOutcome.OK, text))
+        set_counsel_provider(FakeCounselProvider())
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            response = client.post(
+                "/v1/detect", json=detect_test._payload(), headers=detect_test._HEADERS
+            )
+        detect_router.reset_brief_provider()
+
+        assert response.status_code == 200, (
+            f"text={text!r}에서 detect가 {response.status_code}다 — 브리핑 한 건의 실패가 "
+            "반 전체 감지를 죽인다(분기표 ⑥ · 99 ㊝)"
+        )
+        assert response.json()["data"]["signals"], "신호가 0건이라 브리핑 경로를 안 탔다"
