@@ -533,6 +533,11 @@ def _draft_context(request: CounselDraftRequest) -> DraftContext:
         facts=facts,
         evidence_summaries=(),
         period_label=request.context.period_label,
+        # ⚠ **정본이 없는 문자열이다**(8/9 전수 — `docs/`에 이 문장이 없다).
+        #    counsel은 이 값을 **되돌려 쓰지 않으므로**(소비처가 Fake 하나 · 99 #08)
+        #    지금은 계약의 `NonEmptyStr`을 채우는 자리표시자다. 🔴 **실제 폴백 경로가
+        #    생기면 여기 하드코딩이 아니라 05 톤 규칙의 정본을 참조해야 한다** —
+        #    그때 이 문장이 학부모에게 나가고, 문면 소유는 BE다(`error_codes` §2.1).
         fallback_text="이번 기간 학습 상황을 정리해 보내드립니다.",
         # 🔴 학부모가 실제로 물은 것 — 종전엔 아무도 안 읽어서 같은 학생·같은 라벨이면
         # 어떤 문의든 바이트 동일한 프롬프트가 나왔다. BE 1차 마스킹분이고, 전송 직전
