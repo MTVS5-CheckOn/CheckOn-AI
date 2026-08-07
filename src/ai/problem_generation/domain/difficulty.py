@@ -19,7 +19,10 @@ def estimate_t1_difficulty(
     """버전 설정의 가중치만 사용해 T1 난이도를 결정론적으로 추정한다."""
 
     weights = config.difficulty_weights
-    estimate = weights.base + weights.type_tag[item.type_tag]
+    # ⚠ dict 인덱싱을 직접 하지 않는다 — 완전성 검사와 조회는 `DifficultyWeights`가 함께
+    #   든다(99 ㊣). 여기서 `weights.type_tag[...]`로 되돌리면 예약 태그가 KeyError로
+    #   샌다.
+    estimate = weights.base + weights.weight_for(item.type_tag)
     if solve.confidence < config.cross_confidence_high:
         estimate += weights.low_cross_solve_confidence
     if len(item.evidence) > 1:

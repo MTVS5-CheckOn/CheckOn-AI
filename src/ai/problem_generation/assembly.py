@@ -320,7 +320,13 @@ class ProblemGenerationRunner:
                     created_at=self._now(),
                     model_provider=last.provider if last is not None else None,
                     model_name=last.model if last is not None else None,
-                    generation_params=deterministic_params(),
+                    # 🔴 **경로 축이 아니라 사용 축이다** — "그 실행이 실제로 쓴 값"이다.
+                    #    LLM 0콜로 끝나는 pg 실행이 실재한다(R-1 기준 자료 없음 → 생성 호출
+                    #    전에 수렴). 안 쓴 값을 적어 두면 재현 키가 *"그 파라미터로 돌렸다"* 는
+                    #    없는 사실을 말한다. counsel·detect·classify와 같은 판단(A 8/9).
+                    generation_params=(
+                        deterministic_params() if last is not None else None
+                    ),
                 ),
                 calls,
             )
