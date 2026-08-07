@@ -73,6 +73,46 @@ S1  21/21 1차 통과 · 재생성 0 · 폴백 0
 
 ---
 
+## 🔴 실행 전 결정 — AI_RUN 관측을 달았다 (위 표를 고치지 않는다)
+
+⚠ **위 표는 실측 기록이라 손대지 않는다.** 판정만 아래에 덧붙인다 — 표를 고치면 *"처음부터 보였다"* 가 되고 커밋 순서가 증명하려던 것이 사라진다.
+
+**`generation_params`를 「못 본다」로 두지 않고 러너에 관측을 달았다.** 작업 2가 **「호출 있는 실행 / 0콜 실행 둘 다」** 를 요구하는데 러너가 그 값을 못 냈다. 돌리고 나서 달면 **재실행**이라, **돌기 전에** 단다.
+
+- 자리: `evaluation/counsel_llm_smoke.py` — **A 소유이고 ㉝ 무접촉 목록에 없다**
+- `_run_s2`가 케이스마다 `InMemoryRunStore`를 꽂고, `_ledger_rows()`가 **AI_RUN 행**을 읽는다
+- `usage_axis_split()`이 **두 방향을 따로** 센다 — 0콜인데 적힘(거짓) / 호출 있는데 빔(재현 키 결손)
+- ⚠ 표본 0이면 `✅`를 내지 않는다 — *"위반 없음"* 과 *"안 봤다"* 는 다르다
+
+### 🔴 주입 확인 (대역 · 실 LLM 태우기 전)
+
+```
+POST 202 · GET 200 succeeded
+AI_RUN 행: 1
+  capability=composition calls=0 generation_params=None
+  model_provider=None model_name=None prompt_version='0.2'
+```
+
+**관측이 걸린다.** 회차를 태운 뒤 표본 0이면 회차를 통째로 버리므로 먼저 확인했다(로그 70).
+
+### 🔴 그 자리에서 셋째 축이 나왔다 — `prompt_version`
+
+같은 AI_RUN 행에서 **`generation_params`·`model_*`는 조건부인데 `prompt_version`은 무조건**이다.
+
+| 필드 | 0콜 실행에서 | 축 |
+| --- | --- | --- |
+| `model_provider`·`model_name` | `None` | **사용** |
+| `generation_params` | `None`(#144가 고침) | **사용** |
+| 🔴 `prompt_version` | **`'0.2'`** | **선언** |
+
+⚠ **계약 문면과 갈린다** — `contracts/execution.py`의 `prompt_version`은 *"LLM 미사용 실행(감지 등)에서는 None — ERD: 「LLM 미사용 시 null」"* 이다. 0콜 composition 실행은 LLM을 안 썼는데 값이 있다.
+
+⚠ **대역 산물이 아니다** — `context.versions`가 실행 **전에** 만들어지므로 실 경로의 0콜 실행(캐시 히트·폴백)도 같다. 다만 **실 0콜 실행에서 관측된 것은 아직 아니다**(5차가 S2-②로 볼 수 있으면 본다).
+
+🔴 **고치지 않는다** — `contracts/execution.py`는 **양자 승인**이고 `api/`·`composition/`은 **㉝ 무접촉**이다. 등재만 한다.
+
+---
+
 ## 실행 조건
 
 ```
