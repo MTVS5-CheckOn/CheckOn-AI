@@ -156,7 +156,27 @@ class DraftContext(BaseModel):
     """"2026년 7월" 같은 대상 기간 표기 — 프롬프트 문구용."""
 
     fallback_text: NonEmptyStr
-    """게이트 소진·LLM 실패 시 되돌아갈 결정론 템플릿(briefing_context와 동일 역할)."""
+    """게이트 소진·LLM 실패 시 되돌아갈 결정론 템플릿(briefing_context와 동일 역할).
+
+    🔴 **(8/9) 「동일 역할」은 아직 절반만 참이다** — `BriefingContext.fallback_text`는
+    `briefing.py:94`의 `_fallback()`이 **실제로 읽어** `Brief(text=…, fallback_used=True)`를
+    만들고, 비면 `Brief.text`의 `min_length=1`에 걸려 **폴백 자체가 예외**가 되므로
+    validator·테스트가 그 필수성을 지킨다. **여기는 그 소비처가 없다** — counsel의 게이트
+    소진은 `blocked_reason`/`draft_status`로 수렴하고 **이 값을 되돌려 쓰지 않는다.**
+    `src/` 전체에서 읽는 곳은 `counsel/provider.py`의 **`FakeCounselProvider` 하나**다
+    (8/9 전수).
+
+    ⚠ **그런데도 필수로 남긴다 — 근거 셋**(99 #08):
+      ① **BE 와이어가 아니다.** `CounselContext`(BE가 보내는 것)에 이 필드가 **없고**
+         라우터의 `_draft_context()`가 채운다 ⇒ **빼도 BE에 안 나가고, 둬도 BE 부담이 없다.**
+      ② **빈 값을 계약에서 막는 것 자체가 값이다.** 폴백 경로가 생기는 날
+         `BriefingContext`가 겪은 것(빈 문자열 → 폴백이 예외)을 **처음부터 안 겪는다.**
+         `NonEmptyStr`을 나중에 붙이면 그 사이에 빈 값이 쌓인다.
+      ③ **Fake가 읽는다** — 빼면 대역 쪽 기본값을 새로 정해야 하고, 그건 *"대역이 무엇을
+         돌려주는가"* 를 **또 한 곳**에 적는 것이다(#02 부류).
+    ⚠ **여는 조건:** counsel에 실제 폴백 경로가 생기면 ①②가 사라지고 `BriefingContext`와
+      같은 형태(소비처 + validator + 테스트)가 된다. 그때 이 주석을 지운다.
+    """
 
     inquiry_text: str = ""
     """🔴 **학부모가 실제로 물은 것**(BE 1차 마스킹분 `inquiry.text_masked`).
