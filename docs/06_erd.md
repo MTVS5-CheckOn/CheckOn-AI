@@ -75,7 +75,7 @@ erDiagram
     varchar difficulty_calib_version "난이도 보정 버전 — problem_generation 외에는 null"
     varchar model_provider
     varchar model_name
-    jsonb generation_params
+    jsonb generation_params "그 실행이 실제로 쓴 샘플링 파라미터 — LLM 미사용 실행에서는 null"
     varchar input_snapshot_hash "재현성 키"
     timestamptz created_at
   }
