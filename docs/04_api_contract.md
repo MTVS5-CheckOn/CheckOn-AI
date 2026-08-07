@@ -756,8 +756,8 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 | 요청 | 약속한 동작 | 🔴 **현재 동작** |
 | --- | --- | --- |
-| `area_tag`가 `language`가 아니다 (독서·문학·화법·작문·매체) | 400 `INVALID_SCHEMA` + `detail.reason=source_procurement_not_implemented` | **같다 — 구현됨** ✅ |
-| `passage`가 있다 | 위와 같다 | **같다 — 구현됨** ✅ |
+| `area_tag`가 `language`가 아니다 (독서·문학·화법·작문·매체) | 400 `INVALID_SCHEMA` + `detail.reason=source_procurement_not_implemented` | **같다 — 구현됨** ✅ ⚠ **다만 잡을 만든 뒤에 난다.** 문 앞 검사가 없고(`enqueue.py`·`routers/problem.py`에 `area_tag`·`passage` 참조 **0건**) 판정이 `workflow.py:541`, 즉 **잡 실행 안**에서 난다 ⇒ **`job_id`가 응답에 없는 실패 잡이 남는다**(원장에 `failed` 1건이 생기고 **조회할 수 없다**). 🔴 **아래 `apply` 행과 같은 형태다** — 그쪽은 500이고 여기는 400인 것이 다를 뿐, **고아 잡이 남는 것은 같다**(99 #01) |
+| `passage`가 있다 | 위와 같다 | **같다 — 구현됨** ✅ ⚠ **다만 잡을 만든 뒤에 난다.** 문 앞 검사가 없고(`enqueue.py`·`routers/problem.py`에 `area_tag`·`passage` 참조 **0건**) 판정이 `workflow.py:541`, 즉 **잡 실행 안**에서 난다 ⇒ **`job_id`가 응답에 없는 실패 잡이 남는다**(원장에 `failed` 1건이 생기고 **조회할 수 없다**). 🔴 **아래 `apply` 행과 같은 형태다** — 그쪽은 500이고 여기는 400인 것이 다를 뿐, **고아 잡이 남는 것은 같다**(99 #01) |
 | `type_tags`에 **`apply`** | 400 `type_tag_not_supported` `[제안 · B 구현 대기]` | 🔴 **다르다.** `POST`가 **HTTP 500 `INTERNAL`**(envelope는 정상)을 내고, 잡은 만들어져 `failed`/`problem_worker_internal`로 수렴하지만 **`job_id`가 응답에 없어 조회할 수 없다**(고아 잡 · 99 ㊨ 8/7 실측). **400을 기대한 핸들링은 아직 성립하지 않는다 — 그때까지 보내지 마라** |
 | 프로세스 재시작 후 이전 `job_id` 조회 | — | ⚠ **404 `NOT_FOUND`.** `PROBLEM_ITEM` 영속 스키마 확정 전이라 v1은 인메모리 저장소로 돈다. 새 상태코드를 만들지 않으며 **재시작 후 복구가 보장되는 것으로 해석하지 마라** |
 
