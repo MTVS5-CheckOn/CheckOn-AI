@@ -53,6 +53,7 @@ from ai.composition.counsel.refine import refine_draft
 from ai.composition.provider import build_brief_gateway
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LlmError, LLMProvider, LLMRequest, LLMResult
+from ai.db.repositories.run_store import InMemoryRunStore
 from ai.db.store_factory import reset_shared_agent_runtime
 from ai.detection.engine import detect
 from ai.detection.thresholds import default_threshold_config
@@ -403,14 +404,101 @@ def _s2_cases() -> list[tuple[str, str, dict[str, Any]]]:
     ]
 
 
+class LedgerRow(NamedTuple):
+    """AI_RUN 1행에서 **사용 축**만 뽑은 것 — `_ledger_rows()` 참조."""
+
+    capability: str
+    calls: int
+    generation_params: dict[str, Any] | None
+    model_provider: str | None
+    model_name: str | None
+    prompt_version: str | None
+
+
+def _ledger_rows(store: InMemoryRunStore) -> list[LedgerRow]:
+    """🔴 **원장(AI_RUN)을 읽는다** — 종전 러너는 LLM_CALL만 봤다.
+
+    ⚠ 관측 장치를 만들 때 **읽는 자리를 같이 만들지 않으면 없는 것과 같다**(결정 로그 59).
+    #144가 `generation_params`를 *"실제로 쓴 값"* 축으로 바꿨는데, 이 러너는 그 필드가
+    사는 **AI_RUN 행을 아예 안 읽어** 실 경로에서 확인할 방법이 없었다.
+
+    🔴 **뽑는 것은 「호출 수 ↔ 사용 축 필드」의 짝**이다. 세 필드(`generation_params`·
+    `model_provider`·`model_name`)가 **같은 행 안에서 같은 조건**을 따라야 한다 —
+    한 행에서 축이 갈리면 읽는 쪽이 어느 쪽으로도 읽는다(worker.py 주석).
+    """
+    return [
+        LedgerRow(
+            capability=run.capability.value,
+            calls=len(store.calls_of(execution_id)),
+            generation_params=(
+                run.generation_params.model_dump(exclude_none=True)
+                if run.generation_params is not None
+                else None
+            ),
+            model_provider=run.model_provider,
+            model_name=run.model_name,
+            prompt_version=run.prompt_version,
+        )
+        for execution_id, run in store.runs.items()
+    ]
+
+
+def usage_axis_split(rows: Sequence[LedgerRow]) -> dict[str, Any]:
+    """🔴 **호출 있는 실행 / 0콜 실행**으로 갈라 사용 축이 지켜졌는지 본다.
+
+    ⚠ *"`generation_params`가 채워져 있다"* 만으로는 판정이 안 된다 — **0콜 실행에
+    채워져 있으면 그게 거짓말**이고(#144가 없앤 것), **호출 있는 실행에 비어 있으면**
+    재현 키가 빈 것이다(불변식 8). 두 방향을 따로 센다.
+
+    ⚠ 표본이 0이면 `consistent`를 True로 내지 않는다 — *"위반이 없다"* 와 *"안 봤다"* 는
+    다르다(로그 67).
+    """
+    with_calls = [row for row in rows if row.calls > 0]
+    zero_calls = [row for row in rows if row.calls == 0]
+    lying = [row for row in zero_calls if row.generation_params is not None]
+    missing = [row for row in with_calls if row.generation_params is None]
+    return {
+        "ai_run_rows": len(rows),
+        "with_calls": len(with_calls),
+        "zero_calls": len(zero_calls),
+        #: 0콜인데 파라미터가 적힌 행 — **"그 값으로 돌렸다"는 거짓**.
+        "zero_call_rows_with_params": len(lying),
+        #: 호출이 있는데 파라미터가 빈 행 — 재현 키 결손.
+        "called_rows_without_params": len(missing),
+        #: 관측된 파라미터 값들(중복 제거) — 어떤 값이 실제로 실렸는지.
+        "observed_params": sorted(
+            {json.dumps(row.generation_params, sort_keys=True, ensure_ascii=False)
+             for row in rows if row.generation_params is not None}
+        ),
+        #: 🔴 두 축(`model_provider`/`model_name`)이 같은 조건을 따르는가.
+        "model_fields_agree": all(
+            (row.model_provider is not None) == (row.calls > 0) for row in rows
+        ),
+        "verdict": (
+            "표본 없음 — **안 본 것이지 통과가 아니다**"
+            if not rows
+            else "🔴 0콜 실행에 파라미터가 적혀 있다"
+            if lying
+            else "🔴 호출이 있는데 파라미터가 비었다"
+            if missing
+            else "✅ 사용 축 일치"
+        ),
+    }
+
+
 def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -> dict[str, Any]:
-    """실 LLM provider를 라우터에 주입해 POST → 워커 → GET 흐름을 돈다."""
+    """실 LLM provider를 라우터에 주입해 POST → 워커 → GET 흐름을 돈다.
+
+    ⚠ 케이스마다 **원장 저장소를 새로 꽂는다** — 공용 저장소를 쓰면 이전 케이스의 AI_RUN
+    행이 섞여 *"이 케이스가 몇 콜이었나"* 를 못 가른다.
+    """
     from fastapi.testclient import TestClient  # noqa: PLC0415
 
     from ai.api.app import create_app  # noqa: PLC0415
     from ai.api.routers.counsel import (  # noqa: PLC0415
         reset_counsel_stores,
         set_counsel_provider,
+        set_counsel_run_store,
     )
 
     provider = _CountingProvider(OpenAICompatProvider())
@@ -426,6 +514,10 @@ def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -
     for index, (name, note, body) in enumerate(cases):
         reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
         reset_counsel_stores()
+        # 🔴 `reset_counsel_stores()` **뒤에** 꽂는다 — 그 함수가 `_run_store`를
+        #   기본 팩토리로 되돌린다. 순서가 뒤집히면 관측이 조용히 사라진다.
+        ledger = InMemoryRunStore()
+        set_counsel_run_store(ledger)
         set_counsel_provider(real)
         headers = dict(_golden("tests.ai.integration.test_counsel_router")._HEADERS)
         headers["Idempotency-Key"] = f"t1:counsel:smoke-{uuid4().hex[:8]}"
@@ -461,6 +553,8 @@ def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -
                 "elapsed_ms": elapsed,
                 "mask_residue": _mask_residue(text),
                 "text": text,
+                #: 🔴 이 케이스가 원장에 남긴 AI_RUN 행 — S4의 사용 축 판정 재료.
+                "ledger": [row._asdict() for row in _ledger_rows(ledger)],
             }
         )
         reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
@@ -654,6 +748,15 @@ def _run_s4(
         #   리터럴 여부로 본다(값 자체는 실행별로 달라 리포트에 싣지 않는다).
         "llm_call_id_is_constant_none": _worker_pins_llm_call_id_to_none(),
         "s2_jobs": len(s2["rows"]),
+        # ⓓ 🔴 **AI_RUN 원장의 사용 축**(#144) — 8/9 신설. 위 항목들은 전부 LLM_CALL
+        #   레벨이고, `generation_params`는 **AI_RUN에만** 산다.
+        "usage_axis": usage_axis_split(
+            [LedgerRow(**row) for r in s2["rows"] for row in r.get("ledger", [])]
+        ),
+        # 🔴 **refine 턴의 원장은 이 러너가 못 본다** — S3는 `refine_draft()`를 직접 부르고
+        #   라우터를 안 탄다. `_record_refine_run`(api/routers/counsel.py)은 한 번도 안
+        #   불린다. 값을 안 적는 게 아니라 **관측 범위 밖**이라고 적는다(로그 85).
+        "refine_ledger_observed": False,
     }
 
 
@@ -867,6 +970,26 @@ def _verdict(data: dict[str, Any]) -> str:
     return f"{head} 다만 " + " / ".join(tail) + ". §8 결함을 먼저 본다."
 
 
+def leaked_terms_label(misses: Sequence[Mapping[str, Any]]) -> str:
+    """차단 미탐 행에서 **실제로 남은 낙인 표현**만 모은다 — §8 D0의 근거.
+
+    🔴 **문면을 지어내지 않는다.** 4차 D0은 산출물에 없는 문장(`게으른 모습이…`)을
+    근거로 인용했고 같은 회차에 철회됐다(D0′). 여기서 나오는 것은 `_leak_oracle`이
+    **그 회차 본문에서 실제로 찾은** 조각뿐이다.
+    """
+    terms = sorted({term for miss in misses for term in miss.get("leaked_terms", ())})
+    return ", ".join(f"`{term}`" for term in terms) or "—"
+
+
+def uncertain_fragments_label(pii: Mapping[str, Any]) -> str:
+    """마스킹 불확실로 걸린 조각 — §8 D4의 근거. **건수는 판정의 근거가 못 된다**(99 ㊪)."""
+    return ", ".join(
+        f"`{hit['fragment']}`→`{hit['token']}`"
+        for detail in pii.get("uncertain_detail", ())
+        for hit in detail.get("hits", ())
+    ) or "—"
+
+
 def _table(headers: list[str], rows: list[list[str]]) -> str:
     out = ["| " + " | ".join(headers) + " |", "| " + " | ".join("---" for _ in headers) + " |"]
     out += ["| " + " | ".join(row) + " |" for row in rows]
@@ -879,6 +1002,9 @@ def _render(data: dict[str, Any]) -> str:
         data["s4"], data["s5"], data["pii"],
     )
     summary = _s1_summary(s1["rows"])
+    #: 🔴 4-ⓓ의 재료. 4차 리포트에는 이 키가 없으므로 **없으면 빈 표본으로 낸다** —
+    #: `KeyError`로 죽으면 과거 산출을 다시 못 그린다.
+    usage = s4.get("usage_axis") or usage_axis_split([])
     demo = data["demo"]
 
     s3_misses = _s3_misses(s3["rows"])
@@ -887,7 +1013,10 @@ def _render(data: dict[str, Any]) -> str:
     parts = [
         "# counsel·briefing 실 LLM 스모크 리포트",
         "",
-        f"**{data['run_date']} · 브랜치 `test/counsel-llm-smoke` · 실서버 최초 연결**",
+        # ⚠ 브랜치명·회차를 **리터럴로 박지 않는다** — 4차까지 `test/counsel-llm-smoke ·
+        #   실서버 최초 연결`이 박혀 있었고, 5차에도 그대로 찍혀 **둘 다 거짓**이었다.
+        #   값이 바뀌는데 코드 diff가 생기면 위치가 틀린 것이다(03 §1).
+        f"**{data['run_date']} · 실서버 · 모델 `{pre['model']}`**",
         "",
         "> 목적은 기능 추가가 아니라 **실측**이다. 게이트·프롬프트·금칙어는 스모크 통과를 "
         "위해 손대지 않았다 — 걸리면 걸린 대로 싣는다.",
@@ -1007,6 +1136,41 @@ def _render(data: dict[str, Any]) -> str:
             ],
         ),
         "",
+        "### 4-ⓓ. `AI_RUN`의 사용 축 — 🔴 #144가 실 경로에서 지켜지는가",
+        "",
+        "⚠ **4차까지 이 칸은 없었다** — 러너가 `LLM_CALL`만 읽고 `generation_params`가 사는",
+        "`AI_RUN` 행을 안 봤다. 5차 전에 관측을 달았다(로그 59).",
+        "",
+        _table(
+            ["점검", "실측", "판정"],
+            [
+                ["AI_RUN 행 수 (S2)", str(usage["ai_run_rows"]), "참고"],
+                ["호출 있는 실행 / 0콜 실행",
+                 f"{usage['with_calls']} / {usage['zero_calls']}",
+                 "참고" if usage["zero_calls"] else
+                 "⚠ **0콜 표본 없음** — 거짓 기재 방향을 이 회차로는 못 본다"],
+                ["🔴 0콜인데 파라미터가 적힘",
+                 f"{usage['zero_call_rows_with_params']}건 — 적혀 있으면 "
+                 "*\"그 값으로 돌렸다\"* 가 **거짓**이 된다",
+                 "🔴 **결함**" if usage["zero_call_rows_with_params"] else "✅ 0"],
+                ["🔴 호출 있는데 파라미터가 빔",
+                 f"{usage['called_rows_without_params']}건 — 재현 키 결손(불변식 8)",
+                 "🔴 **결함**" if usage["called_rows_without_params"] else "✅ 0"],
+                ["같은 행의 `model_provider`가 같은 조건인가",
+                 "세 필드가 한 조건을 따라야 한다 — 갈리면 읽는 쪽이 어느 쪽으로도 읽는다",
+                 "✅ 일치" if usage["model_fields_agree"] else "🔴 **축이 갈렸다**"],
+                ["관측된 파라미터 값",
+                 ", ".join(f"`{v}`" for v in usage["observed_params"]) or "—",
+                 "참고"],
+                ["refine 턴 원장",
+                 "🔴 **못 본다** — S3는 `refine_draft()`를 직접 부르고 라우터를 안 탄다. "
+                 "`_record_refine_run`은 이 회차에 **한 번도 안 불린다**",
+                 "범위 밖"],
+            ],
+        ),
+        "",
+        f"**종합: {usage['verdict']}**",
+        "",
         "### 4-a. role별 `tokens_out` 분포 — 🔴 ⓧ(토큰 상한) 값의 근거",
         "",
         _table(
@@ -1124,16 +1288,17 @@ def _render(data: dict[str, Any]) -> str:
         _table(
             ["#", "결함", "근거", "심각도"],
             [
-                ["D0", "🔴 **금칙어 게이트가 활용형을 놓친다 — 실서버에서 A4 차단 미탐**",
-                 "실 LLM이 `게으른 모습이 관찰되었습니다`를 냈고 게이트가 **통과시켰다**"
-                 "(`applied=True`). `buffer_lexicon`은 부분 문자열 포함이라 `게으르`가 "
-                 "**`게으른`을 잡지 못한다**(`'게으르' in '게으른'` → `False`). "
-                 "⚠ 그런데 `buffer_lexicon.py`의 모듈 docstring과 `find_forbidden` "
-                 "docstring **양쪽이 \"`게으르`는 게으르다·게으른을 잡는다\"고 적고 있다** — "
-                 "99 D ⑰에 기록된 구멍(`게을러서`·`산만해서`)보다 **넓다**. "
-                 "fake(`게으르다는`)는 잡히고 실서버(`게으른`)는 안 잡힌 것이 정확히 "
-                 "지시서가 경계한 \"fake 통과와 실서버 통과는 다른 문제\"다",
-                 "**높음(신규·안전)**"],
+                ["D0", "금칙어 게이트가 활용형을 놓치는가 — 차단 미탐",
+                 (f"🔴 **이 회차 차단 미탐 {len(s3_misses)}건** — 반영된 본문에 낙인 표현이 "
+                  f"남았다: {leaked_terms_label(s3_misses)}"
+                  if s3_misses
+                  else "**이 회차 차단 미탐 0건.** ⚠ 「반영됨」은 미탐이 아니다 — 실 LLM이 "
+                       "지시를 거부하고 무해한 문장을 내면 `applied=True`가 정상이고, "
+                       "`_s3_misses`는 **반영된 본문에 낙인 표현이 남았을 때만** 센다. "
+                       "🔴 4차(8/7)에 이 행이 「높음(신규·안전)」으로 **리터럴로 박혀** "
+                       "있었고 같은 회차에 **철회**됐다(D0′) — 근거로 든 문장이 산출물에 "
+                       "없었고 게이트는 활용형을 실제로 잡는다"),
+                 "🔴 **높음(안전)**" if s3_misses else "해당 없음 — 측정값 0"],
                 ["D1", "`LlmCallRecord` 적재 배선",
                  (f"조립부 기본 recorder가 공용 수집기다 — 실 호출 "
                   f"{s4['records_captured']}건이 `AI_RUN`·`LLM_CALL`로 영속된다"
@@ -1148,21 +1313,30 @@ def _render(data: dict[str, Any]) -> str:
                   else "`counsel/worker.py`가 상수 `None`. `agent_step`에서 `LLM_CALL`로 갈 "
                        "간선이 끊겨 `execution_id`로 도달할 수 없다"),
                  "높음(B-5 ⓒ)" if s4["llm_call_id_is_constant_none"] else "해소(8/5)"],
-                ["D4", "redaction이 일반 어휘를 오탐한다",
-                 "`재기동` → `⟪주소1⟫`(행정동 패턴) · `반 평균이랑` → **uncertain=True**"
-                 "(인명 후보). 후자는 fail-closed라 **정상 지시가 전송 자체를 못 한다**",
-                 "중간(신규)"],
+                ["D4", "redaction이 일반 어휘를 오탐한다 — ⚠ **가용성 축**",
+                 (f"이 회차 마스킹 불확실 **{pii['uncertain']}건** · 걸린 조각: "
+                  f"{uncertain_fragments_label(pii)}. "
+                  "🔴 **안전이 아니라 가용성이다** — 실명이 나간 것이 아니라 정상 문장이 "
+                  "막힌 것이다(4차 D4′ 재산정). 조각의 진탐·오탐 판정은 **사람이** 한다"
+                  if pii["uncertain"]
+                  else "이 회차 불확실 0건 — 오탐이 관측되지 않았다"),
+                 "중간(가용성)" if pii["uncertain"] else "이 회차 미관측"],
                 ["D5", "A1·A4 공격 케이스가 골든에서 import 불가",
                  "`_STATIC_ATTACKS`(A2·A3·A5·A6·A7)는 모듈 레벨이지만 A1·A4는 테스트 함수 "
                  "안에 있어 이 러너가 **문자열을 복제**했다 — fake판과 실서버판이 갈릴 자리. "
-                 "**D0이 실서버에서만 드러난 이유이기도 하다**", "낮음(신규)"],
+                 "⚠ **아직 안 갈렸다가 안 갈린다는 아니다**(4차 D5′ — 「D0이 실서버에서만 "
+                 "드러난 이유」라는 인과는 D0과 함께 철회됐다)", "낮음"],
                 ["D6", "`temperature=0.0`인데 같은 입력이 **다른 출력**을 낸다",
                  f"S5 2회 실행 길이 {s5['len_first']} vs {s5['len_second']}자 · 문면 상이. "
-                 "불변식 8은 결정론 **경로**만 요구하므로 위반은 아니다. 다만 "
-                 "\"같은 문의에 매번 다른 초안\"이라 **재현 문의·회귀 판정의 기준선이 없다** — "
-                 "`seed` 파라미터는 계약(`GenerationParams.seed`)에 이미 있고 어댑터도 "
-                 "전달하는데 counsel·briefing 어느 쪽도 넣지 않는다",
-                 "중간(신규)"],
+                 "불변식 8은 결정론 **경로**만 요구하므로 위반은 아니다. "
+                 + (f"🔴 **원인은 우리가 아니다 — `seed`는 실려 있다.** 이 회차 `AI_RUN` "
+                    f"원장 실측: {', '.join(f'`{v}`' for v in usage['observed_params'])}. "
+                    "표준 OpenAI API의 `seed`는 **best-effort**라 동일 seed·temperature 0.0에도 "
+                    "동일 출력을 보장하지 않는다(4차 D6′ · 99 ㊼)"
+                    if usage["observed_params"]
+                    else "⚠ 이 회차는 원장에서 `generation_params`를 관측하지 못했다 — "
+                         "`seed` 적재 여부를 이 표로 말할 수 없다"),
+                 "중간(외부 성질)"],
             ],
         ),
         "",
@@ -1170,8 +1344,77 @@ def _render(data: dict[str, Any]) -> str:
         "",
         f"**{data['verdict']}**",
         "",
+        *_blind_spots(usage, s4),
     ]
     return "\n".join(parts) + "\n"
+
+
+def _blind_spots(usage: Mapping[str, Any], s4: Mapping[str, Any]) -> list[str]:
+    """🔴 **이 스모크가 증명하지 못하는 것** — 렌더러가 낸다.
+
+    ⚠ **리포트 마크다운에 손으로 적지 않는다.** 4차(8/7)의 철회 D0′·D5′·D6′가 정확히
+    그렇게 적혔고 **5차 실행이 그 파일을 덮어써서 사라졌다.** 회차와 무관한 사실은
+    **산출물이 아니라 산출하는 코드**에 있어야 매 회차 다시 실린다.
+
+    회차마다 달라지는 값(`0콜 표본`)만 측정에서 받는다.
+    """
+    zero_call_note = (
+        "🔴 **「0콜 실행」 표본이 구조적으로 안 나온다.** *\"이번엔 안 걸렸다\"* 가 아니라 "
+        "**S2에서는 영원히 안 나온다** — `api/routers/counsel.py`의 근거 선검사가 **LLM 호출보다 "
+        "앞**이라 `rejected_insufficient`는 워커·그래프에 아예 안 간다(같은 파일이 *\"원장에 행 "
+        "자체가 없다\"* 고 적어 뒀다 — **의도된 설계**다). ⇒ **#144가 없앤 거짓 기재 방향"
+        "(「0콜인데 파라미터가 적혀 있다」)은 이 스모크로 못 본다.** 보려면 다른 시나리오가 "
+        "필요하다 — 캐시 히트(classify)·폴백·워커 실패 경로."
+        if usage["zero_calls"] == 0
+        else f"0콜 실행 {usage['zero_calls']}건을 관측했다 — 거짓 기재 방향을 이 회차로 봤다."
+    )
+    return [
+        "---",
+        "",
+        "## 10. 🔴 이 스모크가 **증명하지 못하는 것**",
+        "",
+        "⚠ **범위를 넓게 적으면 BE가 안 본 축까지 안전한 것으로 읽는다.**",
+        "",
+        "> **counsel·briefing 축에 회귀가 없다.**",
+        "> **전 축이 안전하다는 뜻이 아니다.**",
+        "",
+        zero_call_note,
+        "",
+        "⚠ **이 사실은 가드가 있어서 드러났다** — `usage_axis_split`이 표본 0에 `✅`를 "
+        "안 낸다. 안 그랬으면 §4-ⓓ가 `0건 ✅ / 0건 ✅`로 보여 **핵심 방향을 한 번도 안 봤다는 "
+        "사실이 초록으로 덮였다.**",
+        "",
+        _table(
+            ["안 본 축", "왜", "무엇으로 봐야 하나"],
+            [
+                ["`classify` 캐시 히트 원장 · 사용 축",
+                 "러너에 `classify` 문자열 **0건** — 어느 시나리오도 분류를 안 부른다",
+                 "S6 신설. ⚠ 캐시 히트는 **같은 `inquiry_ref`로 두 번** 부르는 설계가 필요"],
+                ["문제 생성(pg)",
+                 "러너에 `problem` 문자열 **0건** · **별도 러너**다",
+                 "`uv run pytest -m integration "
+                 "tests/ai/integration/test_pg_real_llm_smoke.py`"],
+                ["plan `REDACTION_BLOCKED`",
+                 "마스킹 불확실의 **자연 발생을 기다릴 수 없다** — **결함이 아니라 성질**",
+                 "대역만 가능 — `_plan_outcome_harness`의 `redaction_blocked`"],
+                ["refine 턴의 원장",
+                 "S3는 `refine_draft()`를 **직접** 부르고 라우터를 안 탄다 — "
+                 + ("`_record_refine_run`이 **한 번도 안 불린다**. "
+                    if not s4["refine_ledger_observed"]
+                    else "`_record_refine_run`이 관측됐다. ")
+                 + "⚠ 그 함수는 `generation_params`를 **무조건** 적는다(워커는 조건부) — "
+                 "**#144의 사용 축이 refine에는 아직 안 적용됐고 이 스모크가 그걸 못 본다**",
+                 "S3를 라우터 경유로 바꾸거나 별도 케이스"],
+                ["LLM 실패 서킷(99 #08)",
+                 "라우터 `enqueue`가 **N=1**이라 연속 실패 최대 1 · 임계는 3",
+                 "N>1이 생기는 때(월별 리포트 벌크·Kafka)"],
+                ["PG 영속",
+                 "`memory` 고정 — 측정 변수를 LLM 하나로 두려는 **의도된** 제약",
+                 "`test_pg_restart.py`·`test_pg_store_roundtrip.py`"],
+            ],
+        ),
+        "",
+    ]
 
 
 # ── 실행 ─────────────────────────────────────────────────────────
