@@ -162,6 +162,7 @@ nullable 키는 실행 종류에 따라 **null이 될 수 있다**: `threshold`�
 | `POST /labels/suggest` | 202 | 주간 배치 | 라벨 제안 + 근거 인용(실존 검증 통과분) |
 | `POST /imports` → `GET` → `/confirm` | 202 | 타사 엑셀 업로드 | 매핑 미리보기 → 확정 후 표준 스키마 산출 |
 | `POST /counsel/drafts` → `GET` → `/refine` | 202 | **문의 도착 즉시** | 초안 1건 자동 생성 · 근거 인용 ≥1 · 다듬기(동기) — §3.9 |
+| `POST /problems` → `GET /problems/{job_id}` | 202 | 강사가 출제를 요청할 때 | 세트 생성 잡 → 문항 **요약** 목록(본문·evidence 아님) — §3.11. 🔴 **v1은 `area_tag=language` + `passage` 없음만** · `type_tags`에 `apply` 금지 |
 | `GET /health` · `GET /meta/versions` | 동기 | 상시 | 헬스 · 버전 |
 
 ---
@@ -619,6 +620,121 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 - **턴 상한은 AI가 판정하지 않는다.** `turn_no`는 로그·이력용으로 받기만 한다 — "세션 턴 상한 없음, 월 할당이 자연 상한"(`part_a/06` §1)이고 할당 집행은 전부 백엔드 Billing이다(7/15 BE-4).
 - **v1 구현 범위 정정 3건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다.
 
+### 3.11 `/v1/problems` — 문제 생성 (202 · **요청 단위 = 세트 1개**)
+
+> **이관 근거:** `docs/part_b/09_integration_proposals.md` §2-19(B 초안 `[제안 · 2026-08-07 · A 반영 대기]`)에서 **구현된 절만** 옮겼다 — §2-19.0~.4. 🔴 **`[v1 스펙 확정 · 구현 후속]` 7절(§2-19.5~.8·.9~.11)은 09에 남긴다.** 04는 「구현된 계약의 정본」이고 09는 「스펙 초안」이라, 미구현 스펙을 04에 넣으면 **BE가 구현된 것으로 읽는다** — 8/7에 `apply`에서 정확히 그렇게 됐다(04가 "400"이라 적었고 실제로는 500이었다 · 99 ㊩·㊨).
+> ⚠ **B 확인 필요** — B는 *"04에 옮길 초안"* 이라고만 적었지 전부인지 구현분만인지는 안 적었다. 이 범위는 A 판정이고 반대 의견이 설 자리가 있다.
+> **v1 operation은 `problem_set.generate` 하나**다 — `problem_item.refine`·`reverify`는 공용 enum의 예약값이고 이 API에 엔드포인트가 없다.
+
+```json
+// ① POST /v1/problems — 세트 생성 기동 (헤더: X-Tenant-Id · X-Request-Id · Idempotency-Key)
+{
+  "target_kind": "student",              // student | class
+  "target_ref": "st_8f2a",               // 가명 참조 — 비어 있을 수 없다
+  "target_source": "teacher_manual",     // weakness_auto | teacher_manual
+  "weakness_map_id": null,               // UUID | null — teacher_manual이면 금지
+  "manual_targets": ["grammar:sentence-structure"],  // teacher_manual이면 ≥1 필수 · weakness_auto면 금지
+  "snapshot_hash": "sha256:…",           // 재현성 축(AI_RUN · 불변식 8)
+  "taxonomy_version": "2026.08",
+  "area_tag": "language",                // 🔴 v1은 language만 — 아래 「v1 지원 한계」
+  "type_tags": ["concept"],              // fact | infer | critic | concept 중 중복 없이 ≥1 · 🔴 apply 금지(아래)
+  "item_format": "mcq",                  // v1은 mcq만(short·essay는 예약값)
+  "count": 1,                            // 1..20
+  "requested_difficulty": "medium",      // low | medium | high | null
+  "target": "auto",                      // cell | node | auto
+  "passage": null,                       // 🔴 v1은 생략 또는 null만
+  "topic_hint": null
+}
+// → 202 { "data": { "job_id": "8e94ceac-…" }, "error": null, "meta": { … } }
+//   헤더 파생 3필드(tenant_id·request_id·idempotency_key)를 바디에 중복하면 400
+//   같은 Idempotency-Key + 같은 바디 = 최초 202 재반환 · 다른 바디 = 409 IDEMPOTENCY_CONFLICT (§2.3)
+
+// ② GET /v1/problems/{job_id} — 상태·결과 회수 (헤더: X-Tenant-Id 필수)
+{
+  "data": {
+    "job_id": "8e94ceac-…",
+    "status": "succeeded",                  // 공통 JobPhase 7종(error_codes §2.5)
+    "result": {
+      "outcome": "problem_set",             // problem_set | rejected_insufficient
+      "set_id": "…", "status": "generated", // generated | partial_success | failed
+      "stop_reason": null,
+      "target_source": "teacher_manual", "personalized": false,
+      "requested_count": 1, "processed_count": 1, "unstarted_count": 0,
+      "items": [                            // ⚠ 요약만 — 문항 본문·지문·evidence는 없다(아래)
+        { "item_id": "…", "status": "needs_review", "attempt_no": 1,
+          "failure_reason": null, "failure_detail": null,
+          "difficulty_est": 1.5, "difficulty_band": "low", "difficulty_fit": null,
+          "review_reason": "manual_target_first" }
+      ],
+      "summary": null, "dropped_reasons": []
+    }
+  },
+  "error": null,
+  "meta": { "execution_id": "…", "versions": { "…§2.2…": "…" } }
+}
+```
+
+**규약**
+
+- **다른 테넌트의 `job_id`는 존재를 숨겨 404**로 수렴한다.
+- **실행 phase와 도메인 결과를 섞지 않는다**(99 ㉥). `queued|leased|running|paused` → `result`는 **반드시 null** · `succeeded` → **반드시** `ProblemGenerationOutcome` · `failed|cancelled` → `null`. 🔴 `status="succeeded" + result=null`, `status="running" + result.status="rejected_insufficient"` 같은 조합은 **금지**다.
+- **잡 성공 ≠ 문항 존재.** `rejected_insufficient`와 세트의 `generated|partial_success|failed`는 **정상 도메인 결과**이지 에러가 아니다(불변식 4). `result.status` 값의 정본은 `policies/error_codes.md` §2.6.
+- **오류 판별은 §2.4 주체 3분할 그대로**다 — 라우터가 다시 판단하지 않는다. 강사가 바꿀 수 있다 → 200 + 도메인 결과 / BE가 고쳐야 한다 → 400 `INVALID_SCHEMA`(409·404 포함) / 아무도 지금 못 바꾼다 → **재시도 예산 소진 후에만** 503·504.
+- **LLM 예외 매핑**은 `runtime/errors.py`의 `domain_error_for()`가 정본이다: `LlmTimeout`→504 `TIMEOUT` · `LlmUnavailable`→503 `LLM_UPSTREAM_DOWN` · `ParseFailed`·`FieldMissing`·plain `LlmError`→500 `INTERNAL`. ⚠ **파싱·필드 오류를 503으로 뭉개지 않는다** — 벤더는 살아 있고 우리 요청이 틀린 경우라 "잠시 후 다시"가 거짓이 된다.
+- **워크플로 설정 예외:** `ProblemWorkflowConfigurationError`→400 · `ProblemTenantMismatch`→403 `TENANT_MISMATCH` · `ProblemSourceUnsupported`→400 + `detail.reason=source_procurement_not_implemented` · `ProblemExecutionContextMismatch`→500(내부 조립 버그). ⚠ 통째로 400으로 바꾸면 403과 조달 미구현 사유가 뭉개진다.
+
+#### 🔴 v1 지원 한계 — BE가 **선검사**해야 하는 것 (약속 vs 현재)
+
+⚠ **아래 표는 「약속한 동작」과 「구현 전인 지금의 동작」을 함께 적는다**(99 ㊩ 규칙). 약속만 적으면 BE가 그 동작을 기대하고 호출한다.
+
+| 요청 | 약속한 동작 | 🔴 **현재 동작** |
+| --- | --- | --- |
+| `area_tag`가 `language`가 아니다 (독서·문학·화법·작문·매체) | 400 `INVALID_SCHEMA` + `detail.reason=source_procurement_not_implemented` | **같다 — 구현됨** ✅ |
+| `passage`가 있다 | 위와 같다 | **같다 — 구현됨** ✅ |
+| `type_tags`에 **`apply`** | 400 `type_tag_not_supported` `[제안 · B 구현 대기]` | 🔴 **다르다.** `POST`가 **HTTP 500 `INTERNAL`**(envelope는 정상)을 내고, 잡은 만들어져 `failed`/`problem_worker_internal`로 수렴하지만 **`job_id`가 응답에 없어 조회할 수 없다**(고아 잡 · 99 ㊨ 8/7 실측). **400을 기대한 핸들링은 아직 성립하지 않는다 — 그때까지 보내지 마라** |
+| 프로세스 재시작 후 이전 `job_id` 조회 | — | ⚠ **404 `NOT_FOUND`.** `PROBLEM_ITEM` 영속 스키마 확정 전이라 v1은 인메모리 저장소로 돈다. 새 상태코드를 만들지 않으며 **재시작 후 복구가 보장되는 것으로 해석하지 마라** |
+
+🔴 **`language` 제한은 트랙 제한이 아니라 「자료 조달 방식」 제한이다.** 현행 그래프에 지문·담화·매체를 만드는 *생성* 노드와 승인 저작물 풀에서 고르는 *저작물* 노드가 **없다**(05 §1.2). 게이트를 완화하거나 빈 자료로 실행하지 않는다.
+
+> **BE 연동 지뢰:** 와이어프레임의 **독서·문학 영역×유형 칸을 그대로 생성 요청으로 보내면 전량 400**이다. 미지원 칸은 **생성 동작을 비활성화하거나 「지원 대기」로 표시**해야 한다.
+
+> 🔴 **`apply` 선검사가 왜 필요한가 — 실수가 아니라 정상 동작이 그리로 간다.** BE가 약점 지도를 보고 **자동 출제 요청**을 만들면 `type_tags=["apply"]`가 자연스럽게 나온다: 학습 이벤트(`LearningEvent.type_tag`)로 `apply`를 **받으므로**(99 ㊣ — 강사가 매긴 사실이라 막지 않는다) diagnoser가 `"문학×apply"` 셀을 만들고, 그 셀이 약한 것으로 나오면 출제 대상이 된다. **정상 동작의 결과로 나오는 것이지 실수가 아니다.** 그래서 요청을 만드는 쪽에서 걸러야 한다.
+
+#### 09에 남아 있는 것 (04로 옮기지 않았다)
+
+⚠ **다른 내용을 다른 문서가 갖는 것은 중복이 아니다** — §7이 지적한 중복은 *"같은 목록이 두 곳에 산다"* 였다. 아래는 **04에 없는 내용**이고 04는 **가리키기만** 한다.
+
+| 09 절 | 무엇 | 왜 04에 없나 |
+| --- | --- | --- |
+| §2-19.5 | `GET /v1/problems/{set_id}/items` — Step3 검토 목록 | `[v1 스펙 확정 · 구현 후속]` — 라우터에 없다 |
+| §2-19.6 | `GET …/items/{slot_index}` — 문항 상세 | 같음. **문항 본문·evidence는 이 표면으로만 나간다** |
+| §2-19.7 | `POST …/revisions` — 수정·롤백 | 같음 |
+| §2-19.8 | 교체·삭제 | 같음 + `[경로 제안 · BE 합의 대기]` |
+| §2-19.9 | evidence `quote=null`과 "출처 확인됨" 배지 | 🔴 **구현된 표면에 evidence가 없다** — `ItemResult`는 `item_id`·`status`·난이도 등 **요약 9필드뿐**이고 `evidence`를 싣지 않는다(실측 8/7). evidence는 `GeneratedItem`에 있고 §2-19.6으로만 나간다 ⇒ 배지 규약은 **지금 도달 불가**다 |
+| §2-19.10 | 완료 알림 최소 payload | `[구현 후속]` + Kafka 토픽 미확정(§8) |
+| §2-19.11 | 약점 진단(Step1) 응답 요구 | `[구현 후속]` |
+
+🔴 **BE는 3~6번 표면이 현행 라우터에 존재한다고 해석하면 안 된다.** 09가 그것을 적어 둔 이유는 **화면 계약을 먼저 맞추기 위해서**이지 호출 가능해서가 아니다.
+
+#### 🔴 `type_tag` 화면 라벨 — AI 근거와 화면 표시는 **소유가 다르다**
+
+> **근거:** `part_b/09` §2-21.2 — B가 `_TYPE_KO` **교체 요청을 철회하고 분리로 갔다.** 정본 표는 09에 있고 여기·`policies/taxonomy.md` §3에 반영한다.
+
+| `TypeTag` | **AI 근거** (`_TYPE_KO`) — 🔴 **AI 소유**(`composition/briefing_context.py`) | **화면 표시** — 🔴 **클라이언트 소유** |
+| --- | --- | --- |
+| `fact` | 사실 | 사실적 이해 |
+| `infer` | 추론 | 추론적 이해 |
+| `critic` | 비판 | 비판적 이해 |
+| `concept` | 개념 | 어휘·개념 |
+| `apply` | 적용 | 적용·창의 |
+
+🔴 **어휘가 두 곳에 사는 게 아니라 소비 목적이 둘이다.** 왼쪽은 **R6 근거 팩트**로 LLM 프롬프트에 실려 **학부모 문장**이 되고(`f"{area}·{type_}"` → `"문학·적용"`), 오른쪽은 **Step 1 그리드**에 뜬다. 같은 값의 두 표기가 아니라 **다른 자리의 두 어휘**다.
+
+🔴 **`display_label`과 방향이 반대인 이유** — `display_label`은 **강사가 못 고치는 값**이라 AI가 실어 보낸다. `type_tag`는 **강사가 화면에서 고치는 값**이라 클라이언트가 **전 값의 라벨을 갖고 있어야** 한다 — **피커가 없으면 못 고친다.** 다섯 값 중 넷만 라벨이 있으면 `apply`로 바꿀 수가 없다.
+
+⚠ **`_TYPE_KO`의 짧은 형은 유지한다** — `f"{area}·{type_}"` 조립에서 `"적용·창의"` 를 그대로 쓰면 `"문학·적용·창의"` 가 되어 **구분자가 모호**해진다(기존 넷이 전부 2글자인 것도 같은 이유로 보인다).
+⚠ **짧은 형이 프롬프트에 실제로 더 나은지는 미실측**이다 — 골든셋(`part_a/08`) 축으로 등재만 해 둔다.
+
 ### 3.10 운영
 
 `GET /v1/health` — liveness/readiness · `GET /v1/meta/versions` — 엔진·임계값·프롬프트·계약 버전(백엔드가 브리핑 메타에 표시 가능).
@@ -661,7 +777,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 | `correct` | bool | solve만 | 정답률(R1·R6) | |
 | `duration_sec` | int | solve만 | 풀이시간(R4) | 없으면 R4 미적용(대체 신호) |
 | `passage_word_count` | int | 지문형만 | **어절 정규화** | 국어 특화의 핵심 필드 |
-| `area_tag` / `type_tag` | enum | 있으면 | 유형별 정답률(R6)·약점 지도 | 미태깅 허용 — 태깅 제안이 채움. **area 값(수능 6영역): `reading(독서)·literature(문학)·speech(화법)·writing(작문)·language(언어/문법)·media(매체)`** · **type 값(평가원 5축): `fact·infer·critic·concept·apply`** — 🔴 **`apply`는 v1 미산출·예약**이다(99 ㊣). 학습 이벤트에는 **보내도 된다**(받아서 R6 집계·표시까지 한다). **출제 요청(`POST /v1/problems`의 `type_tags`)에 보내면 400 `type_tag_not_supported`** `[제안 · B 구현 대기]` — 🔴 **구현 전인 지금은 400이 아니다.** 실측(8/9 · 99 ㊨): `POST /v1/problems`가 **HTTP 500 `INTERNAL`**(envelope는 정상)을 내고, 잡은 만들어져 `failed`/`problem_worker_internal`로 수렴하지만 **`job_id`가 응답에 없어 조회할 수 없다.** 🔴 **400을 기대한 핸들링은 아직 성립하지 않는다 — 그때까지 `type_tags`에 `apply`를 보내지 마라** + `subject_track: common·elective` 메타 · `item_format: v1은 mcq만`(short·essay 예약) — Open-11 확정(7/15) |
+| `area_tag` / `type_tag` | enum | 있으면 | 유형별 정답률(R6)·약점 지도 | 미태깅 허용 — 태깅 제안이 채움. **area 값(수능 6영역): `reading(독서)·literature(문학)·speech(화법)·writing(작문)·language(언어/문법)·media(매체)`** · **type 값(평가원 5축): `fact·infer·critic·concept·apply`** — 🔴 **`apply`는 v1 미산출·예약**이다(99 ㊣). 학습 이벤트에는 **보내도 된다**(받아서 R6 집계·표시까지 한다). **출제 요청(`POST /v1/problems`의 `type_tags`)에 보내면 400 `type_tag_not_supported`** `[제안 · B 구현 대기]` — 🔴 **구현 전인 지금은 400이 아니다.** 실측(8/7 · 99 ㊨): `POST /v1/problems`가 **HTTP 500 `INTERNAL`**(envelope는 정상)을 내고, 잡은 만들어져 `failed`/`problem_worker_internal`로 수렴하지만 **`job_id`가 응답에 없어 조회할 수 없다.** 🔴 **400을 기대한 핸들링은 아직 성립하지 않는다 — 그때까지 `type_tags`에 `apply`를 보내지 마라** + `subject_track: common·elective` 메타 · `item_format: v1은 mcq만`(short·essay 예약) — Open-11 확정(7/15) |
 | `assignment_title_text` | string | 있으면 | **태깅 제안(ⓒ) 입력** | ⚠ `[Open-4b]` 제공 불가 시 기능 자체 불가 |
 | `source` | enum `trackA·trackB·studentHome` | ✅ | 품질 가중 | |
 
