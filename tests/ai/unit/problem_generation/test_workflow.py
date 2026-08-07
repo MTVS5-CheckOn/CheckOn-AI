@@ -17,7 +17,15 @@ from problem_snapshot import SnapshotDiagnosisFake
 
 from ai.contracts.diagnosis import DiagnosisResult, DiagnosisStatus
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
-from ai.contracts.llm import LlmUnavailable, ModelRole
+from ai.contracts.llm import (
+    FieldMissing,
+    LlmError,
+    LlmTimeout,
+    LlmUnavailable,
+    ModelRole,
+    ParseFailed,
+    RedactionBlocked,
+)
 from ai.contracts.problem_generation import (
     Answer,
     Choice,
@@ -245,6 +253,71 @@ def _run(
     return result
 
 
+type _LlmErrorRoute = tuple[int, str]
+
+_GENERATION_LLM_ERROR_ROUTES: dict[type[LlmError], _LlmErrorRoute] = {
+    LlmError: (3, "생성 시도 소진"),
+    LlmUnavailable: (3, "생성 시도 소진"),
+    LlmTimeout: (3, "생성 시도 소진"),
+    RedactionBlocked: (1, "redaction 불확실"),
+    ParseFailed: (3, "생성 시도 소진"),
+    FieldMissing: (3, "생성 시도 소진"),
+}
+
+_CROSS_SOLVE_LLM_ERROR_ROUTES: dict[type[LlmError], _LlmErrorRoute] = {
+    LlmError: (1, "교차 풀이 서비스 불가"),
+    LlmUnavailable: (1, "교차 풀이 서비스 불가"),
+    LlmTimeout: (1, "교차 풀이 서비스 불가"),
+    RedactionBlocked: (1, "교차 풀이 redaction 불확실"),
+    ParseFailed: (3, "교차 풀이 파싱 시도 소진"),
+    FieldMissing: (3, "교차 풀이 파싱 시도 소진"),
+}
+
+
+def _all_llm_error_types() -> set[type[LlmError]]:
+    discovered: set[type[LlmError]] = {LlmError}
+    pending = list(LlmError.__subclasses__())
+    while pending:
+        error_type = pending.pop()
+        if error_type in discovered:
+            continue
+        discovered.add(error_type)
+        pending.extend(error_type.__subclasses__())
+    return {
+        error_type
+        for error_type in discovered
+        if error_type.__module__ == LlmError.__module__
+    }
+
+
+def _route_params(
+    routes: dict[type[LlmError], _LlmErrorRoute],
+) -> list[object]:
+    return [
+        pytest.param(error_type, attempts, detail, id=error_type.__name__)
+        for error_type, (attempts, detail) in sorted(
+            routes.items(), key=lambda entry: entry[0].__name__
+        )
+    ]
+
+
+def test_llm_error_route_tables_cover_recursive_hierarchy() -> None:
+    discovered = _all_llm_error_types()
+    for table_name, routes in (
+        ("_GENERATION_LLM_ERROR_ROUTES", _GENERATION_LLM_ERROR_ROUTES),
+        ("_CROSS_SOLVE_LLM_ERROR_ROUTES", _CROSS_SOLVE_LLM_ERROR_ROUTES),
+    ):
+        missing = discovered - routes.keys()
+        unexpected = routes.keys() - discovered
+        assert not missing and not unexpected, (
+            f"contracts.llm의 LlmError 전칭 표 {table_name}가 계층과 다르다. "
+            f"표에 없는 예외={sorted(cls.__name__ for cls in missing)}, "
+            f"계층에 없는 표 항목={sorted(cls.__name__ for cls in unexpected)}. "
+            f"tests/ai/unit/problem_generation/test_workflow.py의 {table_name}에 "
+            "새 예외의 처리 갈래를 결정해 추가하라."
+        )
+
+
 def test_fake_snapshot_to_generation_store_result_vertical_slice() -> None:
     harness = _WorkflowHarness(
         generator_steps=(_item_json("첫"),),
@@ -310,6 +383,34 @@ def test_generation_failures_stop_at_three_attempts_without_fourth_call() -> Non
     assert result.items[0].status is ProblemItemStatus.DROPPED
     assert result.items[0].attempt_no == 3
     assert len(harness.generator_provider.requests) == 3
+    assert not harness.verifier_provider.requests
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected_attempts", "expected_detail"),
+    _route_params(_GENERATION_LLM_ERROR_ROUTES),
+)
+def test_all_llm_error_types_during_generation_follow_declared_route(
+    error_type: type[LlmError],
+    expected_attempts: int,
+    expected_detail: str,
+) -> None:
+    harness = _WorkflowHarness(
+        generator_steps=tuple(
+            error_type("provider failure") for _ in range(expected_attempts)
+        ),
+        verifier_steps=(),
+    )
+
+    result = _run(harness, harness.request())
+
+    assert result.status is ProblemSetStatus.FAILED
+    assert result.items[0].status is ProblemItemStatus.DROPPED
+    assert result.items[0].failure_reason is ProblemFailureReason.GENERATION_EXHAUSTED
+    assert result.items[0].attempt_no == expected_attempts
+    assert result.items[0].failure_detail is not None
+    assert expected_detail in result.items[0].failure_detail
+    assert len(harness.generator_provider.requests) == expected_attempts
     assert not harness.verifier_provider.requests
 
 
@@ -523,6 +624,34 @@ def test_verifier_outage_is_domain_result_not_execution_exception() -> None:
     assert result.items[0].status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
     stored = asyncio.run(harness.items.list_all())[0]
     assert stored.item is not None
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected_attempts", "expected_detail"),
+    _route_params(_CROSS_SOLVE_LLM_ERROR_ROUTES),
+)
+def test_all_llm_error_types_during_cross_solve_follow_declared_route(
+    error_type: type[LlmError],
+    expected_attempts: int,
+    expected_detail: str,
+) -> None:
+    harness = _WorkflowHarness(
+        generator_steps=tuple(
+            _item_json(f"교차풀이-{attempt}") for attempt in range(expected_attempts)
+        ),
+        verifier_steps=tuple(
+            error_type("cross solve failure") for _ in range(expected_attempts)
+        ),
+    )
+
+    result = _run(harness, harness.request())
+
+    assert result.items[0].status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
+    assert result.items[0].attempt_no == expected_attempts
+    assert result.items[0].failure_detail is not None
+    assert expected_detail in result.items[0].failure_detail
+    assert len(harness.generator_provider.requests) == expected_attempts
+    assert len(harness.verifier_provider.requests) == expected_attempts
 
 
 def test_attempt_is_checkpointed_before_external_generation_call() -> None:

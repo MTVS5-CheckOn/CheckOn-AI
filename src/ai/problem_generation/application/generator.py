@@ -166,6 +166,7 @@ def build_candidate_snapshot(
 
 
 def require_successful_text(result: LLMResult) -> str:
+    # 도달 불가 방어 — provider는 실패를 예외로 올린다(09 provider 계약 · 99 ㉴).
     if result.outcome is CallOutcome.TIMEOUT:
         raise LlmTimeout("LLM provider가 timeout 결과를 반환했다")
     if result.outcome is CallOutcome.PROVIDER_ERROR:

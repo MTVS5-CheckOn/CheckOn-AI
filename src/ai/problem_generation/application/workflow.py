@@ -24,8 +24,7 @@ from ai.contracts.graphrag import (
     GraphContextService,
 )
 from ai.contracts.llm import (
-    LlmTimeout,
-    LlmUnavailable,
+    LlmError,
     ParseFailed,
     RedactionBlocked,
 )
@@ -307,6 +306,8 @@ class ProblemGenerationWorkflow:
                     retry_context=retry_context,
                     execution_context=execution_context,
                 )
+            # 생성은 파싱 실패와 서비스 실패가 같은 재생성 예산을 쓴다.
+            # 교차 풀이는 파싱 실패만 재시도하므로 아래 교차 풀이 분기와 의도적으로 다르다.
             except RedactionBlocked:
                 if state.fallback_ref is not None:
                     return await self._restore_fallback(state)
@@ -315,7 +316,7 @@ class ProblemGenerationWorkflow:
                     reason=ProblemFailureReason.GENERATION_EXHAUSTED,
                     detail="redaction 불확실로 생성 호출이 차단됨",
                 )
-            except (LlmTimeout, LlmUnavailable, ParseFailed) as error:
+            except LlmError as error:
                 feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
                     failed_checks=(f"generator:{type(error).__name__}",)
                 )
@@ -351,6 +352,7 @@ class ProblemGenerationWorkflow:
                     target_skill_node_id=target.skill_node_id,
                     execution_context=execution_context,
                 )
+            # 교차 풀이는 ParseFailed만 재시도한다. LlmError보다 반드시 먼저 잡아야 한다.
             except RedactionBlocked:
                 if state.fallback_ref is not None:
                     return await self._restore_fallback(state)
@@ -358,14 +360,6 @@ class ProblemGenerationWorkflow:
                     state,
                     item=item,
                     detail="교차 풀이 redaction 불확실",
-                )
-            except (LlmTimeout, LlmUnavailable) as error:
-                if state.fallback_ref is not None:
-                    return await self._restore_fallback(state)
-                return await self._finalize_verification_unavailable(
-                    state,
-                    item=item,
-                    detail=f"교차 풀이 서비스 불가: {type(error).__name__}",
                 )
             except ParseFailed as error:
                 feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
@@ -381,6 +375,14 @@ class ProblemGenerationWorkflow:
                         detail=f"교차 풀이 파싱 시도 소진: {type(error).__name__}",
                     )
                 return {}
+            except LlmError as error:
+                if state.fallback_ref is not None:
+                    return await self._restore_fallback(state)
+                return await self._finalize_verification_unavailable(
+                    state,
+                    item=item,
+                    detail=f"교차 풀이 서비스 불가: {type(error).__name__}",
+                )
 
             cross_result = validate_cross_solve(
                 item,
@@ -528,6 +530,9 @@ class ProblemGenerationWorkflow:
         # "생성"(지문·담화·매체를 LLM이 만든다)과 "저작물"(풀에서 선택) 노드가 없어서
         # 자료를 동반한 요청을 받을 수 없다. 생성 노드 1개가 붙으면 T2 본문·T4·T5가
         # 함께 열린다 — 트랙마다 파이프라인을 다시 만드는 구조가 아니다.
+        # ⚠ 생성 노드를 붙일 때 이 조건문도 같이 풀어야 한다 — `area_tag` 검사는
+        # '자료가 필요 없는 유일한 영역'의 대리이지 트랙 제한이 아니다. 조건이 OR라
+        # `area_tag=language`이면서 `passage` 없음, 둘 다 만족해야 통과한다.
         if request.area_tag is not AreaTag.LANGUAGE or request.passage is not None:
             raise ProblemSourceUnsupported(
                 "자료 조달 방식이 '자료 없음'인 요청만 처리할 수 있다 "

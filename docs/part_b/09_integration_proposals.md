@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v4.0 (2026-08-08): **§2-21 신설 — Step 1 그리드 축과 v1 출제 범위.** 2027학년도까지의 수능 체제에 맞춰 화면 y축을 과목 4행으로 확정하되 측정 축 `AreaTag` 6개는 유지하고, TypeTag 행동 영역 라벨·「적용·창의」 예약의 소비처 5곳을 분리했다. 자료 조달 게이트와 커리큘럼 그래프가 서로 다른 잠금임을 명시하고, v1 미지원 표시는 셀이 아니라 출제 버튼에 붙이는 로드맵을 정리했다.
 > - v3.8 (2026-08-07): **§2-19 확장 — PG MVP 조회·수정 API의 BE 인계 규약.** 엔드포인트 표면 6종을 구현 여부로 나누고 Step3 목록·상세의 상태 카운터, `available_actions`, `current_revision_no`, 리비전 충돌과 전 게이트 재검증, 교체·삭제 경로 제안을 명시했다. 근거 `quote=null`의 배지 금지, 본문 없는 완료 알림, Step1의 상대 판정·skill node 집계, 독서·문학 요청 전량 400인 v1 제한을 함께 고정했다.
 > - v3.7 (2026-08-07): **§2-20 신설 — `PROBLEM_ITEM` 스키마 결손과 해소안 제안.** `ProblemItemStore`의 `(set_id, slot_index)` 조회 키와 `StoredProblemItem` 무손실 왕복을 막는 결손 12건을 계약·ORM 행 단위로 대조하고, `ITEM_REVISION` 우회가 성립하지 않는 이유 4건을 기록했다. A가 결정할 조회 키·보존 방식·본문 없는 슬롯 표현의 선택지를 분리했으며, B는 `ITEM_CANDIDATE` 선례에 맞춘 전체 스냅숏 1컬럼 + nullable 파생 투영을 권고한다. §2-19에는 스키마 결정 전 v1 인메모리 운용과 프로세스 재시작 후 404 한계를 추가했다.
 > - v3.6 (2026-08-07): **§2-19 신설 — `/v1/problems` v1 API 스펙 초안.** A 확정 회신에 따라 자체 job 대신 공용 슈퍼바이저를 사용하고, v1 operation을 `problem_set.generate` 하나로 고정했다. counsel/drafts와 같은 필수 헤더·멱등 규약, `JobPhase` 기반 GET 상태, 미완료 `result=null`, 오류 주체 판별, `domain_error_for`의 504/503/500 매핑, 현행 `LANGUAGE`·자료 없음 제약을 한곳에 모았다. 이 절은 §2-1의 가칭 경로와 refine·reverify 범위를 v1에서 대체하며, A가 `04_api_contract.md`에 옮길 초안이다.
@@ -916,14 +917,6 @@ W 번호도 `W1`~`W10`의 실제 표기를 놓치는 하이픈 필수 grep 패�
 | `X-Request-Id` | `request_id` | 요청 추적 키. 바디에는 중복하지 않는다 |
 | `Idempotency-Key` | `idempotency_key` | 같은 키+같은 바디는 최초 202 응답을 재반환하고, 같은 키+다른 바디는 409 `IDEMPOTENCY_CONFLICT` |
 
-⚠ **같은 키+같은 바디의 상태코드는 구현과 정본 문구가 갈려 있다.** counsel 구현은 최초
-응답을 **202로 재반환**하고(`api/routers/counsel.py:637-639`), `04_api_contract.md` §2.3은
-"기존 결과를 **200**으로 반환"이라고 적혀 있다. 이 초안은 **구현(202)** 을 따랐다 —
-A가 04에 옮길 때 둘 중 하나로 통일해 달라. 통일 전까지 BE는 202를 전제로 구현한다.
-
-**후속 정본 동기화:** `04_api_contract.md` §2.3은 이후 비동기 멱등 재반환을 최초와 같은
-202로 확정했다. 위 이력 문단은 삭제하지 않고 남기며, BE의 현재 기준은 **202**다.
-
 외부 HTTP 바디는 내부 command의 헤더 파생 3필드를 제외한 투영이다
 (`contracts/problem_generation.py:83-131`, 이 문서 §2-1의 B HTTP 경계 확정).
 
@@ -1036,12 +1029,38 @@ LLM 예외는 `runtime/errors.py:142-173`의 `domain_error_for()` 표를 **인�
 
 plain `LlmError`와 파싱·필드 오류를 503으로 뭉개지 않는다. 벤더가 살아 있는데 우리
 요청·스키마가 틀린 경우라 “잠시 후 다시” 문구가 거짓이 된다. 반대로
-`ProblemWorkflowConfigurationError`는 `LlmError`가 아니므로 `domain_error_for()` 대상이
-아니며 아래 v1 미지원 요청의 400 경계로 보낸다.
+`ProblemWorkflowConfigurationError` 계열은 `DomainException`이며 라우터가 매핑하지 않고
+`api/app.py`의 예외 핸들러가 잡는다.
 
-`ProblemWorkflowConfigurationError`는 `ValueError` 하위라 `DomainException`이 아니다 —
-그대로 올리면 `api/app.py`의 일반 예외 핸들러가 잡아 500 `INTERNAL`이 된다.
-**라우터가 `SnapshotInvalid`(400 `INVALID_SCHEMA`)로 변환한다.**
+##### Provider 실패 전달 계약 초안 `[A 승인 대기]`
+
+provider는 실패를 **예외로 올린다.** 반환값의 `outcome`은 `OK` 하나뿐이고, 그 밖의
+`CallOutcome` 값은 게이트웨이가 예외에서 유도해 남기는 **원장 기록용**이다.
+
+1. `gateway.py:210-218`의 재시도는
+   `retry_if_exception_type((LlmTimeout, LlmUnavailable))`로 예외 타입에만 걸린다.
+   실패를 outcome으로 반환하면 재시도가 동작하지 않는다.
+2. `gateway.py:95-108`의 `_exception_outcome()`은 예외를 outcome으로 바꾸는 단방향
+   매핑이며, 반대 방향 매핑은 없다.
+3. 실 provider인 `openai_compat.py:193-226`은 실패를 계약 예외로 올리고,
+   `openai_compat.py:247-249`에서 성공만 `CallOutcome.OK`로 반환한다(99 ㉴ 8/6 전수 실측).
+
+소비자의 outcome 분기는 **도달 불가 방어**로 남긴다(#129). 이 규약을 바꾸면 재시도
+계약도 함께 바뀌므로 게이트웨이 소유자(B)에게 먼저 통보해야 한다.
+
+| 예외 | wire 결과 |
+| --- | --- |
+| `ProblemWorkflowConfigurationError` | 400 `INVALID_SCHEMA` |
+| `ProblemTenantMismatch` | 403 `TENANT_MISMATCH` |
+| `ProblemSourceUnsupported` | 400 `INVALID_SCHEMA` + `detail.reason=source_procurement_not_implemented` |
+| `ProblemExecutionContextMismatch` | 500 `INTERNAL` — 내부 조립 버그 |
+
+이 계열을 통째로 400으로 바꾸면 403과 `source_procurement_not_implemented`가 뭉개진다.
+
+**난이도 보정 버전 확인:** v1은 난이도 보정을 쓰지 않아 `difficulty_calib_version`이
+`null`이다(`difficulty_regen_enabled: false` · `DifficultyCalib` 저장소 미배선). 실패
+응답에서는 `taxonomy_version`도 `null`이다. 요청 바디에 따라 갈리는 값은 그 시점에
+정적이지 않다(`04_api_contract.md` §2.2 A 판정 “엔드포인트가 아는 정적 앱 버전”).
 
 #### 2-19.4 v1 지원 한계 — BE 선검사 필요
 
@@ -1326,6 +1345,155 @@ select(ProblemItem).join(
 마이그레이션 파일은 양자 승인 목록이 아니라 `db/models.py` 모델 diff의 기계적 산출물이다.
 따라서 A가 모델 선택지를 승인한 뒤 같은 모델 변경 PR에서 함께 리뷰하면 된다
 (`docs/02_ownership.md:60`).
+
+---
+
+### 2-21. Step 1 그리드 축과 v1 출제 범위 `[2026-08-08]`
+
+#### 2-21.1 y축은 과목 4행 `[B 확정]`
+
+이 화면의 수능 체제는 **2028학년도 체제를 배제하고 2027학년도까지**로 한정한다. 공통
+2과목과 선택 1과목 구조다. 학교 현장의 2022 개정 교육과정은 수능 체제와 **별개 축**이며,
+둘을 하나의 버전이나 분류로 묶지 않는다.
+
+| 그리드 행 | `AreaTag` | 체제 |
+| --- | --- | --- |
+| 독서 | `reading` | 공통 |
+| 문학 | `literature` | 공통 |
+| 화법과 작문 | `speech` + `writing` | 선택 |
+| 언어와 매체 | `language` + `media` | 선택 |
+
+**측정은 6, 표시는 4**다. `area_tag`는 `taxonomy.md:3`의 측정 대상 축이고 과목은 화면을
+구성하는 별도 축이다. 따라서 `AreaTag` 6개를 병합하거나 `contracts/taxonomy.py`를 바꾸지
+않는다. 감지 R6·약점 지도·태깅 제안ⓒ·B 출제/진단 그래프의 네 소비처 영향은 0이며,
+`taxonomy.md` §2 경계 사례 ③처럼 문항 단위 측정이 갈리는 규약도 그대로 유지된다.
+
+남은 협의는 `area_tag → 선택과목` 매핑의 계약 위치다. 현재 매핑은
+`contracts/taxonomy.py`의 docstring에만 있고 `SubjectTrack`은 `COMMON`·`ELECTIVE` 두 값이라
+어느 선택과목인지 구분하지 못한다. `SubjectTrack` 확장은 양자 승인 제안이며, 값 구성은
+A의 감지 R6 소비를 확인한 뒤 정한다.
+
+#### 2-21.2 x축은 평가원 행동 영역 `[A 소유 파일 · 변경 요청]`
+
+종전의 **라벨 FE 이관 제안은 철회한다.** `composition/briefing_context.py`의 `_AREA_KO`와
+`_TYPE_KO`는 R6 근거 팩트에 실려 LLM 프롬프트를 거쳐 학부모 문장이 된다. 이를 제거하면
+`speech`·`critic` 같은 영문이 문장에 섞인다. 이는 `display_label` 선례와도 일치한다.
+**AI 산출물에 들어가는 문구는 BE가 가진다.**
+
+어휘가 두 곳에 사는 것이 아니라 소비 목적이 둘이다.
+
+1. AI 근거 — 브리핑 문장 생성
+2. 화면 표시 — Step 1 그리드
+
+같은 어휘를 두 목적이 함께 쓴다. A 소유 매핑의 `TypeTag` 라벨을 다음 평가원 행동 영역으로
+교체해 달라고 요청한다. `AreaTag`의 독서·문학·화법·작문·언어(문법)·매체는 이미 자연어라
+교체 대상이 아니다.
+
+| `TypeTag` | 요청 라벨 |
+| --- | --- |
+| `fact` | 사실적 이해 |
+| `infer` | 추론적 이해 |
+| `critic` | 비판적 이해 |
+| `concept` | 어휘·개념 |
+
+출처는 [2025학년도 수능 국어 행동 영역 보도](https://news.nate.com/view/20241114n16679),
+[평가원 행동 영역 자료](https://orbi.kr/00012100098),
+[국어과 행동 영역 연구](https://www.kci.go.kr/kciportal/landing/article.kci?arti_id=ART002536706)다.
+
+#### 2-21.3 TypeTag 「적용·창의」 예약 — 소비처 5곳
+
+이 확장은 A가 contracts 초안을 맡고 B는 contracts를 수정하지 않는다. **다섯 소비처가 서로
+다른 답을 내는 것이 예약 규약의 전부**다. 하나로 뭉치면 강사 사실 기록을 잘못 막거나
+브리핑에 영문 라벨이 샌다.
+
+| # | 소비처 | v1 처리 |
+| --- | --- | --- |
+| ① | 분류기 산출 | 스키마에서 배제해 산출하지 않는다. 태깅 골든셋 부재로 검증할 수 없다(㊛) |
+| ② | 출제 요청 `ProblemRequest.type_tags` | 400 `type_tag_not_supported`로 거부한다 |
+| ③ | 강사 수정 `/v1/confirmations` | 200으로 허용한다. 강사 판단은 사실 기록이며 ㊛의 재료다 |
+| ④ | `difficulty_weights` 완전성 검증 | A가 `policy.py`의 기계적 파급으로 처리한다 |
+| ⑤ | 브리핑 표시 라벨 | 예약 태그도 한글 라벨을 가진다. 표시 어휘와 산출 허용은 별개 축이다 |
+
+⑤의 도달 경로는 실재한다. `_TYPE_KO.get(top.type, top.type.value)`는 라벨이 없으면
+KeyError가 아니라 enum 값 `"apply"`를 반환한다. `week.cells`가 BE의 `LearningEvent`에서
+생성되므로 ③이 값을 받는 순간 브리핑까지 흐르며, `_SYMBOL_RE`는 영문을 막지 않는다.
+A가 `_AREA_KO`·`_TYPE_KO` 완전성 테스트를 자기 PR에 추가한다.
+
+PG 전수 결과, ②의 구현 위치는 라우터 요청 경계다. 현재
+`api/routers/problem.py::_problem_request()`는 `ProblemRequest.model_validate()`의 enum
+검증만 사용하므로 A가 enum을 확장하면 `apply`도 자동 통과한다. 이 경계에 v1 지원
+allowlist와 `type_tag_not_supported` reason을 두고 라우터 통합 테스트로 400을 고정해야 한다.
+
+| 조사 대상 | 현행 4종 전제와 영향 |
+| --- | --- |
+| 생성 프롬프트 | `type_tag`를 “요청 값 그대로” 보존할 뿐 4종 열거가 없다. 변경 불요 |
+| `domain/rules.py` | 생성 결과와 요청 태그의 동일성만 검사한다. 4종 열거가 없다 |
+| `domain/difficulty.py` | `weights.type_tag[item.type_tag]`를 조회하므로 설정 키 완전성에 의존한다 |
+| `verify_config.yaml` | `fact`·`concept`·`infer`·`critic` 네 가중치를 명시한다 |
+| `domain/policy.py` | `set(TypeTag)`와 설정 키의 완전 일치를 강제한다. A가 enum 확장의 기계적 파급으로 처리한다 |
+| 라우터 요청 검증 | 현재 enum 파싱뿐이라 예약 태그 추가 후 명시적 v1 거부가 필요하다 |
+| PG 테스트 | `infer`·`concept` 중심이며 4종 전수·예약 태그 거부 테스트가 없다 |
+| 튜플·길이 가정 | 4 고정 가정은 없다. workflow는 요청 `type_tags` 길이에 따라 순환한다 |
+
+`verify_config.yaml`에 `apply: 0.0`을 미리 넣지 않는다. 0은 “영향 없음”이라는 사실을
+만들지만 아직 그런 근거가 없다. 예약 태그의 출제 자체를 막는 동안 없는 값을 지어내지
+않는다.
+
+#### 2-21.4 v1 잠금 구조와 로드맵
+
+현재 잠금은 둘이며 선후 관계를 섞지 않는다.
+
+1. **자료 조달 게이트:** `area_tag != LANGUAGE` **또는** `passage is not None`이면 400이다.
+   자동·수동 전 경로를 막고, `area_tag=language`이면서 `passage` 없음인 경우만 통과한다.
+2. **커리큘럼 그래프:** 현행 33노드가 전부 language라 자동 목표만 막는다. 수동
+   `TEACHER_MANUAL` 경로는 `self._diagnosis()`를 호출하지 않으므로 그래프와 무관하다.
+
+출제를 여는 유일한 조건은 **생성 노드 1개**다. 이 노드가 붙으면 전 영역이 함께 열린다.
+그래프 5영역 확장은 **자동 목표의 선행 조건**이지 출제 자체의 선행 조건이 아니며, 두 작업은
+독립이다.
+
+셀과 노드도 다른 필드다. `contracts/diagnosis.py`의 `cells`는 이벤트 기반 필수 필드이고
+`nodes`는 그래프 기반 선택 필드다. 셀 생성 함수는 그래프 인자를 받지 않는다. 따라서 독서
+이벤트가 오면 독서 셀이 생기고 판정까지 나며 **영구 UNKNOWN이 아니다.** 실제 불일치는
+그리드가 “독서 추론 약함”을 정확히 판정한 뒤 그 셀의 출제 버튼을 누르면 400이 난다는
+것이다. “아직 모름”이 아니라 **약하다고 알려주고도 도와주지 못하는 상태**다.
+
+그러므로 「v1 미지원」 표시는 셀 판정이 아니라 **출제 버튼**에 붙인다. 셀에 붙이면 실제
+판정 가능성과 충돌하는 거짓 표시다.
+
+| 우선순위 | 작업 | 의미 |
+| --- | --- | --- |
+| P0 오늘 | BE·FE에 `area_tag=language`이면서 `passage` 없음, 두 조건을 함께 통보 | OR 조건의 한쪽만 알리면 반대 방향 요청이 400을 맞는다 |
+| P0 오늘 | 그리드 출제 버튼에 「v1 미지원」 표시 | 계약 비용 0 |
+| P1 | 생성 노드 1개 | 출제 전 영역 개방의 유일한 조건. 발표 후 진행 |
+| P2 | 커리큘럼 그래프 5영역 확장 | 자동 목표의 선행이며 P1과 독립 |
+
+#### 2-21.5 대외 프레이밍
+
+대외 설명은 “GPT로 문법 문항 생성”이 아니라 **“자료를 지어내지 않는 문항만 만든다”**다.
+문법이라서 가능한 것이 아니라 지문을 만들지 않아서 가능하며, 이는 evidence 없는 산출물을
+금지한 불변식 2의 직접 결과다. **못 하는 것이 아니라 안 하기로 한 것**이다. 근거 없는
+지문을 LLM이 지어내는 경로를 처음부터 금지했고, v1은 국립국어원의 실재하는 어문 규범
+근거가 있는 영역부터 열었다.
+
+#### 2-21.6 와이어프레임 불일치
+
+와이어프레임은 3열 × 3행이지만 계약은 행동 영역 4열 × 과목 4행이다. 특히 `critic` 열
+누락은 단순 축약으로 보기 어렵다. FE는 표시 축을 계약과 맞추거나, 축약 근거와 누락된 행동
+영역의 접근 경로를 별도로 결정해야 한다.
+
+#### 2-21.7 결정 요약
+
+| 항목 | 상태 | 결정 주체 | 계약 변경 | 비용 |
+| --- | --- | --- | --- | --- |
+| y축 과목 4행 | B 확정 | B | 없음 — `AreaTag` 6개 유지 | 화면 매핑 |
+| TypeTag 행동 영역 라벨 | A 소유 파일 변경 요청 | A | 없음 | 매핑·완전성 테스트 |
+| `SubjectTrack` 선택과목 구분 | 양자 승인 제안 | A+B | 있음 | contracts·소비처 검토 |
+| 「적용·창의」 예약 | A contracts 초안 | A+B | 있음 | 소비처 5곳별 처리 |
+| v1 미지원 표시 | 출제 버튼에 표기 | FE+제품 | 없음 | 계약 비용 0 |
+| 생성 노드 | P1 | B | 내부 실행 경로 | 전 영역 출제 개방 |
+| 그래프 5영역 | P2 | B | 그래프 데이터 버전 | 자동 목표 개방 |
+| 3×3 와이어프레임 | 계약과 불일치 | FE+제품+B | 결정에 따라 다름 | 4×4 정합 필요 |
 
 ---
 

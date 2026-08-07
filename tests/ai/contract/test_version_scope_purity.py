@@ -71,7 +71,7 @@ def _install_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
 #: 그때 이 줄을 지우면 된다. 목록에 없는 스코프가 실패하면 **그대로 red**다.
 #: ⚠ 화이트리스트(#119·#125에서 금지한 것)와의 차이가 그 자동 검출이다 — 화이트리스트는
 #: 영원히 조용하지만 이건 **고쳐지면 시끄럽다.**
-_PENDING_B_FIX: Final = frozenset({"/v1/problems"})
+_PENDING_B_FIX: Final[frozenset[str]] = frozenset()
 
 _PENDING_REASON: Final = (
     "B의 pg 라우터가 problem_failure_versions()에서 load_verify_config()를 부른다"

@@ -59,6 +59,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+#: 파일이 깨졌으면 실패 응답 때가 아니라 기동 때 죽는 게 맞다 —
+#: `require_problem_providers`가 미배선을 기동에서 막는 것과 같은 축이다.
+_PROBLEM_FAILURE_VERSIONS: Final = problem_versions(
+    taxonomy_version=None,
+    verify_config_version=load_verify_config().version,
+)
+
+
 def problem_failure_versions() -> VersionSet:
     """실패 응답용 정적 버전 세트 — 실행 config 확정 전에도 나간다(04 §2.2 A판정 · 99 ㊓).
 
@@ -67,10 +75,7 @@ def problem_failure_versions() -> VersionSet:
     같은 판단이다("그 실행이 v3를 썼다"는 없는 사실을 만들지 않는다).
     """
 
-    return problem_versions(
-        taxonomy_version=None,
-        verify_config_version=load_verify_config().version,
-    )
+    return _PROBLEM_FAILURE_VERSIONS
 
 
 #: 이 라우터가 응답하는 경로 접두와 그 버전 세트 — `api/app.py`가 **실패 응답**에 쓴다(99 ㊓).
