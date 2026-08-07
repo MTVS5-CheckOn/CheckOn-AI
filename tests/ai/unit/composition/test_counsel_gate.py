@@ -10,6 +10,7 @@ import asyncio
 from uuid import UUID
 
 import pytest
+from counsel_text import draft
 
 from ai.composition.buffer_lexicon import forbidden_terms
 from ai.composition.counsel.gate import check_counsel_gate
@@ -79,7 +80,7 @@ def test_grounded_draft_passes() -> None:
     result = check_counsel_gate(
         "이번 주 정답률은 62%였습니다. 다음 주에는 오답 정리를 함께 해보겠습니다.",
         _context(),
-        max_chars=_max_chars(),
+        max_chars=_max_chars(), min_chars=0,
     )
     assert result.passed, result.reason
 
@@ -90,7 +91,7 @@ def test_grounded_draft_passes() -> None:
 def test_ungrounded_number_is_rejected() -> None:
     """근거에 없는 수치 — LLM이 수치를 만들지 않는다(불변식 1·2)."""
     result = check_counsel_gate(
-        "정답률이 88%까지 올랐습니다.", _context(), max_chars=_max_chars()
+        "정답률이 88%까지 올랐습니다.", _context(), max_chars=_max_chars(), min_chars=0
     )
     assert not result.passed
     assert result.reason.startswith("ungrounded_number")
@@ -107,7 +108,7 @@ def test_grounded_numbers_come_from_context() -> None:
 @pytest.mark.parametrize("stem", ["게으르", "꼴찌", "다른 아이들은", "ADHD"])
 def test_forbidden_terms_are_rejected(stem: str) -> None:
     result = check_counsel_gate(
-        f"학생이 {stem}다는 인상입니다.", _context(), max_chars=_max_chars()
+        f"학생이 {stem}다는 인상입니다.", _context(), max_chars=_max_chars(), min_chars=0
     )
     assert not result.passed
     assert result.reason == f"forbidden:{stem}"
@@ -126,31 +127,34 @@ def test_gate_uses_buffer_lexicon_single_source() -> None:
 
 
 def test_too_long_is_rejected() -> None:
-    result = check_counsel_gate("가" * (_max_chars() + 1), _context(), max_chars=_max_chars())
+    result = check_counsel_gate(
+        "가" * (_max_chars() + 1), _context(), max_chars=_max_chars(), min_chars=0
+    )
     assert not result.passed
     assert result.reason.startswith("too_long")
 
 
 def test_mask_token_leak_is_rejected() -> None:
-    result = check_counsel_gate("⟪이름1⟫ 학생은", _context(), max_chars=_max_chars())
+    result = check_counsel_gate("⟪이름1⟫ 학생은", _context(), max_chars=_max_chars(), min_chars=0)
     assert not result.passed
     assert result.reason == "token_leak"
 
 
 def test_symbol_is_rejected() -> None:
-    result = check_counsel_gate("정답률 $62$", _context(), max_chars=_max_chars())
+    result = check_counsel_gate("정답률 $62$", _context(), max_chars=_max_chars(), min_chars=0)
     assert not result.passed
     assert result.reason == "symbol"
 
 
 def test_empty_is_rejected() -> None:
-    assert check_counsel_gate("   ", _context(), max_chars=_max_chars()).reason == "empty"
+    result = check_counsel_gate("   ", _context(), max_chars=_max_chars(), min_chars=0)
+    assert result.reason == "empty"
 
 
 def test_gate_is_deterministic() -> None:
     args = ("정답률이 88%까지 올랐습니다.", _context())
-    first = check_counsel_gate(*args, max_chars=_max_chars())
-    second = check_counsel_gate(*args, max_chars=_max_chars())
+    first = check_counsel_gate(*args, max_chars=_max_chars(), min_chars=0)
+    second = check_counsel_gate(*args, max_chars=_max_chars(), min_chars=0)
     assert first == second
 
 
@@ -209,7 +213,7 @@ def test_fake_plan_emits_record_id_backed_points() -> None:
 
 def test_fake_write_is_scenario_driven_and_deterministic() -> None:
     def run() -> list[str]:
-        fake = FakeCounselProvider(drafts=["초안 A", "초안 B"])
+        fake = FakeCounselProvider(drafts=[draft("초안 A"), draft("초안 B")])
         return [
             asyncio.run(
                 fake.write(context=_context(), execution_context=_execution_context())
@@ -217,7 +221,7 @@ def test_fake_write_is_scenario_driven_and_deterministic() -> None:
             for _ in range(3)
         ]
 
-    assert run() == ["초안 A", "초안 B", "초안 B"]  # 마지막 시나리오 반복
+    assert run() == [draft("초안 A"), draft("초안 B"), draft("초안 B")]  # 마지막 시나리오 반복
     assert run() == run()
 
 
@@ -226,7 +230,8 @@ def test_fake_write_falls_back_to_context_template() -> None:
     text = asyncio.run(
         fake.write(context=_context(), execution_context=_execution_context())
     )
-    assert text == _context().fallback_text
+    # 🔴 대역도 **초안처럼 생겨야 한다**(99 #14) — `fallback_text`는 ~19자라 하한 미만이다.
+    assert text == draft(_context().fallback_text)
 
 
 # ── 길이 상한: 전체 본문 기준 (99 ㉤) ────────────────────────────
@@ -282,7 +287,9 @@ def test_a_draft_written_as_instructed_fits(
         _sentence(_MEASURED_CHARS_PER_SENTENCE)
         for _ in range(len(rule.blocks) * rule.sentences_per_block)
     )
-    result = check_counsel_gate(as_instructed, context, max_chars=max_chars_for(context))
+    result = check_counsel_gate(
+        as_instructed, context, max_chars=max_chars_for(context), min_chars=0
+    )
     assert result.passed, (
         f"{len(rule.blocks)}블록×{rule.sentences_per_block}문장 지시인데 "
         f"{len(as_instructed)}자가 막혔다: {result.reason}"
@@ -301,7 +308,9 @@ def test_the_limit_is_not_toothless() -> None:
         _sentence(_MEASURED_CHARS_PER_SENTENCE * 2)
         for _ in range(len(rule.blocks) * rule.sentences_per_block)
     )
-    result = check_counsel_gate(bloated, context, max_chars=max_chars_for(context))
+    result = check_counsel_gate(
+        bloated, context, max_chars=max_chars_for(context), min_chars=0
+    )
     assert not result.passed
     assert result.reason.startswith("too_long:")
 
@@ -353,7 +362,7 @@ def test_numbers_inside_the_fact_label_are_allowed() -> None:
     """
     context = _numeric_context(label="7월 3주차 정답률", value="62%")
     result = check_counsel_gate(
-        "7월 3주차 정답률은 62%였습니다.", context, max_chars=max_chars_for(context)
+        "7월 3주차 정답률은 62%였습니다.", context, max_chars=max_chars_for(context), min_chars=0
     )
     assert result.passed, result.reason
 
@@ -373,7 +382,7 @@ def test_digit_separators_match_in_both_directions(evidence: str, body: str) -> 
     남으므로 **추출 함수 자체**를 게이트와 허용집합이 공유한다.
     """
     context = _numeric_context(label="출석", value=evidence)
-    result = check_counsel_gate(body, context, max_chars=max_chars_for(context))
+    result = check_counsel_gate(body, context, max_chars=max_chars_for(context), min_chars=0)
     assert result.passed, result.reason
 
 
@@ -391,7 +400,7 @@ def test_fabricated_numbers_are_still_blocked(body: str, expected: str) -> None:
     근거에 없는 숫자는 여전히 막힌다. 이 역케이스가 통과하지 못하면 위 완화는 되돌려야 한다.
     """
     context = _numeric_context(label="출석", value="1,240회 · 정답률 62%")
-    result = check_counsel_gate(body, context, max_chars=max_chars_for(context))
+    result = check_counsel_gate(body, context, max_chars=max_chars_for(context), min_chars=0)
     assert not result.passed
     assert result.reason == f"ungrounded_number:{expected}"
 

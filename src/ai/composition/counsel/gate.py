@@ -39,6 +39,7 @@ def check_counsel_gate(
     context: DraftContext,
     *,
     max_chars: int,
+    min_chars: int,
 ) -> GateResult:
     """**초안 본문 전체**를 판정한다. 순수 함수(계산·I/O 분리, 03 §2).
 
@@ -49,8 +50,14 @@ def check_counsel_gate(
     검사 순서는 고정이라 같은 입력에 같은 사유가 나온다(결정론).
     ⚠ `internal_term`은 **맨 뒤에 붙였다** — 기존 검사 사이에 끼우면 종전에 다른 사유로
     막히던 본문의 사유 코드가 바뀐다(순서가 곧 계약이다).
-    `max_chars`는 호출자가 tone_map에서 산출해 주입한다(`max_chars_for` — 블록 수 ×
-    블록당 문장 수 × 문장당 글자) — 임계값을 이 모듈에 박지 않는다(03 §1).
+    `max_chars`·`min_chars`는 호출자가 tone_map에서 산출해 주입한다(`max_chars_for`·
+    `min_chars_for`) — 임계값을 이 모듈에 박지 않는다(03 §1).
+
+    🔴 **`min_chars`에 기본값을 두지 않았다**(99 #13). `= 0`으로 두면 새 호출자가
+    **조용히 하한 없이** 게이트를 통과시킨다 — 그게 이 안건이 고치는 결함(*"선언은 있고
+    배선이 없다"*)과 정확히 같은 형태다. `max_chars`와 **대칭으로 필수 키워드**라
+    호출부마다 값을 정하게 강제한다. ⚠ 길이 축과 무관한 테스트는 `min_chars=0`을
+    **명시**한다 — 숨은 옵트아웃이 아니라 보이는 선언이다.
     """
     body = text.strip()
     if not body:
@@ -79,6 +86,21 @@ def check_counsel_gate(
     ungrounded = sorted(extract_numbers(body) - allowed)
     if ungrounded:  # 근거에 없는 수치 — 불변식 1·2(LLM이 수치를 만들지 않는다)
         return GateResult(passed=False, reason=f"ungrounded_number:{ungrounded[0]}")
+
+    # 🔴 **하한은 맨 뒤다**(99 #13). 종전에는 규칙 일곱이 전부 「있으면 안 되는 것」이라
+    #    `passed=True`가 **떨어져 나오는 값**이었다 — `"네."` 두 글자가 통과했다.
+    #
+    # ⚠ **`empty`(:56) 바로 뒤가 자연스러워 보이지만 그 자리를 안 골랐다.** 길이 검사
+    #    둘을 나란히 두면 읽기는 좋은데, **종전에 다른 사유로 막히던 짧은 본문의 사유
+    #    코드가 바뀐다** — 예: 마스킹 토큰이 남은 20자 본문은 지금 `token_leak`인데
+    #    앞에 끼우면 `too_short`가 된다. 이 파일 머리말이 *"순서가 곧 계약이다"* 를 적어
+    #    뒀고 `internal_term`이 같은 이유로 맨 뒤에 붙은 선례다.
+    #    🔴 **자연스러움보다 사유 코드 안정이 먼저다.**
+    #
+    # ⚠ 사유 코드는 `too_long`과 **대칭**이다(`too_short:{len}<{min}`) — 접두가 갈리면
+    #    `error_codes` §2.1 매핑이 갈린다.
+    if len(body) < min_chars:
+        return GateResult(passed=False, reason=f"too_short:{len(body)}<{min_chars}")
 
     return GateResult(passed=True)
 

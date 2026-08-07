@@ -20,6 +20,7 @@ from collections.abc import Coroutine
 from uuid import UUID
 
 import pytest
+from counsel_text import draft
 
 from ai.composition.counsel.prompt import assemble_prompt
 from ai.contracts.composition import (
@@ -189,7 +190,7 @@ def test_plan_llm_failure_proceeds_without_emphasis() -> None:
         async def plan(self, **kwargs: object) -> dict[str, list[str]]:
             raise LlmUnavailable("plan down")
 
-    provider = _PlanBoom(drafts=["과제 미제출이 2건 있었습니다."] * 10)
+    provider = _PlanBoom(drafts=[draft("과제 미제출이 2건 있었습니다.")] * 10)
     graph = build_counsel_graph(
         planner=provider,
         writer=provider,
@@ -233,7 +234,7 @@ def test_plan_failure_does_not_trip_llm_circuit() -> None:
         async def plan(self, **kwargs: object) -> dict[str, list[str]]:
             raise LlmUnavailable("plan down")
 
-    provider = _PlanBoom(drafts=["과제 미제출이 2건 있었습니다."] * 10)
+    provider = _PlanBoom(drafts=[draft("과제 미제출이 2건 있었습니다.")] * 10)
     graph = build_counsel_graph(
         planner=provider,
         writer=provider,

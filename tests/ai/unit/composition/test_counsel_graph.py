@@ -12,6 +12,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from counsel_text import draft
 from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.composition.counsel.graph import build_counsel_graph, summarize
@@ -123,7 +124,7 @@ def _run(
 
 def test_all_students_processed_in_order() -> None:
     """student_refs 순서 고정(재현성) — cursor가 끝까지 간다."""
-    provider = FakeCounselProvider(drafts=["정답률은 62%였습니다. 함께 살펴보겠습니다."])
+    provider = FakeCounselProvider(drafts=[draft("정답률은 62%였습니다. 함께 살펴보겠습니다.")])
     _graph, out = _run(["st_1", "st_2", "st_3"], provider)
     assert out["cursor"] == 3
     assert [r.student_ref for r in out["results"]] == ["st_1", "st_2", "st_3"]
@@ -131,7 +132,7 @@ def test_all_students_processed_in_order() -> None:
 
 
 def test_plan_runs_once_and_emits_record_id_points() -> None:
-    provider = FakeCounselProvider(drafts=["정답률은 62%였습니다."])
+    provider = FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")])
     _graph, out = _run(["st_1", "st_2"], provider)
     assert len(provider.plan_calls) == 1  # plan은 LLM 1회
     for points in out["emphasis_points"].values():
@@ -139,7 +140,7 @@ def test_plan_runs_once_and_emits_record_id_points() -> None:
 
 
 def test_summary_counts_match_results() -> None:
-    provider = FakeCounselProvider(drafts=["정답률은 62%였습니다."])
+    provider = FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")])
     _graph, out = _run(["st_1", "st_2"], provider)
     assert out["summary"] == "2명 중 2명 생성·0명 데이터 부족·0명 실패"
 
@@ -158,7 +159,7 @@ def test_summarize_is_pure() -> None:
 
 def test_llm_failure_records_and_continues() -> None:
     provider = FakeCounselProvider(
-        drafts=[LlmTimeout("느림"), "정답률은 62%였습니다."]
+        drafts=[LlmTimeout(draft("느림")), draft("정답률은 62%였습니다.")]
     )
     _graph, out = _run(["st_1", "st_2"], provider)
     assert out["cursor"] == 2  # 멈추지 않았다
@@ -170,7 +171,7 @@ def test_llm_failure_records_and_continues() -> None:
 def test_redaction_blocked_is_fail_closed_and_continues() -> None:
     """마스킹 불확실 → 미전송·실패 기록. 루프는 계속(불변식 3·③)."""
     provider = FakeCounselProvider(
-        drafts=[RedactionBlockedError("불확실"), "정답률은 62%였습니다."]
+        drafts=[RedactionBlockedError(draft("불확실")), draft("정답률은 62%였습니다.")]
     )
     _graph, out = _run(["st_1", "st_2"], provider)
     assert out["results"][0].fail_reason == "redaction_blocked"
@@ -179,7 +180,7 @@ def test_redaction_blocked_is_fail_closed_and_continues() -> None:
 
 def test_missing_context_is_insufficient_not_failure() -> None:
     """컨텍스트 부재는 데이터 부족(정상 상태) — error_codes §2.1."""
-    provider = FakeCounselProvider(drafts=["정답률은 62%였습니다."])
+    provider = FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")])
     _graph, out = _run(
         ["st_1", "st_2"], provider, contexts={"st_2": _context("st_2")}
     )
@@ -199,7 +200,7 @@ def test_gate_failure_regenerates_up_to_cap_then_records_failure() -> None:
     3을 **도달 불가능한 값**으로 만들었다. `classify`의 `range(MAX_PARSE_RETRY + 1)`과
     같은 관례로 맞췄다.
     """
-    provider = FakeCounselProvider(drafts=["정답률이 88%까지 올랐습니다."])
+    provider = FakeCounselProvider(drafts=[draft("정답률이 88%까지 올랐습니다.")])
     _graph, out = _run(["st_1"], provider)
     assert len(provider.write_calls) == _REGEN_MAX + 1
     assert out["results"][0].status is DraftStatus.FAILED
@@ -213,7 +214,7 @@ def test_regen_budget_is_n_regenerations_not_n_attempts() -> None:
     안 나온다.** 상한 값과 원장 컬럼의 뜻이 갈리면 어느 쪽이 계약인지 알 수 없다.
     """
     for budget in (1, 2, 3):
-        provider = FakeCounselProvider(drafts=["정답률이 88%까지 올랐습니다."])
+        provider = FakeCounselProvider(drafts=[draft("정답률이 88%까지 올랐습니다.")])
         graph = build_counsel_graph(
             planner=provider,
             writer=provider,
@@ -240,7 +241,7 @@ def test_zero_regen_budget_is_refused_at_build_time() -> None:
     게이트가 막은 것처럼 보이지만 아무것도 생성하지 않은 것이라 사후 진단이 거짓이 된다.
     `gateway.py`가 `transport_retry`에 "0..1 밖이면 기동 실패"를 건 것과 같은 자리다(불변식 6).
     """
-    provider = FakeCounselProvider(drafts=["정답률은 62%였습니다."])
+    provider = FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")])
     with pytest.raises(ValueError, match="regen_max"):
         build_counsel_graph(
             planner=provider,
@@ -261,7 +262,7 @@ def test_zero_regen_budget_is_refused_at_build_time() -> None:
 
 def test_gate_pass_on_second_attempt_stops_regenerating() -> None:
     provider = FakeCounselProvider(
-        drafts=["정답률이 88%까지 올랐습니다.", "정답률은 62%였습니다."]
+        drafts=[draft("정답률이 88%까지 올랐습니다."), draft("정답률은 62%였습니다.")]
     )
     _graph, out = _run(["st_1"], provider)
     assert len(provider.write_calls) == 2  # 통과 즉시 중단
@@ -273,7 +274,7 @@ def test_gate_pass_on_second_attempt_stops_regenerating() -> None:
 
 def test_resume_from_student_boundary_does_not_regenerate() -> None:
     """학생 경계에서 중단→재개. 이미 만든 draft를 다시 만들지 않는다(멱등)."""
-    provider = FakeCounselProvider(drafts=["정답률은 62%였습니다."])
+    provider = FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")])
     graph = build_counsel_graph(
         planner=provider,
         writer=provider,
@@ -302,7 +303,7 @@ def test_resume_from_student_boundary_does_not_regenerate() -> None:
 
 def test_checkpoint_is_per_student() -> None:
     """체크포인트 단위 = 학생 1명 완료(§1.3) — 중간 상태가 남지 않는다."""
-    provider = FakeCounselProvider(drafts=["정답률은 62%였습니다."])
+    provider = FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")])
     graph = build_counsel_graph(
         planner=provider,
         writer=provider,
@@ -327,7 +328,7 @@ def test_checkpoint_is_per_student() -> None:
 
 def test_graph_is_deterministic() -> None:
     def run() -> str:
-        provider = FakeCounselProvider(drafts=["정답률은 62%였습니다."])
+        provider = FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")])
         _graph, out = _run(["st_1", "st_2"], provider, thread="det")
         return str(out["summary"])
 

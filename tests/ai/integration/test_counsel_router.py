@@ -13,6 +13,7 @@ from typing import Any, Final
 
 import httpx
 import pytest
+from counsel_text import DEFAULT_DRAFT, draft
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
@@ -239,7 +240,7 @@ def test_same_key_same_body_replays_the_first_result(client: TestClient) -> None
 
 def test_same_key_same_body_does_not_run_the_worker_twice(client: TestClient) -> None:
     """멱등 히트는 **실행을 건너뛴다** — LLM 원가가 두 번 나가면 안 된다."""
-    provider = FakeCounselProvider(drafts=["이번 기간 학습 상황을 정리해 드립니다."])
+    provider = FakeCounselProvider(drafts=[draft("이번 기간 학습 상황을 정리해 드립니다.")])
     set_counsel_provider(provider)
     _post(client)
     calls_after_first = len(provider.write_calls)
@@ -360,7 +361,7 @@ def test_refine_inherits_the_emphasis_the_first_draft_chose(client: TestClient) 
     강사가 refine을 한 번이라도 누르면 **매번** 그렇다.
     """
     provider = _EmphasisSpy(
-        drafts=["이번 기간 학습 상황을 정리해 드립니다."],
+        drafts=[draft("이번 기간 학습 상황을 정리해 드립니다.")],
         emphasis={_REQUEST["student_ref"]: [_GROUNDED_EMPHASIS]},
     )
     set_counsel_provider(provider)
@@ -388,7 +389,7 @@ def test_refine_ledger_carries_the_real_input_snapshot(client: TestClient) -> No
     같다** — 그래서 POST와 refine의 AI_RUN이 같은 스냅숏을 가리킨다.
     """
     set_counsel_provider(
-        _EmphasisSpy(drafts=["이번 기간 학습 상황을 정리해 드립니다."])
+        _EmphasisSpy(drafts=[draft("이번 기간 학습 상황을 정리해 드립니다.")])
     )
     _refine_once(client)
 
@@ -412,7 +413,7 @@ def test_an_empty_emphasis_is_not_the_same_event_as_a_missing_one(
     🔴 사유는 다른 축이 든다(`plan_outcome` · 99 ㉲). 이 대조가 없으면 이 PR이 고친 결함이
     **다시 숨는다** — refine이 `()`를 받은 것이 정상인지 회귀인지 구분되지 않는다.
     """
-    provider = _EmphasisSpy(drafts=["이번 기간 학습 상황을 정리해 드립니다."])
+    provider = _EmphasisSpy(drafts=[draft("이번 기간 학습 상황을 정리해 드립니다.")])
     set_counsel_provider(provider)
     _refine_once(client)
 
@@ -446,7 +447,7 @@ def test_two_gets_return_the_same_execution_id(client: TestClient) -> None:
     만들었나"* 라는 **형태**만 보고, 변수에 담아 넘기면 통과한다 — 실제로 POST가 정확히
     그 형태였다. 이건 **행동**을 본다.
     """
-    set_counsel_provider(FakeCounselProvider(drafts=["이번 기간 학습 상황을 정리했습니다."]))
+    set_counsel_provider(FakeCounselProvider(drafts=[draft("이번 기간 학습 상황을 정리했습니다.")]))
     job_id = str(_post(client).json()["data"]["job_id"])
     headers = {"X-Tenant-Id": _HEADERS["X-Tenant-Id"]}
     first = client.get(f"/v1/counsel/drafts/{job_id}", headers=headers)
@@ -464,7 +465,7 @@ def test_the_response_execution_id_is_the_ledger_key(client: TestClient) -> None
     아무것도 못 가리켰다. 정본은 `WorkerJob.execution_id`이고 `worker.py`가 그 값으로
     `AI_RUN`을 쓴다.
     """
-    set_counsel_provider(FakeCounselProvider(drafts=["이번 기간 학습 상황을 정리했습니다."]))
+    set_counsel_provider(FakeCounselProvider(drafts=[draft("이번 기간 학습 상황을 정리했습니다.")]))
     posted = _post(client).json()
     job_id = str(posted["data"]["job_id"])
     got = client.get(
@@ -490,7 +491,7 @@ def test_a_job_less_path_still_returns_a_stable_id(client: TestClient) -> None:
     가리키는 값을 지어내는 대신 POST가 만든 **상관 ID 하나를 재사용**한다 — 최소한
     응답들끼리는 묶인다. ⚠ 그 값은 **원장 키가 아니다**(㊮에 그 비대칭을 등재했다).
     """
-    set_counsel_provider(FakeCounselProvider(drafts=["쓰이지 않는다"]))
+    set_counsel_provider(FakeCounselProvider(drafts=[draft("쓰이지 않는다")]))
     posted = _post(client, inquiry={**_REQUEST["inquiry"], "topic": "schedule"}).json()
     job_id = str(posted["data"]["job_id"])
     headers = {"X-Tenant-Id": _HEADERS["X-Tenant-Id"]}
@@ -517,8 +518,11 @@ class _GatewayCounselProvider:
     선례: `test_llm_observability.py::_GatewayCounselProvider`.
     """
 
-    def __init__(self, text: str = "이번 기간 학습 상황을 정리해 드립니다.") -> None:
-        gateway = build_counsel_gateway(FakeCounselLlmProvider(text))
+    def __init__(self, text: str = "") -> None:
+        # 🔴 대역 초안도 하한 위여야 한다(99 #14).
+        gateway = build_counsel_gateway(
+            FakeCounselLlmProvider(text or DEFAULT_DRAFT)
+        )
         self._planner = GatewayPlanner(gateway)
         self._writer = GatewayDraftWriter(gateway)
 

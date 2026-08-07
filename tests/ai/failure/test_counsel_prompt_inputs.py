@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 import pytest
+from counsel_text import draft
 
 from ai.composition.counsel.gate import check_counsel_gate
 from ai.composition.counsel.prompt import PROMPT_VERSION, assemble_prompt
@@ -120,10 +121,12 @@ def test_three_refine_turns_accumulate() -> None:
     팀 공유본(와이어프레임 v3.5·프로토타입·데이터계약)이 전부 누적을 전제로 만들어졌다.
     고치기 전에는 매 턴 원본 근거에서 새로 써서 턴1의 "짧게"가 턴2에서 되살아났다.
     """
+    # ⚠ 셋 다 `draft()`를 거친다 — 대역 초안은 하한 위여야 한다(99 #14).
+    #   길이만 올리고 **문면·숫자는 그대로**라 누적 검증은 그대로 성립한다.
     turns = [
-        "이번 주 정답률은 62%였습니다.",
-        "이번 주 정답률은 62%로 확인됩니다.",
-        "정답률은 62%입니다.",
+        draft("이번 주 정답률은 62%였습니다."),
+        draft("이번 주 정답률은 62%로 확인됩니다."),
+        draft("정답률은 62%입니다."),
     ]
     writer = _ScriptedWriter(turns)
     text = "이번 주 학습 상황을 정리해 보내드립니다."
@@ -160,7 +163,7 @@ def test_blocked_turn_keeps_the_previous_version() -> None:
 
     누적을 붙이면서 이게 깨지면 강사가 차단당한 시도로 초안을 잃는다.
     """
-    good = "이번 주 정답률은 62%였습니다."
+    good = draft("이번 주 정답률은 62%였습니다.")
     writer = _ScriptedWriter([good, "정답률이 88%까지 올랐습니다."])  # 2턴부터 근거 없는 수치
 
     text = _refine(writer, "원본 본문입니다.") or ""
@@ -198,7 +201,7 @@ def test_numbers_in_the_inquiry_are_not_grounded() -> None:
     context = _context(inquiry_text="지난번 80점이라고 하셨는데 맞나요")
     assert "80" not in context.allowed_numbers()
     result = check_counsel_gate(
-        "지난번 80점에서 올랐습니다.", context, max_chars=max_chars_for(context)
+        "지난번 80점에서 올랐습니다.", context, max_chars=max_chars_for(context), min_chars=0
     )
     assert result.reason == "ungrounded_number:80"
 
@@ -215,7 +218,7 @@ def test_the_measured_leak_is_now_blocked() -> None:
     """🔴 3차 실측 첫 문장이 게이트에 걸린다."""
     context = _context()
     leaked = "안녕하세요. 2026년 7월 상담 초안을 드립니다. 정답률은 62%였습니다."
-    result = check_counsel_gate(leaked, context, max_chars=max_chars_for(context))
+    result = check_counsel_gate(leaked, context, max_chars=max_chars_for(context), min_chars=0)
     assert not result.passed
     assert result.reason.startswith("internal_term:")
 
@@ -228,7 +231,7 @@ def test_ordinary_counselling_wording_is_not_blocked() -> None:
     context = _context()
     natural = "이번 상담을 통해 말씀드립니다. 정답률은 62%였습니다."
     assert check_counsel_gate(
-        natural, context, max_chars=max_chars_for(context)
+        natural, context, max_chars=max_chars_for(context), min_chars=0
     ).passed
 
 
@@ -247,7 +250,7 @@ def test_the_check_runs_last_so_existing_reasons_do_not_move() -> None:
     both = "상담 초안입니다. 학생이 게으른 편입니다."
     assert find_internal_terms(both)  # 내부 용어도 들어 있다
     assert check_counsel_gate(
-        both, context, max_chars=max_chars_for(context)
+        both, context, max_chars=max_chars_for(context), min_chars=0
     ).reason.startswith("forbidden:")
 
 

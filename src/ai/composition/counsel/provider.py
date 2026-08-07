@@ -79,6 +79,37 @@ def max_chars_for(context: DraftContext) -> int:
     return len(rule.blocks) * rule.sentences_per_block * CHARS_PER_SENTENCE
 
 
+def min_chars_for(context: DraftContext) -> int:
+    """이 조합의 **초안 전체** 글자 하한 — 상한과 **같은 자리에서** 파생한다(03 §1 · 99 #13).
+
+    🔴 **게이트 규칙 일곱이 전부 「있으면 안 되는 것」이었다** — 금칙어·기호·마스킹 토큰·
+    근거 없는 수치… 그래서 `"네."` 두 글자가 `passed=True`로 떨어져 나와 학부모에게
+    `generated`로 나갈 수 있었다. **금지 목록은 아무리 길어도 하한이 되지 않는다.**
+
+    **값의 근거 — 「블록당 최소 한 문장」:**
+
+        min = len(rule.blocks) × CHARS_PER_SENTENCE
+        max = len(rule.blocks) × rule.sentences_per_block × CHARS_PER_SENTENCE
+
+    ⚠ **지시한 길이를 강제하는 것이 아니다.** 톤 규칙은 블록당
+    `sentences_per_block`문장을 지시하는데 하한은 그 **1/`sentences_per_block`** 이다 —
+    *"각 블록이 최소 한 문장은 됐다"* 만 요구하고 나머지는 상한이 든다. 퇴화 산출을
+    막는 바닥이지 품질 기준이 아니다.
+
+    **실측 위에 놓았다**(4차·5차 실 LLM):
+
+        실 초안 글자수   300 · 339 · 341 (5차 S2)  ·  358 / 361 (4차 S5)  ·  466 / 366 (5차 S5)
+        관측 최소        300
+        하한 최대값      240 (4블록 조합)          ⇒ 여유 60자
+        24조합 창        [180, 360] ~ [240, 1200]  ⇒ 가장 좁은 창이 180자
+
+    ⚠ **`gate_exhausted`가 두 회차 0건이라 지금 넣을 수 있었다** — 게이트가 이미 소진
+    직전이었다면 하한이 그걸 무너뜨린다(99 ㉤ 재측정이 이 작업의 전제다).
+    """
+    rule = tone_rule_for(context)
+    return len(rule.blocks) * CHARS_PER_SENTENCE
+
+
 PLAN_PROMPT_ID: Final = "composition/counsel_plan"
 PLAN_PROMPT_VERSION: Final = "0.1"
 
@@ -452,7 +483,9 @@ class FakeCounselProvider:
         elif self._drafts:
             step = self._drafts[-1]
         else:
-            step = context.fallback_text
+            # 🔴 대역도 **초안처럼 생겨야 한다**(99 #14) — 종전에는
+            #   `fallback_text`(~19자)를 그대로 냈고 그게 하한 미만이었다.
+            step = gate_floor_draft(context.fallback_text)
         if isinstance(step, Exception):
             raise step
         return step
@@ -465,7 +498,50 @@ _PLAN_BLOCK_LINE: Final = re.compile(
     re.MULTILINE,
 )
 
-_DEFAULT_FAKE_TEXT: Final = "이번 주 학습 상황을 정리해 드립니다."
+#: 🔴 **대역 초안을 하한 위로 올리는 중립 꼬리** (99 #13·#14).
+#:
+#: 게이트에 최소 길이 하한이 생기자 **63건이 깨졌다** — 원인은 하한 값이 아니라 **대역
+#: 초안이 2~25자**였던 것이다(실 초안은 300~466자). 대역이 실물의 1/20~1/100이었고,
+#: **스위트 전체가 「초안이 초안처럼 생겼는가」를 한 번도 안 봤다.** 게이트에 하한이
+#: 없던 것과 **같은 뿌리**다(로그 61 *"대역은 계약의 일부"*).
+#:
+#: ⚠ **지켜야 할 것 넷** — `tests/ai/unit/composition/test_counsel_text_fixture.py`가 단정한다:
+#:   ⓐ **숫자 0개** — `ungrounded_number`가 `allowed_numbers()`와 EXACT 대조라
+#:      숫자가 하나라도 들어가면 **모든 대역이 그 사유로 막힌다**
+#:   ⓐ′ 🔴 **redaction이 `uncertain`을 안 내야 한다.** 처음 쓴 문면이 `가정에서도`·
+#:      `정리하는`에서 걸렸다 — 「성씨 1자 + 이름 2자」 휴리스틱이 평범한 활용형을
+#:      인명 후보로 잡는다(5차 리포트 §7-a가 같은 조각을 관측했다). 걸리면
+#:      **전송 전 fail-closed**라 대역이 500을 낸다. **숫자만 보고 마스킹을 안 본 것이
+#:      이 PR에서 실제로 난 실수다.**
+#:   ⓑ **상한 안** — 가장 좁은 조합의 `max_chars_for`가 360이다(꼬리 239 + 접두 ≤ 264)
+#:   ⓒ 금칙어·내부 용어·기호·마스킹 토큰 없음 — 게이트 일곱을 다 통과해야 한다
+#:   ⓓ **실 LLM 산출을 복붙하지 않았다** — 합성이다(옮기면 마스킹·실명 위험이 레포로 온다)
+#:
+#: 🔴 **정본은 여기 하나다.** 대역이 `src`에 살아서 테스트가 여기서 가져간다
+#: (`tests/ai/fakes/counsel_text.py`가 재수출) — 두 곳에 두면 갈린다(#02 부류).
+GATE_FLOOR_TAIL: Final = (
+    " 제출 흐름은 지난 기간과 비슷하게 이어지고 있습니다."
+    " 수업 중 참여 태도도 꾸준한 편이라 지금 흐름을 유지하면 좋겠습니다."
+    " 댁에서도 같은 방향으로 지켜봐 주시면 도움이 됩니다."
+    " 다음 기간에는 오답을 다시 짚는 시간을 조금 더 늘려 보려고 합니다."
+    " 궁금한 점이 있으시면 언제든 편하게 말씀해 주세요."
+    " 아이가 스스로 짚어 보는 힘이 붙고 있어 그 부분을 계속 지지해 주시면 좋겠습니다."
+    " 학원에서도 같은 흐름으로 도와 나가겠습니다."
+)
+
+
+def gate_floor_draft(text: str) -> str:
+    """대역 초안 — **뜻은 그대로 두고 길이만** 실물 수준으로 올린다.
+
+    🔴 **앞을 안 자르고 뒤에 붙인다.** 테스트가 심는 것(금칙어·특정 수치·내부 용어)이
+    `text`에 있고 **그게 검사 대상**이다 — 바꾸면 그 테스트가 검증하던 것이 사라진다.
+    ⚠ **빈 문자열은 그대로** — `empty` 사유를 보는 테스트가 있고 꼬리를 붙이면 그 케이스가
+    사라진다.
+    """
+    return f"{text}{GATE_FLOOR_TAIL}" if text else text
+
+
+_DEFAULT_FAKE_TEXT: Final = gate_floor_draft("이번 주 학습 상황을 정리해 드립니다.")
 
 
 def fake_plan_response(prompt: str) -> str:

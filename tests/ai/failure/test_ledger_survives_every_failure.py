@@ -43,6 +43,7 @@ from uuid import UUID
 
 import httpx
 import pytest
+from counsel_text import draft
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -104,7 +105,7 @@ _CLASSIFY_FAILURES = [
 
 _HEADERS = {"X-Tenant-Id": "t1", "X-Request-Id": "rq-ledger-1"}
 _WORKER_NOW = datetime(2026, 8, 7, tzinfo=UTC)
-_GROUNDED = "지문 42개를 함께 살펴봤습니다."
+_GROUNDED = draft("지문 42개를 함께 살펴봤습니다.")
 
 
 def _router_request_body() -> dict[str, Any]:
@@ -513,7 +514,7 @@ class _UnclassifiedBoom:
 
 
 def _ok_provider() -> FakeCounselProvider:
-    return FakeCounselProvider(drafts=["정답률은 62%였습니다."] * 40)
+    return FakeCounselProvider(drafts=[draft("정답률은 62%였습니다.")] * 40)
 
 
 def _run_circuit_open() -> tuple[_WorkerHarness, WorkerJob]:

@@ -26,6 +26,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from counsel_text import draft
 from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.agents.job_store import InMemoryJobStore
@@ -55,7 +56,7 @@ from ai.contracts.composition import (
 )
 
 _NOW = datetime(2026, 7, 30, 3, 0, tzinfo=UTC)
-_DRAFT_TEXT = "정답률은 62%였습니다."
+_DRAFT_TEXT = draft("정답률은 62%였습니다.")
 
 
 def _run[T](coro: Coroutine[object, object, T]) -> T:
@@ -256,7 +257,7 @@ def test_draft_body_is_actually_stored_and_matches_gate_output() -> None:
 
 def test_failed_student_has_no_draft_record() -> None:
     """게이트 소진 학생은 본문을 저장하지 않는다 — 저장은 **게이트 통과분만**(불변식 1)."""
-    h = _Harness(provider=FakeCounselProvider(drafts=["정답률이 88%까지 올랐습니다."] * 40))
+    h = _Harness(provider=FakeCounselProvider(drafts=[draft("정답률이 88%까지 올랐습니다.")] * 40))
 
     async def scenario() -> CounselPackResultRecord | None:
         await h.enqueue(["st_1"])
@@ -459,7 +460,7 @@ def test_llm_circuit_pauses_after_consecutive_failures() -> None:
     from ai.contracts.llm import LlmUnavailable
 
     refs = [f"st_{i}" for i in range(1, 9)]
-    h = _Harness(provider=FakeCounselProvider(drafts=[LlmUnavailable("down")] * 40))
+    h = _Harness(provider=FakeCounselProvider(drafts=[LlmUnavailable(draft("down"))] * 40))
 
     async def scenario() -> tuple[WorkerJob | None, int]:
         await h.enqueue(refs)
