@@ -580,7 +580,10 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
     "text_masked": "요즘 아이가 힘들어하는 것 같은데…"   // redaction 통과분 (불변식 3)
   },
   "student_ref": "st_8f2a", "parent_ref": "pa_9c1d", "class_ref": "cl_a1",  // 전부 가명
-  "labels": ["narrative", "anxiety_sensitive"],        // 확정 라벨 — 톤 게이트 입력(05 매핑)
+  "labels": ["narrative", "anxious"],                  // 🔴 **4축 enum 값만** — alias 없음. 그 밖은 400
+                                                       //   comm: data|narrative · sensitivity: anxious|direct
+                                                       //   interest: grade|attitude|admission · frequency: frequent|monthly
+                                                       //   ⚠ **선택이다** — 누락 축은 기본값(narrative·anxious·grade·monthly)
   "dismissed_suggestions": [{ "axis": "frequency", "value": "monthly" }],   // 재제안 억제
   "context": {                                         // 인용 가능한 사실의 전체 우주
     "snapshot_hash": "sha256:…",                       // 재현성 축(AI_RUN · 불변식 8)
@@ -604,7 +607,8 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
       "citations": [                        // **항상 1건 이상** — 근거 없는 초안은 존재 불가(불변식 2)
         { "cite_id": "L1", "record_id": "le_2041", "summary": "6월 지문 42개·312문항" }
       ],
-      "labels_applied": ["narrative", "anxiety_sensitive"],
+      "labels_applied": ["narrative", "anxious", "grade", "monthly"],   // 🔴 **항상 4값**(4축 전수)
+                                                       //   요청이 2개만 보내도 기본값으로 채운 4축이 나온다 — 에코가 아니다
       "label_suggestions": [],              // ⚠ v1 상수 [] — 생성기 미구현(99 D ㊲)
       "status_reason": null,                // 거부·실패 사유 코드(error_codes §2.1)
       "generated_at": "2026-07-31T14:24:11+09:00"
@@ -648,7 +652,8 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
     - ⚠ **정정값을 얻으려고 `POST /v1/classify`를 다시 부르지 말 것.** classify는 `(tenant_id, inquiry_ref)` 캐시가 있어 **저장된 예측**을 그대로 돌려준다(§3.5) — 이는 **예측 고정 원칙**(예측이 소실되면 평가셋의 (입력·예측·정답) 3요소가 깨진다)의 결과이지 버그가 아니다.
     - ⇒ 이후 `POST /v1/counsel/drafts`에 싣는 `inquiry.topic`은 **BE가 보관한 정정값**이다.
 - **턴 상한은 AI가 판정하지 않는다.** `turn_no`는 로그·이력용으로 받기만 한다 — "세션 턴 상한 없음, 월 할당이 자연 상한"(`part_a/06` §1)이고 할당 집행은 전부 백엔드 Billing이다(7/15 BE-4).
-- **v1 구현 범위 정정 3건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다.
+- **v1 구현 범위 정정 5건**(계약보다 낮게 구현되는 부분)은 `docs/handoff/2026-07-31_counsel_router_v1_scope_to_BE.md`가 정본이다 — ① `citations` 각주형(앵커는 v1.1) · ② `label_suggestions[]` 항상 빈 배열 · ③ `draft_status` 4종 유지 · 🔴 **④ 4축 라벨 값 표기 정정** · ⑤ `labels[]`는 선택(누락 축은 기본값).
+  > 🔴 **(8/7 정정) 종전 표기는 「3건」이었다** — handoff는 **5건**이고, 빠진 ④가 정확히 이 절의 예시를 틀리게 만든 항목이다. **BE에는 7/31에 통보했는데 04를 안 고쳤다** — `anxiety_sensitive`(존재하지 않는 값)가 예시에 남아 그대로 호출하면 **400**이었다. *통보와 계약 반영은 다른 사건이다.*
 
 ### 3.11 `/v1/problems` — 문제 생성 (202 · **요청 단위 = 세트 1개**)
 
