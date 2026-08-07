@@ -530,6 +530,9 @@ class ProblemGenerationWorkflow:
         # "생성"(지문·담화·매체를 LLM이 만든다)과 "저작물"(풀에서 선택) 노드가 없어서
         # 자료를 동반한 요청을 받을 수 없다. 생성 노드 1개가 붙으면 T2 본문·T4·T5가
         # 함께 열린다 — 트랙마다 파이프라인을 다시 만드는 구조가 아니다.
+        # ⚠ 생성 노드를 붙일 때 이 조건문도 같이 풀어야 한다 — `area_tag` 검사는
+        # '자료가 필요 없는 유일한 영역'의 대리이지 트랙 제한이 아니다. 조건이 OR라
+        # `area_tag=language`이면서 `passage` 없음, 둘 다 만족해야 통과한다.
         if request.area_tag is not AreaTag.LANGUAGE or request.passage is not None:
             raise ProblemSourceUnsupported(
                 "자료 조달 방식이 '자료 없음'인 요청만 처리할 수 있다 "
