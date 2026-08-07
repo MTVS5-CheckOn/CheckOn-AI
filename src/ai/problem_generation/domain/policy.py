@@ -7,7 +7,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ai.contracts.problem_generation import DifficultyBand
-from ai.contracts.taxonomy import TypeTag
+from ai.contracts.taxonomy import V1_TYPE_TAGS, TypeTag
 
 
 class DifficultyRange(BaseModel):
@@ -82,8 +82,14 @@ class DifficultyWeights(BaseModel):
 
     @model_validator(mode="after")
     def validate_type_weights(self) -> Self:
-        if set(self.type_tag) != set(TypeTag):
-            raise ValueError("difficulty_weights.type_tag는 공용 TypeTag를 모두 포함해야 한다")
+        # 🔴 **예약 태그(`RESERVED_TYPE_TAGS`)는 가중치를 갖지 않는다**(99 ㊣). 여는 날
+        #    `V1_TYPE_TAGS`가 자동으로 넓어지고 이 검사가 **가중치 누락을 red로 알려 준다**
+        #    — 가드가 죽는 게 아니라 **기준선이 옮겨간다.**
+        if set(self.type_tag) != set(V1_TYPE_TAGS):
+            raise ValueError(
+                "difficulty_weights.type_tag는 v1 TypeTag를 모두 포함해야 한다 "
+                "— 예약 태그는 가중치를 갖지 않는다"
+            )
         return self
 
 
