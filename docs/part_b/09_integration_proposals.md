@@ -1031,6 +1031,22 @@ plain `LlmError`와 파싱·필드 오류를 503으로 뭉개지 않는다. 벤�
 `ProblemWorkflowConfigurationError` 계열은 `DomainException`이며 라우터가 매핑하지 않고
 `api/app.py`의 예외 핸들러가 잡는다.
 
+##### Provider 실패 전달 계약 초안 `[A 승인 대기]`
+
+provider는 실패를 **예외로 올린다.** 반환값의 `outcome`은 `OK` 하나뿐이고, 그 밖의
+`CallOutcome` 값은 게이트웨이가 예외에서 유도해 남기는 **원장 기록용**이다.
+
+1. `gateway.py:210-218`의 재시도는
+   `retry_if_exception_type((LlmTimeout, LlmUnavailable))`로 예외 타입에만 걸린다.
+   실패를 outcome으로 반환하면 재시도가 동작하지 않는다.
+2. `gateway.py:95-108`의 `_exception_outcome()`은 예외를 outcome으로 바꾸는 단방향
+   매핑이며, 반대 방향 매핑은 없다.
+3. 실 provider인 `openai_compat.py:193-226`은 실패를 계약 예외로 올리고,
+   `openai_compat.py:247-249`에서 성공만 `CallOutcome.OK`로 반환한다(99 ㉴ 8/6 전수 실측).
+
+소비자의 outcome 분기는 **도달 불가 방어**로 남긴다(#129). 이 규약을 바꾸면 재시도
+계약도 함께 바뀌므로 게이트웨이 소유자(B)에게 먼저 통보해야 한다.
+
 | 예외 | wire 결과 |
 | --- | --- |
 | `ProblemWorkflowConfigurationError` | 400 `INVALID_SCHEMA` |
