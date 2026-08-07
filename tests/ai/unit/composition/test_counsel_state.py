@@ -21,6 +21,15 @@ from ai.contracts.composition import DraftStatus, StudentResult
 _HASH = "sha256:" + "a" * 64
 
 #: langgraph_state §1.2 CounselPackState 코드블록에서 손으로 옮긴 필드 집합.
+#: 🔴 **이것은 「문서 대조」가 아니다 — 손으로 옮긴 두 번째 사본이다**(99 #07).
+#: 아래 단정은 `set(model_fields) == 이 집합`, 즉 **코드 ↔ 손사본**이라 **문서가 바뀌어도
+#: red가 안 난다.** 잡는 방향은 하나뿐이다:
+#:   ✅ **코드 → 문서** — 모델에 필드를 더하면 red가 나 문서를 고치게 만든다
+#:   🔴 **문서 → 코드** — 문서만 바뀌면 **조용하다**
+#: ⚠ 이름(`..._match_doc_exactly`)이 **양방향으로 읽힌다** — 검사의 이름이 실제로 보는
+#:   것보다 넓다. 🔴 **문서를 실제로 파싱하는 형태는
+#:   `tests/ai/contract/test_doc_enum_parity.py`에 있다** — §1.2 코드블록도 그렇게
+#:   읽으려면 블록 파싱이 필요하고, 그건 #07로 등재만 했다(이 PR 범위 밖).
 _DOC_FIELDS = {
     "state_schema_version",
     "tenant_id",
