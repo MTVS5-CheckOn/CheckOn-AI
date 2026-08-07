@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영)의 공식 통합 제안과 승인 이력. `[제안]` 항목은 오너 승인 전까지 확정되지 않으며, `✅ A+B 승인 완료`로 표시된 항목은 승인된 결정 기록이다. A 소유 문서·공용 계약·정책·ERD 변경은 `docs/02_ownership.md` 절차를 따른다. A가 이미 요청한 리뷰 반영은 직접 갱신하고, 독립 크로스체크에서 새로 발견한 A·백엔드 안건은 기존 정본 값을 바꾸지 않은 채 원본 조항에 `[PART_B 크로스체킹 요청 · 미확정]`으로 남긴다.
 >
 > **변경 이력**
+> - v3.8 (2026-08-07): **§2-19 확장 — PG MVP 조회·수정 API의 BE 인계 규약.** 엔드포인트 표면 6종을 구현 여부로 나누고 Step3 목록·상세의 상태 카운터, `available_actions`, `current_revision_no`, 리비전 충돌과 전 게이트 재검증, 교체·삭제 경로 제안을 명시했다. 근거 `quote=null`의 배지 금지, 본문 없는 완료 알림, Step1의 상대 판정·skill node 집계, 독서·문학 요청 전량 400인 v1 제한을 함께 고정했다.
 > - v3.7 (2026-08-07): **§2-20 신설 — `PROBLEM_ITEM` 스키마 결손과 해소안 제안.** `ProblemItemStore`의 `(set_id, slot_index)` 조회 키와 `StoredProblemItem` 무손실 왕복을 막는 결손 12건을 계약·ORM 행 단위로 대조하고, `ITEM_REVISION` 우회가 성립하지 않는 이유 4건을 기록했다. A가 결정할 조회 키·보존 방식·본문 없는 슬롯 표현의 선택지를 분리했으며, B는 `ITEM_CANDIDATE` 선례에 맞춘 전체 스냅숏 1컬럼 + nullable 파생 투영을 권고한다. §2-19에는 스키마 결정 전 v1 인메모리 운용과 프로세스 재시작 후 404 한계를 추가했다.
 > - v3.6 (2026-08-07): **§2-19 신설 — `/v1/problems` v1 API 스펙 초안.** A 확정 회신에 따라 자체 job 대신 공용 슈퍼바이저를 사용하고, v1 operation을 `problem_set.generate` 하나로 고정했다. counsel/drafts와 같은 필수 헤더·멱등 규약, `JobPhase` 기반 GET 상태, 미완료 `result=null`, 오류 주체 판별, `domain_error_for`의 504/503/500 매핑, 현행 `LANGUAGE`·자료 없음 제약을 한곳에 모았다. 이 절은 §2-1의 가칭 경로와 refine·reverify 범위를 v1에서 대체하며, A가 `04_api_contract.md`에 옮길 초안이다.
 > - v3.5 (2026-08-05): **라이선스 전제 명시에 따라 W16·W18을 P3으로 내렸다.** 이 프로젝트는 부트캠프 대회 출제용이며 상업 서비스가 아니다 — AI Hub 이용정책은 비상업 연구개발을 허용하므로 71857을 **사용 가능**으로 재판정했고, CC BY-SA 전파도 비상업 범위에서는 출처 표시로 닫힌다. **두 항목은 삭제하지 않았다** — 상용 전환 시 P1으로 되살아나며 그 조건을 `05` §1.1.4 머리에 함께 못 박았다.
@@ -889,7 +890,23 @@ W 번호도 `W1`~`W10`의 실제 표기를 놓치는 하이픈 필수 grep 패�
 > `WorkerKind.PROBLEM_GENERATION`·`OperationKind.PROBLEM_SET_GENERATE`
 > (`"problem_set.generate"`)를 쓴다. v1 operation은 이것 하나뿐이다.
 
+#### 2-19.0 엔드포인트 구현 상태 퀵 레퍼런스
+
+| # | 엔드포인트 표면 | 구현 상태 | BE 용도 |
+| --- | --- | --- | --- |
+| 1 | `POST /v1/problems` | `[v1 구현]` | 생성 잡 기동 |
+| 2 | `GET /v1/problems/{job_id}` | `[v1 구현]` | 잡 상태와 생성 결과 회수 |
+| 3 | `GET /v1/problems/{set_id}/items` | `[v1 스펙 확정 · 구현 후속]` | Step3 문항 목록과 상태별 카운터 |
+| 4 | `GET /v1/problems/{set_id}/items/{slot_index}` | `[v1 스펙 확정 · 구현 후속]` | Step3 문항 상세와 현재 허용 동작 |
+| 5 | `POST /v1/problems/{set_id}/items/{slot_index}/revisions` | `[v1 스펙 확정 · 구현 후속]` | AI 수정·강사 직접 수정·롤백 |
+| 6 | 교체·삭제 | `[v1 스펙 확정 · 구현 후속]` | 새 생성 계보 시작 또는 감사 이력을 보존한 삭제 |
+
+3~6번은 BE가 화면 계약을 먼저 맞출 수 있도록 확정된 응답 의미를 적은 것이며, 현행
+라우터에 존재한다고 해석하지 않는다. 6번의 HTTP 경로만 아래에서 별도 제안으로 표시한다.
+
 #### 2-19.1 `POST /v1/problems` — 세트 생성 기동(202)
+
+**구현 상태:** `[v1 구현]`
 
 필수 헤더와 멱등 범위는 `04_api_contract.md` §3.9 counsel/drafts와 같다.
 
@@ -903,6 +920,9 @@ W 번호도 `W1`~`W10`의 실제 표기를 놓치는 하이픈 필수 grep 패�
 응답을 **202로 재반환**하고(`api/routers/counsel.py:637-639`), `04_api_contract.md` §2.3은
 "기존 결과를 **200**으로 반환"이라고 적혀 있다. 이 초안은 **구현(202)** 을 따랐다 —
 A가 04에 옮길 때 둘 중 하나로 통일해 달라. 통일 전까지 BE는 202를 전제로 구현한다.
+
+**후속 정본 동기화:** `04_api_contract.md` §2.3은 이후 비동기 멱등 재반환을 최초와 같은
+202로 확정했다. 위 이력 문단은 삭제하지 않고 남기며, BE의 현재 기준은 **202**다.
 
 외부 HTTP 바디는 내부 command의 헤더 파생 3필드를 제외한 투영이다
 (`contracts/problem_generation.py:83-131`, 이 문서 §2-1의 B HTTP 경계 확정).
@@ -954,6 +974,8 @@ A가 04에 옮길 때 둘 중 하나로 통일해 달라. 통일 전까지 BE는
 ```
 
 #### 2-19.2 `GET /v1/problems/{job_id}` — 상태·결과 회수
+
+**구현 상태:** `[v1 구현]`
 
 GET은 `X-Tenant-Id`가 필수이고 다른 테넌트의 `job_id`는 존재를 숨겨 404로 수렴한다.
 `status`는 새 enum을 만들지 않고 `contracts/agents.py:43-52`의 `JobPhase`를 그대로 쓴다:
@@ -1038,6 +1060,183 @@ BE가 고쳐야 하는 v1 미지원 요청이므로 400 `INVALID_SCHEMA`로 수�
 또한 v1은 `problem_set.generate` 하나뿐이다. `problem_item.refine`·
 `problem_item.reverify`는 공용 enum의 예약 operation일 뿐 이 API에 엔드포인트나 분기를
 만들지 않는다.
+
+**BE 연동 지뢰:** v1은 `area_tag="language"`이고 `passage`가 없는 요청만 처리한다.
+와이어프레임의 독서·문학 영역×유형 칸을 그대로 생성 요청으로 보내면 **전량 400
+`source_procurement_not_implemented`**가 된다. BE는 미지원 칸의 생성 동작을 먼저
+비활성화하거나 지원 대기 상태로 표시해야 한다.
+
+#### 2-19.5 `GET /v1/problems/{set_id}/items` — Step3 검토 목록 `[v1 스펙 확정 · 구현 후속]`
+
+`X-Tenant-Id`가 필수다. 다른 테넌트의 세트는 존재를 숨겨 404 `NOT_FOUND`로 수렴한다.
+응답은 슬롯별 검토 요약과 Step3 상단에 바로 표시할 상태별 카운터를 함께 제공한다.
+
+```json
+{
+  "data": {
+    "set_id": "5ac7a8c1-83cb-4c86-b224-f08e4b1ae8e9",
+    "status_counts": {
+      "verified": 7,
+      "needs_review": 2,
+      "verification_unavailable": 1,
+      "dropped": 0
+    },
+    "items": [
+      {
+        "slot_index": 0,
+        "item_id": "c8f4530e-a64c-4e78-80d5-cb3bd95bfc30",
+        "status": "verified",
+        "current_revision_no": 0,
+        "review_reason": null,
+        "failure_reason": null
+      }
+    ]
+  },
+  "error": null,
+  "meta": { "execution_id": "…", "versions": { "…": "…" } }
+}
+```
+
+카운터의 네 키는 `ProblemItemStatus`의 `verified | needs_review |
+verification_unavailable | dropped`와 1:1 대응한다. BE가 목록을 다시 세어 상단 값을
+추론하지 않으며, 합계 불일치는 서버 계약 위반으로 취급한다.
+
+#### 2-19.6 `GET /v1/problems/{set_id}/items/{slot_index}` — Step3 문항 상세 `[v1 스펙 확정 · 구현 후속]`
+
+문항 조회 응답이 곧 화면이다. 본문·선지·정답·해설·근거와 blind 교차 풀이 결과,
+검사 상태를 한 번에 돌려준다. 특히 아래 두 필드는 협업 경계의 필수값이다.
+
+- `available_actions`: 서버가 현재 허용하는 `refine | replace | teacher_direct | delete |
+  rollback`의 부분집합. FE는 상태로 버튼 활성화를 재계산하지 않는다.
+- `current_revision_no`: 다음 수정 요청의 `base_revision_no`로 그대로 보내는 낙관적 잠금
+  번호다.
+
+```json
+{
+  "data": {
+    "set_id": "5ac7a8c1-83cb-4c86-b224-f08e4b1ae8e9",
+    "slot_index": 0,
+    "item_id": "c8f4530e-a64c-4e78-80d5-cb3bd95bfc30",
+    "status": "needs_review",
+    "current_revision_no": 2,
+    "available_actions": ["refine", "replace", "teacher_direct", "delete", "rollback"],
+    "item": {
+      "area_tag": "language",
+      "type_tag": "concept",
+      "item_format": "mcq",
+      "skill_node_id": "grammar:sentence-structure",
+      "stem": "…",
+      "choices": [
+        { "no": 1, "text": "…", "why_wrong": null }
+      ],
+      "answer": { "correct_no": 1 },
+      "rationale": "…",
+      "evidence": [
+        { "kind": "grammar_rule", "ref": "grammar:rule-1", "quote": null }
+      ]
+    },
+    "cross_solve": {
+      "chosen": 1,
+      "reasoning": "…",
+      "confidence": 0.91,
+      "multiple_answers_possible": false,
+      "target_skill_node_id": "grammar:sentence-structure",
+      "measured_skill_node_id": "grammar:sentence-structure",
+      "aligned": true,
+      "alignment_reason": "…",
+      "alignment_confidence": 0.95
+    },
+    "verification": {
+      "rule_validation": "passed",
+      "blind_cross_solve": "passed",
+      "release_decision": "needs_review"
+    }
+  },
+  "error": null,
+  "meta": { "execution_id": "…", "versions": { "…": "…" } }
+}
+```
+
+위 예시는 화면 필드 배치를 보여 주기 위해 선지 첫 항목만 축약했다. 실제 `choices`는
+`GeneratedItem` 계약대로 1~5번 다섯 항목을 모두 반환한다.
+
+삭제·변경 진행 중처럼 누를 수 있는 동작이 없으면 `available_actions=[]`를 명시한다.
+`rollback`은 되돌릴 이전 리비전이 있을 때만 포함한다.
+
+#### 2-19.7 `POST /v1/problems/{set_id}/items/{slot_index}/revisions` — 수정·롤백 `[v1 스펙 확정 · 구현 후속]`
+
+필수 헤더는 다른 쓰기 API와 같은 `X-Tenant-Id`·`X-Request-Id`·`Idempotency-Key`다.
+바디는 `revision_kind=ai_refine | teacher_direct | rollback`과
+`base_revision_no`를 반드시 포함하고 종류별 payload는 다음과 같이 서로 배타적이다.
+
+| `revision_kind` | 추가 필드 | 의미 |
+| --- | --- | --- |
+| `ai_refine` | `instruction` | 기존 계보 안에서 AI가 수정한다 |
+| `teacher_direct` | `edited_item` | 강사가 완성 문항을 직접 제출한다 |
+| `rollback` | `revert_to` | 현재 번호보다 앞선 리비전으로 되돌린다 |
+
+`base_revision_no != current_revision_no`이면 409 `REVISION_CONFLICT`와
+`detail.reason="stale_base_revision"`, 같은 슬롯에 수정이 진행 중이면 같은 코드와
+`detail.reason="revision_in_progress"`를 반환한다(`error_codes.md` §1).
+
+수정 폭과 종류에 관계없이 매 턴 게이트 ① 스키마·규칙 검증, ② blind 교차 풀이,
+③ 근거·금칙어·노출 판정을 **전부 다시 실행**한다. 강사 직접 수정과 rollback도 예외가
+아니며 일부 필드만 검사하고 이전 통과 상태를 재사용하지 않는다(`07_refine_policy.md` §4).
+
+#### 2-19.8 교체·삭제 경로 `[v1 스펙 확정 · 구현 후속]` `[경로 제안 · BE 합의 대기]`
+
+counsel의 동작별 하위 경로 관례에 맞춰 교체는
+`POST /v1/problems/{set_id}/items/{slot_index}/replace`, 삭제는
+`DELETE /v1/problems/{set_id}/items/{slot_index}`로 **제안**한다. 경로와 동기·비동기
+응답 형태는 BE 합의 전 정본이 아니며, 의미 규약은 다음과 같이 고정한다.
+
+- `replace`는 리비전이 아니다. 기존 계보를 보존하고 새 `item_id`와 새 1..3회 attempt
+  예산으로 별도 생성 계보를 시작한다.
+- `delete`는 LLM을 0회 호출하고 학생 노출 대상에서만 제거한다. 원문·리비전·검증·행위
+  기록은 감사 이력으로 보존하며 물리 삭제하지 않는다(`07_refine_policy.md` §1).
+
+#### 2-19.9 evidence 응답과 “출처 확인됨” 배지
+
+모든 evidence 항목은 `kind`·`ref`·`quote` 세 필드를 갖는다. `quote=null`은 논리 참조만
+있고 인용 원문은 없다는 뜻이므로, BE는 **“출처 확인됨” 배지를 켜면 안 된다.**
+
+v1 초기에는 지식층이 Fake라 `quote`가 `null`이다. 근거층 배선(2단계) 이후 실제 인용이
+채워진다. BE는 `quote=null`을 정상 응답으로 처리하되 “출처 확인됨” 배지를 켜지 않는다.
+빈 문자열을 확인 완료로 간주하거나 `ref` 존재만으로 배지를 추론하지 않는다.
+
+#### 2-19.10 완료 알림 최소 payload `[v1 스펙 확정 · 구현 후속]`
+
+완료 알림에는 `set_id`·`status`·`counts`·`stop_reason`만 싣는다. 문항 본문·지문·해설은
+알림에 넣지 않고 §2-19.5~.6 조회로 회수한다.
+
+```json
+{
+  "set_id": "5ac7a8c1-83cb-4c86-b224-f08e4b1ae8e9",
+  "status": "partial_success",
+  "counts": {
+    "verified": 7,
+    "needs_review": 2,
+    "verification_unavailable": 1,
+    "dropped": 0
+  },
+  "stop_reason": null
+}
+```
+
+Kafka 토픽은 아직 확정되지 않았다. v1 전달 수단을 GET 폴링으로만 둘지 완료 알림까지
+연결할지는 **BE 합의 항목**으로 남기며 이 문서에서 임의로 결정하지 않는다.
+
+#### 2-19.11 약점 진단(Step1) 응답 요구 `[v1 스펙 확정 · 구현 후속]`
+
+Step1 진단은 생성 API와 별도 응답면으로 등재한다. 각 영역×유형 칸은 최소한
+`area_tag`·`type_tag`·판정(`verdict`)·푼 문항 수(`solved_item_count`)·판정 기준값을
+함께 제공해야 한다. 판정 기준은 학생 자신의 평균 대비 값이므로 **정답률 백분율은
+내리지 않는다.** 백분율을 약점 근거처럼 표시하면 상대 판정의 의미를 잘못 전달한다.
+
+영역×유형 칸의 합계만으로는 “문법 × 개념 — 음운 변동” 같은 추천 근거를 만들 수 없다.
+같은 칸 안에서도 `skill_node_id`별 `verdict`·`solved_item_count`·판정 기준값 집계가
+필요하다는 것이 **B 확인 사항**이다. 구체 endpoint와 wire 필드명은 후속 구현에서
+BE와 합의하되 이 정보 요구를 생략하지 않는다.
 
 ### 2-20. `PROBLEM_ITEM` 스키마 결손과 해소안 `[제안 · A 결정 대기]`
 
