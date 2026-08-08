@@ -170,6 +170,8 @@ def detection_versions(config: ThresholdConfig | None = None) -> VersionSet:
     **선언 축**이다: *"이 엔드포인트가 어느 버전 위에서 도는가"* 이지 *"이번 실행이 실제로
     무엇을 썼는가"* 가 아니다. 사용 축은 `AI_RUN`의 `model_provider`·`model_name`·
     `generation_params` 셋이고 **응답에 나가지 않는다**(04 §2.2 8/7 확정).
+    ⚠ **정본은 8/7이고 04 §2.2 자신의 문면은 아직 8/10이다**(99 #30 · BE 통보 대기).
+    **대조하면 갈려 보이는데 틀린 쪽은 04다.** ⚠ 04가 고쳐지면 이 줄도 지운다.
 
     config가 없으면(실행 전 오류의 meta.versions 조립) 기본 config로 정적 버전을 낸다
     (04 §2.2 A판정 — 실패 응답도 이 엔드포인트의 버전을 싣는다).

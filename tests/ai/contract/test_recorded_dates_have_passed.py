@@ -87,17 +87,28 @@ _PENDING_NOTIFICATION: Final = {
 }
 
 
+def _parse_commit_stamp(raw: str) -> datetime.date:
+    """`git log --date=short` 출력 → 날짜. 🔴 **이 검사 전체의 fail-closed다.**
+
+    빈 문자열·쓰레기가 오면 **여기서 터진다.** 안 터지게 만들면 `stamp`가 빈 값이 되고
+    비교가 전부 통과해 **검사가 아무것도 안 보는데 green으로 보인다.**
+    ⚠ `test_the_baseline_parser_is_fail_closed`가 이 assert를 **실제로 문다** — 함수로
+    빼 둔 이유가 그것이다(프로세스를 흉내내지 않고 로직을 직접 겨눈다).
+    """
+    stamp = raw.strip()
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", stamp), (
+        f"최신 커밋 날짜를 못 읽었다: {stamp!r} — 기준이 없으면 이 검사는 아무것도 안 본다"
+    )
+    return datetime.date.fromisoformat(stamp)
+
+
 def _newest_commit_date() -> datetime.date:
     """저장소의 최신 커밋 날짜 — 기준이다(`git log --date=short`가 정본)."""
     result = subprocess.run(
         ["git", "log", "-1", "--format=%ad", "--date=short"],
         cwd=_ROOT, capture_output=True, text=True, check=False,
     )
-    stamp = result.stdout.strip()
-    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", stamp), (
-        f"최신 커밋 날짜를 못 읽었다: {stamp!r} — 기준이 없으면 이 검사는 아무것도 안 본다"
-    )
-    return datetime.date.fromisoformat(stamp)
+    return _parse_commit_stamp(result.stdout)
 
 
 def _future_past_tense_sites() -> list[tuple[str, int, str]]:
@@ -144,10 +155,27 @@ def test_every_exclusion_carries_a_reason() -> None:
     assert all(reason.strip() for reason in _PENDING_NOTIFICATION.values())
 
 
-def test_the_baseline_comes_from_git_not_the_wall_clock() -> None:
-    """🔴 기준이 `date`가 아니라 커밋이다 — 기기·CI의 타임존이 답을 바꾸지 않는다."""
-    baseline = _newest_commit_date()
-    assert baseline.year == 2026, baseline
+def test_the_baseline_parser_is_fail_closed() -> None:
+    """🔴 **기준을 못 읽으면 터진다 — 이 검사 전체의 fail-closed를 여기서 문다.**
+
+    ⚠ **종전 이름이 `…comes_from_git_not_the_wall_clock`이었는데 단정은 `year == 2026`
+    하나였다** — **벽시계로도 참**이라 *"기준이 git에서 온다"* 를 하나도 안 봤다.
+    「검사의 이름이 보는 것보다 넓다」의 **여섯째**이고, 이 회차가 그 형태를 다섯 번 잡고
+    여섯째를 **가드를 세우면서** 냈다(99 로그 103).
+
+    🔴 **기준이 git에서 온다는 것은 `_newest_commit_date()`의 구현이 보장한다**(`git log`를
+    부르는 자리가 거기 하나다). 이 검사가 보는 것은 **그 출력을 못 읽었을 때 조용히
+    통과하지 않는가**다 — 그게 깨지면 `stamp`가 빈 값이 되고 **검사가 아무것도 안 보는데
+    green으로 보인다.**
+    """
+    for broken in ("", "   ", "not-a-date", "2026-8-9", "2026-08-09 00:00:00 +0900"):
+        try:
+            _parse_commit_stamp(broken)
+        except AssertionError:
+            continue
+        raise AssertionError(f"기준 파서가 {broken!r}를 통과시켰다 — fail-closed가 아니다")
+    #: 정상 입력은 통과한다(파서가 전부 막으면 그것도 검사를 끊는 것이다).
+    assert _parse_commit_stamp("2026-08-09\n") == datetime.date(2026, 8, 9)
 
 
 def test_no_recorded_date_is_still_in_the_future() -> None:
@@ -184,3 +212,66 @@ def test_the_pending_notification_still_violates() -> None:
         f"통보 대기 예외가 더는 위반이 아니다: {stale} — 고쳐졌으면 "
         "`_PENDING_NOTIFICATION`에서 지워라"
     )
+
+
+# ── 인용과 피인용이 갈린 것을 고친 쪽이 말하는가 (99 #30·#02) ──────
+
+#: src가 인용하는 04 §2.2 확정일 · 04 자신이 적는 확정일.
+_CITED: Final = re.compile(r"04 §2\.2 8/(\d+) 확정")
+_SECTION_OWN: Final = re.compile(r"두 축을 가른다 `\[확정 · 8/(\d+)\]`")
+#: 고친 쪽이 갈림을 말하는 문면.
+_DISCLOSURE: Final = "04 §2.2 자신의 문면은 아직"
+
+
+def _citing_files() -> dict[str, str]:
+    found: dict[str, str] = {}
+    for path in (_ROOT / "src").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        match = _CITED.search(text)
+        if match is not None:
+            found[path.relative_to(_ROOT).as_posix()] = match.group(1)
+    return found
+
+
+def test_the_citation_scan_finds_both_sides() -> None:
+    """🔴 검사 경로가 끊기면 통과가 아니라 실패다 — 한쪽을 못 읽으면 갈림을 못 본다."""
+    citing = _citing_files()
+    assert citing, "04 §2.2 확정일을 인용하는 src 자리를 못 찾았다"
+    own = _SECTION_OWN.search(
+        (_ROOT / "docs" / "04_api_contract.md").read_text(encoding="utf-8")
+    )
+    assert own is not None, "04 §2.2 자신의 확정일 표기를 못 찾았다 — 제목 문면이 바뀌었나"
+
+
+def test_the_cited_section_date_divergence_is_disclosed() -> None:
+    """🔴 **고칠 수 없는 쪽이 있으면 고친 쪽이 그 사실을 말한다.**
+
+    `04_api_contract.md`는 **BE에 나간 계약 문서**라 날짜 정정에 통보 축이 붙는다(99 #30).
+    그래서 src는 정본으로 고쳤고 04는 아직 **이전 날짜**다 — **지금 실제로 갈려 있다.**
+    ⚠ 여기에 리터럴 날짜를 안 쓴다 — 쓰면 **위 날짜 검사가 이 docstring을 잡는다.**
+    ⚠ 적어 두지 않으면 **다음 사람이 대조하고 참인 쪽(src)을 거짓으로 고친다.**
+
+    🔴 **이 검사가 자동 만료다** — 04가 고쳐져 둘이 같아지면 **공개 문면이 남아 있는 것이
+    red**가 되어 지우게 만든다(`test_the_pending_exception_still_violates`와 같은 형태).
+    ⚠ *"주석이 있다"* 만 세지 않는다 — **갈림 자체**를 보고 그에 맞는 상태를 요구한다.
+    """
+    citing = _citing_files()
+    own_match = _SECTION_OWN.search(
+        (_ROOT / "docs" / "04_api_contract.md").read_text(encoding="utf-8")
+    )
+    assert own_match is not None
+    own = own_match.group(1)
+
+    for path, cited in citing.items():
+        text = (_ROOT / path).read_text(encoding="utf-8")
+        if cited != own:
+            assert _DISCLOSURE in text, (
+                f"{path}가 04 §2.2를 `8/{cited}`로 인용하는데 04 자신은 `8/{own}`이다 — "
+                "갈렸는데 그 사실이 어디에도 없다. 고친 쪽이 말해야 다음 사람이 참인 쪽을 "
+                "거짓으로 고치지 않는다(99 #30)"
+            )
+        else:
+            assert _DISCLOSURE not in text, (
+                f"{path}의 갈림 공개 문면이 낡았다 — 04가 `8/{own}`으로 맞춰졌으니 "
+                "그 줄을 지워라(자동 만료)"
+            )
