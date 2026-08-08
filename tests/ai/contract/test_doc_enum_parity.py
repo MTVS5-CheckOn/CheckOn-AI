@@ -53,10 +53,15 @@ from pydantic import BaseModel
 
 from ai.composition.counsel.state import CounselPackState
 from ai.contracts.agents import JobPhase, PriorityClass, WorkerKind
-from ai.contracts.composition import PlanOutcome
+from ai.contracts.composition import BlockType, DraftKind, DraftStatus, PlanOutcome
+from ai.contracts.detection import Lifecycle
 from ai.contracts.execution import Capability
+from ai.contracts.gates import GateName, OwnerKind
+from ai.contracts.llm import CallOutcome
 from ai.contracts.problem_generation import ProblemItemStatus, ProblemSetStatus
 from ai.contracts.taxonomy import V1_TYPE_TAGS
+from ai.detection.segments import Segment
+from ai.evidence.models import EvidenceOwnerKind
 from ai.import_mapping.probe.state import MappingProbeState
 
 _DOCS: Final = Path(__file__).resolve().parents[3] / "docs"
@@ -197,6 +202,24 @@ _ERD_PAIRS: Final = (
     _Pair(
         "type_tag", _DOCS / "06_erd.md", V1_TYPE_TAGS, "PROBLEM_ITEM", "V1_TYPE_TAGS"
     ),
+    # ── 🔴 갈림이 실재한 둘 (8/8 · 99 #17) ─────────────────────────
+    # 쌍을 **먼저 걸어 red를 보고** ERD를 고쳤다 — 한 커밋에 넣으면 *"원래 초록이었다"* 와
+    # 구분이 안 된다. 커밋 순서가 증거다.
+    _Pair("outcome", _DOCS / "06_erd.md", CallOutcome, "LLM_CALL"),
+    _Pair("segment", _DOCS / "06_erd.md", Segment, "FEATURE_WEEK"),
+    # ── A 축 일곱 (8/8 · 지금 일치라 등재만으로 잠긴다) ────────────
+    # ⚠ `evidence/models.py`·`contracts/gates.py`는 **양자 파일이지만 import만 한다** —
+    #   편집이 아니라 승인이 필요 없다(`Capability`를 `contracts/execution.py`에서
+    #   가져오는 기존 쌍이 같은 형태다).
+    _Pair("lifecycle", _DOCS / "06_erd.md", Lifecycle, "SIGNAL"),
+    _Pair("owner_kind", _DOCS / "06_erd.md", EvidenceOwnerKind, "EVIDENCE_ITEM"),
+    _Pair("kind", _DOCS / "06_erd.md", DraftKind, "DRAFT"),
+    _Pair("status", _DOCS / "06_erd.md", DraftStatus, "DRAFT"),
+    _Pair("block_type", _DOCS / "06_erd.md", BlockType, "DRAFT_BLOCK"),
+    _Pair("owner_kind", _DOCS / "06_erd.md", OwnerKind, "GATE_RESULT"),
+    # ⚠ `GateName`은 값이 **PascalCase**다(`Consent`·`DataSufficiency`…). 다른 enum과
+    #   표기가 다르지만 **와이어 값은 영구**라 소문자로 통일하지 않는다.
+    _Pair("gate_name", _DOCS / "06_erd.md", GateName, "GATE_RESULT"),
 )
 
 #: 값 목록 뒤에 붙는 설명을 자르는 구분자. 🔴 이 저장소의 기존 표기 관례다 —
