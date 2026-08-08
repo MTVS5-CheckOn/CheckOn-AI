@@ -34,6 +34,11 @@ _OBSERVATIONS: Final = (
     (("job_ledger_size", "job_ledger_added"), "job_store.py"),
     (("pack_miss_absent", "pack_miss_foreign_tenant"), "pack_store.py"),
     (("collector_evicted_runs",), "run_store.py"),
+    # ⚠ **`_JobCache.evicted`는 이름이 아니라 리포트 키로 센다** — 카운터 자체는 소유
+    #   파일(`routers/counsel.py`) 안에서만 쓰이고 단위 테스트가 직접 단정한다.
+    #   여기서 보는 것은 **리포트에 실렸는지**다(축출이 ㉿의 404 원인이라 프로덕션에서
+    #   보여야 한다). 🔴 **둘을 갈라 센다** — 합치면 GET/refine 비대칭이 사라진다.
+    (("view_cache_evicted", "draft_cache_evicted"), "counsel.py"),
 )
 
 #: ⚠ **`emphasis_scanned`는 이 검사의 축이 아니다** — 그건 **리포트 키 자신**(리더 쪽 끝)이고

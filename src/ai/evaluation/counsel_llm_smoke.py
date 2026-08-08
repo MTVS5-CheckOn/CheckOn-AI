@@ -801,6 +801,15 @@ def _run_s4(
         #   `0`으로 적으면 「PG인데 실패가 없었다」로 읽힌다(`job_ledger_size`와 같은 규율).
         "pack_miss_absent": _pack_miss_observation()[0],
         "pack_miss_foreign_tenant": _pack_miss_observation()[1],
+        # ⓖ 🔴 **읽기 모델 캐시의 축출 수**(99 ㉿ · 8/9 신설). 축출이 **404의 원인**인데
+        #   프로덕션에서 그 수를 볼 자리가 없었다 — `_JobCache.evicted`는 카운터와 경고
+        #   로그가 있고 단위 테스트가 세지만(`test_counsel_runtime_lifetime.py`) **리포트에
+        #   안 실렸다.** ⚠ ㉿의 고침은 **스키마 결정 대기**라(PR-μ 중단) 그동안 **트리거가
+        #   실제로 밟히는지**를 보는 것이 이 두 줄의 값이다.
+        #   ⚠ **둘을 갈라 센다** — `GET`은 404인데 `refine`은 200인 비대칭이 **두 캐시가
+        #   독립 축출**되기 때문이고(㉿), 합치면 그 비대칭이 리포트에서 사라진다.
+        "view_cache_evicted": _cache_eviction_observation()[0],
+        "draft_cache_evicted": _cache_eviction_observation()[1],
         # ⓓ 🔴 **AI_RUN 원장의 사용 축**(#144) — 8/9 신설. 위 항목들은 전부 LLM_CALL
         #   레벨이고, `generation_params`는 **AI_RUN에만** 산다.
         "usage_axis": usage_axis_split(
@@ -921,6 +930,18 @@ def _pack_miss_observation() -> tuple[int | None, int | None]:
     if not isinstance(store, PgPackResultStore):
         return None, None
     return store.miss_absent, store.miss_foreign_tenant
+
+
+def _cache_eviction_observation() -> tuple[int, int]:
+    """읽기 모델 캐시 둘의 누적 축출 수 — (view, draft) (99 ㉿).
+
+    ⚠ **`None`을 돌려주지 않는다** — 이 캐시는 `store_backend`와 무관한 모듈 전역이라
+    백엔드가 무엇이든 **항상 존재한다**(`job_ledger_*`·`pack_miss_*`와 다른 성질이다).
+    ⇒ 여기서 `0`은 *"안 센다"* 가 아니라 **"축출이 없었다"** 다.
+    """
+    from ai.api.routers import counsel as counsel_router  # noqa: PLC0415
+
+    return counsel_router._view_cache.evicted, counsel_router._drafts.evicted
 
 
 def _pii_scan(data: dict[str, Any]) -> dict[str, Any]:
