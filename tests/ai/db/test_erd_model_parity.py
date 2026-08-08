@@ -64,7 +64,9 @@ def test_erd_parsed_34_tables() -> None:
     assert ERD_PATH.is_file()
     # 34 → 36(2026-08-03): 기대치 입력 층 — passage_type_stat(조합 실측 누적) ·
     # expectation_ingest(이중 집계 방지 원장). 결정 로그 33 · ⚠ 양자 승인 대상.
-    assert len(ERD_TABLES) == 36, f"ERD 테이블 수 {len(ERD_TABLES)} != 36"
+    # 36 → 37(2026-08-08): counsel_pack_result — `AGENT_RUN.result_ref`(`pack://`)가
+    # 가리키던 대상이 없었다(99 ㉕). ⚠ 양자 승인 대상.
+    assert len(ERD_TABLES) == 37, f"ERD 테이블 수 {len(ERD_TABLES)} != 37"
 
 
 def test_table_set_matches_erd() -> None:
@@ -135,6 +137,8 @@ def test_foreign_keys_match_erd(table_name: str) -> None:
 #       idempotency_record — UNIQUE(tenant_id·endpoint·idempotency_key)
 #       weakness_map — UNIQUE(tenant·student·graph_ver·week_start)
 #       item_candidate — UNIQUE(tenant·set·slot·attempt)
+#       problem_item — UNIQUE(set·slot) · 🔴 tenant_id가 빠진 것은 누락이 아니다:
+#         set_id가 problem_set.tenant_id에 종속이라 둘로 전역 유일하다(09 §2-20 결정 ① · A 판정 §1).
 EXPECTED_UNIQUES: dict[str, set[frozenset[str]]] = {
     "feature_week": {
         frozenset({"tenant_id", "student_ref", "week_start", "feature_version"})
@@ -142,6 +146,7 @@ EXPECTED_UNIQUES: dict[str, set[frozenset[str]]] = {
     "idempotency_record": {frozenset({"tenant_id", "endpoint", "idempotency_key"})},
     "weakness_map": {frozenset({"tenant_id", "student_ref", "graph_version", "week_start"})},
     "item_candidate": {frozenset({"tenant_id", "set_id", "slot_index", "attempt_no"})},
+    "problem_item": {frozenset({"set_id", "slot_index"})},
 }
 
 
