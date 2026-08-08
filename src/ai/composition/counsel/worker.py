@@ -26,7 +26,11 @@ from uuid import UUID, uuid4
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ai.agents.supervisor import Supervisor, system_utc_now
-from ai.composition.counsel.graph import LlmCircuitOpenError, build_counsel_graph
+from ai.composition.counsel.graph import (
+    LlmCircuitOpenError,
+    build_counsel_graph,
+    graph_recursion_limit,
+)
 from ai.composition.counsel.prompt import PROMPT_VERSION
 from ai.composition.counsel.provider import (
     COUNSEL_GEN_PARAMS,
@@ -258,7 +262,16 @@ class CounselPackRunner:
             new_draft_id=self._new_id,
             now=self._now,
         )
-        config = {"configurable": {"thread_id": thread_id}}
+        # 🔴 **호출마다 상한을 명시한다**(불변식 6 · 99 #08 ⓑ). 안 주면 langgraph 기본값
+        #    `getenv("LANGGRAPH_DEFAULT_RECURSION_LIMIT", "10007")`이 쓰이는데, 그건
+        #    **사실상 무한**이고 **BE 운영이 만질 수 있는 저장소 밖 값**이다.
+        #    ⚠ `bundle.contexts`는 위에서 이미 역참조했다 — 다시 조회하지 않는다.
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": graph_recursion_limit(
+                student_count=len(bundle.contexts)
+            ),
+        }
         #: 🔴 `finally`가 **모든 수렴 경로**를 지나게 하려고 둔 플래그다(라우터 2곳과 같은
         #:  형태 — #117 → #119 → 여기가 4번째). 실패 경로에서만 적재 오류를 삼킨다.
         failed = True
