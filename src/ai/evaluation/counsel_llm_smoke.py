@@ -745,6 +745,16 @@ def _run_s4(
     empty_s1 = empty_response_rows(s1_rows)
     empty_s2 = empty_response_rows(s2["rows"])
 
+    # 🔴 **관측 셋은 한 번만 부르고 푼다**(8/9 · 99 #02). 종전에는 `…()[0]`·`…()[1]`로
+    #   **두 번씩** 불렀다 — 세 쌍이 같은 형태였다(`job_ledger`·`pack_miss`·`cache_eviction`).
+    #   ⚠ **지금도 안 갈린다** — 동기 함수이고 사이에 `await`가 없다. 🔴 **그런데 셋이면
+    #   관례가 된다** — 다음 사람이 넷째를 같은 형태로 만들고, 그때 한쪽이 `await`를 타거나
+    #   상태를 바꾸면 **같은 값이 두 자리에서 갈린다**(#02 · 이 저장소 최다 결함).
+    #   ⚠ PR-ι에서 첫 쌍을 짚고 **따라가지 않은 것**이 셋이 된 원인이다.
+    job_ledger_size, job_ledger_added = _job_ledger_observation()
+    pack_miss_absent, pack_miss_foreign = _pack_miss_observation()
+    view_cache_evicted, draft_cache_evicted = _cache_eviction_observation()
+
     return {
         "records_captured": len(calls),
         "tokens_total": sum(call.tokens_in + call.tokens_out for call in calls),
@@ -791,16 +801,16 @@ def _run_s4(
         #   만들었다. `test_the_job_ledger_counter_has_a_reader`가 이 줄을 지킨다.
         #   ⚠ 스위트 전역에서 `== 0`을 단정하지 않는다 — 순서에 따라 흔들려 flaky가 된다.
         #   **관측이지 게이트가 아니다**(위 `collector_evicted_runs`와 같은 규율).
-        "job_ledger_size": _job_ledger_observation()[0],
-        "job_ledger_added": _job_ledger_observation()[1],
+        "job_ledger_size": job_ledger_size,
+        "job_ledger_added": job_ledger_added,
         # ⓕ 🔴 **팩 결과 역참조 실패의 두 갈래**(99 #23 · 8/8 신설). 반환값은 둘 다
         #   `None`이라 **운영에서 *"왜 404인가"* 를 물으면 반환값으로는 답이 안 나온다.**
         #   ⚠ 로그만 가르면 **테스트가 셀 수 없어 리더를 만들 수 없다**(로그 59가 그 형태다)
         #   ⇒ 저장소가 카운터로 세고 여기가 그 **읽는 자리**다.
         #   ⚠ **PG 백엔드가 아니면 둘 다 `None`이다** — 인메모리는 이 카운터를 안 든다.
         #   `0`으로 적으면 「PG인데 실패가 없었다」로 읽힌다(`job_ledger_size`와 같은 규율).
-        "pack_miss_absent": _pack_miss_observation()[0],
-        "pack_miss_foreign_tenant": _pack_miss_observation()[1],
+        "pack_miss_absent": pack_miss_absent,
+        "pack_miss_foreign_tenant": pack_miss_foreign,
         # ⓖ 🔴 **읽기 모델 캐시의 축출 수**(99 ㉿ · 8/9 신설). 축출이 **404의 원인**인데
         #   프로덕션에서 그 수를 볼 자리가 없었다 — `_JobCache.evicted`는 카운터와 경고
         #   로그가 있고 단위 테스트가 세지만(`test_counsel_runtime_lifetime.py`) **리포트에
@@ -808,8 +818,8 @@ def _run_s4(
         #   실제로 밟히는지**를 보는 것이 이 두 줄의 값이다.
         #   ⚠ **둘을 갈라 센다** — `GET`은 404인데 `refine`은 200인 비대칭이 **두 캐시가
         #   독립 축출**되기 때문이고(㉿), 합치면 그 비대칭이 리포트에서 사라진다.
-        "view_cache_evicted": _cache_eviction_observation()[0],
-        "draft_cache_evicted": _cache_eviction_observation()[1],
+        "view_cache_evicted": view_cache_evicted,
+        "draft_cache_evicted": draft_cache_evicted,
         # ⓓ 🔴 **AI_RUN 원장의 사용 축**(#144) — 8/9 신설. 위 항목들은 전부 LLM_CALL
         #   레벨이고, `generation_params`는 **AI_RUN에만** 산다.
         "usage_axis": usage_axis_split(
