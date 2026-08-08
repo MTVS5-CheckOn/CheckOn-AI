@@ -241,8 +241,13 @@ def _erd_values(doc: Path, column: str, table: str) -> set[str]:
     match = re.search(rf'^\s*varchar {column} "([^"]+)"', block.group(1), re.M)
     if match is None:
         return set()
+    # 🔴 **`.strip()`이 필요하다**(8/8 · B가 A에게 넘긴 건). `split(sep, 1)[0]`만으로는
+    #    꼬리 앞 공백이 **둘 이상**일 때 마지막 값에 공백이 들러붙어 **문서가 맞는데
+    #    red**가 난다. ⚠ 지금 `06_erd.md`의 ` — ` 주석은 공백이 정확히 하나라 **우연히
+    #    안전**하다 — 그 우연에 기대지 않는다. `test_the_guard_would_catch_a_violation`이
+    #    공백 둘 픽스처로 red를 남긴다(#04 — 한 줄만 고치면 다음 사람이 지워도 모른다).
     listed = match.group(1).split(_ERD_NOTE_SEPARATOR, 1)[0]
-    return set(listed.split("|"))
+    return {value.strip() for value in listed.split("|")}
 
 
 # ── 검사 ───────────────────────────────────────────────────────────
@@ -364,6 +369,21 @@ def test_the_guard_would_catch_a_violation(tmp_path: Path) -> None:
     assert _erd_values(erd, "status", "SECOND") == {"c", "d"}
     assert _erd_values(erd, "status", "NOPE") == set(), (
         "없는 테이블인데 값을 돌려준다 — 앵커가 안 걸리고 파일 전체를 훑는다"
+    )
+
+    # 🔴 **꼬리 앞 공백이 둘일 때** — `split(sep, 1)[0]`만으로는 마지막 값에 공백이
+    #    들러붙어 **문서가 맞는데 red**가 난다. `.strip()`을 빼면 이 단정이 죽는다.
+    #    ⚠ 지금 `06_erd.md`의 ` — ` 주석은 공백이 정확히 하나라 **우연히 안전**하다 —
+    #      그 우연에 기대지 않으려고 여기 red를 남긴다(#04).
+    spaced = tmp_path / "spaced_erd.md"
+    spaced.write_text(
+        "  T {\n"
+        '    varchar capability "detection|composition  — 설명이 두 칸 뒤에 온다"\n'
+        "  }\n",
+        encoding="utf-8",
+    )
+    assert _erd_values(spaced, "capability", "T") == {"detection", "composition"}, (
+        "값 뒤 공백이 안 잘렸다 — `.strip()`이 빠지면 'composition '이 나온다"
     )
 
     table = tmp_path / "fake_table.md"
