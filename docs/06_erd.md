@@ -311,7 +311,7 @@ erDiagram
     uuid set_id FK
     uuid passage_id FK "T1은 null"
     varchar area_tag
-    varchar type_tag "fact|infer|critic|concept"
+    varchar type_tag "fact|infer|critic|concept — apply는 v1 미산출 예약이라 이 컬럼에 안 들어온다(99 ㊣ · 요청 문에서 400)"
     varchar item_format "mcq — v1"
     varchar skill_node_id "null 가능"
     text stem

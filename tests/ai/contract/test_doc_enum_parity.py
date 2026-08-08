@@ -43,6 +43,7 @@ test_state_fields_match_doc_exactly`를 *"정확히 그 형태다 — 그 파일
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
 from typing import Final, NamedTuple
@@ -54,17 +55,43 @@ from ai.composition.counsel.state import CounselPackState
 from ai.contracts.agents import JobPhase, PriorityClass, WorkerKind
 from ai.contracts.composition import PlanOutcome
 from ai.contracts.execution import Capability
+from ai.contracts.problem_generation import ProblemItemStatus, ProblemSetStatus
+from ai.contracts.taxonomy import V1_TYPE_TAGS
 from ai.import_mapping.probe.state import MappingProbeState
 
 _DOCS: Final = Path(__file__).resolve().parents[3] / "docs"
 
 
 class _Pair(NamedTuple):
-    """문서의 값 집합 하나와 그것이 정본으로 삼는 enum."""
+    """문서의 값 집합 하나와 그것이 정본으로 삼는 값들.
+
+    🔴 **정본이 enum 전체가 아닐 수 있다**(B 확장 8/9). `PROBLEM_ITEM.type_tag`는
+    **우리가 산출한 문항**이 들어가는 컬럼이라 값 영역이 `V1_TYPE_TAGS`(예약 뺀 4종)이지
+    `TypeTag`(5종)가 아니다 — 요청 문이 예약 태그를 400으로 끊으므로 **그 컬럼에 `apply`가
+    들어갈 경로가 없다.** 그래서 `members`는 enum 클래스만이 아니라 **그 부분집합**도 받는다.
+    ⚠ 여기서 `TypeTag`를 걸면 red가 나는데, 그건 문서가 틀려서가 아니라 **쌍을 잘못 맺어서**다.
+    """
 
     label: str
     doc: Path
-    enum: type[StrEnum]
+    #: enum 클래스(전체) 또는 멤버 부분집합 — 둘 다 멤버를 순회할 수 있다.
+    members: Iterable[StrEnum]
+    #: ERD 쌍에서 컬럼이 사는 **테이블**. 🔴 컬럼명만으로는 못 고른다 —
+    #: `varchar status`가 06_erd.md에 **여덟 곳**(AGENT_RUN·DRAFT·PROBLEM_SET·
+    #: PROBLEM_ITEM·LABEL_SUGGESTION·MAPPING_SPEC·IMPORT_JOB·TAG_SUGGESTION)이다. 앵커가 없으면
+    #: 정규식이 **파일에서 먼저 나오는 테이블**을 집고, 그건 ERD를 재배열하는 순간
+    #: 조용히 다른 표와 대조하게 된다(B 확장 8/9).
+    table: str = ""
+    #: 실패 메시지에 쓰는 정본 이름. 부분집합은 클래스가 아니라 `__name__`이 없다.
+    source: str = ""
+
+    @property
+    def expected(self) -> set[str]:
+        return {member.value for member in self.members}
+
+    @property
+    def origin(self) -> str:
+        return self.source or getattr(self.members, "__name__", str(self.members))
 
 
 # ── ⓐ 마크다운 표 — 첫 열이 백틱으로 감싼 값 ──────────────────────
@@ -159,17 +186,40 @@ def _codeblock_fields(doc: Path, heading: str, class_name: str) -> set[str]:
 #: 🔴 **컬럼명을 명시 등재한다** — `|`가 있는 주석 중 **값 목록이 아닌 것**이 있다
 #: (`lease_owner "leased|running에서만"`). 정규식으로 싹 훑으면 거짓 쌍이 생긴다.
 _ERD_PAIRS: Final = (
-    _Pair("capability", _DOCS / "06_erd.md", Capability),
-    _Pair("agent_kind", _DOCS / "06_erd.md", WorkerKind),
-    _Pair("priority_class", _DOCS / "06_erd.md", PriorityClass),
-    _Pair("status", _DOCS / "06_erd.md", JobPhase),
+    _Pair("capability", _DOCS / "06_erd.md", Capability, "AI_RUN"),
+    _Pair("agent_kind", _DOCS / "06_erd.md", WorkerKind, "AGENT_RUN"),
+    _Pair("priority_class", _DOCS / "06_erd.md", PriorityClass, "AGENT_RUN"),
+    _Pair("status", _DOCS / "06_erd.md", JobPhase, "AGENT_RUN"),
+    # [PART_B] 같은 `status` 컬럼명이 세 테이블에 있다 — 앵커가 이 둘을 가능하게 한다.
+    _Pair("status", _DOCS / "06_erd.md", ProblemSetStatus, "PROBLEM_SET"),
+    _Pair("status", _DOCS / "06_erd.md", ProblemItemStatus, "PROBLEM_ITEM"),
+    # 🔴 **정본이 enum 전체가 아닌 유일한 쌍** — 산출 문항의 값 영역은 예약을 뺀 4종이다.
+    _Pair(
+        "type_tag", _DOCS / "06_erd.md", V1_TYPE_TAGS, "PROBLEM_ITEM", "V1_TYPE_TAGS"
+    ),
 )
 
+#: 값 목록 뒤에 붙는 설명을 자르는 구분자. 🔴 이 저장소의 기존 표기 관례다 —
+#: `lifecycle "new|ongoing|follow_up — AI 경보 생애 판정, 09 §4"`. 안 자르면 마지막 값에
+#: 산문이 들러붙어 **문서가 맞는데 red**가 난다(B 확장 8/9).
+_ERD_NOTE_SEPARATOR: Final = " — "
 
-def _erd_values(doc: Path, column: str) -> set[str]:
-    """`varchar <column> "a|b|c"` 주석의 값 집합."""
-    match = re.search(rf'^\s*varchar {column} "([^"]+)"', doc.read_text("utf-8"), re.M)
-    return set(match.group(1).split("|")) if match else set()
+
+def _erd_values(doc: Path, column: str, table: str) -> set[str]:
+    """`<table> { … varchar <column> "a|b|c — 설명" … }` 주석의 값 집합.
+
+    🔴 **테이블 블록 안에서만 찾는다.** 파일 전체에서 첫 일치를 집으면 같은 컬럼명을 쓰는
+    다른 테이블을 조용히 대조한다 — `status`가 그 형태다.
+    """
+    text = doc.read_text("utf-8")
+    block = re.search(rf"^\s*{table} \{{(.*?)^\s*\}}", text, re.M | re.S)
+    if block is None:
+        return set()
+    match = re.search(rf'^\s*varchar {column} "([^"]+)"', block.group(1), re.M)
+    if match is None:
+        return set()
+    listed = match.group(1).split(_ERD_NOTE_SEPARATOR, 1)[0]
+    return set(listed.split("|"))
 
 
 # ── 검사 ───────────────────────────────────────────────────────────
@@ -188,8 +238,9 @@ def test_the_scan_finds_documented_value_sets() -> None:
             "아니라 **검사가 끊긴 것**이다(절 제목·표 형식 변경 확인)"
         )
     for pair in _ERD_PAIRS:
-        assert _erd_values(pair.doc, pair.label), (
-            f"{pair.doc.name}에서 `varchar {pair.label} \"…\"` 주석을 못 찾았다 — "
+        assert _erd_values(pair.doc, pair.label, pair.table), (
+            f"{pair.doc.name}의 {pair.table} 블록에서 `varchar {pair.label}` 주석을 "
+            "못 찾았다 — "
             "검사가 끊겼다"
         )
     for field_pair in _FIELD_PAIRS:
@@ -232,16 +283,20 @@ def test_documented_table_matches_the_enum(
 ) -> None:
     """🔴 문서 표의 값 집합 == enum 멤버. **문서를 읽어서** 비교한다."""
     documented = _table_values(pair.doc, start, end)
-    coded = {member.value for member in pair.enum}
+    coded = pair.expected
     assert documented == coded, (
-        f"{pair.doc.name}의 {pair.label} 표와 `{pair.enum.__name__}`이 갈렸다.\n"
+        f"{pair.doc.name}의 {pair.label} 표와 `{pair.origin}`이 갈렸다.\n"
         f"  문서에만: {sorted(documented - coded)}\n"
         f"  코드에만: {sorted(coded - documented)}\n"
         "🔴 값을 늘렸으면 문서 표도 같이 늘린다 — 한쪽만 고치면 문서가 거짓이 된다."
     )
 
 
-@pytest.mark.parametrize("pair", _ERD_PAIRS, ids=[p.label for p in _ERD_PAIRS])
+@pytest.mark.parametrize(
+    "pair",
+    _ERD_PAIRS,
+    ids=[f"{p.table}.{p.label}={p.origin}" for p in _ERD_PAIRS],
+)
 def test_erd_comment_matches_the_enum(pair: _Pair) -> None:
     """🔴 ERD 주석의 값 목록 == enum 멤버.
 
@@ -249,10 +304,10 @@ def test_erd_comment_matches_the_enum(pair: _Pair) -> None:
     있으면 이 검사가 한 곳만 지키고 다른 곳이 조용히 갈린다. 실제로 그렇게 갈렸었다
     (`capability`가 거기서 **3종**이었다).
     """
-    documented = _erd_values(pair.doc, pair.label)
-    coded = {member.value for member in pair.enum}
+    documented = _erd_values(pair.doc, pair.label, pair.table)
+    coded = pair.expected
     assert documented == coded, (
-        f"{pair.doc.name}의 `{pair.label}` 주석과 `{pair.enum.__name__}`이 갈렸다.\n"
+        f"{pair.doc.name} {pair.table}.{pair.label} 주석과 `{pair.origin}`이 갈렸다.\n"
         f"  문서에만: {sorted(documented - coded)}\n"
         f"  코드에만: {sorted(coded - documented)}"
     )
@@ -265,10 +320,27 @@ def test_the_guard_would_catch_a_violation(tmp_path: Path) -> None:
     열 수 없다(#134 실측).
     """
     erd = tmp_path / "fake_erd.md"
-    erd.write_text('    varchar capability "detection|composition"\n', encoding="utf-8")
-    assert _erd_values(erd, "capability") == {"detection", "composition"}
-    assert _erd_values(erd, "capability") != {m.value for m in Capability}, (
+    erd.write_text(
+        "  FIRST {\n"
+        '    varchar status "a|b"\n'
+        "  }\n"
+        "  SECOND {\n"
+        '    varchar status "c|d"\n'
+        '    varchar capability "detection|composition"\n'
+        "  }\n",
+        encoding="utf-8",
+    )
+    assert _erd_values(erd, "capability", "SECOND") == {"detection", "composition"}
+    assert _erd_values(erd, "capability", "SECOND") != {m.value for m in Capability}, (
         "두 값짜리 가짜 주석이 실제 enum과 같다고 나온다 — 파싱이 안 되고 있다"
+    )
+    # 🔴 같은 컬럼명이 두 테이블에 있을 때 **앵커가 실제로 고르는가**(B 확장 8/9).
+    #    앵커가 무시되면 둘 다 첫 테이블 값을 돌려주고, 그 순간 이 검사는 조용히
+    #    엉뚱한 표와 대조하게 된다 — 초록인 채로.
+    assert _erd_values(erd, "status", "FIRST") == {"a", "b"}
+    assert _erd_values(erd, "status", "SECOND") == {"c", "d"}
+    assert _erd_values(erd, "status", "NOPE") == set(), (
+        "없는 테이블인데 값을 돌려준다 — 앵커가 안 걸리고 파일 전체를 훑는다"
     )
 
     table = tmp_path / "fake_table.md"

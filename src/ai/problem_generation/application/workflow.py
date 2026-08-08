@@ -88,6 +88,35 @@ _BEGIN_ATTEMPT = "begin_attempt"
 _BEGIN_DIFFICULTY_REGEN = "begin_difficulty_regen"
 _RUN_ATTEMPT = "run_attempt"
 
+#: 한 시도가 쓰는 super-step 수 — 진입 노드(`begin_attempt`·`begin_difficulty_regen`) 하나와
+#: `run_attempt` 하나. 🔴 **그래프 모양에서 나오는 값이라 코드가 든다** — 노드를 늘리면 여기도
+#: 늘려야 하고, 안 늘리면 아래 상한이 정상 실행을 자른다(설정 파일로 뺄 값이 아니다).
+_STEPS_PER_ATTEMPT = 2
+
+#: START 진입과 종단 판정이 쓰는 여유분.
+_GRAPH_STEP_MARGIN = 2
+
+
+def graph_recursion_limit(*, count: int, config: VerifyConfig) -> int:
+    """그래프 super-step 상한을 **계약 상한에서 유도한다** (불변식 6 · 99 #08 ⓑ).
+
+    🔴 **라이브러리 기본값에 기대지 않는다.** 실측(langgraph 1.2.9 · 8/9):
+    `_internal/_config.py`의 `DEFAULT_RECURSION_LIMIT`이 **10007**이고
+    `LANGGRAPH_DEFAULT_RECURSION_LIMIT` **환경변수로 덮인다.** 즉 지금 상한은
+    ⓐ 사실상 무한이라 불변식 6의 방어가 없고 ⓑ 우리 저장소 밖에서 바뀔 수 있다.
+    ⚠ 종전 langgraph는 이 값이 **25**였다 — 핀이 되돌아가면 `count=13`부터 정상 요청이
+    `GraphRecursionError`로 죽는다. 유도값을 명시해 두면 **버전·환경과 무관해진다.**
+
+    ⚠ 이 값은 「루프를 막는 장치」가 아니다 — 진짜 상한은 상태기계(cursor 단조 증가 ·
+    `item_attempt` ≤ `item_attempt_limit`)가 든다. 여기는 **그 상한이 깨졌을 때 걸리는
+    마지막 그물**이라, 정상 최대치보다 크고 폭주보다는 작아야 한다.
+    """
+
+    per_slot = (
+        config.item_attempt_limit + config.difficulty_regen_max
+    ) * _STEPS_PER_ATTEMPT
+    return count * per_slot + _GRAPH_STEP_MARGIN
+
 
 class ProblemWorkflowConfigurationError(DomainException):
     """실행 컨텍스트와 고정 버전 또는 입력이 일치하지 않음."""
@@ -208,7 +237,12 @@ class ProblemGenerationWorkflow:
         try:
             result = await graph.ainvoke(
                 initial,
-                config={"configurable": {"thread_id": str(set_id)}},
+                config={
+                    "configurable": {"thread_id": str(set_id)},
+                    "recursion_limit": graph_recursion_limit(
+                        count=request.count, config=self._verify_config
+                    ),
+                },
             )
         except GraphContextReferenceInsufficient:
             return RejectedInsufficientOutcome(
@@ -965,4 +999,5 @@ __all__ = [
     "ProblemTenantMismatch",
     "ProblemWorkflowConfigurationError",
     "TargetPlan",
+    "graph_recursion_limit",
 ]
