@@ -779,7 +779,10 @@ class AiRun(Base):
     taxonomy_version: Mapped[str | None] = mapped_column(String, nullable=True)
     verify_config_version: Mapped[str | None] = mapped_column(String, nullable=True)
     difficulty_calib_version: Mapped[str | None] = mapped_column(String, nullable=True)
-    # 모델 정보 — LLM 미사용 실행(detection)에서는 null.
+    # 🔴 모델 정보 — **사용 축**: 그 실행의 LLM 호출이 0건이면 null(99 #12 · 04 §2.2).
+    #    ⚠ (8/8 정정) 종전 「LLM 미사용 실행(detection)에서는 null」은 **「(detection)」이
+    #      틀렸다** — detect도 브리핑 프롬프트를 쓰고, 이 셋이 갈리는 축은 capability가
+    #      아니라 **호출 유무**다(위 버전 키는 선언 축이라 조건이 다르다).
     model_provider: Mapped[str | None] = mapped_column(String, nullable=True)
     model_name: Mapped[str | None] = mapped_column(String, nullable=True)
     generation_params: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

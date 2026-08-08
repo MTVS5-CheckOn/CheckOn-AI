@@ -63,7 +63,17 @@ class VersionSet(BaseModel):
     """
 
     prompt_version: str | None = None
-    """LLM 미사용 실행(감지 등)에서는 None — ERD: "LLM 미사용 시 null"."""
+    """🔴 **선언 축** — **프롬프트를 쓰지 않는 capability에서만 None**이다(04 §2.2).
+
+    counsel·classify·detect·imports·pg는 **전부 프롬프트를 쓰므로 호출 0건인 실행에서도
+    채운다**(캐시 히트 포함). ⚠ **「LLM 미사용 실행」이라는 표현을 쓰지 않는다** — 그 말이
+    ⓐ*"LLM을 안 쓰는 capability"* / ⓑ*"호출이 0인 실행"* 둘로 읽혀 **실제 오독을 낳았다**
+    (99 ㊧·#11 ⓓ · 04가 8/10에 폐기).
+
+    ⚠ **(8/8 정정 · 99 #12) 종전 문면은 *"LLM 미사용 실행(감지 등)에서는 None"* 이었고
+    「(감지 등)」이 04의 8/8 정정과 정반대였다** — **감지는 브리핑 프롬프트 `0.2`를 실제로
+    쓴다**(`detect.py`의 `detection_versions()`). 표현만이 아니라 **내용이 틀렸다.**
+    """
 
     graph_version: str | None = None
     """curriculum_graph.yaml 버전 — 진단·출제 외 실행에서는 None."""
@@ -122,7 +132,8 @@ class ExecutionContext(BaseModel):
         """AI_RUN에 기록할 메타로 승격한다.
 
         created_at은 주입받는다 — datetime.now() 직접 호출 금지(clock 주입,
-        03_coding_rules.md §3). LLM 미사용 실행은 model_* 인자를 비운다.
+        03_coding_rules.md §3). 🔴 **그 실행의 LLM 호출이 0건이면** `model_*`·
+        `generation_params`를 비운다 — **사용 축**이다(선언 축인 버전 키와 다르다).
         """
         return RunMetadata(
             execution_id=self.execution_id,
@@ -166,7 +177,7 @@ class RunMetadata(BaseModel):
     """감지 임계값 시트 버전 — detection 외에는 null (VersionSet 참조)."""
 
     prompt_version: str | None = None
-    """LLM 미사용 시 null."""
+    """🔴 **선언 축** — 프롬프트를 쓰지 않는 capability에서만 null(`VersionSet` 참조)."""
 
     schema_version: str
     contract_version: str
@@ -185,7 +196,12 @@ class RunMetadata(BaseModel):
     """난이도 보정 버전 — 문항 생성 외에는 null."""
 
     model_provider: str | None = None
-    """LLM 미사용 실행에서는 null."""
+    """🔴 **사용 축** — **그 실행의 LLM 호출이 0건이면 null**이다.
+
+    ⚠ **선언 축(버전 키)과 조건이 다르다** — 버전 키는 capability로 갈리고 이 셋
+    (`model_provider`·`model_name`·`generation_params`)은 **실제 호출 유무**로 갈린다.
+    같은 행 안에 두 축이 산다(04 §2.2 · 99 ㊧).
+    """
 
     model_name: str | None = None
     generation_params: GenerationParams | None = None

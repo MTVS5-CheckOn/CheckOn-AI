@@ -66,7 +66,7 @@ erDiagram
     varchar pipeline_version
     varchar engine_version
     varchar threshold_version "감지 임계값 시트 버전 — detection 외에는 null"
-    varchar prompt_version "LLM 미사용 시 null"
+    varchar prompt_version "프롬프트를 쓰지 않는 capability에서만 null — 선언 축 · counsel·classify·detect·imports·pg는 호출 0건이어도 채운다(04 §2.2)"
     varchar schema_version
     varchar contract_version "API 계약 버전 — meta.versions.contract"
     varchar graph_version "교육과정 그래프 버전 — diagnosis·problem_generation 외에는 null"
@@ -75,7 +75,7 @@ erDiagram
     varchar difficulty_calib_version "난이도 보정 버전 — problem_generation 외에는 null"
     varchar model_provider
     varchar model_name
-    jsonb generation_params "그 실행이 실제로 쓴 샘플링 파라미터 — LLM 미사용 실행에서는 null"
+    jsonb generation_params "그 실행이 실제로 쓴 샘플링 파라미터 — 사용 축 · LLM 호출이 0건이면 null"
     varchar input_snapshot_hash "재현성 키"
     timestamptz created_at
   }
