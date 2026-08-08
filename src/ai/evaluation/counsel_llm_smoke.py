@@ -65,6 +65,7 @@ from ai.detection.thresholds import default_threshold_config
 from ai.evaluation.demo_snapshot import build_demo_request
 from ai.llm.providers.openai_compat import OpenAICompatProvider, get_llm_settings
 from ai.runtime.errors import RedactionUncertain
+from ai.runtime.real_llm import real_llm_skip_reason
 from ai.runtime.redaction import redact
 from ai.runtime.tracing import active_tracing_env_names, external_tracing_active
 
@@ -340,8 +341,11 @@ def _preflight() -> dict[str, Any]:
         names = ", ".join(active_tracing_env_names()) or "(env 밖 — 컨텍스트·run tree)"
         raise SystemExit(f"❌ 외부 추적이 활성이다({names}) — 실서버 스모크 중단(C-1).")
     settings = get_llm_settings()
-    if "localhost" in settings.openai_base_url:
-        raise SystemExit("❌ OPENAI_BASE_URL 미설정 — 실서버 스모크 skip.")
+    #: 🔴 **판정은 opt-in 하나다**(99 #32 · 사고 2026-08-09). 종전에는
+    #: `"localhost" in openai_base_url`이었고 `.env`가 기본값을 덮어 **fail-open**이었다.
+    reason = real_llm_skip_reason(settings.openai_base_url)
+    if reason is not None:
+        raise SystemExit(f"❌ {reason}")
     return {
         "tracing_env_active": list(active_tracing_env_names()),
         "base_url": settings.openai_base_url,

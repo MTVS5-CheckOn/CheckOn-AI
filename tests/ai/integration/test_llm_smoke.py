@@ -17,6 +17,7 @@ import pytest
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import CallOutcome, LlmError, LLMRequest, ModelRole
 from ai.llm.providers.openai_compat import OpenAICompatProvider, get_llm_settings
+from ai.runtime.real_llm import real_llm_skip_reason
 
 pytestmark = pytest.mark.integration
 
@@ -40,8 +41,10 @@ def _context() -> ExecutionContext:
 def test_local_server_single_roundtrip() -> None:
     """실서버가 있으면 OK + 비어있지 않은 한국어 응답. 없으면 skip."""
     settings = get_llm_settings()
-    if "localhost" in settings.openai_base_url:
-        pytest.skip("로컬 LLM 미설정(env OPENAI_BASE_URL) — 스모크 skip")
+    # 🔴 **opt-in 없이는 안 부른다**(99 #32) — 종전 조건은 `.env`가 덮으면 열렸다.
+    reason = real_llm_skip_reason(settings.openai_base_url)
+    if reason is not None:
+        pytest.skip(reason)
 
     provider = OpenAICompatProvider(settings=settings)
     request = LLMRequest(
