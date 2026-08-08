@@ -225,7 +225,7 @@ def test_result_ref_dereferences_to_summary_and_results() -> None:
         await h.enqueue(["st_1", "st_2"])
         done = await h.runner.run_next(tenant_id="t1")
         assert done is not None and done.result_ref is not None
-        return done, await h.runner.result_of(done.result_ref)
+        return done, await h.runner.result_of(done.result_ref, tenant_id="t1")
 
     _done, pack = _run(scenario())
     assert pack is not None
@@ -242,7 +242,7 @@ def test_draft_body_is_actually_stored_and_matches_gate_output() -> None:
         await h.enqueue(["st_1", "st_2"])
         done = await h.runner.run_next(tenant_id="t1")
         assert done is not None and done.result_ref is not None
-        pack = await h.runner.result_of(done.result_ref)
+        pack = await h.runner.result_of(done.result_ref, tenant_id="t1")
         assert pack is not None
         bodies: list[str] = []
         for result in pack.results:
@@ -263,7 +263,7 @@ def test_failed_student_has_no_draft_record() -> None:
         await h.enqueue(["st_1"])
         done = await h.runner.run_next(tenant_id="t1")
         assert done is not None and done.result_ref is not None
-        return await h.runner.result_of(done.result_ref)
+        return await h.runner.result_of(done.result_ref, tenant_id="t1")
 
     pack = _run(scenario())
     assert pack is not None
@@ -292,8 +292,10 @@ def test_resume_only_processes_remaining_students() -> None:
         h._clock = lambda: _NOW + timedelta(seconds=120)  # lease 만료 유도
         done = await h.runner.run_next(tenant_id="t1")
         assert done is not None and done.result_ref is not None
-        return after_first, len(killer.write_calls), await h.runner.result_of(
-            done.result_ref
+        return (
+            after_first,
+            len(killer.write_calls),
+            await h.runner.result_of(done.result_ref, tenant_id="t1"),
         )
 
     first, total, pack = _run(scenario())

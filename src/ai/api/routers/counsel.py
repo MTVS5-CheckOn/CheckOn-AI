@@ -700,9 +700,17 @@ async def _wire_result(
 
     **잡 성공 ≠ 초안 존재**(불변식 4) — 결과 계약이 저장됐어도 학생 판정은 거부일 수 있다.
     """
-    pack = await runner.result_of(job.result_ref) if job.result_ref else None
+    pack = (
+        await runner.result_of(job.result_ref, tenant_id=tenant_id)
+        if job.result_ref
+        else None
+    )
     if pack is None:
         # 결과 계약 **자체가 없다** = 잡 장애(error_codes §2.5의 failed 정의).
+        # ⚠ **테넌트 불일치도 여기로 떨어진다**(99 #23) — 선례 셋(`ContextStore`·
+        #   `DraftResultStore`·pg)이 전부 `None`이라 맞춘 것이고, 지금은 잡 조회가 이미
+        #   걸러 내서 **도달하지 않는다.** ㉕ 테이블이 서면 「행이 없다」와 「남의 행이다」가
+        #   같은 번역을 받는 것이 실제 질문이 된다 — 그때 재검한다.
         return CounselDraftResult(
             draft_status=WireDraftStatus.LLM_FAILED,
             status_reason=job.error_code or "job_no_result",

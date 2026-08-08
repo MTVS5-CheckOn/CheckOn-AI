@@ -179,11 +179,21 @@ class DraftResultStore(Protocol):
 
 
 class PackResultStore(Protocol):
-    """팩 결과(요약+포인터) 저장소 — `result_ref`의 대상."""
+    """팩 결과(요약+포인터) 저장소 — `result_ref`의 대상.
+
+    🔴 **`get`이 테넌트를 받는다**(8/8 · 99 #23) — 참조(`pack://{uuid}`)는 테넌트를 담지
+    않으므로 **저장소가 안 받으면 「어느 테넌트 행인가」를 물을 자리가 없다.** 종전에는
+    같은 파일의 다른 둘(`ContextStore`·`DraftResultStore`)과 **셋 중 하나만 달랐다.**
+    ⚠ **결함을 고친 것이 아니라 이중 방어를 채운 것이다** — 잡 조회가 이미 테넌트
+    스코프라 남의 `result_ref`에 도달할 경로가 없었다. **㉕ 테이블이 서면** 인메모리
+    dict 조회가 **PG 행 조회**가 되고, 그때 이 술어가 없으면 질문이 달라진다.
+    """
 
     async def put(self, record: CounselPackResultRecord) -> str: ...
 
-    async def get(self, ref: str) -> CounselPackResultRecord | None: ...
+    async def get(
+        self, ref: str, *, tenant_id: str
+    ) -> CounselPackResultRecord | None: ...
 
 
 class AgentStepSink(Protocol):
@@ -234,8 +244,13 @@ class InMemoryPackResultStore:
         self._rows[record.id] = record
         return make_ref(PACK_SCHEME, record.id)
 
-    async def get(self, ref: str) -> CounselPackResultRecord | None:
-        return self._rows.get(parse_ref(ref, PACK_SCHEME))
+    async def get(
+        self, ref: str, *, tenant_id: str
+    ) -> CounselPackResultRecord | None:
+        row = self._rows.get(parse_ref(ref, PACK_SCHEME))
+        if row is None or row.tenant_id != tenant_id:  # 저장소 수준 격리
+            return None
+        return row
 
 
 class InMemoryAgentStepSink:

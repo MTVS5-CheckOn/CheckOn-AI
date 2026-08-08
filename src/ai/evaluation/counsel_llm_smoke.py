@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Final, NamedTuple
 from uuid import uuid4
 
+from ai.agents.job_store import InMemoryJobStore
 from ai.composition.briefing import make_brief
 from ai.composition.briefing_context import build_contexts
 from ai.composition.counsel.assembly import (
@@ -54,7 +55,10 @@ from ai.composition.provider import build_brief_gateway
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LlmError, LLMProvider, LLMRequest, LLMResult
 from ai.db.repositories.run_store import InMemoryRunStore
-from ai.db.store_factory import reset_shared_agent_runtime
+from ai.db.store_factory import (
+    build_agent_job_store,
+    reset_shared_agent_runtime,
+)
 from ai.detection.engine import detect
 from ai.detection.thresholds import default_threshold_config
 from ai.evaluation.demo_snapshot import build_demo_request
@@ -307,6 +311,19 @@ def _context(capability: Capability, tag: str) -> ExecutionContext:
             prompt_version="v0.1",
         ),
     )
+
+
+def _job_ledger_observation() -> tuple[int | None, int | None]:
+    """공용 잡 원장의 (현재 크기, 누적 적재) — 관측만 한다(99 ㊐ ⓑ).
+
+    ⚠ **PG 백엔드면 둘 다 `None`이다** — 카운터는 인메모리 구현의 것이고, PG로 가면
+    이 관측 자체가 필요 없어진다(㊐ ⓒ가 닫히는 자리). *"0건"* 으로 적으면 **PG인데
+    비어 있다**로 읽혀 사실과 다르다.
+    """
+    store = build_agent_job_store()
+    size = len(store) if isinstance(store, InMemoryJobStore) else None
+    added = store.added if isinstance(store, InMemoryJobStore) else None
+    return size, added
 
 
 def _mask_residue(text: str) -> bool:
@@ -757,6 +774,16 @@ def _run_s4(
         #   리터럴 여부로 본다(값 자체는 실행별로 달라 리포트에 싣지 않는다).
         "llm_call_id_is_constant_none": _worker_pins_llm_call_id_to_none(),
         "s2_jobs": len(s2["rows"]),
+        # ⓔ 🔴 **잡 원장의 규모**(99 ㊐ ⓑ · 8/8 신설). 이 저장소는 **아무것도 지우지
+        #   않는다** — 상한을 A가 단독으로 못 정하기 때문이다(소비자가 둘). 숫자를 정할
+        #   근거가 0이라 **먼저 세기 시작한 값**이고, 여기가 그 **읽는 자리**다.
+        #   ⚠ `evicted_runs`가 카운터·경고를 갖고도 **읽는 사람이 0명이라 두 달을 살았다**
+        #   (바로 위 항목) — 같은 일을 반복하지 않으려고 관측 장치와 읽는 자리를 **같이**
+        #   만들었다. `test_the_job_ledger_counter_has_a_reader`가 이 줄을 지킨다.
+        #   ⚠ 스위트 전역에서 `== 0`을 단정하지 않는다 — 순서에 따라 흔들려 flaky가 된다.
+        #   **관측이지 게이트가 아니다**(위 `collector_evicted_runs`와 같은 규율).
+        "job_ledger_size": _job_ledger_observation()[0],
+        "job_ledger_added": _job_ledger_observation()[1],
         # ⓓ 🔴 **AI_RUN 원장의 사용 축**(#144) — 8/9 신설. 위 항목들은 전부 LLM_CALL
         #   레벨이고, `generation_params`는 **AI_RUN에만** 산다.
         "usage_axis": usage_axis_split(
