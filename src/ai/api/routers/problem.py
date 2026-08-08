@@ -36,6 +36,7 @@ from ai.problem_generation.application.workflow import DiagnosisCallable
 from ai.problem_generation.assembly import (
     ProblemGenerationRunner,
     ProblemRuntimeStores,
+    build_tenant_scoped_item_store,
     open_problem_generation_runner,
     problem_runtime_stores,
     problem_versions,
@@ -324,12 +325,28 @@ async def _generate(request: ProblemRequest) -> tuple[ProblemJobView, WorkerJob]
     ).enqueue(request)
     graph_context, diagnosis = _require_services()
     providers = require_problem_providers()
+    # 🔴 슬롯 최종본 저장소만 **요청 테넌트로 스코프**한다(09 §2-20.3) — Protocol에
+    #  `tenant_id`가 없어 인스턴스가 그 축을 든다. 러너는 `lease_next(tenant_id, …)`로만
+    #  잡을 집으므로 다른 테넌트의 잡을 이 저장소로 실행할 경로가 없다.
+    #  ⚠ `store_backend=memory`(기본)면 `None`이라 **`_stores`가 그대로 간다** — 주입 seam
+    #   무변경. 교체할 때도 나머지 셋은 `_stores`에서 그대로 옮긴다(덮어쓰지 않는다).
+    tenant_items = build_tenant_scoped_item_store(tenant_id=request.tenant_id)
+    stores = (
+        _stores
+        if tenant_items is None
+        else problem_runtime_stores(
+            request_store=_stores.requests,
+            result_store=_stores.results,
+            candidate_store=_stores.candidates,
+            item_store=tenant_items,
+        )
+    )
     async with open_problem_generation_runner(
         supervisor=supervisor,
         providers=providers,
         graph_context=graph_context,
         diagnosis=diagnosis,
-        stores=_stores,
+        stores=stores,
         lease_owner=_LEASE_OWNER,
         run_store=_run_store,
     ) as runner:

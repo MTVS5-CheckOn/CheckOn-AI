@@ -25,11 +25,13 @@ from ai.contracts.problem_generation import (
     ProblemGenerationOutcome,
     ProblemRequest,
 )
+from ai.db.repositories.problem_store import PgProblemItemStore
 from ai.db.repositories.run_store import (
     LlmCallCollector,
     RunStore,
     default_llm_call_collector,
 )
+from ai.db.session import get_sessionmaker
 from ai.db.settings import DbSettings, get_db_settings
 from ai.llm.determinism import deterministic_params
 from ai.llm.prompts.loader import load_prompt_template
@@ -151,6 +153,30 @@ def default_problem_runtime_stores() -> ProblemRuntimeStores:
         candidates=InMemoryCandidateStore(),
         items=InMemoryProblemItemStore(),
     )
+
+
+def build_tenant_scoped_item_store(
+    *,
+    tenant_id: str,
+    settings: DbSettings | None = None,
+) -> ProblemItemStore | None:
+    """`store_backend=pg`면 테넌트 스코프 PG 저장소, 아니면 **`None`**.
+
+    🔴 **테넌트를 여기서 받는 이유**: `ProblemItemStore` Protocol의 `save`/`get`에
+    `tenant_id`가 없어(계약 고정) **인스턴스를 테넌트 단위로 스코프**한다(09 §2-20.3).
+    러너는 `lease_next(tenant_id, worker_kind)`로만 잡을 집으므로 한 러너가 다른 테넌트의
+    잡을 실행할 경로가 없다 — 요청 테넌트로 만든 저장소가 그 잡에 항상 맞다.
+
+    🔴 **`None`은 "실패"가 아니라 "교체할 것이 없다"** — 인메모리 저장소에는 테넌트 축이
+    아예 없으므로 만들 게 없고, **이미 배선된 저장소를 그대로 써야 한다.** 여기서
+    `default_problem_runtime_stores().items`를 돌려주면 `problem_runtime_stores(item_store=…)`로
+    주입한 저장소를 조용히 덮어써서 **주입 seam이 죽는다**(그 회귀를
+    `test_problem_store_injection_seam_uses_the_supplied_item_store`가 잡는다).
+    """
+    settings = settings or get_db_settings()
+    if settings.store_backend != _PG:
+        return None
+    return PgProblemItemStore(sessionmaker=get_sessionmaker(), tenant_id=tenant_id)
 
 
 def problem_runtime_stores(
@@ -419,6 +445,7 @@ __all__ = [
     "ProblemGenerationRunner",
     "ProblemResultStore",
     "ProblemRuntimeStores",
+    "build_tenant_scoped_item_store",
     "default_problem_runtime_stores",
     "open_problem_generation_runner",
     "problem_runtime_stores",
