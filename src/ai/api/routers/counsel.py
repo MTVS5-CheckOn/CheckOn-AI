@@ -48,7 +48,6 @@ from ai.composition.counsel.assembly import (
 )
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.labels import LabelVocabularyError, snapshot_from_labels
-from ai.composition.counsel.prompt import PROMPT_VERSION
 from ai.composition.counsel.provider import (
     COUNSEL_GEN_PARAMS,
     CounselPlanner,
@@ -69,6 +68,7 @@ from ai.composition.counsel.stores import (
     PackResultStore,
     make_ref,
 )
+from ai.composition.counsel.versions import counsel_versions as _counsel_versions
 from ai.composition.counsel.worker import CounselPackRunner
 from ai.contracts.agents import JobPhase, WorkerJob
 from ai.contracts.composition import DraftContext, EvidenceFact
@@ -83,7 +83,7 @@ from ai.contracts.counsel import (
     WireDraftStatus,
     wire_status_for,
 )
-from ai.contracts.execution import Capability, ExecutionContext, VersionSet
+from ai.contracts.execution import Capability, ExecutionContext
 from ai.contracts.gates import BlockedReason
 from ai.contracts.llm import LlmError
 from ai.db.repositories.idempotency import IdempotencyStore
@@ -107,10 +107,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_PIPELINE_VERSION = "0.1.0"
-_ENGINE_VERSION = "counsel-pack-0.1"
-_SCHEMA_VERSION = "0.1"
-_CONTRACT_VERSION = "0.1"
 
 _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id", "Idempotency-Key")
 _POST_ENDPOINT = "POST /v1/counsel/drafts"
@@ -453,43 +449,17 @@ def reset_counsel_stores() -> None:
     set_counsel_provider(FakeCounselProvider())
 
 
-def counsel_versions() -> VersionSet:
-    """이 엔드포인트의 버전 세트 — 실패 응답에도 실린다(04 §2.2 A판정).
-
-    🔴 **`prompt_version`을 싣는다(8/7 · 99 ㊔).** 종전에는 넷만 채워 응답의
-    `meta.versions.prompt`가 `null`이었는데, **같은 실행의 `AI_RUN`에는 `"0.2"`가 있었다** —
-    응답과 원장이 다른 답을 했다. 04 §2.2는 `prompt`를 **프롬프트를 쓰지 않는 capability
-    에서만 null**로 규정하고(선언 축) counsel은 프롬프트를 쓴다. `imports`는 이미 싣고
-    있어 **counsel만 빠져 있었다.**
-
-    ⚠ **(8/11) 인용문을 04의 현행 문면으로 고쳤다.** 종전에는 *"`prompt`는 **LLM 미사용
-    실행**(감지·진단)에서 null"* 로 인용했는데, 04 §2.2가 8/10에 **그 표현을 폐기**했다
-    (ⓐ*"LLM을 안 쓰는 capability"* / ⓑ*"호출이 0인 실행"* 둘로 읽혀 오독을 낳았다 ·
-    99 ㊧). **인용은 원문이 바뀌면 같이 바뀌어야 한다** — 안 고치면 여기가 폐기된 표현의
-    마지막 서식지가 된다(99 #12).
-
-    ⚠ **counsel은 프롬프트가 둘인데 이 필드는 하나다.** `VersionSet.prompt_version`은
-    단일 `str | None`이고 `contracts/execution.py`는 양자 승인 파일이라 늘릴 수 없다.
-
-        prompt.PROMPT_VERSION      = "0.2"   counsel_pack(초안)   ← 이 값을 싣는다
-        provider.PLAN_PROMPT_VERSION = "0.1"  counsel_plan(강조점)
-
-    **초안 쪽을 고른 근거:** ⓐ `AI_RUN`이 이미 그 값을 쓴다(`worker.py`의
-    `_execution_context` — *"prompt_version은 프롬프트 모듈이 소유한다"*). ㊔가 말하는 결함이
-    *"응답과 원장이 다른 답을 한다"* 이므로 **원장에 맞추는 것**이 그걸 닫는 최소 변경이다.
-    ⓑ 산출물은 초안이다 — plan은 그 입력을 고르는 보조 단계다.
-
-    ⚠ **plan 버전은 유실되지 않는다**(실측 8/7). `LLM_CALL` 행이 호출별
-    `prompt_version`을 들어 `['0.1', '0.2']`가 그대로 남는다. 축이 다르다 —
-    **`AI_RUN`은 실행의 대표 프롬프트, `LLM_CALL`은 호출별 프롬프트**다.
-    """
-    return VersionSet(
-        pipeline_version=_PIPELINE_VERSION,
-        engine_version=_ENGINE_VERSION,
-        schema_version=_SCHEMA_VERSION,
-        contract_version=_CONTRACT_VERSION,
-        prompt_version=PROMPT_VERSION,
-    )
+#: 🔴 **버전 세트의 생성 자리는 `composition/counsel/versions.py` 하나다**(99 #20).
+#:
+#: 종전에는 이 파일이 `_PIPELINE_VERSION` 등 상수 넷과 `counsel_versions()`를 **직접 들었고**,
+#: 워커는 자기 `VersionSet(...)` 리터럴을 들었다 — **생성 자리가 둘**이라 같은 잡의 원장
+#: 두 행이 서로 다른 값을 말했다(`pipeline` `"0.1"` vs `"0.1.0"`).
+#: ⚠ **값만 맞추지 않고 자리를 없앴다** — 값만 맞추면 다음에 또 갈린다.
+#: 규약은 pg와 같다: **capability가 만들고 api가 참조한다**(`assembly.problem_versions()`).
+#:
+#: ⚠ 이 이름은 재수출이다 — `VERSION_SCOPE`·실패 응답 조립이 이미 이 경로를 참조하고
+#: `__all__`에도 있어, 개명하면 남의 참조가 끊긴다.
+counsel_versions = _counsel_versions
 
 
 def _format_validation_error(exc: ValidationError) -> list[dict[str, str]]:
