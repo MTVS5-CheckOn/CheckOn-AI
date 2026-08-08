@@ -606,3 +606,60 @@ def test_ledger_generation_params_are_a_usage_axis_not_a_path_axis() -> None:
     called = next(iter(called_store.runs.values()))
     assert called.generation_params is not None
     assert called.model_provider is not None
+
+
+def test_post_202_carries_the_phase_so_be_knows_whether_to_wait() -> None:
+    """🔴 202가 `status`를 싣는다 — BE가 **통지를 기다릴지 바로 GET할지**를 그 값으로 정한다.
+
+    ⚠ pg는 POST 안에서 워커를 동기 실행하지만 `run_next()`가 **자기 잡을 처리한다는 보장이
+    없다**(우선순위·aging 순서). 그래서 202가 종단으로 나가는 경로와 `queued`로 나가는
+    경로가 **둘 다 실재한다** — `job_id`만 실어 보내면 BE가 어느 쪽인지 알 수 없다.
+
+    ⚠ counsel 202와 같은 형태다(04 §3.9) — 두 잡 엔드포인트가 다르게 생기면 BE가 규칙을
+    두 벌 만든다.
+    """
+    _prepare()
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        job_id = posted.json()["data"]["job_id"]
+        fetched = client.get(
+            f"/v1/problems/{job_id}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+
+    assert posted.status_code == 202
+    assert set(posted.json()["data"]) == {"job_id", "status"}
+    assert posted.json()["data"]["status"] == "succeeded"
+    # 🔴 같은 잡을 두 문으로 읽었을 때 같은 값이어야 한다 — 202의 status가 GET과 갈리면
+    #    BE가 어느 쪽을 믿을지 알 수 없다.
+    assert posted.json()["data"]["status"] == fetched.json()["data"]["status"]
+
+
+def test_post_202_says_queued_when_the_runner_took_another_job() -> None:
+    """🔴 **202가 `queued`로 나가는 경로가 실재한다** — 그래서 위 단정이 상수 대조가 아니다.
+
+    러너는 우선순위·aging 순으로 **다음 잡 하나**를 처리한다. 앞에 다른 잡이 있으면 내 잡은
+    큐에 남고, 그 상태로 202가 나간다. ⚠ 이때 BE가 통지를 기다리면 **다음 요청이 올 때까지
+    안 돈다** — 배경 드레인 루프가 없다(v1 인라인 실행 · 09 §2-24).
+    """
+    _run_store, stores, _gen, _ver = _prepare(calls=2)
+    supervisor = Supervisor(
+        store=build_agent_job_store(),
+        lease_duration=timedelta(minutes=5),
+        priority_aging_interval=timedelta(minutes=10),
+    )
+    _run(
+        ProblemGenerationEnqueuer(
+            supervisor=supervisor, request_store=stores.requests
+        ).enqueue(_problem_request(request_id="ahead", target_ref="student-ahead"))
+    )
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+
+    assert posted.status_code == 202
+    assert posted.json()["data"]["status"] == "queued", (
+        "앞선 잡이 있는데도 202가 종단으로 나온다 — 러너가 내 잡을 처리했다는 뜻이라 "
+        "이 테스트의 전제(다음 잡 하나만 처리)가 깨졌다"
+    )
