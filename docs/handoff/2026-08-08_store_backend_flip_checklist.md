@@ -82,7 +82,7 @@ pack_miss_absent · pack_miss_foreign →  None  →  수      (PG 저장소가 
 **#24의 수정은 「결정론 id + 결정론 시각」 둘이고 그 필요성은 확인됐다.** 다만 **멱등 분기
 자체는 `PgPackResultStore`에만 있다** — `InMemoryPackResultStore.put`은
 `self._rows[record.id] = record`로 **그냥 덮어쓴다**(실측). ⇒ 단위 하네스(인메모리)가
-고정하는 것은 **「같은 키 + 첫 시각 유지」까지**다.
+보는 범위는 **「같은 키 + 첫 시각 유지」까지**다.
 
 | 확인할 것 | 어디서 | 왜 PG여야 하나 |
 | --- | --- | --- |
