@@ -26,7 +26,10 @@ from ai.composition.counsel.provider import (
     GatewayDraftWriter,
     GatewayPlanner,
 )
-from ai.composition.counsel.stores import InMemoryPackResultStore
+from ai.composition.counsel.stores import (
+    CounselPackResultRecord,
+    InMemoryPackResultStore,
+)
 from ai.contracts.composition import DraftContext, PlanOutcome
 from ai.contracts.execution import ExecutionContext
 from ai.db.repositories.run_store import InMemoryRunStore
@@ -684,4 +687,54 @@ def test_refine_ledger_versions_match_the_draft_job(client: TestClient) -> None:
     assert drafted == refined, (
         f"같은 잡의 두 원장이 다른 버전을 말한다 — 초안={drafted} refine={refined}. "
         "생성 자리가 둘이라는 뜻이다(워커 리터럴 vs 라우터 함수)"
+    )
+
+
+# ── 저장소 경계: 테넌트가 역참조까지 흘러가는가 (99 #23) ──────────
+
+
+class _TenantSpyPackStore:
+    """`PackResultStore` 스파이 — 역참조에 **무엇이 넘어왔는지**만 본다.
+
+    🔴 **`**kwargs`로 받는 이유**가 이 테스트의 요점이다. `*, tenant_id: str`로 두면
+    고치기 전에 `TypeError`가 나고, 그건 *"경로가 안 이어졌다"* 가 아니라
+    *"호출이 깨졌다"* 로 읽힌다. **red 메시지가 사실을 말하게** 하려고 넓게 받는다.
+    """
+
+    def __init__(self) -> None:
+        self._inner = InMemoryPackResultStore()
+        self.seen_tenant: str | None = None
+        self.calls = 0
+
+    async def put(self, record: CounselPackResultRecord) -> str:
+        ref: str = await self._inner.put(record)
+        return ref
+
+    async def get(
+        self, ref: str, **kwargs: str
+    ) -> CounselPackResultRecord | None:
+        self.calls += 1
+        self.seen_tenant = kwargs.get("tenant_id")
+        return await self._inner.get(ref, **kwargs)
+
+
+def test_the_router_passes_the_tenant_into_the_pack_lookup(
+    client: TestClient,
+) -> None:
+    """🔴 **시그니처가 넓어진 것과 라우터가 넘기는 것은 다른 사실이다.**
+
+    `_wire_result`는 `tenant_id`를 **이미 인자로 들고 있으면서** 역참조에 안 넘겼다.
+    시그니처만 고치고 여기를 안 고치면 **「선언은 있는데 소비가 0」**(이 저장소가 반복해
+    겪은 형태)이 하나 더 생긴다 — 그 자리를 이 단정이 막는다.
+    """
+    spy = _TenantSpyPackStore()
+    counsel_router.set_counsel_stores(pack_store=spy)
+
+    job_id = str(_post(client).json()["data"]["job_id"])
+    client.get(f"/v1/counsel/drafts/{job_id}", headers=_HEADERS)
+
+    assert spy.calls, "역참조가 한 번도 안 일어났다 — 경로가 끊겼다(검사 절단)"
+    assert spy.seen_tenant == _HEADERS["X-Tenant-Id"], (
+        f"팩 역참조에 테넌트가 안 넘어왔다(받은 값 {spy.seen_tenant!r}) — "
+        "라우터는 tenant_id를 들고 있는데 저장소까지 흘리지 않는다"
     )
