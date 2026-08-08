@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from functools import lru_cache
@@ -39,6 +40,8 @@ from ai.contracts.llm import (
 )
 from ai.llm.gateway import LlmGateway
 from ai.runtime.redaction import redact
+
+logger = logging.getLogger(__name__)
 
 #: 문장 하나의 글자 예산 — **실측에서 역산했다**(8/6 3차 산출 4건).
 #:
@@ -370,7 +373,47 @@ class GatewayPlanner:
             raise PlanUnparsedError(
                 f"plan 응답이 형식을 지키지 않았다 — 파싱 0건(응답 {len(text)}자)"
             )
-        return parsed
+        return _mask_plan_output(parsed)
+
+
+def _mask_plan_output(parsed: dict[str, list[str]]) -> dict[str, list[str]]:
+    """plan 산출을 **포착 시점에** 마스킹한다 (99 #25).
+
+    🔴 **출력측이다.** 위 `redact(prompt)`는 *"보내도 되는가"* 를 묻는 fail-closed
+    검사이고, 이것은 *"받은 것을 그대로 남겨도 되는가"* 를 묻는 **변형**이다.
+    **선례가 같은 위험에 이미 판정을 냈다** — `db/repositories/llm_payload.py`가
+    응답을 *"어떤 게이트도 통과하지 않았다 ⇒ 저장 전 변형"* 으로 다루고
+    *"마스킹은 포착 시점에 한다(저장 시점이 아니다)"* 를 못 박는다.
+    `emphasis_points`는 **같은 성질의 값인데 다른 저장소(팩 스냅숏)로 간다** —
+    같은 값에 두 규율이 서 있었다.
+
+    **왜 파싱 뒤인가** — 응답 전문에 걸면 구조(`학생참조 |`)까지 변형 대상이 되어
+    별칭이 마스킹되면 매칭이 깨진다. 파싱 뒤에는 구조가 이미 확보돼 있고 **값만** 바뀐다.
+
+    **왜 저장 직전이 아닌가** — 그 사이 구간에 원문이 state·체크포인트로 앉는다.
+    `llm_payload`가 없애려고 규약을 세운 바로 그 구간이다.
+
+    ⚠ **`uncertain`으로 막지 않는다.** 입력측의 fail-closed는 *"안 보낸다"* 인데 여기는
+    **이미 받은 값**이라 막을 대상이 없다. `⟪확인필요⟫`로 치환된 문면은 원문보다 안전하고,
+    드롭하면 근거만 사라진다(안전은 안 늘어난다).
+
+    ⚠ **재입력에서 2차 마스킹이 나면 안 된다** — 이 값은 `graph.py`가 writer 프롬프트에
+    다시 싣고 그 프롬프트가 `redact()`를 또 탄다. **그 경로는 이미 지원 대상**이다:
+    트립와이어와 `LLM_PAYLOAD` 저장 훅이 마스킹 통과본을 재검사하므로
+    `test_redaction_idempotence.py`가 코퍼스 전건 멱등성을 세워 뒀다.
+
+    🔴 **이 처방은 fail-closed가 아니다** — `redact()`는 호칭·조사 같은 **문맥 신호**가
+    있어야 인명을 확정하고, `"김민준"` 단독은 안 잡는다(실측 · 99 #28). **잡히는 형태가
+    늘어난 것**이고 *"실명이 못 들어온다"* 가 아니다. 그 한계를 #28로 갈라 등재했다.
+    """
+    masked: dict[str, list[str]] = {}
+    for ref, points in parsed.items():
+        replaced = [redact(point).masked_text for point in points]
+        if replaced != points:
+            # ⚠ 조각을 남기지 않는다 — 로그에 원문을 실으면 마스킹한 값이 로그로 샌다.
+            logger.info("plan 산출 마스킹 적용 student_ref=%s points=%d", ref, len(points))
+        masked[ref] = replaced
+    return masked
 
 
 class CompositeCounselProvider:
