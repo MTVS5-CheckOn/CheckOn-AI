@@ -37,15 +37,46 @@
 
 ## 2. 산출물 상태 코드 — 200 안의 `status` (에러 아님!)
 
-### 2.1 Draft (`GET /v1/drafts/{id}`)
+### 2.1 Draft (`GET /v1/counsel/drafts/{job_id}`)
 
 | status | 뜻 | `status_reason` 예 | 백엔드 표시 문구 |
 | --- | --- | --- | --- |
 | `queued` / `generating` | 대기/생성 중 | — | 스피너 |
 | `generated` | 정상 — 게이트 전체 통과 | — | 초안 표시 |
 | `template_only` | **정상** — 데이터 무관 문의(시간표 등)라 일반 템플릿만 | `no_data_topic` | "일반 안내 초안이에요 — 학습 데이터는 사용하지 않았어요" |
-| `rejected_insufficient` | **정상** — 데이터 부족으로 생성 안 함(재원 2주 미만 등) | `data_lt_2weeks` | "○○ 학생은 아직 데이터를 모으는 중이에요(다음 달부터 가능)" |
+| `rejected_insufficient` | **정상** — 인용 가능한 근거가 없어 생성 안 함 | `no_citable_evidence` · `context_missing` | "○○ 학생은 아직 데이터를 모으는 중이에요(다음 달부터 가능)" |
 | `failed` | 진짜 실패 | `llm_failed` `gate_exhausted` `llm_timeout` `parse_fail_exhausted` | "생성에 실패했어요 — 다시 시도" |
+
+> 🔴 **(2026-08-08) `data_lt_2weeks`는 코드가 내지 않는 값이었다.** 전수 확인 결과
+> `tests/ai/contract/test_gates.py`의 **픽스처에만** 있다 — 그걸 예로 들면 **BE가 없는 값을
+> 매핑한다.** 실제 값은 `no_citable_evidence`·`context_missing` 둘이다.
+> ⚠ 경로 표기도 틀렸다(`GET /v1/drafts/{id}` → **`GET /v1/counsel/drafts/{job_id}`**).
+
+#### 🔴 `status_reason` 전수 (2026-08-08 · 코드에서 직접 셈)
+
+⚠ **아래가 정본이다** — 위 표의 「예」 열은 대표값만 든다. **BE가 매핑을 만들 때는 이 표를
+쓴다** — 없는 사유는 화면에서 빈칸이 된다.
+
+| `status_reason` | `draft_status` | 어디서 나오나 | 성격 | 백엔드 표시 문구 |
+| --- | --- | --- | --- | --- |
+| *(null)* | `generated` | `wire_status_for` — 사유 없음 | 정상 | 초안 표시 |
+| `no_data_topic` | `template_only` | 라우터 `_generate` ① — `topic=schedule` | **정상** | *(위 표)* |
+| `no_citable_evidence` | `rejected_insufficient` | 라우터 `_generate` ② — 인용 가능 근거 0건 | **정상** | *(위 표)* |
+| `context_missing` | `rejected_insufficient` | ⓐ 라우터 `_wire_result` — 학생 결과 0건 · ⓑ `graph.py` — 학생 컨텍스트 부재 | **정상** | *(위 표)* |
+| `redaction_blocked` | `llm_failed` | `graph.py` — 마스킹 fail-closed(전송 전 차단) | 차단 | `[BE 작성]` |
+| `llm_failed` | `llm_failed` | `graph.py` — `llm_failed:{예외클래스}`의 **접두만** 싣는다 | 장애 | *(위 표)* |
+| `gate_exhausted` | `gate_exhausted` | `graph.py` — `gate_exhausted:{게이트사유}`의 **접두만** | 장애 | *(위 표)* |
+| `job_no_result` | `llm_failed` | 라우터 `_wire_result` — 결과 계약 자체가 없다 | 장애 | `[BE 작성]` |
+| 🔴 **잡 error_code 다섯** — `context_bundle_missing` · `context_hash_mismatch` · `tenant_mismatch` · `worker_internal_error` · `worker_recovery_exhausted` | `llm_failed` | 라우터가 `job.error_code`를 **그대로** 싣는다. 앞 넷은 `composition/counsel/worker.py`의 `ERROR_*` 상수, 마지막은 `contracts/agents.WORKER_RECOVERY_EXHAUSTED` | 장애 | `[BE 작성]` |
+| `unmapped:{값}` | `gate_exhausted` | `wire_status_for` — 파생표에 없는 `DraftStatus`가 왔다 | 방어 | `[BE 작성]` |
+
+⚠ **「백엔드 표시 문구」는 BE 소유다**(§2.7 규칙 ③ *"표시 문구는 AI가 주지 않는다"*) —
+새 행은 `[BE 작성]`으로 비워 뒀다. 여기를 AI가 채우면 8/5에 `RefineResponse.message`를
+없애며 세운 규약을 되돌리는 것이다.
+
+⚠ **접두만 싣는다** — `llm_failed:LlmTimeout`·`gate_exhausted:too_short:13<180`처럼 상세가
+붙어도 와이어에는 `llm_failed`·`gate_exhausted`만 간다(`wire_status_for`). 상세는 예외
+클래스명·게이트 내부 사유라 **화면 어휘가 아니다.**
 
 **`failed`의 `status_reason` — counsel 와이어 5종과의 대응(7/31 · 인박스 계약 v1 §4-③ · 8/x `template_only` 승격).** 계약은 초안 판정을 `generated · template_only · rejected_insufficient · llm_failed · gate_exhausted` 5종으로 싣는다. 뒤의 둘은 **판정이 아니라 사유**라서 이 표의 `status`가 아니라 `failed`의 `status_reason`에 둔다 — 계약 자신이 둘 다 화면 `failed`("다시 시도")로 매핑하므로 화면이 구분하지 않는 것을 판정 축에 섞지 않는다.
 

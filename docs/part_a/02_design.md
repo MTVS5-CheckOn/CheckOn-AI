@@ -359,12 +359,7 @@ erDiagram
   AGENT_RUN {
     uuid id PK
     uuid run_id FK
-    varchar tenant_id
-    varchar agent_kind "counsel_pack|mapping_probe"
-    jsonb state_checkpoint "LangGraph 체크포인터"
-    varchar progress "예: 19/22"
-    varchar status "running|paused|done|failed"
-    timestamptz updated_at
+    varchar tenant_id "격리 키 — 🔴 컬럼 정본은 06_erd.md의 AGENT_RUN 블록이다"
   }
   AGENT_STEP {
     uuid id PK
@@ -601,6 +596,14 @@ erDiagram
 > **왜 하나로 두는가:** 같은 목록이 두 곳에 있으면 갈린다(`policies/error_codes.md` §7이 이미 세운 원칙). ⚠ **실제로 갈려 있었다** — 이 블록의 `capability`가 `detection|composition|import_mapping` **3종**이었는데 `contracts/execution.py`의 `Capability`는 **5종**이다(`diagnosis`·`problem_generation`이 빠졌다). 🔴 **갈린 방향이 「A 문서에서 B의 값이 빠지는 쪽」이었다** — B가 지적한 대로 *"A 문서에 B 값이 사는 형태는 **갱신 동기가 없는 쪽에 정본이 있는 것**"* 이다. `verify_config`·`taxonomy` 등 version 컬럼 5개도 통째로 없었다.
 >
 > ⚠ **06 쪽 하나를 `tests/ai/contract/test_doc_enum_parity.py`가 지킨다** — `varchar capability "…"` 주석과 `Capability` 멤버가 갈리면 red다. **정본을 하나로 줄인 것과 그 하나를 대조로 잠근 것이 짝**이고, 둘 중 하나만 하면 값이 없다.
+
+> 🔴 **`AGENT_RUN`도 같은 처방을 받았다(2026-08-08 · 99 #02 ⓓ).** 컬럼 정본은 [`docs/06_erd.md`](../06_erd.md)의 `AGENT_RUN` 블록이고 여기는 **관계만** 그린다.
+>
+> **갈려 있던 것 — AI_RUN보다 나빴다:** `agent_kind`가 `counsel_pack|mapping_probe` **2종**(`WorkerKind`는 **3종** — `problem_generation`이 빠졌다) · `status`가 `running|paused|done|failed` **4종**(`JobPhase`는 **7종**) · 컬럼이 **8개**(06은 25개). 🔴 **`done`은 코드 어디에도 없는 값이다** — 실제는 `succeeded`다. **어디에도 없는 값이 설계 문서에 살고 있었다.**
+>
+> 🔴 **대조로는 이걸 못 잡는다.** `test_doc_enum_parity.py`는 `06_erd.md`만 읽고 06은 **이미 맞다** — 갈린 쪽이 `part_a/02`라 **앵커가 생겨도 안 걸린다.** *"06을 정본으로 맞추면 앵커 대조가 잠근다"* 는 방향이 반대였고, 그래서 **정본을 하나로 줄이는 것**(이 처방) 말고는 방법이 없다.
+>
+> ⚠ **블록을 통째로 지우지 않았다** — `part_b/09` §2-19가 이 §2를 가리킨다(AI_RUN 때와 같은 이유).
 
 > **양자 승인 대상:** `EVIDENCE_ITEM` 구조 · `LLM_CALL` 지표 필드(기존) + **`TAG_SUGGESTION`의 area/type enum**(B의 약점 지도와 공용 어휘). `ENGINE_REGISTRY`·`THRESHOLD_CONFIG`·`AGENT_*`는 A 단독.
 

@@ -53,10 +53,15 @@ from pydantic import BaseModel
 
 from ai.composition.counsel.state import CounselPackState
 from ai.contracts.agents import JobPhase, PriorityClass, WorkerKind
-from ai.contracts.composition import PlanOutcome
+from ai.contracts.composition import BlockType, DraftKind, DraftStatus, PlanOutcome
+from ai.contracts.detection import Lifecycle
 from ai.contracts.execution import Capability
+from ai.contracts.gates import GateName, OwnerKind
+from ai.contracts.llm import CallOutcome
 from ai.contracts.problem_generation import ProblemItemStatus, ProblemSetStatus
 from ai.contracts.taxonomy import V1_TYPE_TAGS
+from ai.detection.segments import Segment
+from ai.evidence.models import EvidenceOwnerKind
 from ai.import_mapping.probe.state import MappingProbeState
 
 _DOCS: Final = Path(__file__).resolve().parents[3] / "docs"
@@ -197,6 +202,24 @@ _ERD_PAIRS: Final = (
     _Pair(
         "type_tag", _DOCS / "06_erd.md", V1_TYPE_TAGS, "PROBLEM_ITEM", "V1_TYPE_TAGS"
     ),
+    # ── 🔴 갈림이 실재한 둘 (8/8 · 99 #17) ─────────────────────────
+    # 쌍을 **먼저 걸어 red를 보고** ERD를 고쳤다 — 한 커밋에 넣으면 *"원래 초록이었다"* 와
+    # 구분이 안 된다. 커밋 순서가 증거다.
+    _Pair("outcome", _DOCS / "06_erd.md", CallOutcome, "LLM_CALL"),
+    _Pair("segment", _DOCS / "06_erd.md", Segment, "FEATURE_WEEK"),
+    # ── A 축 일곱 (8/8 · 지금 일치라 등재만으로 잠긴다) ────────────
+    # ⚠ `evidence/models.py`·`contracts/gates.py`는 **양자 파일이지만 import만 한다** —
+    #   편집이 아니라 승인이 필요 없다(`Capability`를 `contracts/execution.py`에서
+    #   가져오는 기존 쌍이 같은 형태다).
+    _Pair("lifecycle", _DOCS / "06_erd.md", Lifecycle, "SIGNAL"),
+    _Pair("owner_kind", _DOCS / "06_erd.md", EvidenceOwnerKind, "EVIDENCE_ITEM"),
+    _Pair("kind", _DOCS / "06_erd.md", DraftKind, "DRAFT"),
+    _Pair("status", _DOCS / "06_erd.md", DraftStatus, "DRAFT"),
+    _Pair("block_type", _DOCS / "06_erd.md", BlockType, "DRAFT_BLOCK"),
+    _Pair("owner_kind", _DOCS / "06_erd.md", OwnerKind, "GATE_RESULT"),
+    # ⚠ `GateName`은 값이 **PascalCase**다(`Consent`·`DataSufficiency`…). 다른 enum과
+    #   표기가 다르지만 **와이어 값은 영구**라 소문자로 통일하지 않는다.
+    _Pair("gate_name", _DOCS / "06_erd.md", GateName, "GATE_RESULT"),
 )
 
 #: 값 목록 뒤에 붙는 설명을 자르는 구분자. 🔴 이 저장소의 기존 표기 관례다 —
@@ -218,8 +241,13 @@ def _erd_values(doc: Path, column: str, table: str) -> set[str]:
     match = re.search(rf'^\s*varchar {column} "([^"]+)"', block.group(1), re.M)
     if match is None:
         return set()
+    # 🔴 **`.strip()`이 필요하다**(8/8 · B가 A에게 넘긴 건). `split(sep, 1)[0]`만으로는
+    #    꼬리 앞 공백이 **둘 이상**일 때 마지막 값에 공백이 들러붙어 **문서가 맞는데
+    #    red**가 난다. ⚠ 지금 `06_erd.md`의 ` — ` 주석은 공백이 정확히 하나라 **우연히
+    #    안전**하다 — 그 우연에 기대지 않는다. `test_the_guard_would_catch_a_violation`이
+    #    공백 둘 픽스처로 red를 남긴다(#04 — 한 줄만 고치면 다음 사람이 지워도 모른다).
     listed = match.group(1).split(_ERD_NOTE_SEPARATOR, 1)[0]
-    return set(listed.split("|"))
+    return {value.strip() for value in listed.split("|")}
 
 
 # ── 검사 ───────────────────────────────────────────────────────────
@@ -341,6 +369,21 @@ def test_the_guard_would_catch_a_violation(tmp_path: Path) -> None:
     assert _erd_values(erd, "status", "SECOND") == {"c", "d"}
     assert _erd_values(erd, "status", "NOPE") == set(), (
         "없는 테이블인데 값을 돌려준다 — 앵커가 안 걸리고 파일 전체를 훑는다"
+    )
+
+    # 🔴 **꼬리 앞 공백이 둘일 때** — `split(sep, 1)[0]`만으로는 마지막 값에 공백이
+    #    들러붙어 **문서가 맞는데 red**가 난다. `.strip()`을 빼면 이 단정이 죽는다.
+    #    ⚠ 지금 `06_erd.md`의 ` — ` 주석은 공백이 정확히 하나라 **우연히 안전**하다 —
+    #      그 우연에 기대지 않으려고 여기 red를 남긴다(#04).
+    spaced = tmp_path / "spaced_erd.md"
+    spaced.write_text(
+        "  T {\n"
+        '    varchar capability "detection|composition  — 설명이 두 칸 뒤에 온다"\n'
+        "  }\n",
+        encoding="utf-8",
+    )
+    assert _erd_values(spaced, "capability", "T") == {"detection", "composition"}, (
+        "값 뒤 공백이 안 잘렸다 — `.strip()`이 빠지면 'composition '이 나온다"
     )
 
     table = tmp_path / "fake_table.md"
