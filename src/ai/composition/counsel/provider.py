@@ -182,7 +182,7 @@ class RedactionBlockedError(LlmError):
     """마스킹 불확실 — 전송하지 않았다(fail-closed · 불변식 3).
 
     ⚠ **`contracts/llm.RedactionBlocked`와 이름이 겹친다. 같은 개념·다른 층이다**
-    (99 ㉳ · 8/11 조사).
+    (99 ㉳ · 8/8 조사).
 
         이 예외      **전송 전** 차단 — `redact()`가 uncertain이면 `gateway.complete()`를
                      **부르기 전에** raise한다(`write():238` · `plan():288`)
@@ -191,7 +191,7 @@ class RedactionBlockedError(LlmError):
                      `CallOutcome.REDACTION_BLOCKED`로 분류한다
 
     🔴 **「분류가 샌다」가 아니다** — 99 ㉳가 *"provider 쪽 예외는 그 분류를 못 받는다"* 로
-    등재됐는데, **못 받는 게 아니라 그 층을 안 탄다.** 실측(8/11):
+    등재됐는데, **못 받는 게 아니라 그 층을 안 탄다.** 실측(8/8):
 
         정상 경로         LLM_CALL 1행 · outcome=ok
         이 예외 발생 시   LLM_CALL **0행** — 게이트웨이를 안 불렀으니 분류할 호출이 없다

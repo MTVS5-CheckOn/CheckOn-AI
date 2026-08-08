@@ -117,7 +117,7 @@ class CounselPackRunner:
         self._lease_owner = lease_owner
         self._new_id = new_id
         self._now = now
-        #: 실행 원장(AI_RUN·LLM_CALL) — 🔴 **적재 실패의 축은 경로마다 다르다**(8/11 실측):
+        #: 실행 원장(AI_RUN·LLM_CALL) — 🔴 **적재 실패의 축은 경로마다 다르다**(8/8 실측):
         #:
         #:     성공 경로  `_record_execution(..., swallow_errors=False)` → 예외가 올라가
         #:                `_run_guarded`가 잡아 잡을 `worker_internal_error`로 떨군다
@@ -201,7 +201,7 @@ class CounselPackRunner:
     async def _execute(self, job: WorkerJob) -> WorkerJob:
         """잡 하나를 실행한다.
 
-        🔴 **원장의 경계는 `_execution_context`다** (99 ㉺ · 8/11 확정):
+        🔴 **원장의 경계는 `_execution_context`다** (99 ㉺ · 8/8 확정):
 
         > **`_execution_context(job)`가 만들어지면 실행이 시작된 것이고, 그때부터
         > 무슨 일이 나든 `AI_RUN`을 남긴다. 그 앞에서 죽으면 남길 실행이 없다.**

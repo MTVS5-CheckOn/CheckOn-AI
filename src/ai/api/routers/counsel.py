@@ -925,7 +925,7 @@ async def _record_refine_run(
                 created_at=_clock(),
                 model_provider=last.provider if last is not None else None,
                 model_name=last.model if last is not None else None,
-                # 🔴 **사용 축이다**(#144 · 04 §2.2 8/10 확정) — 이 턴이 **실제로 쓴**
+                # 🔴 **사용 축이다**(#144 · 04 §2.2 8/7 확정) — 이 턴이 **실제로 쓴**
                 #    샘플링 파라미터다. 상수로 두면 LLM을 안 부른 턴(생성 전 차단·장애)에
                 #    *"그 값으로 돌렸다"* 는 **거짓**이 남는다.
                 #    ⚠ 종전엔 이 한 줄만 무조건이라 **같은 행 안에서 축이 갈렸다** —

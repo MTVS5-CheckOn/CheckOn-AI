@@ -24,7 +24,7 @@ from ai.contracts.composition import (
 from ai.runtime.redaction import redact
 
 _MAX_OF_NARROWEST_COMBINATION = 360
-"""24조합 중 가장 좁은 `max_chars_for` — `tone_map.yaml` 실측(8/11).
+"""24조합 중 가장 좁은 `max_chars_for` — `tone_map.yaml` 실측(8/8).
 
 ⚠ 손으로 옮긴 값이 아니라 **아래 테스트가 실제 조합에서 재확인**한다.
 """

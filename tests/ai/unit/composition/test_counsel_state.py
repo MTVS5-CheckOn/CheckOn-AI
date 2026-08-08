@@ -21,7 +21,7 @@ from ai.contracts.composition import DraftStatus, StudentResult
 _HASH = "sha256:" + "a" * 64
 
 #: langgraph_state §1.2 CounselPackState 코드블록의 필드 집합(손 작성).
-#: ✅ **(8/11 · 99 #07 해소) 「문서 → 코드」 방향은 이제 다른 파일이 지킨다** —
+#: ✅ **(8/8 · 99 #07 해소) 「문서 → 코드」 방향은 이제 다른 파일이 지킨다** —
 #: `tests/ai/contract/test_doc_enum_parity.py::test_documented_codeblock_fields_match_the_model`
 #: 이 §1.2 코드블록을 **실제로 파싱해** `CounselPackState.model_fields`와 대조한다.
 #: 붙이자마자 **진짜 갈림을 찾았다** — 문서에 `state_schema_version`이 빠져 있었고
