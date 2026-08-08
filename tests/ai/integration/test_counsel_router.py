@@ -592,3 +592,96 @@ def test_refine_ledger_generation_params_are_a_usage_axis(client: TestClient) ->
         "실제로 부른 턴인데 파라미터가 비었다 — 재현 키 결손(불변식 8)"
     )
     assert called[0].model_provider is not None
+
+
+# ── 🔴 #20 — 응답·원장의 버전 축이 한 자리인가 ────────────────────
+
+
+def _ledger_versions(run: Any) -> dict[str, Any]:  # noqa: ANN401 — RunMetadata
+    """`AI_RUN` 행에서 **버전 열만** 뽑아 응답 키 이름으로 바꾼다.
+
+    🔴 **키 이름을 손으로 옮기지 않는다** — `envelope.versions_dict()`가 쓰는 것과 같은
+    변환(`_version` 접미사 제거)을 `RunMetadata`에 적용한다. 손으로 적으면 **두 번째
+    사본**이 되고 계약이 열 개에서 열한 개가 되는 날 이 검사만 조용히 낡는다(99 #07).
+
+    ⚠ **실측 3키(`model_provider`·`model_name`·`generation_params`)는 안 담는다** —
+    그 셋은 **사용 축**이라 응답에 아예 안 나간다(04 §2.2 · 99 ㊧). 접미사 필터가
+    자연히 거른다.
+    """
+    return {
+        name.removesuffix("_version"): getattr(run, name)
+        for name in type(run).model_fields
+        if name.endswith("_version")
+    }
+
+
+def test_response_and_ledger_versions_are_the_same_row(client: TestClient) -> None:
+    """🔴 응답 `meta.versions` == 초안 잡 `AI_RUN`의 버전 열 (99 #20 · 불변식 8).
+
+    **재현 키가 둘이면 안 된다.** 갈려 있었다 — 라우터가 `"0.1.0"`을, 워커가 `"0.1"`을
+    실어 **같은 실행인데 응답과 원장이 다른 값을 말했다.** 그때 아무 테스트도 안 걸렸다.
+    선례는 `test_problem_router.py`의 같은 이름 테스트(#161) — pg는 `problem_versions()`
+    하나를 두 문이 함께 써서 갈릴 수 없다.
+
+    ⚠ **이 검사가 못 보는 것:** *"응답과 원장이 같다"* 만 본다 — **둘 다 같이 틀린 경우는
+    못 잡는다**(B가 적어 준 한계). 값 자체의 정당성은 다른 축이다.
+
+    🔴 **`next(iter(runs.values()))`를 쓰지 않는다** — counsel은 러너가 **남의 잡을 집을 수
+    있다**(99 #21). 그렇다고 `meta["execution_id"]`로 고르면 *"execution_id가 그 행을
+    가리킨다"* 단정이 **순환**이 된다. ⇒ **행이 하나뿐임을 먼저 단정**하고(테스트가 잡을
+    하나만 넣는다) 그 행을 쓴다 — 독립 경로다.
+    """
+    set_counsel_provider(_GatewayCounselProvider())
+    posted = _post(client)
+    assert posted.status_code == 202
+
+    run_store = counsel_router._run_store
+    assert isinstance(run_store, InMemoryRunStore)
+    assert len(run_store.runs) == 1, (
+        f"AI_RUN이 {len(run_store.runs)}행이다 — 이 테스트는 잡을 하나만 넣는다. "
+        "둘 이상이면 러너가 남의 잡을 집은 것이고, 그러면 행을 execution_id로 골라야 "
+        "하는데 그건 아래 단정과 순환이 된다"
+    )
+    run = next(iter(run_store.runs.values()))
+    ledger = _ledger_versions(run)
+
+    assert ledger, "AI_RUN에서 버전 열을 하나도 못 찾았다 — 검사가 끊긴 것이다"
+    meta = posted.json()["meta"]
+    assert meta["versions"] == ledger, (
+        "응답과 원장이 같은 실행에 다른 버전을 말한다 — 과거 실행을 어느 값으로 재현할지가 "
+        "갈린다(불변식 8). 두 자리가 같은 함수를 참조하는지 확인하라"
+    )
+    # 🔴 값이 같아도 다른 행을 가리키면 재현이 안 된다.
+    assert meta["execution_id"] == str(run.execution_id)
+
+
+def test_refine_ledger_versions_match_the_draft_job(client: TestClient) -> None:
+    """🔴 **refine 턴의 `AI_RUN`도 같은 값이다** — 원장이 둘인데 서로도 달랐다 (99 #20).
+
+    초안 잡은 워커가 `VersionSet(...)` 리터럴로, refine 턴은 라우터의 `counsel_versions()`로
+    원장을 쓴다 — **한 잡에 원장 행이 둘이고 그 둘이 서로 다른 값**이었다.
+
+    🔴 **전이적으로만 두지 않는다.** 「응답 == 초안 잡」과 「응답 == refine」만 걸면 어느
+    쪽이 틀렸는지가 안 보인다 — **두 원장을 직접 대조**한다.
+    """
+    set_counsel_provider(_GatewayCounselProvider())
+    job_id = str(_post(client).json()["data"]["job_id"])
+    run_store = counsel_router._run_store
+    assert isinstance(run_store, InMemoryRunStore)
+    draft_runs = dict(run_store.runs)
+    assert len(draft_runs) == 1, f"초안 잡 AI_RUN이 1행이 아니다({len(draft_runs)})"
+
+    client.post(
+        f"/v1/counsel/drafts/{job_id}/refine",
+        json={"instruction": "조금 더 따뜻하게 써줘", "turn_no": 1},
+        headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"], "X-Request-Id": "rq-ver"},
+    )
+    turns = [run_store.runs[k] for k in set(run_store.runs) - set(draft_runs)]
+    assert len(turns) == 1, f"refine 턴 AI_RUN이 1행이 아니다({len(turns)})"
+
+    drafted = _ledger_versions(next(iter(draft_runs.values())))
+    refined = _ledger_versions(turns[0])
+    assert drafted == refined, (
+        f"같은 잡의 두 원장이 다른 버전을 말한다 — 초안={drafted} refine={refined}. "
+        "생성 자리가 둘이라는 뜻이다(워커 리터럴 vs 라우터 함수)"
+    )
