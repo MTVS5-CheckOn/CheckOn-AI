@@ -168,6 +168,12 @@ class CounselPackRunner:
 
         ⚠ `BaseException`(프로세스 kill·SystemExit)은 잡지 않는다 — 그건 lease 만료·recovery가
         다룰 영역이고 워커가 대신 판정할 수 없다.
+
+        🔴 **다른 워커가 이것을 복사하려 하면 멈춰라**(8/9 · 99 #18). 위에서 열거하는 넷은
+        **counsel 축의 예외**이고 **probe 축에는 하나도 없다**(전수 0건). probe는 자기 예외
+        집합에 맞춰 **단일 수렴 + 재던짐**으로 따로 세웠고, pg(B)는 `DomainException.code`
+        기반이다 — **세 워커의 규율이 다른 것은 예외 집합이 다르기 때문**이고 #02가 아니다.
+        ⚠ **`pause`를 쓰는 자리는 서킷 하나뿐**이다 — 되돌릴 수 있는 배압이라서다.
         """
         try:
             return await self._execute(job)

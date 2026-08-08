@@ -13,8 +13,9 @@ LLM·도구는 Protocol+Fake 기본(실 LLM·게이트웨이 후속). checkpoint
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 from uuid import UUID, uuid4
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -35,6 +36,13 @@ from ai.import_mapping.probe.stores import (
 from ai.import_mapping.probe.tools import FakeProbeTools
 
 _SPEC_VERSION = 1
+
+logger = logging.getLogger(__name__)
+
+#: 🔴 **미분류 실패의 사유** — `error_codes` §2.1의 공용 어휘를 쓴다(counsel과 같은 문자열).
+#: ⚠ pg는 자기 값(`problem_worker_internal`)을 쓰는데 **그건 B 소유 축**이라 여기서 안 맞춘다 —
+#: 같은 어휘를 쓰는 것이 원장을 읽는 쪽에 싸다(99 #18).
+ERROR_WORKER_INTERNAL: Final = "worker_internal_error"
 
 
 class MappingProbeRunner:
@@ -72,7 +80,48 @@ class MappingProbeRunner:
         )
         if job is None:
             return None
-        return await self._execute(job)
+        return await self._run_guarded(job)
+
+    async def _run_guarded(self, job: WorkerJob) -> WorkerJob:
+        """예외를 **잡 종단으로 수렴**시킨다 — running 방치 금지(99 #18).
+
+        방치하면 lease 만료 recovery를 `max_recovery_attempts`(**기본 3**)까지 태우고
+        그때마다 **전체 재실행**이다. 원장에는 사유가 하나도 안 남는다.
+
+        🔴 **counsel의 `_run_guarded`를 복사하지 않았다.** 그쪽이 예외를 넷 열거해
+        `pause`/`fail`로 갈라 떨구는데 **그 넷이 probe 축에 하나도 없다**(전수 0건 —
+        `LlmCircuitOpenError`·`ContextBundleMissingError`·`TenantMismatchError`·
+        `ContextHashMismatchError`). 복사하면 **못 나는 예외를 잡는 코드**가 생긴다(#22 부류).
+
+        ⚠ **`pause`가 없는 이유** — `pause`는 **되돌릴 수 있는 배압**에 쓰고 counsel이 그것을
+        쓰는 유일한 자리가 서킷인데 **probe에는 서킷이 0건**이다. probe가 낼 수 있는 것은
+        `ValueError`(참조 해소 실패·컬럼 수 불일치·미지 도구)·`MappingInferenceError`·
+        `GraphRecursionError` 계열이고 **전부 「이대로는 안 된다」**라 종단이 정답이다.
+
+        🔴 **수렴한 뒤 다시 던진다**(pg 형태 · counsel은 삼킨다). 이유 둘:
+        ⓐ **호출자에게 사실을 숨기지 않는다** — probe는 프로덕션 드레인이 아직 없어
+          (전수: `imports.py`는 enqueue만 한다) 삼켜서 얻을 가용성이 없다.
+        ⓑ `test_probe_recursion_limit`이 **전파를 현재 동작으로 단정**하고 있어, 재던지면
+          그 단정이 **그대로 참**이다 — 축이 다른 테스트를 이 변경이 흔들지 않는다.
+
+        ⚠ **수렴 자체가 실패해도 원래 예외를 잃지 않는다** — `fail`이 터지면 그것을 기록만
+        하고 원래 예외를 올린다(pg가 같은 형태다).
+        """
+        try:
+            return await self._execute(job)
+        except Exception:
+            logger.exception("mapping_probe 워커 실패 job=%s", job.job_id)
+            try:
+                await self._sv.fail(
+                    tenant_id=job.tenant_id,
+                    job_id=job.job_id,
+                    lease_owner=self._lease_owner,
+                    lease_generation=job.lease_generation,
+                    error_code=ERROR_WORKER_INTERNAL,
+                )
+            except Exception:  # noqa: BLE001 — 수렴 실패를 원래 예외로 덮지 않는다
+                logger.exception("mapping_probe 실패 수렴 중 오류 job=%s", job.job_id)
+            raise
 
     async def _execute(self, job: WorkerJob) -> WorkerJob:
         profile_rec = await self._profiles.get(job.payload_ref)
