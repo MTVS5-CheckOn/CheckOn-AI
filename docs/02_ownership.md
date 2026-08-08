@@ -204,7 +204,7 @@ ai/
         ├── tone/       (24조합 스냅숏)  [박진희]
         ├── tagging/                    [박진희+염준영]  ★정답 라벨 확정만 양자 (어휘집 §2 기준)
         ├── refine_attack/ (A1~A8)      [박진희]    ★v2
-        ├── redaction/  (코퍼스 30건)    [박진희]
+        ├── redaction/  (코퍼스 전건)    [박진희]
         ├── import_corpus/ (양식 10종)   [박진희]
         ├── classify/                   [박진희]
         ├── problems/   (문항 검증)      [염준영]
