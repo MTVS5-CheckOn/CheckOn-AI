@@ -31,6 +31,7 @@ from ai.composition.counsel.graph import (
     build_counsel_graph,
     graph_recursion_limit,
 )
+from ai.composition.counsel.identity import pack_result_id
 from ai.composition.counsel.provider import (
     COUNSEL_GEN_PARAMS,
     CounselPlanner,
@@ -428,12 +429,26 @@ class CounselPackRunner:
         """
         return await self._packs.put(
             CounselPackResultRecord(
-                id=self._new_id(),
+                # 🔴 **결정론이다**(99 #24) — `self._new_id()`가 아니다. ⑤와 ⑥ 사이에서
+                #    죽고 재개하면 ⑤가 다시 도는데, `uuid4`면 **새 행**이 생겨 앞 행이
+                #    고아가 된다(`result_ref`는 나중 것만 가리킨다). ⚠ 인메모리는 프로세스와
+                #    함께 사라지지만 `store_backend=pg`로 뒤집히면 **쌓인다.**
+                id=pack_result_id(job.job_id),
                 tenant_id=job.tenant_id,
                 class_ref=bundle.class_ref,
                 summary=final["summary"] or "",
                 results=tuple(final["results"]),
-                created_at=self._now(),
+                # 🔴 **시각도 결정론이어야 한다** — `self._now()`면 재시도가 **다른 내용**을
+                #    만든다. ⚠ **PG에서는** 그것이 `PackResultConflict`로 떨어져 **잡이 죽고**
+                #    (결정론 id만 넣으면 고아 대신 실패가 된다), 인메모리에서는 **조용히
+                #    덮인다**(`InMemoryPackResultStore.put`은 dict 대입이다) — 어느 쪽도 옳지
+                #    않다. ⚠ 그 인과는 `test_pack_result_pg_roundtrip.py`(integration)가 보고,
+                #    단위 테스트가 고정하는 것은 **시각의 결정론성 자체**다.
+                #    `started_at`은 재개에서 보존되고(`job_store.py`의
+                #    `previous.started_at or started_at`) `queued_at`은 불변이라 재시도가
+                #    같은 값을 낸다. ⚠ 뜻은 「이 결과를 낸 실행이 시작된 시각」이고 투영
+                #    컬럼의 축(보존기간·정리 배치)에도 그대로 맞는다.
+                created_at=job.started_at or job.queued_at,
                 # plan 결과 사유를 결과 계약에 실어 보낸다 — state 밖으로 나가는 유일한
                 # 경로다(잡이 끝나면 체크포인트는 재개 대상이 아니다 · 99 ㉲).
                 plan_outcome=final["plan_outcome"],

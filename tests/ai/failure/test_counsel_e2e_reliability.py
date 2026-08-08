@@ -515,3 +515,179 @@ def test_non_ok_outcome_is_llm_failed_not_gate_exhausted() -> None:
     )
     with pytest.raises(LlmError):
         _run(writer.write(context=_context("st_1"), execution_context=ctx))
+
+
+# ── ⑤와 ⑥ 사이의 고아 창 (99 #24 · 플립 선행) ──────────────────────
+
+
+class _CrashAtSuccess:
+    """⑥(`succeed`)만 **한 번** 막는 슈퍼바이저 래퍼 — ⑤는 이미 돌았다.
+
+    🔴 **⑤ 뒤·⑥ 앞을 정확히 겨눈다.** 다른 자리에서 죽이면 팩 저장 자체가 안 일어나
+    고아 창을 재현하지 못한다 — 그러면 red가 *"고아가 없다"* 로 거짓 초록이 된다.
+    """
+
+    def __init__(self, inner: Supervisor) -> None:
+        self._inner = inner
+        self.armed = True
+        self.succeed_calls = 0
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._inner, name)
+
+    async def succeed(
+        self,
+        *,
+        tenant_id: str,
+        job_id: UUID,
+        lease_owner: str,
+        lease_generation: int,
+        result_ref: str,
+    ) -> WorkerJob:
+        self.succeed_calls += 1
+        if self.armed:
+            self.armed = False
+            # 🔴 **`_WorkerKilled`(BaseException)다** — `RuntimeError`면 `_run_guarded`가
+            #   잡아 잡을 `worker_internal_error`로 **종단**시키고 **재개가 안 온다**
+            #   (실측: `succeed_calls == 1`로 red가 거짓 초록이 됐다). 프로세스 급사는
+            #   `Exception`이 아니고, 그래야 잡이 running으로 남아 lease 만료 → recovery다.
+            raise _WorkerKilled("⑤ 뒤 · ⑥ 앞 급사(고아 창)")
+        done: WorkerJob = await self._inner.succeed(
+            tenant_id=tenant_id,
+            job_id=job_id,
+            lease_owner=lease_owner,
+            lease_generation=lease_generation,
+            result_ref=result_ref,
+        )
+        return done
+
+
+class _CountingPackStore:
+    """`put` 호출 수를 세는 팩 저장소 — **멱등 분기를 탔는지**를 가른다.
+
+    🔴 행 수만 보면 *"⑤가 한 번만 돌았다"* 와 *"두 번 돌았고 분기가 흡수했다"* 가 구분되지
+    않는다. 전자면 고아 창이 안 재현된 것이고 그건 **거짓 초록**이다.
+    """
+
+    def __init__(self) -> None:
+        self._inner = InMemoryPackResultStore()
+        self.put_calls = 0
+
+    @property
+    def _rows(self) -> dict[UUID, CounselPackResultRecord]:
+        return self._inner._rows  # noqa: SLF001 — 관측 전용
+
+    async def put(self, record: CounselPackResultRecord) -> str:
+        self.put_calls += 1
+        ref: str = await self._inner.put(record)
+        return ref
+
+    async def get(
+        self, ref: str, *, tenant_id: str
+    ) -> CounselPackResultRecord | None:
+        return await self._inner.get(ref, tenant_id=tenant_id)
+
+
+def _crash_harness() -> tuple[_Harness, _CrashAtSuccess, _CountingPackStore]:
+    """🔴 **시계가 움직이는 러너를 직접 조립한다.**
+
+    `_Harness._runner()`는 `now=lambda: _NOW`(**고정**)를 넘긴다 — 그 러너로는
+    *"재시도 시각이 아니다"* 를 물어도 **단정이 헛돈다**(실측: 고치기 전에도 초록).
+    재시도가 **다른 시계**를 보게 해야 「내용이 같은가」를 물을 수 있다.
+    """
+    harness = _Harness(lease_seconds=1)
+    crasher = _CrashAtSuccess(harness.supervisor)
+    harness.supervisor = crasher  # type: ignore[assignment]
+    packs = _CountingPackStore()
+    harness.packs = packs  # type: ignore[assignment]
+    harness.runner = CounselPackRunner(
+        supervisor=crasher,  # type: ignore[arg-type]
+        context_store=harness.contexts,
+        draft_store=harness.drafts,
+        pack_store=packs,
+        step_sink=harness.sink,
+        planner=harness.provider,
+        writer=harness.provider,
+        checkpointer=harness.saver,
+        now=lambda: harness._clock(),  # noqa: SLF001 — 움직이는 시계가 요점이다
+        new_id=_counter(),
+        regen_max=DEFAULT_REGEN_MAX,
+        lease_owner="worker-crash",
+    )
+    return harness, crasher, packs
+
+
+async def _crash_then_recover(
+    harness: _Harness, crasher: _CrashAtSuccess
+) -> WorkerJob | None:
+    """① 고아 창에서 죽인다 → ② lease 만료 → recovery → 재개."""
+    await harness.enqueue(["st_1"])
+    with pytest.raises(_WorkerKilled):
+        await harness.runner.run_next(tenant_id="t1")
+    harness._clock = lambda: _NOW + timedelta(seconds=120)  # noqa: SLF001
+    return await harness.runner.run_next(tenant_id="t1")
+
+
+def test_the_orphan_window_leaves_exactly_one_pack_row() -> None:
+    """🔴 **고아 창을 지나 재개하면 팩 결과 행이 하나여야 한다.**
+
+    고치기 전: ⑤가 두 번 돌고 `new_id`가 `uuid4`라 **행이 둘**이며 `result_ref`는
+    **나중 것만** 가리킨다 ⇒ 앞 행이 고아다. ⚠ 인메모리는 프로세스와 함께 사라지지만
+    `store_backend=pg`로 뒤집히면 **쌓인다.**
+    """
+    harness, crasher, packs = _crash_harness()
+    done = _run(_crash_then_recover(harness, crasher))
+
+    assert crasher.succeed_calls == 2, (
+        f"⑥이 두 번 불리지 않았다 — 재개 경로에 안 닿았다(검사 절단): "
+        f"{crasher.succeed_calls}"
+    )
+    assert done is not None and done.result_ref is not None
+    rows = packs._rows  # noqa: SLF001 — 관측 전용
+    assert len(rows) == 1, (
+        f"고아 창을 지나 팩 결과 행이 {len(rows)}개다 — 앞 행이 고아로 남는다(99 #24). "
+        "PG로 뒤집히면 프로세스와 함께 사라지지 않고 쌓인다"
+    )
+    # 🔴 행이 하나여도 **참조가 그 행을 가리켜야** 닫힌 것이다.
+    stored = _run(harness.runner.result_of(done.result_ref, tenant_id="t1"))
+    assert stored is not None, f"result_ref가 저장된 행을 안 가리킨다: {done.result_ref}"
+    assert stored.id == next(iter(rows)), "참조와 유일한 행이 다르다"
+
+
+def test_the_retry_reuses_the_same_key_with_a_deterministic_timestamp() -> None:
+    """🔴 **재시도가 같은 키로 가고 시각이 결정론이다.**
+
+    이 파일이 고정하는 것은 **둘**이다: ⓐ `put`이 두 번 불렸고(`put_calls == 2`)
+    ⓑ 저장된 시각이 **첫 시각**이다. 시각이 재시도 시계면 재시도마다 **내용이 달라진다.**
+
+    ⚠ **여기서 「멱등 분기」를 검증하지 않는다 — 이 하네스는 인메모리다.**
+    `InMemoryPackResultStore.put`은 `self._rows[record.id] = record`로 **그냥 덮어쓴다**
+    (실측). *"같은 내용이면 통과 · 다르면 `PackResultConflict`"* 분기는
+    **`PgPackResultStore`에만 있다.** ⇒ 인메모리에서는 시각이 달라도 **충돌하지 않고 덮인다.**
+    🔴 **그래서 「시각이 결정론이 아니면 잡이 죽는다」의 인과는 여기서 재현되지 않는다** —
+    여기가 고정하는 것은 **시각의 결정론성 자체**다.
+
+    🔴 **분기 자체는 `tests/ai/integration/test_pack_result_pg_roundtrip.py`가 본다**
+    (`test_the_same_id_is_not_silently_overwritten` · **PG 없으면 skip**이라 로컬에서는
+    아직 미검증이다). ⚠ **이 구분을 안 적으면 검사의 이름이 보는 것보다 넓어진다**(로그 85).
+    """
+    harness, crasher, packs = _crash_harness()
+    done = _run(_crash_then_recover(harness, crasher))
+    assert done is not None and done.phase is JobPhase.SUCCEEDED, (
+        f"재개가 성공으로 수렴하지 않았다 — 멱등 분기가 충돌을 냈나: {done}"
+    )
+    # 🔴 **⑤가 두 번 돌았다** — 한 번만 돌았으면 고아 창이 안 재현된 것이고 행 수 단정이
+    #    거짓 초록이 된다(검사 절단).
+    assert packs.put_calls == 2, (
+        f"`put`이 두 번 안 불렸다 — 멱등 분기를 탄 것이 아니라 ⑤가 한 번만 돌았다: "
+        f"{packs.put_calls}"
+    )
+    stored = _run(harness.runner.result_of(str(done.result_ref), tenant_id="t1"))
+    assert stored is not None
+    # 🔴 **시각이 결정론이다** — 두 번째 실행의 시계는 `_NOW + 120s`인데 저장된 값은
+    #    **첫 시각**이어야 한다. ⚠ **인메모리에서는 달라도 덮이기만 한다**(위 docstring) —
+    #    `PackResultConflict`로 잡이 죽는 것은 **PG에서만**이고 그건 여기서 안 본다.
+    assert stored.created_at == _NOW, (
+        f"팩 결과 시각이 첫 시각이 아니다({stored.created_at}) — 재시도가 다른 내용을 "
+        "만들면 멱등 분기가 충돌로 떨어지고 잡이 죽는다"
+    )
