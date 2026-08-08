@@ -447,9 +447,15 @@ class CounselPackRunner:
             )
         )
 
-    async def result_of(self, result_ref: str) -> CounselPackResultRecord | None:
-        """`result_ref` 역참조 — 백엔드·테스트가 결과 계약을 읽는 경로."""
-        return await self._packs.get(result_ref)
+    async def result_of(
+        self, result_ref: str, *, tenant_id: str
+    ) -> CounselPackResultRecord | None:
+        """`result_ref` 역참조 — 백엔드·테스트가 결과 계약을 읽는 경로.
+
+        ⚠ **테넌트를 받아 저장소까지 흘린다**(99 #23 · pg의 `result_of`와 같은 형태).
+        여기서 끊으면 저장소가 술어를 받아도 **아무도 안 넘겨** 선언만 남는다.
+        """
+        return await self._packs.get(result_ref, tenant_id=tenant_id)
 
 
 def _execution_context(job: WorkerJob) -> ExecutionContext:
