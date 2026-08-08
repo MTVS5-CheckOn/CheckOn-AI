@@ -54,6 +54,7 @@ from ai.composition.counsel.refine import refine_draft
 from ai.composition.provider import build_brief_gateway
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LlmError, LLMProvider, LLMRequest, LLMResult
+from ai.db.repositories.pack_store import PgPackResultStore
 from ai.db.repositories.run_store import InMemoryRunStore
 from ai.db.store_factory import (
     build_agent_job_store,
@@ -792,6 +793,14 @@ def _run_s4(
         #   **관측이지 게이트가 아니다**(위 `collector_evicted_runs`와 같은 규율).
         "job_ledger_size": _job_ledger_observation()[0],
         "job_ledger_added": _job_ledger_observation()[1],
+        # ⓕ 🔴 **팩 결과 역참조 실패의 두 갈래**(99 #23 · 8/8 신설). 반환값은 둘 다
+        #   `None`이라 **운영에서 *"왜 404인가"* 를 물으면 반환값으로는 답이 안 나온다.**
+        #   ⚠ 로그만 가르면 **테스트가 셀 수 없어 리더를 만들 수 없다**(로그 59가 그 형태다)
+        #   ⇒ 저장소가 카운터로 세고 여기가 그 **읽는 자리**다.
+        #   ⚠ **PG 백엔드가 아니면 둘 다 `None`이다** — 인메모리는 이 카운터를 안 든다.
+        #   `0`으로 적으면 「PG인데 실패가 없었다」로 읽힌다(`job_ledger_size`와 같은 규율).
+        "pack_miss_absent": _pack_miss_observation()[0],
+        "pack_miss_foreign_tenant": _pack_miss_observation()[1],
         # ⓓ 🔴 **AI_RUN 원장의 사용 축**(#144) — 8/9 신설. 위 항목들은 전부 LLM_CALL
         #   레벨이고, `generation_params`는 **AI_RUN에만** 산다.
         "usage_axis": usage_axis_split(
@@ -899,6 +908,21 @@ def _captured_emphasis() -> list[str]:
     ]
 
 
+def _pack_miss_observation() -> tuple[int | None, int | None]:
+    """팩 결과 역참조 실패의 (부재, 남의 테넌트) 누적 — 관측만 한다(99 #23).
+
+    ⚠ **PG 구현만 이 카운터를 든다.** 인메모리는 술어로 거르기만 하고 세지 않는다 —
+    `None`을 돌려주는 이유는 *"PG인데 0건"* 과 *"인메모리라 안 센다"* 가 **다른 사실**이기
+    때문이다(`_job_ledger_observation`과 같은 규율).
+    """
+    from ai.api.routers import counsel as counsel_router  # noqa: PLC0415
+
+    store = counsel_router._pack_store
+    if not isinstance(store, PgPackResultStore):
+        return None, None
+    return store.miss_absent, store.miss_foreign_tenant
+
+
 def _pii_scan(data: dict[str, Any]) -> dict[str, Any]:
     """**LLM이 만든 텍스트만** 마스킹 검사한다 — 실명이 들어올 수 있는 표면은 여기뿐이다.
 
@@ -918,6 +942,13 @@ def _pii_scan(data: dict[str, Any]) -> dict[str, Any]:
     #: 있는가"* 에 답할 수 없던 이유가 그것이다(로그 98). ⚠ 이 값은 팩 스냅숏에 영속되고
     #: **게이트를 안 탄다**(초안 본문과 달리) — 오히려 더 봐야 하는 축이다.
     #: ⚠ `.get()`으로 읽는다 — 이 함수를 부르는 자리가 s1~s3만 담는 경우가 있다.
+    #: 🔴 **이 값은 이미 마스킹본이다**(8/8 · 99 #25) — `GatewayPlanner`가 **포착 시점에**
+    #: `redact()`를 걸어 저장하므로 여기 오는 강조점은 마스킹 통과본이다.
+    #: ⇒ **`findings` 0은 정상이고 「안전하다」의 근거가 아니다.** 의미 있는 신호는
+    #: **`token_residue`**(마스킹 토큰이 산출물에 남았다 = 두 번 가려졌거나 모델이 토큰을
+    #: 따라 썼다)와 **`uncertain`**(1차가 못 가린 것을 2차가 의심 = 미탐 후보)이다.
+    #: ⚠ 안 적으면 다음 사람이 *"findings 0이니 실명이 없다"* 로 읽는다 —
+    #: 커버리지는 fail-closed가 아니다(99 #28: 문맥 신호 없는 이름꼴은 애초에 안 잡힌다).
     emphasis = [
         (f"s2/rows/{i}/emphasis/{j}", point)
         for i, r in enumerate(data["s2"]["rows"])

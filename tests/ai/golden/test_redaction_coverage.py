@@ -26,7 +26,7 @@ from __future__ import annotations
 import ast
 import itertools
 import re
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import Final
 
 import pytest
@@ -197,3 +197,177 @@ def test_every_referenced_case_exists() -> None:
         f"머리말 표가 없는 케이스를 가리킨다: {dangling} — 커버리지 진술이 거짓이다. "
         "케이스를 넣거나 표 행을 고쳐라(층 배정이면 「미커버」로 적는다)"
     )
+
+
+# ── 코퍼스 크기를 문서가 수로 재진술하지 않는다 (8/8 · 99 #02) ──────
+
+#: 🔴 **기록 축은 뺀다.** `99_open_items.md`(등재문·결정 로그)와 `docs/handoff/`(파일명에
+#: 날짜가 박힌 리포트)는 **그때의 크기**를 적는 자리다 — 걸면 *"기록을 고쳐라"* 는 red가
+#: 계속 나고 그건 기록을 훼손하라는 요구다. **가드의 축은 「현재형 진술」이다.**
+_RECORD_AXIS: Final = ("99_open_items.md", "handoff")
+
+#: 🔴 **앵커는 「크기 진술」이다** — 수 뒤에 `건`이 와야 한다. `코퍼스 50~54와 같은 형태`는
+#: **케이스 id 범위**이지 크기가 아니라 여기 걸리면 안 된다(실측: `test_redaction_idempotence`).
+_CORPUS_SIZE_CLAIM: Final = re.compile(r"코퍼스\s*(\d+)\s*건")
+
+#: 🔴 **다른 코퍼스임을 말하는 표식 — fail-closed의 축이다.**
+#: 이 코퍼스의 **이름 변형을 열거하지 않는다**(`failure 코퍼스`·`골든 코퍼스`·
+#: `golden/redaction 코퍼스`·`redaction/ (코퍼스` — 실측 넷). 열거하면 **목록이 화이트리스트가
+#: 되어 다섯째 변형에서 또 샌다**(PR-κ의 앵커가 정확히 그래서 미탐 다섯을 냈다).
+#: ⇒ **반대로 「남의 코퍼스」를 등재한다** — 모르는 자리는 **이 코퍼스로 보고 red**를 낸다.
+#: ⚠ 그래서 **다른 코퍼스가 새로 생기면 red가 나고 이유와 함께 여기 등재**하게 된다.
+#: **미탐을 오탐 쪽으로 옮긴 거래**이고, 이 저장소가 ⓛ에 적어 둔 *"미탐은 오탐보다 나쁘다"*
+#: 에 맞는 방향이다(선례: `NON_PROJECTED_COLUMNS`도 *"이유와 함께 등재"* 규약이다).
+_OTHER_CORPUS_MARKERS: Final = {
+    "실서버": "A군 활용형 오탐 대조군 26건 — `buffer_lexicon`·`05_tone_mapping`",
+    "대조군": "같은 것. 표식이 **직전 줄**에 사는 자리가 있다(`test_buffer_lexicon`)",
+    "문의": "분류(classify) 문의 코퍼스 80건 — `08_evaluation_plan`",
+    "합성": "같은 것(전량 합성)",
+    "당시": "기록 표식 — *「당시 코퍼스 N건」*은 그때의 크기다(`test_redaction_idempotence`)",
+}
+
+#: 🔴 **승인 대기 예외 — 조용히 범위 밖으로 밀지 않는다.**
+#: 값은 **사유**이고 `test_the_pending_exception_still_violates`가 **만료 조건**이다:
+#: 그 자리가 고쳐지면 **예외 자신이 red**가 되어 목록에서 지우게 만든다.
+#: ⚠ 범위에서 빼면 승인이 와도 아무도 안 고친다.
+_PENDING_APPROVAL: Final = {
+    "src/ai/contracts/evaluation.py": (
+        "양자 승인 파일(13곳) — 8/8 승인 대기. `db/models.py:3`(양자 12곳)·"
+        "`CounselPackResult` docstring과 함께 세 줄 승인 요청 중(99 #02)"
+    ),
+}
+
+
+def _posix_rel(path: PurePath, root: PurePath) -> str:
+    """상대경로를 **`/` 표기로** 낸다 — 스캐너와 회귀 단정이 **같은 함수**를 쓴다.
+
+    🔴 **`str(Path)`는 Windows에서 백슬래시를 낸다**(CI에 windows-latest 잡이 있다).
+    `_PENDING_APPROVAL`·`_RECORD_AXIS`의 키가 `/` 표기라 `str()`이면 **어느 쪽도 안 맞아**
+    승인 대기 예외가 안 걸리고 red가 난다(8/8 실측: windows 잡만 red).
+    ⚠ **함수로 빼는 것이 요점이다** — 회귀 단정이 `.as_posix()`를 **직접** 부르면
+    *"`as_posix`가 동작한다"* 만 확인하고 **스캐너가 그것을 쓰는지는 안 본다.**
+    선례: `test_composition_redaction.py`의 `_posix_rel`.
+    """
+    return path.relative_to(root).as_posix()
+
+
+def _scan_roots() -> list[Path]:
+    root = Path(__file__).resolve().parents[3]
+    return [root / "src", root / "docs", root / "tests"]
+
+
+def _size_claiming_lines() -> list[tuple[str, int, str]]:
+    """이 코퍼스의 크기를 수로 말하는 자리 전수 — (경로, 줄번호, 수).
+
+    표식은 **그 줄과 직전 줄**에서 찾는다 — 실측에 표식이 앞 줄에 사는 자리가 있다.
+    """
+    root = Path(__file__).resolve().parents[3]
+    hits: list[tuple[str, int, str]] = []
+    for scan_root in _scan_roots():
+        for path in scan_root.rglob("*"):
+            if path.suffix not in {".py", ".md", ".yaml"} or not path.is_file():
+                continue
+            relative = _posix_rel(path, root)
+            if any(part in relative for part in _RECORD_AXIS):
+                continue
+            lines = path.read_text(encoding="utf-8").splitlines()
+            for number, line in enumerate(lines, start=1):
+                match = _CORPUS_SIZE_CLAIM.search(line)
+                if match is None:
+                    continue
+                window = line + "\n" + (lines[number - 2] if number >= 2 else "")
+                if any(marker in window for marker in _OTHER_CORPUS_MARKERS):
+                    continue
+                hits.append((relative, number, match.group(1)))
+    return hits
+
+
+def test_the_scan_reaches_every_root() -> None:
+    """🔴 검사 경로가 끊기면 통과가 아니라 실패다 — 세 뿌리를 다 읽어야 한다."""
+    for scan_root in _scan_roots():
+        found = [
+            path for path in scan_root.rglob("*") if path.suffix in {".py", ".md", ".yaml"}
+        ]
+        assert len(found) > 10, f"{scan_root}를 못 읽었다 — {len(found)}개"
+
+
+def test_the_other_corpus_markers_carry_a_reason() -> None:
+    """⚠ 표식은 **이유와 함께** 등재한다 — 사유 없는 등재는 조용한 화이트리스트다."""
+    assert all(reason.strip() for reason in _OTHER_CORPUS_MARKERS.values())
+    assert all(reason.strip() for reason in _PENDING_APPROVAL.values())
+
+
+def test_no_current_statement_restates_the_corpus_size() -> None:
+    """🔴 **정본을 수로 재진술하지 않는다 — 가드 없는 재진술은 또 갈린다**(99 #02).
+
+    8/8 실측: `masking_redaction.md` §5 **제목**이 크기를 **30**으로 적고 있었고 실제 코퍼스는
+    **63건**이다. PR-κ가 그 넷을 걷었는데 **앵커(`failure 코퍼스`)와 범위(`docs/` 셋)가 둘 다
+    좁아 미탐이 다섯 남았다** — `contracts/evaluation.py`·`03_usecases.md`(같은 파일에서
+    하나만 고쳤다)·`02_ownership.md`·`golden/redaction/__init__.py`·`masking_redaction.md`.
+
+    🔴 **그래서 이름을 열거하지 않는다.** 이 코퍼스의 이름 변형을 나열하면 목록이
+    화이트리스트가 되고 여섯째 변형에서 또 샌다 — **남의 코퍼스를 등재하고 모르는 자리는
+    이 코퍼스로 보는** 방향이다(fail-closed).
+    """
+    violations = [
+        (path, number, size)
+        for path, number, size in _size_claiming_lines()
+        if not any(pending in path for pending in _PENDING_APPROVAL)
+    ]
+    assert not violations, (
+        f"이 코퍼스의 크기를 수로 재진술한다: {violations} (현재 {len(CORPUS)}건) — "
+        "수를 빼고 「전건」으로 적어라. 다른 코퍼스라면 `_OTHER_CORPUS_MARKERS`에 "
+        "**이유와 함께** 등재해라"
+    )
+
+
+def test_the_pending_exception_still_violates() -> None:
+    """🔴 **예외의 만료 조건이다** — 승인 대기 자리가 고쳐지면 **이 검사가 red**가 된다.
+
+    ⚠ 조용히 범위 밖으로 밀면 승인이 와도 아무도 안 고친다. 예외를 **살아 있는 채로**
+    두고, 그 예외가 필요 없어지는 순간 **목록에서 지우라고 red**가 난다.
+    """
+    violating_paths = {path for path, _number, _size in _size_claiming_lines()}
+    stale = sorted(
+        pending
+        for pending in _PENDING_APPROVAL
+        if not any(pending in path for path in violating_paths)
+    )
+    assert not stale, (
+        f"승인 대기 예외가 더는 위반이 아니다: {stale} — 고쳐졌으면 "
+        "`_PENDING_APPROVAL`에서 지워라(예외가 남으면 다음 위반을 조용히 덮는다)"
+    )
+
+
+# ── 경로 구분자 회귀 (OS 무관) ─────────────────────────────────────
+#
+# **왜 필요한가:** 이 가드의 `_PENDING_APPROVAL`·`_RECORD_AXIS` 키가 `/` 표기인데
+# `str(Path)`는 Windows에서 백슬래시를 낸다. `.as_posix()`가 없던 동안 **windows 잡만**
+# red였고 맥·리눅스에서는 초록이었다(8/8 실측 · 승인 대기 예외가 안 걸려 두 건이 깨졌다).
+# `.as_posix()`를 되돌리는 변경을 **맥·리눅스에서** 잡는 게 아래 단정의 존재 이유다.
+# 선례: `test_composition_redaction.py::test_posix_rel_normalizes_windows_separator`.
+
+
+def test_pending_approval_keys_are_posix() -> None:
+    """🔴 예외 키가 `/` 표기임을 못 박는다 — 백슬래시로 적으면 맥에서 안 걸린다."""
+    assert all("\\" not in key for key in _PENDING_APPROVAL), _PENDING_APPROVAL
+    assert all("/" in key for key in _PENDING_APPROVAL), _PENDING_APPROVAL
+
+
+def test_relative_paths_are_normalized_for_windows() -> None:
+    """Windows 시맨틱을 맥에서 재현 — `.as_posix()`를 되돌리면 여기서 빨개진다.
+
+    두 인자를 **모두** `PureWindowsPath`로 준다(flavour 혼합은 파이썬 버전마다 갈린다 —
+    선례 docstring 참조).
+    """
+    root = PureWindowsPath("D:/a/CheckOn-AI/CheckOn-AI")
+    target = root / "src" / "ai" / "contracts" / "evaluation.py"
+
+    # 🔴 **스캐너가 쓰는 그 함수를 부른다** — `.as_posix()`를 되돌리면 여기서 빨개진다.
+    assert _posix_rel(target, root) == "src/ai/contracts/evaluation.py"
+    assert "\\" not in _posix_rel(target, root)
+    # str()이면 이 값이 나온다 — 예외 키(`/` 표기)와 불일치하는 그 값.
+    assert str(target.relative_to(root)) == "src\\ai\\contracts\\evaluation.py"
+    assert any(
+        _posix_rel(target, root) == key for key in _PENDING_APPROVAL
+    ), "승인 대기 키가 POSIX 상대경로와 일치하지 않는다 — Windows에서 예외가 안 걸린다"

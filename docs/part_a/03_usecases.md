@@ -230,7 +230,7 @@
 
 **상황 2.** "비고" 열에 학부모 전화번호가 섞여 있다.
 
-1. masking이 샘플 내 패턴 치환 후에야 LLM·에이전트 도구에 노출. 누락 대비 `redaction`(2차 방어 — 패턴 P1~P8·failure 코퍼스 30건)이 프롬프트·로그 단계 필터링. `LLM_PAYLOAD`에는 마스킹 통과본만.
+1. masking이 샘플 내 패턴 치환 후에야 LLM·에이전트 도구에 노출. 누락 대비 `redaction`(2차 방어 — 패턴 P1~P8·failure 코퍼스)이 프롬프트·로그 단계 필터링. `LLM_PAYLOAD`에는 마스킹 통과본만.
 
 **검증하는 것:** 재수입의 비용 0·재현성. 1차(masking)+2차(redaction) 이중 방어의 관통(에이전트 도구 경로 포함).
 
@@ -268,7 +268,7 @@
 | L1 | gates/인용 실존 게이트 · contract/ai_suggested 미사용 보장 |
 | I1 | integration/import e2e · golden/import_corpus → MappingSpec 회귀 |
 | I2 | integration/도구 루프 상한·수렴 · gates/도구 마스킹 보장 · contract/'모름' 명시 · agent_step 감사 완전성 |
-| I3 | integration/동일 파일+spec 결정론 · **golden/redaction 코퍼스 30건(미탐 0 = CI 게이트)** |
+| I3 | integration/동일 파일+spec 결정론 · **golden/redaction 코퍼스 전건(미탐 0 = CI 게이트)** |
 | I4 | integration/캐시 히트 · contract/미확정 태그 피처 미반영 · **golden/tagging(수능 enum·경계 사례 confidence)** |
 
 > 🔴 **합격 수치의 정본은 [`08_evaluation_plan.md`](08_evaluation_plan.md) §7이다 — 여기 중복 적지 않는다(8/8).** 종전 C7 행이 `complaint 재현율 ≥95%`를 인용하고 있었는데, §7이 기준의 **형태**를 바꾸면서(정확도는 baseline과 짝 · 소수 클래스 재현율을 축마다) 두 곳이 갈릴 자리가 됐다. 이 표는 **어떤 테스트가 도는가**만 적는다.
