@@ -26,7 +26,7 @@ from __future__ import annotations
 import ast
 import itertools
 import re
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import Final
 
 import pytest
@@ -238,6 +238,19 @@ _PENDING_APPROVAL: Final = {
 }
 
 
+def _posix_rel(path: PurePath, root: PurePath) -> str:
+    """상대경로를 **`/` 표기로** 낸다 — 스캐너와 회귀 단정이 **같은 함수**를 쓴다.
+
+    🔴 **`str(Path)`는 Windows에서 백슬래시를 낸다**(CI에 windows-latest 잡이 있다).
+    `_PENDING_APPROVAL`·`_RECORD_AXIS`의 키가 `/` 표기라 `str()`이면 **어느 쪽도 안 맞아**
+    승인 대기 예외가 안 걸리고 red가 난다(8/8 실측: windows 잡만 red).
+    ⚠ **함수로 빼는 것이 요점이다** — 회귀 단정이 `.as_posix()`를 **직접** 부르면
+    *"`as_posix`가 동작한다"* 만 확인하고 **스캐너가 그것을 쓰는지는 안 본다.**
+    선례: `test_composition_redaction.py`의 `_posix_rel`.
+    """
+    return path.relative_to(root).as_posix()
+
+
 def _scan_roots() -> list[Path]:
     root = Path(__file__).resolve().parents[3]
     return [root / "src", root / "docs", root / "tests"]
@@ -254,7 +267,7 @@ def _size_claiming_lines() -> list[tuple[str, int, str]]:
         for path in scan_root.rglob("*"):
             if path.suffix not in {".py", ".md", ".yaml"} or not path.is_file():
                 continue
-            relative = str(path.relative_to(root))
+            relative = _posix_rel(path, root)
             if any(part in relative for part in _RECORD_AXIS):
                 continue
             lines = path.read_text(encoding="utf-8").splitlines()
@@ -324,3 +337,37 @@ def test_the_pending_exception_still_violates() -> None:
         f"승인 대기 예외가 더는 위반이 아니다: {stale} — 고쳐졌으면 "
         "`_PENDING_APPROVAL`에서 지워라(예외가 남으면 다음 위반을 조용히 덮는다)"
     )
+
+
+# ── 경로 구분자 회귀 (OS 무관) ─────────────────────────────────────
+#
+# **왜 필요한가:** 이 가드의 `_PENDING_APPROVAL`·`_RECORD_AXIS` 키가 `/` 표기인데
+# `str(Path)`는 Windows에서 백슬래시를 낸다. `.as_posix()`가 없던 동안 **windows 잡만**
+# red였고 맥·리눅스에서는 초록이었다(8/8 실측 · 승인 대기 예외가 안 걸려 두 건이 깨졌다).
+# `.as_posix()`를 되돌리는 변경을 **맥·리눅스에서** 잡는 게 아래 단정의 존재 이유다.
+# 선례: `test_composition_redaction.py::test_posix_rel_normalizes_windows_separator`.
+
+
+def test_pending_approval_keys_are_posix() -> None:
+    """🔴 예외 키가 `/` 표기임을 못 박는다 — 백슬래시로 적으면 맥에서 안 걸린다."""
+    assert all("\\" not in key for key in _PENDING_APPROVAL), _PENDING_APPROVAL
+    assert all("/" in key for key in _PENDING_APPROVAL), _PENDING_APPROVAL
+
+
+def test_relative_paths_are_normalized_for_windows() -> None:
+    """Windows 시맨틱을 맥에서 재현 — `.as_posix()`를 되돌리면 여기서 빨개진다.
+
+    두 인자를 **모두** `PureWindowsPath`로 준다(flavour 혼합은 파이썬 버전마다 갈린다 —
+    선례 docstring 참조).
+    """
+    root = PureWindowsPath("D:/a/CheckOn-AI/CheckOn-AI")
+    target = root / "src" / "ai" / "contracts" / "evaluation.py"
+
+    # 🔴 **스캐너가 쓰는 그 함수를 부른다** — `.as_posix()`를 되돌리면 여기서 빨개진다.
+    assert _posix_rel(target, root) == "src/ai/contracts/evaluation.py"
+    assert "\\" not in _posix_rel(target, root)
+    # str()이면 이 값이 나온다 — 예외 키(`/` 표기)와 불일치하는 그 값.
+    assert str(target.relative_to(root)) == "src\\ai\\contracts\\evaluation.py"
+    assert any(
+        _posix_rel(target, root) == key for key in _PENDING_APPROVAL
+    ), "승인 대기 키가 POSIX 상대경로와 일치하지 않는다 — Windows에서 예외가 안 걸린다"
