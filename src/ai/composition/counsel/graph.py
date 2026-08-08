@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping, MutableMapping
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -59,6 +59,48 @@ class LlmCircuitOpenError(RuntimeError):
 _PLAN_NODE = "plan"
 _STUDENT_NODE = "student"
 _SUMMARIZE_NODE = "summarize"
+
+#: 학생 루프 **밖**에서 도는 super-step 수 — 🔴 **실측값이다**(8/8 · 99 #08 ⓑ).
+#:
+#: 손으로 세면 `plan` + `summarize` = 2인데 **실측은 3**이다(학생 1명 → 4 · 2명 → 5 ·
+#: 5명 → 8 · 20명 → 23). probe 그래프에서도 **똑같이 +1**이 나오므로 오셈이 아니라
+#: `END` 전이가 super-step 하나를 먹는 라이브러리 성질이다.
+#: 실측표: `docs/handoff/2026-08-08_graph_superstep_measurement.md`.
+#:
+#: ⚠ **여유분이 들어 있지 않다.** 노드를 늘리면 이 값도 늘려야 하고, 그걸
+#: `test_derived_limit_admits_the_maximum_normal_run`이 red로 잡는다 — 여유를 얹으면
+#: 그 red가 안 난다.
+_GRAPH_OVERHEAD_STEPS: Final = 3
+
+
+def graph_recursion_limit(*, student_count: int) -> int:
+    """이 잡의 `recursion_limit` — **그래프 모양에서 유도**한다(03 §1 · 불변식 6).
+
+    🔴 **위험의 방향은 「기본값이 낮아 죽는다」가 아니다.** langgraph의
+    `DEFAULT_RECURSION_LIMIT`은 `int(getenv("LANGGRAPH_DEFAULT_RECURSION_LIMIT", "10007"))`
+    이라 **사실상 무한**이다. 둘이 문제다:
+
+      ⓐ **불변식 6의 방어가 없다** — `cursor`가 안 올라가는 버그가 나면 10007번 돈다.
+      ⓑ 🔴 **저장소 밖에서 바뀐다** — 그 환경변수를 **BE 운영이 만질 수 있다.**
+        호출마다 명시하면 그 변수가 우리 값을 못 덮는다.
+
+    ⚠ **이건 루프를 막는 장치가 아니다.** 진짜 상한은 `cursor` 단조 증가와 `is_complete`가
+    든다 — 여기는 그게 깨졌을 때 걸리는 **마지막 그물**이고, 기준은 *"정상 최대치보다 크고
+    폭주보다 작게"* 다.
+
+    🔴 **pg(`workflow.graph_recursion_limit`)의 식을 복사하지 않았다 — 그래프 모양이 다르다.**
+    pg는 `request.count`라는 **계약 상한**에서 유도하는데, counsel은 학생 수에 계약 상한이
+    없다(라우터가 `contexts={student_ref: context}`로 N=1이고 벌크는 미구현). 그래서
+    **실행 시점 번들 크기**에서 유도한다. 복사했으면 counsel은 과대가 된다.
+
+    ⚠ **게이트 재생성은 안 센다** — `for _ in range(regen_max + 1)`이 `student` 노드
+    **안의 파이썬 루프**라 super-step을 안 먹는다(실측 확인).
+
+    ⚠ **재개 시 `cursor`를 빼서 좁히지 않는다** — 같은 잡의 상한이 실행마다 달라지고
+    (재개가 두 번이면 값이 셋) 불변식 8과 충돌한다. **상한은 잡의 성질이지 시도의 성질이
+    아니다.** 전체 학생 수로 유도한 값은 재개 시 과대 공급이라 안전하다.
+    """
+    return max(student_count, 1) + _GRAPH_OVERHEAD_STEPS
 
 
 def summarize(results: list[StudentResult]) -> str:
@@ -347,4 +389,9 @@ def build_counsel_graph(
     )
 
 
-__all__ = ["LlmCircuitOpenError", "build_counsel_graph", "summarize"]
+__all__ = [
+    "LlmCircuitOpenError",
+    "build_counsel_graph",
+    "graph_recursion_limit",
+    "summarize",
+]

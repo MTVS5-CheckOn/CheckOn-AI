@@ -970,8 +970,14 @@ async def _record_refine_run(
 async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
     """다듬기 1턴 — 동기 · **매 턴 게이트 전체 재통과**(06 §1).
 
-    🔴 **차단도 200이다**(`applied:false` + 사유 + 문구) — 게이트 거부는 에러가 아니다
+    🔴 **차단도 200이다**(`applied:false` + `blocked_reason`) — 게이트 거부는 에러가 아니다
     (불변식 4 · error_codes §4 "GateRejected를 5xx로 올리는 코드는 리뷰 반려").
+
+    ⚠ **(8/8) 종전 문면은 *"사유 + 문구"* 였고 8/5부터 거짓이었다** — `RefineResponse.message`가
+    그때 제거됐다(§2.7 규칙 ③ *"표시 문구는 AI가 주지 않는다"*). **같은 함수 100줄 아래가
+    *"문구(`REFINE_BLOCK_MESSAGES`)는 응답에 싣지 않는다"* 라고 적고 있어 한 함수가 자기
+    자신과 모순됐다.** 🔴 **8/5에 세 곳을 고치고 넷째를 안 봤다** — 04 §3.9·
+    `RefineResponse` docstring·`error_codes`는 전부 맞다(전수 확인 8/8 · 99 #19).
 
     대상 키는 `job_id`다 — POST 202 응답·Kafka 완료 통지가 싣는 그 값이다.
     FE 계약 §3-③의 `inquiry_id`는 BE가 중계 매핑한다(04 §3.9).

@@ -13,7 +13,7 @@ Fake 플래너(결정론). 루프 상한은 설정 주입(ImportSettings.import_
 from __future__ import annotations
 
 from collections.abc import Hashable
-from typing import Any
+from typing import Any, Final
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -31,6 +31,37 @@ from ai.import_mapping.probe.tools import ProbeTool
 
 _PROBE_NODE = "probe"
 _PROPOSE_NODE = "propose_spec"
+
+#: 조사 루프 **밖**에서 도는 super-step 수 — 🔴 **실측값이다**(8/8 · 99 #08 ⓑ).
+#:
+#: 손으로 세면 `profile_read` + `propose_spec` + `confidence_check` = 3인데 **실측은 4**다
+#: (`loop_max` 1 → 5 · 2 → 6 · 5 → 9 · 12 → 16). counsel 그래프에서도 **똑같이 +1**이
+#: 나오므로 오셈이 아니라 `END` 전이가 super-step 하나를 먹는 라이브러리 성질이다.
+#: 실측표: `docs/handoff/2026-08-08_graph_superstep_measurement.md`.
+#:
+#: ⚠ **여유분이 들어 있지 않다** — 노드를 늘리면 이 값도 늘려야 하고 그걸 테스트가 잡는다.
+_GRAPH_OVERHEAD_STEPS: Final = 4
+
+
+def graph_recursion_limit(*, loop_max: int) -> int:
+    """이 조사 실행의 `recursion_limit` — **그래프 모양에서 유도**한다(03 §1 · 불변식 6).
+
+    🔴 **위험의 방향은 「기본값이 낮아 죽는다」가 아니다.** langgraph의
+    `DEFAULT_RECURSION_LIMIT`은 `int(getenv("LANGGRAPH_DEFAULT_RECURSION_LIMIT", "10007"))`
+    이라 **사실상 무한**이다: ⓐ 불변식 6의 방어가 없고 ⓑ 🔴 **그 환경변수를 BE 운영이
+    만질 수 있다** — 호출마다 명시하면 저장소 밖 값이 우리 값을 못 덮는다.
+
+    🔴 **`loop_max`를 인자로 받는다 — Settings를 여기서 읽지 않는다.** 순수 함수여야
+    재현성이 선다(불변식 8). 값의 정본은 `ImportSettings.import_probe_loop_max`(`ge=1`)이고
+    워커가 `self._loop_max`로 들고 있다.
+
+    ⚠ **counsel·pg와 유도식이 다르다** — 세 그래프의 모양이 다르다. probe는 **상한이 이미
+    설정에 있어서** 계약(pg)이나 실행 시점 크기(counsel)를 볼 필요가 없다.
+
+    ⚠ **후보가 먼저 소진되면 실제 super-step은 이보다 적다**(실측: 컬럼 5개 · `loop_max=6`
+    → 9). 이 값은 **상한이 실제로 물릴 때의 최대치**다.
+    """
+    return max(loop_max, 1) + _GRAPH_OVERHEAD_STEPS
 
 
 def _all_columns(state: MappingProbeState) -> list[str]:

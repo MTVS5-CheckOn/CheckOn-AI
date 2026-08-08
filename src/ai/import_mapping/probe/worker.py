@@ -21,7 +21,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ai.agents.supervisor import Supervisor
 from ai.contracts.agents import WorkerJob, WorkerKind
-from ai.import_mapping.probe.graph import build_probe_graph
+from ai.import_mapping.probe.graph import build_probe_graph, graph_recursion_limit
 from ai.import_mapping.probe.planner import FakeProbePlanner, ProbePlanner
 from ai.import_mapping.probe.state import MappingProbeState, MappingSpecDraft
 from ai.import_mapping.probe.stores import (
@@ -104,8 +104,15 @@ class MappingProbeRunner:
             sheets_meta={"columns": columns},
         )
         # ainvoke — async 체크포인터(AsyncPostgresSaver)를 구동한다. InMemorySaver도 호환.
+        # 🔴 **호출마다 상한을 명시한다**(불변식 6 · 99 #08 ⓑ) — 안 주면 langgraph 기본값
+        #    `getenv("LANGGRAPH_DEFAULT_RECURSION_LIMIT", "10007")`이 쓰이는데 그건
+        #    **사실상 무한**이고 **BE 운영이 만질 수 있는 저장소 밖 값**이다.
         final = await graph.ainvoke(
-            init, config={"configurable": {"thread_id": thread_id}}
+            init,
+            config={
+                "configurable": {"thread_id": thread_id},
+                "recursion_limit": graph_recursion_limit(loop_max=self._loop_max),
+            },
         )
         draft: MappingSpecDraft = final["spec_draft"]
 
