@@ -58,7 +58,13 @@ from ai.contracts.detection import Lifecycle
 from ai.contracts.execution import Capability
 from ai.contracts.gates import GateName, OwnerKind
 from ai.contracts.llm import CallOutcome
-from ai.contracts.problem_generation import ProblemItemStatus, ProblemSetStatus
+from ai.contracts.problem_generation import (
+    ProblemItemStatus,
+    ProblemSetStatus,
+    RevisionKind,
+    TargetKind,
+    TargetSource,
+)
 from ai.contracts.taxonomy import V1_TYPE_TAGS
 from ai.detection.segments import Segment
 from ai.evidence.models import EvidenceOwnerKind
@@ -220,6 +226,12 @@ _ERD_PAIRS: Final = (
     # ⚠ `GateName`은 값이 **PascalCase**다(`Consent`·`DataSufficiency`…). 다른 enum과
     #   표기가 다르지만 **와이어 값은 영구**라 소문자로 통일하지 않는다.
     _Pair("gate_name", _DOCS / "06_erd.md", GateName, "GATE_RESULT"),
+    # ── [PART_B] 축 셋 (8/8 · B가 값까지 대조해 승인 · 99 #17) ──────
+    # *"흔들 예정 없습니다. 오히려 지금 잠가 두는 게 낫습니다 — 그 표면을 구현할 때 ERD를
+    #  같이 고치게 되는 게 의도한 바입니다."*  ⇒ 소유자 동의를 받고 잠근다.
+    _Pair("target_kind", _DOCS / "06_erd.md", TargetKind, "PROBLEM_SET"),
+    _Pair("target_source", _DOCS / "06_erd.md", TargetSource, "PROBLEM_SET"),
+    _Pair("revision_kind", _DOCS / "06_erd.md", RevisionKind, "ITEM_REVISION"),
 )
 
 #: 값 목록 뒤에 붙는 설명을 자르는 구분자. 🔴 이 저장소의 기존 표기 관례다 —
