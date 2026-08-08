@@ -23,11 +23,20 @@
 
 from __future__ import annotations
 
+import ast
 import itertools
+import re
+from pathlib import Path
+from typing import Final
 
 import pytest
 
+from ai.evaluation.golden.redaction import corpus as corpus_module
+from ai.evaluation.golden.redaction.corpus import CORPUS
 from ai.runtime.redaction import redact
+
+#: 머리말(모듈 docstring)만 읽는다 — 케이스 본문은 이 검사의 축이 아니다.
+_CORPUS_SRC: Final = Path(corpus_module.__file__).read_text(encoding="utf-8")
 
 #: 이름꼴 축 — 실제로 들어오는 표기 형태.
 _NAME_FORMS: dict[str, str] = {
@@ -139,3 +148,52 @@ def test_relation_terms_are_the_axis_that_leaked() -> None:
     assert len(relations) >= 5
     for follower in relations:
         assert _is_masked("박서연", "박서연" + _FOLLOWERS[follower]), follower
+
+
+# ── 머리말 표가 가리키는 케이스가 실존하는가 (8/8 · 99 #02) ────────
+
+
+_CASE_REF: Final = re.compile(r"\*\*(\d+(?:[·~]\d+)*)\*\*")
+
+
+def _referenced_case_ids() -> set[int]:
+    """`corpus.py` 머리말 커버리지 표가 **볼드로 가리키는** 케이스 id 전부.
+
+    `**44·45**`(열거)와 `**50~53**`(범위) 둘 다 쓴다.
+    """
+    header = ast.get_docstring(ast.parse(_CORPUS_SRC)) or ""
+    table = [line for line in header.splitlines() if line.startswith("|")]
+    ids: set[int] = set()
+    for line in table:
+        for token in _CASE_REF.findall(line):
+            if "~" in token:
+                lo, hi = (int(x) for x in token.split("~"))
+                ids.update(range(lo, hi + 1))
+            else:
+                ids.update(int(x) for x in token.split("·"))
+    return ids
+
+
+def test_the_header_scan_finds_case_references() -> None:
+    """🔴 검사 경로가 끊기면 통과가 아니라 실패다 — 0건이면 표 형식이 바뀐 것이다."""
+    refs = _referenced_case_ids()
+    assert len(refs) >= 10, f"머리말 표에서 케이스 참조를 못 찾았다: {sorted(refs)}"
+
+
+def test_every_referenced_case_exists() -> None:
+    """🔴 **표가 가리키는 케이스는 실존해야 한다.**
+
+    8/8 실측: 표가 `| **성+이름 2자** | 김철이 | **43** |`로 43을 가리키는데 **id 43이
+    없었다** — 그리고 **같은 표가 두 줄 아래에서 같은 형태를 「미커버(99 등재)」**라고
+    적고 있었다. 실제로 그 형태는 99 ⓓ에서 **BE 명부 1차의 책임으로 층 배정**돼(8/6)
+    AI 코퍼스에 케이스를 두지 않는 것이 맞다 ⇒ **매달린 쪽이 43 행**이었고 지웠다.
+
+    ⚠ **표가 「덮는다」고 적고 케이스가 없으면 커버리지 진술이 거짓**이 된다 — 다음 사람은
+    표를 읽고 그 형태가 검증된다고 믿는다. **가드 없는 재진술은 또 갈린다**(99 #02).
+    """
+    existing = {case.id for case in CORPUS}
+    dangling = sorted(_referenced_case_ids() - existing)
+    assert not dangling, (
+        f"머리말 표가 없는 케이스를 가리킨다: {dangling} — 커버리지 진술이 거짓이다. "
+        "케이스를 넣거나 표 행을 고쳐라(층 배정이면 「미커버」로 적는다)"
+    )
