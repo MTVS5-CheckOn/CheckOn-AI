@@ -565,6 +565,11 @@ def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -
                 result = got_data.get("result") or {}
             elapsed = int((time.monotonic() - started) * 1000)
         text = str(result.get("text") or "")
+        # 🔴 팩 결과의 강조점을 같이 담는다 — `_pii_scan`이 **초안 본문만** 봐서 #25가
+        #   고친 표면(plan 산출)이 관측 대상이 아니었다. `_mask_plan_output`이 남기는
+        #   `logger.info`를 **읽는 자리**가 여기다(로그 59 — 카운터만 있고 리더가 0명이면
+        #   관측이 아니다 · `job_ledger_size`와 같은 형태).
+        emphasis = _captured_emphasis()
         rows.append(
             {
                 "case": name,
@@ -574,6 +579,9 @@ def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -
                 "draft_status": result.get("draft_status"),
                 "status_reason": result.get("status_reason"),
                 "citations": len(result.get("citations") or []),
+                #: plan 산출 — 마스킹 관측 대상(99 #25). 본문(`text`)과 **다른 축**이라
+                #: 갈라 담는다(게이트를 타는 것과 안 타는 것).
+                "emphasis": emphasis,
                 "labels_applied": result.get("labels_applied") or [],
                 "label_suggestions": result.get("label_suggestions") or [],
                 "elapsed_ms": elapsed,
@@ -870,6 +878,27 @@ def _redaction_hits(text: str, masked: str) -> list[dict[str, str]]:
     return hits
 
 
+def _captured_emphasis() -> list[str]:
+    """직전 케이스의 팩 결과에 실린 강조점 전부 — 마스킹 관측 대상(99 #25).
+
+    ⚠ **케이스마다 `reset_counsel_stores()`가 돌아** 저장소에는 그 케이스 것만 남는다
+    (`_run_s2`의 루프 머리). 그래서 케이스 경계에서 읽으면 섞이지 않는다.
+
+    ⚠ 저장소 내부(`_rows`)를 읽는다 — `PackResultStore.get`은 `result_ref`를 요구하고
+    러너는 그 ref를 들고 있지 않다. **관측 전용**이고 프로덕션 경로가 아니다
+    (선례: `test_counsel_router.py`가 같은 방식으로 팩 레코드를 읽는다).
+    """
+    from ai.api.routers import counsel as counsel_router  # noqa: PLC0415
+
+    rows = getattr(counsel_router._pack_store, "_rows", {})
+    return [
+        point
+        for record in rows.values()
+        for points in record.emphasis_points.values()
+        for point in points
+    ]
+
+
 def _pii_scan(data: dict[str, Any]) -> dict[str, Any]:
     """**LLM이 만든 텍스트만** 마스킹 검사한다 — 실명이 들어올 수 있는 표면은 여기뿐이다.
 
@@ -884,9 +913,23 @@ def _pii_scan(data: dict[str, Any]) -> dict[str, Any]:
     labelled = [(f"s1/rows/{i}", r["text"]) for i, r in enumerate(data["s1"]["rows"])]
     labelled += [(f"s2/rows/{i}", r["text"]) for i, r in enumerate(data["s2"]["rows"])]
     labelled += [(f"s3/rows/{i}", r["text"]) for i, r in enumerate(data["s3"]["rows"])]
+    #: 🔴 **plan 산출(강조점)도 LLM이 만든 텍스트다**(8/8 · 99 #25). 종전에는 초안 본문
+    #: 셋만 봐서 **#25가 고친 바로 그 표면이 관측 대상이 아니었다** — *"실명이 든 적
+    #: 있는가"* 에 답할 수 없던 이유가 그것이다(로그 98). ⚠ 이 값은 팩 스냅숏에 영속되고
+    #: **게이트를 안 탄다**(초안 본문과 달리) — 오히려 더 봐야 하는 축이다.
+    #: ⚠ `.get()`으로 읽는다 — 이 함수를 부르는 자리가 s1~s3만 담는 경우가 있다.
+    emphasis = [
+        (f"s2/rows/{i}/emphasis/{j}", point)
+        for i, r in enumerate(data["s2"]["rows"])
+        for j, point in enumerate(r.get("emphasis") or ())
+    ]
+    labelled += emphasis
     scanned = [(where, text, redact(text)) for where, text in labelled if text]
     return {
         "llm_texts": len(scanned),
+        #: 🔴 **0이면 「없었다」가 아니라 「안 봤다」다.** 강조점이 0건인 회차와 강조점을
+        #: 수집하지 못한 회차는 다른 사실인데 `llm_texts`에 합치면 구분이 사라진다.
+        "emphasis_scanned": len(emphasis),
         "uncertain": sum(1 for _w, _t, r in scanned if r.uncertain),
         "masked": sum(1 for _w, _t, r in scanned if r.findings),
         "token_residue": sum(1 for _w, t, _r in scanned if _mask_residue(t)),

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -458,3 +459,63 @@ def test_uncertain_fragments_are_listed_not_just_counted() -> None:
     }
     assert uncertain_fragments_label(pii) == "`하면서`→`⟪확인필요⟫`"
     assert uncertain_fragments_label({"uncertain": 0, "uncertain_detail": []}) == "—"
+
+
+# ── plan 산출 마스킹의 「읽는 자리」 (99 #25 · 로그 59) ────────────
+
+
+def test_pii_scan_also_looks_at_plan_output() -> None:
+    """🔴 **`_pii_scan`이 강조점도 본다.**
+
+    종전에는 **초안 본문 셋만** 봤고, 그래서 #25가 고친 표면(plan 산출)이 **관측 대상이
+    아니었다** — *"실명이 든 적 있는가"* 에 답할 수 없던 이유가 그것이다(로그 98).
+    ⚠ 이 값은 팩 스냅숏에 영속되면서 **게이트를 안 탄다**(초안 본문과 달리).
+    """
+    data = {
+        "s1": {"rows": []},
+        "s2": {"rows": [{"text": "", "emphasis": ["김민준 학생의 어휘 정확도"]}]},
+        "s3": {"rows": []},
+    }
+    scan = _pii_scan(data)
+    assert scan["emphasis_scanned"] == 1, scan
+    assert scan["llm_texts"] == 1, "본문이 비었는데 강조점이 안 세어졌다 — 검사가 끊겼다"
+    assert scan["masked"] == 1, (
+        f"강조점의 실명이 스캔에 안 걸렸다: {scan} — 관측 축이 여전히 본문뿐이다"
+    )
+
+
+def test_zero_emphasis_is_told_apart_from_unobserved_emphasis() -> None:
+    """⚠ **0건과 미관측은 다른 사실이다.**
+
+    `llm_texts`에 합치면 *"강조점이 0건인 회차"* 와 *"강조점을 수집하지 못한 회차"* 가
+    같은 숫자가 된다 — #25 판정에서 *"0건이 아니라 관측이 0이었다"* 를 가른 그 구분이다.
+    """
+    data = {
+        "s1": {"rows": [{"text": "이번 주 학습 상황을 정리해 드립니다."}]},
+        "s2": {"rows": [{"text": "본문만 있는 행"}]},
+        "s3": {"rows": []},
+    }
+    scan = _pii_scan(data)
+    assert scan["emphasis_scanned"] == 0
+    assert scan["llm_texts"] == 2, "본문 둘은 세어져야 한다"
+
+
+def test_the_plan_masking_log_has_a_reader() -> None:
+    """🔴 **관측 장치를 만들 때 읽는 자리를 같이 만든다** (로그 59 · ㊐ ⓑ에서 겪었다).
+
+    `_mask_plan_output`이 `logger.info`를 남기는데 **읽는 사람이 0명이면 관측이 아니다.**
+    `evicted_runs`가 카운터·경고를 다 갖고도 리더 0으로 두 달을 살았고, 그게 ㉸가 오래
+    안 보인 실질 이유였다. ⚠ **같은 규율을 #23에서 준영님께 요구했으므로** 우리가 방금
+    만든 로그에서 어기면 안 된다.
+
+    읽는 자리 = 스모크 리포트의 `emphasis_scanned`(그 값이 마스킹 대상 표면의 크기다) +
+    `_run_s2`가 팩 결과에서 강조점을 담는 배선.
+    """
+    import ai.evaluation.counsel_llm_smoke as runner  # noqa: PLC0415
+
+    source = Path(runner.__file__).read_text(encoding="utf-8")
+    assert "_captured_emphasis" in source, "강조점을 담는 배선이 없다"
+    assert '"emphasis": emphasis' in source, (
+        "s2 행에 강조점이 안 실린다 — `_pii_scan`이 볼 것이 없다"
+    )
+    assert '"emphasis_scanned"' in source, "리포트에 관측 크기가 안 실린다"
