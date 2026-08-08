@@ -654,15 +654,22 @@ def test_the_orphan_window_leaves_exactly_one_pack_row() -> None:
     assert stored.id == next(iter(rows)), "참조와 유일한 행이 다르다"
 
 
-def test_the_retry_actually_takes_the_idempotent_branch() -> None:
-    """🔴 **멱등 분기가 「도달 미실증 방어」에서 실제 경로로 바뀐다.**
+def test_the_retry_reuses_the_same_key_with_a_deterministic_timestamp() -> None:
+    """🔴 **재시도가 같은 키로 가고 시각이 결정론이다.**
 
-    PR-κ가 넣은 *"같은 내용이면 통과 · 다르면 충돌"* 분기는 **같은 id가 두 번 오는 경로가
-    없어서** 한 번도 안 탔다. 결정론 id를 넣으면 **재시도가 그 분기를 탄다** —
-    「선언은 있는데 소비가 0」을 막는 자리다(99 #24 · 로그 59 계열).
+    이 파일이 고정하는 것은 **둘**이다: ⓐ `put`이 두 번 불렸고(`put_calls == 2`)
+    ⓑ 저장된 시각이 **첫 시각**이다. 시각이 재시도 시계면 재시도마다 **내용이 달라진다.**
 
-    ⚠ **같은 잡의 재시도는 내용이 같아야 한다** — 다르면 `PackResultConflict`가 나고
-    **잡이 죽는다.** 그래서 시각도 결정론이어야 한다(아래 단정이 그것을 고정한다).
+    ⚠ **여기서 「멱등 분기」를 검증하지 않는다 — 이 하네스는 인메모리다.**
+    `InMemoryPackResultStore.put`은 `self._rows[record.id] = record`로 **그냥 덮어쓴다**
+    (실측). *"같은 내용이면 통과 · 다르면 `PackResultConflict`"* 분기는
+    **`PgPackResultStore`에만 있다.** ⇒ 인메모리에서는 시각이 달라도 **충돌하지 않고 덮인다.**
+    🔴 **그래서 「시각이 결정론이 아니면 잡이 죽는다」의 인과는 여기서 재현되지 않는다** —
+    여기가 고정하는 것은 **시각의 결정론성 자체**다.
+
+    🔴 **분기 자체는 `tests/ai/integration/test_pack_result_pg_roundtrip.py`가 본다**
+    (`test_the_same_id_is_not_silently_overwritten` · **PG 없으면 skip**이라 로컬에서는
+    아직 미검증이다). ⚠ **이 구분을 안 적으면 검사의 이름이 보는 것보다 넓어진다**(로그 85).
     """
     harness, crasher, packs = _crash_harness()
     done = _run(_crash_then_recover(harness, crasher))
@@ -677,9 +684,9 @@ def test_the_retry_actually_takes_the_idempotent_branch() -> None:
     )
     stored = _run(harness.runner.result_of(str(done.result_ref), tenant_id="t1"))
     assert stored is not None
-    # 🔴 **내용이 결정론이라 분기가 충돌 없이 흡수한다.** 두 번째 실행의 시계는
-    #    `_NOW + 120s`인데 저장된 값은 **첫 시각**이어야 한다 — `_now()`를 쓰면 재시도마다
-    #    내용이 달라져 `PackResultConflict`가 나고 **잡이 죽는다.**
+    # 🔴 **시각이 결정론이다** — 두 번째 실행의 시계는 `_NOW + 120s`인데 저장된 값은
+    #    **첫 시각**이어야 한다. ⚠ **인메모리에서는 달라도 덮이기만 한다**(위 docstring) —
+    #    `PackResultConflict`로 잡이 죽는 것은 **PG에서만**이고 그건 여기서 안 본다.
     assert stored.created_at == _NOW, (
         f"팩 결과 시각이 첫 시각이 아니다({stored.created_at}) — 재시도가 다른 내용을 "
         "만들면 멱등 분기가 충돌로 떨어지고 잡이 죽는다"

@@ -439,8 +439,11 @@ class CounselPackRunner:
                 summary=final["summary"] or "",
                 results=tuple(final["results"]),
                 # 🔴 **시각도 결정론이어야 한다** — `self._now()`면 재시도가 **다른 내용**을
-                #    만들어 멱등 분기가 `PackResultConflict`로 떨어지고 **잡이 죽는다**
-                #    (결정론 id만 넣으면 고아 대신 실패가 된다 — red가 그것을 고정한다).
+                #    만든다. ⚠ **PG에서는** 그것이 `PackResultConflict`로 떨어져 **잡이 죽고**
+                #    (결정론 id만 넣으면 고아 대신 실패가 된다), 인메모리에서는 **조용히
+                #    덮인다**(`InMemoryPackResultStore.put`은 dict 대입이다) — 어느 쪽도 옳지
+                #    않다. ⚠ 그 인과는 `test_pack_result_pg_roundtrip.py`(integration)가 보고,
+                #    단위 테스트가 고정하는 것은 **시각의 결정론성 자체**다.
                 #    `started_at`은 재개에서 보존되고(`job_store.py`의
                 #    `previous.started_at or started_at`) `queued_at`은 불변이라 재시도가
                 #    같은 값을 낸다. ⚠ 뜻은 「이 결과를 낸 실행이 시작된 시각」이고 투영
