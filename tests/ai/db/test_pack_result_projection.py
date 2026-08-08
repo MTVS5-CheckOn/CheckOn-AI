@@ -23,14 +23,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Final
 
+from ai.composition.counsel.stores import CounselPackResultRecord
+from ai.contracts.composition import DraftStatus, PlanOutcome, StudentResult
+from ai.db.models import CounselPackResult as CounselPackResultRow
 from ai.db.repositories.pack_store import (
     NON_PROJECTED_COLUMNS,
     pack_result_projection,
 )
-
-from ai.composition.counsel.stores import CounselPackResultRecord
-from ai.contracts.composition import DraftStatus, PlanOutcome, StudentResult
-from ai.db.models import CounselPackResult as CounselPackResultRow
 
 #: 스냅숏에만 사는 필드 — 투영 키에 나타나면 안 된다(설계 §1).
 _SNAPSHOT_ONLY: Final = ("summary", "results", "plan_dropped", "emphasis_points")

@@ -22,11 +22,6 @@ from datetime import UTC, datetime
 from typing import Final
 
 import pytest
-from ai.db.repositories.pack_store import (
-    PackResultConflict,
-    PgPackResultStore,
-    pack_result_projection,
-)
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -38,6 +33,11 @@ from ai.composition.counsel.stores import (
 )
 from ai.contracts.composition import DraftStatus, PlanOutcome, StudentResult
 from ai.db.models import CounselPackResult as CounselPackResultRow
+from ai.db.repositories.pack_store import (
+    PackResultConflict,
+    PgPackResultStore,
+    pack_result_projection,
+)
 
 pytestmark = pytest.mark.integration
 
