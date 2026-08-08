@@ -111,7 +111,7 @@ ai/
 │       ├── loader.py · registry.yaml   [염준영]    ← A 프롬프트 등록 행 변경 시 A 리뷰
 │       └── templates/
 │           ├── composition/            [박진희]    reply · report(+chart_analysis) · counsel_pack · refine · brief(ⓐ) · classify(ⓑ) · label_suggest(ⓓ)
-│           ├── problem_generation/     [염준영]    passage · items · cross_solve
+│           ├── problem_generation/     [염준영]    items · cross_solve · verify
 │           └── import_mapping/         [박진희]    infer_mapping · probe(②) · tag_suggest(ⓒ)
 │
 ├── registry/                           [박진희]    엔진 레지스트리 (규칙→GRU 교체 지점)
@@ -176,9 +176,14 @@ ai/
 │   ├── label_suggest.py                [박진희]    ★v2 — 보조 ⓓ 라벨 제안 + 인용 실존 게이트
 │   └── workflow_counsel_pack.py        [박진희]    ★v2 — 에이전트 ① LangGraph (B-1 합의 후 착수)
 │
-├── problem_generation/                 [염준영]    문항 생성 — LangGraph
-│   ├── passage.py · generator.py · verification.py
-│   ├── cross_solver.py · workflow.py
+├── problem_generation/                 [염준영]    문항 생성 — LangGraph · 3층 구조
+│   ├── domain/                         [염준영]    models · rules · policy · difficulty
+│   │                                               identity · lexicon · cross_solve
+│   ├── application/                    [염준영]    workflow(그래프) · generator
+│   │                                               cross_solver · ports(저장 경계 Protocol)
+│   ├── infrastructure/                 [염준영]    memory_store · stdict · grammar_norm
+│   │                                               graph_context · config
+│   ├── assembly.py · bootstrap.py · enqueue.py · provider.py   [염준영]
 │   └── (P2 예약) print_layout.py       [염준영]    F17 시험지 조판 — 문항 메타 보존
 │
 ├── import_mapping/                     [박진희]    엑셀 Import + 에이전트② + 보조ⓒ
