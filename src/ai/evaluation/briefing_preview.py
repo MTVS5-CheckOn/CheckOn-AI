@@ -93,6 +93,10 @@ def _context() -> ExecutionContext:
         tenant_id="tn_preview",
         capability=Capability.COMPOSITION,
         input_snapshot_hash="preview",
+        # ⚠ **프로덕션 버전 세트를 안 쓴다**(99 #20 판정 ⓑ) — 이 값은 **미리보기 러너의
+        #   표식**이지 실행된 코드의 버전이 아니다. `counsel_llm_smoke.py`와 같은 판단이고
+        #   거기 근거를 적어 뒀다. **다른 것이 결함이 아니라 「왜 다른지」가 없는 것이
+        #   결함이었다**(로그 89).
         versions=VersionSet(
             pipeline_version="0.1",
             engine_version="0.1",

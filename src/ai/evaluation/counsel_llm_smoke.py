@@ -290,6 +290,15 @@ def _context(capability: Capability, tag: str) -> ExecutionContext:
         tenant_id="teacher_alias_smoke",
         capability=capability,
         input_snapshot_hash=f"sha256:smoke-{tag}",
+        # 🔴 **프로덕션 버전 세트를 안 쓴다 — 그게 의도다**(99 #20 판정 ⓑ · 8/8).
+        #    이 값은 **평가 러너 자신의 회차 표식**이지 실행된 코드의 버전이 아니다.
+        #    `composition/counsel/versions.counsel_versions()`를 쓰면 리포트가
+        #    *"이 회차는 counsel 0.1.0으로 돌았다"* 를 말하게 되는데, 러너는 라우터를
+        #    거치기도 하고 안 거치기도 해서(S1은 `make_brief` 직접 호출) **한 값으로
+        #    대표할 수 없다.**
+        #    ⚠ **다른 것이 결함이 아니라 「왜 다른지」가 없는 것이 결함이었다**(로그 89).
+        #    ⚠ 형식도 다르다(`"v2.1"` vs `"0.1.0"`) — **회차 번호**라서다. 프로덕션 축과
+        #      섞이면 원장에서 평가 실행을 못 가른다.
         versions=VersionSet(
             pipeline_version="v2.1",
             engine_version="rules-1.0",

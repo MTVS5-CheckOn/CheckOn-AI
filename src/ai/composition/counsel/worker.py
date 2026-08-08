@@ -31,7 +31,6 @@ from ai.composition.counsel.graph import (
     build_counsel_graph,
     graph_recursion_limit,
 )
-from ai.composition.counsel.prompt import PROMPT_VERSION
 from ai.composition.counsel.provider import (
     COUNSEL_GEN_PARAMS,
     CounselPlanner,
@@ -48,6 +47,7 @@ from ai.composition.counsel.stores import (
     DraftResultStore,
     PackResultStore,
 )
+from ai.composition.counsel.versions import counsel_versions
 from ai.contracts.agents import WorkerJob, WorkerKind
 from ai.contracts.execution import ExecutionContext
 from ai.db.repositories.run_store import (
@@ -462,20 +462,17 @@ def _execution_context(job: WorkerJob) -> ExecutionContext:
     ⚠ pipeline·engine·schema·contract 버전은 아직 이 함수의 리터럴이다 — 버전 소유
     (라우터 상수 vs 워커)를 정하는 것은 99 ㉗ⓒ의 남은 절반이고 여기서 섞지 않는다.
     """
-    from ai.contracts.execution import Capability, VersionSet
+    from ai.contracts.execution import Capability
 
     return ExecutionContext(
         execution_id=job.execution_id,
         tenant_id=job.tenant_id,
         capability=Capability.COMPOSITION,
         input_snapshot_hash=job.payload_hash,
-        versions=VersionSet(
-            pipeline_version="0.1",
-            engine_version="counsel-pack-0.1",
-            prompt_version=PROMPT_VERSION,
-            schema_version="0.1",
-            contract_version="0.1",
-        ),
+        # 🔴 **생성 자리는 `versions.counsel_versions()` 하나다**(99 #20).
+        #    종전에는 여기 리터럴이 있어 라우터와 갈렸다 — `pipeline`이 `"0.1"`이었고
+        #    라우터·refine 원장은 `"0.1.0"`이라 **같은 잡의 원장 두 행이 서로 달랐다.**
+        versions=counsel_versions(),
     )
 
 
