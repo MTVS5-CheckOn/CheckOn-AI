@@ -201,52 +201,126 @@ def test_every_referenced_case_exists() -> None:
 
 # ── 코퍼스 크기를 문서가 수로 재진술하지 않는다 (8/8 · 99 #02) ──────
 
-#: 현재형 진술이 사는 곳 — **기록 축(99)은 뺀다**(아래 docstring).
-_CURRENT_STATEMENT_DIRS: Final = ("policies", "part_a", "handoff")
+#: 🔴 **기록 축은 뺀다.** `99_open_items.md`(등재문·결정 로그)와 `docs/handoff/`(파일명에
+#: 날짜가 박힌 리포트)는 **그때의 크기**를 적는 자리다 — 걸면 *"기록을 고쳐라"* 는 red가
+#: 계속 나고 그건 기록을 훼손하라는 요구다. **가드의 축은 「현재형 진술」이다.**
+_RECORD_AXIS: Final = ("99_open_items.md", "handoff")
 
-#: 🔴 **이 코퍼스를 이름으로 부르는 자리만 본다.** 첫 판에 `코퍼스\s*\d+`로 넓게 걸었더니
-#: **다른 코퍼스 여덟을 함께 잡았다**(분류 문의 80건 · A군 활용형 26건 · 오탐 코퍼스 30건).
-#: 셋 다 **다른 코퍼스의 참값**이라 red가 거짓이 된다 — **검사의 이름이 검사보다 넓었다**
-#: (로그 85 · 내가 이 회차에 계속 잡던 형태를 가드를 세우다 스스로 냈다).
-#: ⇒ `failure 코퍼스`라는 **고유 명칭**에 앵커한다(전수 확인: 이 이름은 redaction 코퍼스만 쓴다).
-_CORPUS_SIZE_CLAIM: Final = re.compile(r"failure 코퍼스\s*(\d+)")
+#: 🔴 **앵커는 「크기 진술」이다** — 수 뒤에 `건`이 와야 한다. `코퍼스 50~54와 같은 형태`는
+#: **케이스 id 범위**이지 크기가 아니라 여기 걸리면 안 된다(실측: `test_redaction_idempotence`).
+_CORPUS_SIZE_CLAIM: Final = re.compile(r"코퍼스\s*(\d+)\s*건")
+
+#: 🔴 **다른 코퍼스임을 말하는 표식 — fail-closed의 축이다.**
+#: 이 코퍼스의 **이름 변형을 열거하지 않는다**(`failure 코퍼스`·`골든 코퍼스`·
+#: `golden/redaction 코퍼스`·`redaction/ (코퍼스` — 실측 넷). 열거하면 **목록이 화이트리스트가
+#: 되어 다섯째 변형에서 또 샌다**(PR-κ의 앵커가 정확히 그래서 미탐 다섯을 냈다).
+#: ⇒ **반대로 「남의 코퍼스」를 등재한다** — 모르는 자리는 **이 코퍼스로 보고 red**를 낸다.
+#: ⚠ 그래서 **다른 코퍼스가 새로 생기면 red가 나고 이유와 함께 여기 등재**하게 된다.
+#: **미탐을 오탐 쪽으로 옮긴 거래**이고, 이 저장소가 ⓛ에 적어 둔 *"미탐은 오탐보다 나쁘다"*
+#: 에 맞는 방향이다(선례: `NON_PROJECTED_COLUMNS`도 *"이유와 함께 등재"* 규약이다).
+_OTHER_CORPUS_MARKERS: Final = {
+    "실서버": "A군 활용형 오탐 대조군 26건 — `buffer_lexicon`·`05_tone_mapping`",
+    "대조군": "같은 것. 표식이 **직전 줄**에 사는 자리가 있다(`test_buffer_lexicon`)",
+    "문의": "분류(classify) 문의 코퍼스 80건 — `08_evaluation_plan`",
+    "합성": "같은 것(전량 합성)",
+    "당시": "기록 표식 — *「당시 코퍼스 N건」*은 그때의 크기다(`test_redaction_idempotence`)",
+}
+
+#: 🔴 **승인 대기 예외 — 조용히 범위 밖으로 밀지 않는다.**
+#: 값은 **사유**이고 `test_the_pending_exception_still_violates`가 **만료 조건**이다:
+#: 그 자리가 고쳐지면 **예외 자신이 red**가 되어 목록에서 지우게 만든다.
+#: ⚠ 범위에서 빼면 승인이 와도 아무도 안 고친다.
+_PENDING_APPROVAL: Final = {
+    "src/ai/contracts/evaluation.py": (
+        "양자 승인 파일(13곳) — 8/8 승인 대기. `db/models.py:3`(양자 12곳)·"
+        "`CounselPackResult` docstring과 함께 세 줄 승인 요청 중(99 #02)"
+    ),
+}
 
 
-def _documents_restating_the_size() -> list[tuple[str, str]]:
-    docs_root = Path(__file__).resolve().parents[3] / "docs"
-    hits: list[tuple[str, str]] = []
-    for folder in _CURRENT_STATEMENT_DIRS:
-        for path in (docs_root / folder).rglob("*.md"):
-            for claimed in _CORPUS_SIZE_CLAIM.findall(path.read_text(encoding="utf-8")):
-                hits.append((str(path.relative_to(docs_root)), claimed))
+def _scan_roots() -> list[Path]:
+    root = Path(__file__).resolve().parents[3]
+    return [root / "src", root / "docs", root / "tests"]
+
+
+def _size_claiming_lines() -> list[tuple[str, int, str]]:
+    """이 코퍼스의 크기를 수로 말하는 자리 전수 — (경로, 줄번호, 수).
+
+    표식은 **그 줄과 직전 줄**에서 찾는다 — 실측에 표식이 앞 줄에 사는 자리가 있다.
+    """
+    root = Path(__file__).resolve().parents[3]
+    hits: list[tuple[str, int, str]] = []
+    for scan_root in _scan_roots():
+        for path in scan_root.rglob("*"):
+            if path.suffix not in {".py", ".md", ".yaml"} or not path.is_file():
+                continue
+            relative = str(path.relative_to(root))
+            if any(part in relative for part in _RECORD_AXIS):
+                continue
+            lines = path.read_text(encoding="utf-8").splitlines()
+            for number, line in enumerate(lines, start=1):
+                match = _CORPUS_SIZE_CLAIM.search(line)
+                if match is None:
+                    continue
+                window = line + "\n" + (lines[number - 2] if number >= 2 else "")
+                if any(marker in window for marker in _OTHER_CORPUS_MARKERS):
+                    continue
+                hits.append((relative, number, match.group(1)))
     return hits
 
 
-def test_the_document_scan_reaches_the_docs_tree() -> None:
-    """🔴 검사 경로가 끊기면 통과가 아니라 실패다 — 문서를 못 읽으면 0건이 거짓이다."""
-    docs_root = Path(__file__).resolve().parents[3] / "docs"
-    found = [
-        path
-        for folder in _CURRENT_STATEMENT_DIRS
-        for path in (docs_root / folder).rglob("*.md")
-    ]
-    assert len(found) > 10, f"문서 트리를 못 찾았다: {docs_root} · {len(found)}개"
+def test_the_scan_reaches_every_root() -> None:
+    """🔴 검사 경로가 끊기면 통과가 아니라 실패다 — 세 뿌리를 다 읽어야 한다."""
+    for scan_root in _scan_roots():
+        found = [
+            path for path in scan_root.rglob("*") if path.suffix in {".py", ".md", ".yaml"}
+        ]
+        assert len(found) > 10, f"{scan_root}를 못 읽었다 — {len(found)}개"
 
 
-def test_no_document_restates_the_corpus_size() -> None:
+def test_the_other_corpus_markers_carry_a_reason() -> None:
+    """⚠ 표식은 **이유와 함께** 등재한다 — 사유 없는 등재는 조용한 화이트리스트다."""
+    assert all(reason.strip() for reason in _OTHER_CORPUS_MARKERS.values())
+    assert all(reason.strip() for reason in _PENDING_APPROVAL.values())
+
+
+def test_no_current_statement_restates_the_corpus_size() -> None:
     """🔴 **정본을 수로 재진술하지 않는다 — 가드 없는 재진술은 또 갈린다**(99 #02).
 
-    8/8 실측: `masking_redaction.md`가 *"코퍼스 54가 이 판정을 고정한다"* 였는데 코퍼스는
-    **63건**이다(id 1~64 · **43 결번**). **정책 문서에 거짓 수가 현재형으로 서 있었다.**
-    ⇒ *"골든 코퍼스 전건이"* 로 바꿨다 — 크기를 말할 이유가 애초에 없다.
+    8/8 실측: `masking_redaction.md` §5 **제목**이 크기를 **30**으로 적고 있었고 실제 코퍼스는
+    **63건**이다. PR-κ가 그 넷을 걷었는데 **앵커(`failure 코퍼스`)와 범위(`docs/` 셋)가 둘 다
+    좁아 미탐이 다섯 남았다** — `contracts/evaluation.py`·`03_usecases.md`(같은 파일에서
+    하나만 고쳤다)·`02_ownership.md`·`golden/redaction/__init__.py`·`masking_redaction.md`.
 
-    ⚠ **`99_open_items.md`는 이 검사의 축이 아니다.** 등재문·결정 로그는 **날짜가 붙은
-    기록**이라 현재 크기와 다른 것이 정상이고, 걸면 *"기록을 고쳐라"* 는 red가 계속 난다.
-    **가드의 축은 「현재형 진술」이지 「기록」이 아니다** — 이 구분을 안 적으면 다음 사람이
-    범위를 넓혀 기록을 훼손한다(검사의 이름을 보는 것보다 넓히지 않는다 · 로그 85).
+    🔴 **그래서 이름을 열거하지 않는다.** 이 코퍼스의 이름 변형을 나열하면 목록이
+    화이트리스트가 되고 여섯째 변형에서 또 샌다 — **남의 코퍼스를 등재하고 모르는 자리는
+    이 코퍼스로 보는** 방향이다(fail-closed).
     """
-    restated = _documents_restating_the_size()
-    assert not restated, (
-        f"문서가 코퍼스 크기를 수로 재진술한다: {restated} (현재 {len(CORPUS)}건) — "
-        "수를 빼고 「전건」으로 적어라. 수를 적으면 코퍼스가 늘 때 문서만 낡는다"
+    violations = [
+        (path, number, size)
+        for path, number, size in _size_claiming_lines()
+        if not any(pending in path for pending in _PENDING_APPROVAL)
+    ]
+    assert not violations, (
+        f"이 코퍼스의 크기를 수로 재진술한다: {violations} (현재 {len(CORPUS)}건) — "
+        "수를 빼고 「전건」으로 적어라. 다른 코퍼스라면 `_OTHER_CORPUS_MARKERS`에 "
+        "**이유와 함께** 등재해라"
+    )
+
+
+def test_the_pending_exception_still_violates() -> None:
+    """🔴 **예외의 만료 조건이다** — 승인 대기 자리가 고쳐지면 **이 검사가 red**가 된다.
+
+    ⚠ 조용히 범위 밖으로 밀면 승인이 와도 아무도 안 고친다. 예외를 **살아 있는 채로**
+    두고, 그 예외가 필요 없어지는 순간 **목록에서 지우라고 red**가 난다.
+    """
+    violating_paths = {path for path, _number, _size in _size_claiming_lines()}
+    stale = sorted(
+        pending
+        for pending in _PENDING_APPROVAL
+        if not any(pending in path for path in violating_paths)
+    )
+    assert not stale, (
+        f"승인 대기 예외가 더는 위반이 아니다: {stale} — 고쳐졌으면 "
+        "`_PENDING_APPROVAL`에서 지워라(예외가 남으면 다음 위반을 조용히 덮는다)"
     )
