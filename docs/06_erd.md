@@ -137,7 +137,7 @@ erDiagram
     varchar tenant_id
     varchar student_ref "alias"
     date week_start
-    varchar segment "normal|readapt|vacation"
+    varchar segment "normal|readapt|vacation|new_term — 정본은 detection/segments.Segment, resolve_segment가 TermContext에서 판정"
     jsonb metrics "acc·time_ratio_norm·submit_rate·type_acc"
     varchar feature_version
     timestamptz created_at "UNIQUE(tenant·student·week·ver)"
@@ -405,7 +405,7 @@ erDiagram
     int tokens_out
     numeric cost_usd
     int latency_ms
-    varchar outcome "ok|parse_fail|field_missing|bad_ref|timeout"
+    varchar outcome "ok|parse_fail|field_missing|bad_ref|timeout|provider_error|redaction_blocked — 정본은 contracts/llm.CallOutcome, 재시도 정책은 error_codes §3"
     timestamptz created_at
   }
   LLM_PAYLOAD {
