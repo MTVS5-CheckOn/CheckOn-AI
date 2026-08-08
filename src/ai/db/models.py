@@ -1,4 +1,4 @@
-"""ERD 34테이블 ORM — 06_erd.md 정본을 그대로 옮긴다.
+"""ERD 37테이블 ORM — 06_erd.md 정본을 그대로 옮긴다.
 
 소유: 공통 계약 (A+B 확인 완료 — 양자 12곳, 02_ownership §4). ERD가 정본이므로
 ERD에 없는 테이블은 만들지 않는다. A-1 승인으로 B 전용 문항·진단 8테이블을
@@ -273,6 +273,48 @@ class GateResult(Base):
     reason: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class CounselPackResult(Base):
+    """상담 팩 결과 — 🔴 **`snapshot`이 정본이고 위 넷은 조회용 파생 투영이다.**
+
+    (99 ㉕ · A 본문 설계 2026-08-08 §3 · 조건 ⓒ) `AGENT_RUN.result_ref`(`pack://{id}`)가
+    가리키던 대상이 여태 없었다 — `AGENT_RUN`은 포인터만 들고 `DRAFT`는 학생별 1행이라
+    **팩 단위 요약이 앉을 자리가 없었다.** `AGENT_RUN`의 jsonb로 흡수하지 않은 이유는
+    ⓐ 공통 원장이 capability별로 갈리고 ⓑ 그러면 `pack://` ref의 대상이 자기 자신이 되며
+    ⓒ 대상 테이블 하나면 끝나서다.
+
+    🔴 **PK는 `AGENT_RUN.id`가 아니다** — `worker.py`가 결과 레코드에 새 UUID를 만든다
+    (`AGENT_RUN.id`는 `WorkerJob.job_id`). ⇒ `result_ref = 'pack://' || COUNSEL_PACK_RESULT.id`.
+    `AGENT_RUN`과 **FK로 잇지 않는다** — `result_ref`는 capability마다 대상이 다른 불투명
+    참조라(`06_erd.md`) 다형 FK가 된다.
+
+    ⚠ **투영 넷의 이유가 같지 않다** — `tenant_id`는 격리 술어, `created_at`은 보존기간·정리
+    배치 축, `plan_outcome`은 *"강조점 0건, 왜"* 집계 축이고, **`class_ref`만 조회가 아니라
+    파기 술어**다(반 단위 삭제에서 컬럼으로 낼 수 있는 유일한 축 — `student_ref`는 스냅숏
+    안이다). 유도는 저장소의 한 함수가 한다(조건 ⓐ).
+
+    ⚠ **`results`·`emphasis_points`는 투영하지 않는다** — 학생별 조회 축은 `DRAFT`가 이미
+    갖는다(학생당 1행). 투영하면 같은 사실이 두 테이블에 앉고 그 둘이 갈린다.
+    🔴 **쓰기 경로는 아직 없다(조건 ⓓ)** — 스냅숏의 `emphasis_points`가 출력측 마스킹을 안
+    거친 LLM 자유 텍스트라, 그 판단(A) 전에는 `PackResultStore`의 PG 구현을 붙이지 않는다.
+    이 PR은 **자리만 만든다.**
+    """
+
+    __tablename__ = "counsel_pack_result"
+    __table_args__ = (
+        # 보존기간·정리 배치가 테넌트별로 훑는 축. `class_ref` 인덱스는 파기 경로가 실제로
+        # 생길 때 — 지금 넣으면 쓰는 곳 없는 인덱스다.
+        Index("ix_counsel_pack_result_tenant_created", "tenant_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    class_ref: Mapped[str] = mapped_column(String)
+    plan_outcome: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(_TZ)
+    #: 🔴 정본 — CounselPackResultRecord 전문. 위 넷은 여기서 유도한 파생이다.
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
+
+
 # ───────────────── 진단·문제생성 계열 ([PART_B]) ─────────────────
 
 
@@ -343,24 +385,58 @@ class ProblemSet(Base):
 
 
 class ProblemItem(Base):
+    """슬롯 최종본 — 🔴 **`snapshot`이 정본이고 아래 컬럼은 조회용 파생 투영이다.**
+
+    (09 §2-20 결정 ②·③ · A 판정 2026-08-08 조건 ⓒ) 계약 값 객체
+    `StoredProblemItem`이 무손실로 왕복해야 하는데(`application/ports.py`
+    `ProblemItemStore.save/get`), 컬럼 전개로는 계약이 늘 때마다 **양자 파일이 열린다** —
+    `contracts/problem_generation.py`는 B 소유인데 이 파일은 양자라 B가 자기 계약을 늘릴
+    때마다 A를 기다린다. 선례는 `ItemCandidate`(`snapshot` + `gate_summary` 정본 +
+    `difficulty_est` 파생).
+
+    🔴 **투영을 직접 쓰지 마라 — 읽을 값은 `snapshot`에서 온다.** 투영은 목록·정렬·필터가
+    JSONB 연산 없이 돌기 위한 사본이고, 유도는 `db/repositories/problem_store.py`의
+    `problem_item_projection()` **한 함수**가 한다(조건 ⓐ). 갈리면
+    `tests/ai/db/test_problem_store_projection.py`가 red다(조건 ⓑ · 99 #04).
+
+    ⚠ **`current_revision_no`는 파생이 아니다** — 스냅숏에 대응 값이 없는 **저장소 소유
+    상태**(낙관적 잠금 축)라 최초 저장이 0을 넣고 `item_revision`이 올린다.
+    ⚠ **`drop_reason`도 파생이 아니다** — `StoredProblemItem`은 `dropped`를 저장하지 않으므로
+    (`domain/models.py` `validate_body`) 이 저장소 경로에서는 **항상 null**이다.
+    `result.failure_reason`을 여기 실으면 폐기 사유 컬럼 오버로딩이 된다(§2-20 #12).
+    """
+
     __tablename__ = "problem_item"
+    __table_args__ = (
+        # 🔴 `ProblemItemStore.get(set_id, slot_index)`가 Protocol 시그니처로 요구하는 조회 키.
+        # `tenant_id`가 빠진 것은 누락이 아니다 — `set_id`가 `problem_set.tenant_id`에
+        # 종속이라 둘로 전역 유일하다(A 판정 §1). `item_candidate`가 넷인 이유는 거긴
+        # `tenant_id`가 직접 컬럼이라 복합 인덱스가 그 컬럼을 태우는 편이 나아서다.
+        UniqueConstraint("set_id", "slot_index", name="uq_problem_item_slot"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     set_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("problem_set.id"))
+    slot_index: Mapped[int] = mapped_column(Integer)
+    #: 🔴 정본 — StoredProblemItem 전문. 아래 투영은 전부 여기서 유도한다.
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
     passage_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("passage.id"), nullable=True
     )
-    area_tag: Mapped[str] = mapped_column(String)
-    type_tag: Mapped[str] = mapped_column(String)
-    item_format: Mapped[str] = mapped_column(String)
+    # ── 아래부터 파생 투영 — 본문 없는 슬롯(`item=None`)에서는 전부 null이다(결정 ③ ⓒ).
+    area_tag: Mapped[str | None] = mapped_column(String, nullable=True)
+    type_tag: Mapped[str | None] = mapped_column(String, nullable=True)
+    item_format: Mapped[str | None] = mapped_column(String, nullable=True)
     skill_node_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    stem: Mapped[str] = mapped_column(Text)
-    choices: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    answer: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    rationale: Mapped[str] = mapped_column(Text)
-    difficulty_est: Mapped[Decimal] = mapped_column(Numeric)
+    stem: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: ⚠ jsonb 배열이다 — `GeneratedItem.choices`가 선지 5개 목록이라 dict로 감싸지 않는다.
+    choices: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    answer: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    difficulty_est: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
     difficulty_fit: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
-    difficulty_calib_ver: Mapped[str] = mapped_column(String)
+    #: 저장 시점에 대응 값이 없다(§2-20 #5) — 보정 버전이 붙기 전에는 null이다.
+    difficulty_calib_ver: Mapped[str | None] = mapped_column(String, nullable=True)
     review_badge: Mapped[bool] = mapped_column(Boolean)
     current_revision_no: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String)

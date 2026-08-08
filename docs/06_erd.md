@@ -262,6 +262,14 @@ erDiagram
     boolean passed
     varchar reason
   }
+  COUNSEL_PACK_RESULT {
+    uuid id PK "pack://<id> 의 id — AGENT_RUN.result_ref가 가리키는 키(AGENT_RUN.id와 다르다 · 다형 참조라 물리 FK 없음)"
+    varchar tenant_id "격리 술어 — 전 테이블 필수"
+    varchar class_ref "파기 술어 — 반 단위 삭제의 유일한 컬럼 축(조회 축 아님)"
+    varchar plan_outcome "ok|llm_failed|redaction_blocked|unparsed|all_dropped — 강조점 0건의 사유를 세는 집계 축"
+    timestamptz created_at "보존기간·정리 배치의 축 — INDEX(tenant_id, created_at)"
+    jsonb snapshot "🔴 정본 — CounselPackResultRecord 전문. 위 넷은 여기서 유도한 파생이다"
+  }
   WEAKNESS_MAP {
     uuid id PK
     uuid run_id FK
@@ -309,22 +317,24 @@ erDiagram
   PROBLEM_ITEM {
     uuid id PK
     uuid set_id FK
+    int slot_index "조회 키 — UNIQUE(set_id, slot_index) · ProblemItemStore.get이 요구한다(09 §2-20 결정 ①)"
+    jsonb snapshot "🔴 정본 — StoredProblemItem 전문. 아래 투영은 전부 여기서 유도한다(결정 ② B안)"
     uuid passage_id FK "T1은 null"
-    varchar area_tag
-    varchar type_tag "fact|infer|critic|concept — apply는 v1 미산출 예약이라 이 컬럼에 안 들어온다(99 ㊣ · 요청 문에서 400)"
-    varchar item_format "mcq — v1"
+    varchar area_tag "투영 · 본문 없는 슬롯은 null"
+    varchar type_tag "fact|infer|critic|concept — apply는 v1 미산출 예약이라 이 컬럼에 안 들어온다(99 ㊣ · 요청 문에서 400) · 투영 · 본문 없는 슬롯은 null"
+    varchar item_format "mcq — v1 · 투영 · 본문 없는 슬롯은 null"
     varchar skill_node_id "null 가능"
-    text stem
-    jsonb choices "mcq 선지 5"
-    jsonb answer
-    text rationale "근거 인용 필수"
-    numeric difficulty_est
+    text stem "투영 · 본문 없는 슬롯은 null"
+    jsonb choices "mcq 선지 5 · 투영 · 본문 없는 슬롯은 null"
+    jsonb answer "투영 · 본문 없는 슬롯은 null"
+    text rationale "근거 인용 필수 · 투영 · 본문 없는 슬롯은 null"
+    numeric difficulty_est "투영 · null 가능(ItemResult가 옵셔널)"
     numeric difficulty_fit "null 가능 · v1 항상 null"
-    varchar difficulty_calib_ver
-    boolean review_badge
-    int current_revision_no "낙관적 잠금 기준"
-    varchar status "verified|needs_review|dropped|verification_unavailable"
-    varchar drop_reason "null 가능"
+    varchar difficulty_calib_ver "null 가능 — 저장 시점에 대응 값이 없다(09 §2-20 #5)"
+    boolean review_badge "투영 — 사유(review_reason)는 스냅숏 안이다"
+    int current_revision_no "낙관적 잠금 기준 — 투영이 아니라 저장소 소유 상태"
+    varchar status "verified|needs_review|dropped|verification_unavailable — 투영"
+    varchar drop_reason "null 가능 — 폐기 사유 전용. 최종본 저장소 경로에서는 항상 null(09 §2-20 #12)"
   }
   VERIFICATION_RESULT {
     uuid id PK

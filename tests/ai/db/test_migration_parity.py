@@ -69,3 +69,41 @@ def test_each_downgrade_reverses_its_upgrade_table_order() -> None:
         assert dropped == list(reversed(created)), (
             f"{path.name}: downgrade가 upgrade의 테이블 생성 순서를 역전하지 않는다"
         )
+
+
+#: `alembic_version.version_num`의 폭 — alembic이 만드는 테이블이라 우리가 못 넓힌다.
+_VERSION_NUM_WIDTH = 32
+_REVISION = re.compile(r'^revision: str = "(.+)"', re.M)
+
+
+def test_revision_ids_fit_the_alembic_version_column() -> None:
+    """🔴 리비전 id가 32자를 넘으면 **DDL은 다 돌고 버전 기록에서만** 죽는다.
+
+    `alembic_version.version_num varchar(32)`라 초과분은
+    `StringDataRightTruncationError`가 되는데, 그때는 이미 스키마가 바뀐 뒤라 DB가
+    「테이블은 새것인데 버전은 옛것」인 상태로 남는다. **정적 파싱으로 미리 막는다** —
+    실 PG를 띄워야만 보이는 결함을 CI 앞단에서 세운다(2026-08-08 실측으로 발견).
+    """
+    too_long = {
+        path.name: revision
+        for path in _migration_paths()
+        for revision in _REVISION.findall(path.read_text(encoding="utf-8"))
+        if len(revision) > _VERSION_NUM_WIDTH
+    }
+    assert not too_long, (
+        f"리비전 id가 {_VERSION_NUM_WIDTH}자를 넘는다(alembic_version.version_num 폭): "
+        f"{ {name: len(rev) for name, rev in too_long.items()} }"
+    )
+
+
+def test_the_revision_scan_finds_every_migration() -> None:
+    """정규식이 조용히 0건을 내면 위 검사가 「위반 없음」이 아니라 「안 봤다」가 된다."""
+    found = [
+        revision
+        for path in _migration_paths()
+        for revision in _REVISION.findall(path.read_text(encoding="utf-8"))
+    ]
+    assert len(found) == len(_migration_paths()), (
+        f"리비전 id를 못 읽은 파일이 있다 — 찾은 것 {len(found)}개, "
+        f"파일 {len(_migration_paths())}개"
+    )

@@ -232,6 +232,10 @@ _ERD_PAIRS: Final = (
     _Pair("target_kind", _DOCS / "06_erd.md", TargetKind, "PROBLEM_SET"),
     _Pair("target_source", _DOCS / "06_erd.md", TargetSource, "PROBLEM_SET"),
     _Pair("revision_kind", _DOCS / "06_erd.md", RevisionKind, "ITEM_REVISION"),
+    # ── 신설 테이블의 유일한 값목록 컬럼 (8/8 · 99 ㉕ · 커버리지 19/44 → 20/45) ──────
+    # ⚠ 앵커가 **필수**다 — `plan_outcome`은 `langgraph_state.md` 표에서도 대조 중이라
+    #   앵커가 없으면 정규식이 엉뚱한 블록을 집는다(A 본문 설계 §3.1).
+    _Pair("plan_outcome", _DOCS / "06_erd.md", PlanOutcome, "COUNSEL_PACK_RESULT"),
 )
 
 #: 값 목록 뒤에 붙는 설명을 자르는 구분자. 🔴 이 저장소의 기존 표기 관례다 —
