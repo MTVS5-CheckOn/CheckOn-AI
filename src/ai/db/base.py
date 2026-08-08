@@ -20,6 +20,10 @@ NAMING_CONVENTION = {
 
 
 class Base(DeclarativeBase):
-    """전 ORM 모델의 베이스. ERD 26테이블(db/models.py)이 이를 상속한다."""
+    """전 ORM 모델의 베이스. ERD 37테이블(db/models.py)이 이를 상속한다.
+
+    ⚠ 수를 여기 적는 이상 갱신 대상이다 — 26이 34·36·37을 지나도록 안 따라왔다.
+    정본은 `tests/ai/db/test_erd_model_parity.py`의 상수이고 여기는 그 재진술이다.
+    """
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
