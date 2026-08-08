@@ -197,3 +197,56 @@ def test_every_referenced_case_exists() -> None:
         f"머리말 표가 없는 케이스를 가리킨다: {dangling} — 커버리지 진술이 거짓이다. "
         "케이스를 넣거나 표 행을 고쳐라(층 배정이면 「미커버」로 적는다)"
     )
+
+
+# ── 코퍼스 크기를 문서가 수로 재진술하지 않는다 (8/8 · 99 #02) ──────
+
+#: 현재형 진술이 사는 곳 — **기록 축(99)은 뺀다**(아래 docstring).
+_CURRENT_STATEMENT_DIRS: Final = ("policies", "part_a", "handoff")
+
+#: 🔴 **이 코퍼스를 이름으로 부르는 자리만 본다.** 첫 판에 `코퍼스\s*\d+`로 넓게 걸었더니
+#: **다른 코퍼스 여덟을 함께 잡았다**(분류 문의 80건 · A군 활용형 26건 · 오탐 코퍼스 30건).
+#: 셋 다 **다른 코퍼스의 참값**이라 red가 거짓이 된다 — **검사의 이름이 검사보다 넓었다**
+#: (로그 85 · 내가 이 회차에 계속 잡던 형태를 가드를 세우다 스스로 냈다).
+#: ⇒ `failure 코퍼스`라는 **고유 명칭**에 앵커한다(전수 확인: 이 이름은 redaction 코퍼스만 쓴다).
+_CORPUS_SIZE_CLAIM: Final = re.compile(r"failure 코퍼스\s*(\d+)")
+
+
+def _documents_restating_the_size() -> list[tuple[str, str]]:
+    docs_root = Path(__file__).resolve().parents[3] / "docs"
+    hits: list[tuple[str, str]] = []
+    for folder in _CURRENT_STATEMENT_DIRS:
+        for path in (docs_root / folder).rglob("*.md"):
+            for claimed in _CORPUS_SIZE_CLAIM.findall(path.read_text(encoding="utf-8")):
+                hits.append((str(path.relative_to(docs_root)), claimed))
+    return hits
+
+
+def test_the_document_scan_reaches_the_docs_tree() -> None:
+    """🔴 검사 경로가 끊기면 통과가 아니라 실패다 — 문서를 못 읽으면 0건이 거짓이다."""
+    docs_root = Path(__file__).resolve().parents[3] / "docs"
+    found = [
+        path
+        for folder in _CURRENT_STATEMENT_DIRS
+        for path in (docs_root / folder).rglob("*.md")
+    ]
+    assert len(found) > 10, f"문서 트리를 못 찾았다: {docs_root} · {len(found)}개"
+
+
+def test_no_document_restates_the_corpus_size() -> None:
+    """🔴 **정본을 수로 재진술하지 않는다 — 가드 없는 재진술은 또 갈린다**(99 #02).
+
+    8/8 실측: `masking_redaction.md`가 *"코퍼스 54가 이 판정을 고정한다"* 였는데 코퍼스는
+    **63건**이다(id 1~64 · **43 결번**). **정책 문서에 거짓 수가 현재형으로 서 있었다.**
+    ⇒ *"골든 코퍼스 전건이"* 로 바꿨다 — 크기를 말할 이유가 애초에 없다.
+
+    ⚠ **`99_open_items.md`는 이 검사의 축이 아니다.** 등재문·결정 로그는 **날짜가 붙은
+    기록**이라 현재 크기와 다른 것이 정상이고, 걸면 *"기록을 고쳐라"* 는 red가 계속 난다.
+    **가드의 축은 「현재형 진술」이지 「기록」이 아니다** — 이 구분을 안 적으면 다음 사람이
+    범위를 넓혀 기록을 훼손한다(검사의 이름을 보는 것보다 넓히지 않는다 · 로그 85).
+    """
+    restated = _documents_restating_the_size()
+    assert not restated, (
+        f"문서가 코퍼스 크기를 수로 재진술한다: {restated} (현재 {len(CORPUS)}건) — "
+        "수를 빼고 「전건」으로 적어라. 수를 적으면 코퍼스가 늘 때 문서만 낡는다"
+    )
