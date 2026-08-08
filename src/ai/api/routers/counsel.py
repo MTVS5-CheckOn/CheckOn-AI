@@ -925,7 +925,11 @@ async def _record_refine_run(
                 created_at=_clock(),
                 model_provider=last.provider if last is not None else None,
                 model_name=last.model if last is not None else None,
-                # 🔴 **사용 축이다**(#144 · 04 §2.2 8/10 확정) — 이 턴이 **실제로 쓴**
+                # 🔴 **사용 축이다**(#144 · 04 §2.2 8/7 확정) — 이 턴이 **실제로 쓴**
+                #    ⚠ **정본은 8/7이고 04 §2.2 자신의 문면은 아직 8/10이다**(99 #30 ·
+                #      BE 통보 대기). **대조하면 갈려 보이는데 틀린 쪽은 04다** — 통보 축이
+                #      붙어 이 회차에 못 고쳤다. ⚠ 04가 고쳐지면 이 줄도 지운다
+                #      (`test_the_cited_section_date_divergence_is_disclosed`가 그때 red다).
                 #    샘플링 파라미터다. 상수로 두면 LLM을 안 부른 턴(생성 전 차단·장애)에
                 #    *"그 값으로 돌렸다"* 는 **거짓**이 남는다.
                 #    ⚠ 종전엔 이 한 줄만 무조건이라 **같은 행 안에서 축이 갈렸다** —
