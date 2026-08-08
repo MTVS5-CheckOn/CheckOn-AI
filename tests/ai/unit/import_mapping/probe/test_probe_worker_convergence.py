@@ -62,7 +62,10 @@ def _run_once(patch: pytest.MonkeyPatch) -> WorkerJob | None:
             #: ⚠ **전파는 이 검사의 축이 아니다** — 축은 「잡이 종단됐는가」다.
             #:   전파 여부는 `test_probe_recursion_limit.py`가 따로 고정한다.
             pass
-        return await supervisor.get(tenant_id=_TENANT, job_id=UUID(int=5))
+        found: WorkerJob | None = await supervisor.get(
+            tenant_id=_TENANT, job_id=UUID(int=5)
+        )
+        return found
 
     job: WorkerJob | None = harness._run(scenario())  # noqa: SLF001
     return job
