@@ -663,3 +663,43 @@ def test_post_202_says_queued_when_the_runner_took_another_job() -> None:
         "앞선 잡이 있는데도 202가 종단으로 나온다 — 러너가 내 잡을 처리했다는 뜻이라 "
         "이 테스트의 전제(다음 잡 하나만 처리)가 깨졌다"
     )
+
+
+def test_response_versions_and_ledger_versions_are_the_same_row() -> None:
+    """🔴 응답 `meta.versions` == `AI_RUN`의 버전 열. **재현 키가 둘이면 안 된다**(불변식 8).
+
+    A가 counsel에서 이 축이 갈린 것을 찾았다(8/9 · `#20`) — 라우터가 `"0.1.0"`을, 워커가
+    `"0.1"`을 실어 **같은 실행인데 응답과 원장이 다른 값을 말한다.** 그때 아무 테스트도
+    안 걸렸다.
+
+    🔴 **정본을 어디 두느냐보다 이 단정이 먼저다.** capability마다 상수를 어디 두든,
+    응답과 원장이 **같은 자리를 참조**하면 갈릴 수 없다 — pg는 `assembly.problem_versions()`
+    하나를 두 문이 함께 쓴다. 이 테스트는 그 구조를 잠근다.
+
+    ⚠ 키 이름을 손으로 옮기지 않는다 — `envelope.versions_dict()`가 쓰는 것과 같은 변환
+    (`_version` 접미사 제거)을 `RunMetadata`에 적용해 만든다. 손으로 적으면 **두 번째 사본**이
+    되고, 계약이 열 개에서 열한 개가 되는 날 이 테스트만 조용히 낡는다(99 #07 부류).
+    """
+    run_store, _stores, _gen, _ver = _prepare()
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+
+    assert posted.status_code == 202
+    meta = posted.json()["meta"]
+    run = next(iter(run_store.runs.values()))
+    ledger = {
+        name.removesuffix("_version"): getattr(run, name)
+        for name in type(run).model_fields
+        if name.endswith("_version")
+    }
+
+    assert ledger, (
+        "AI_RUN에서 버전 열을 하나도 못 찾았다 — 필드 이름이 바뀌었다면 검사가 끊긴 것이다"
+    )
+    assert meta["versions"] == ledger, (
+        "응답과 원장이 같은 실행에 다른 버전을 말한다 — 과거 실행을 어느 값으로 재현할지가 "
+        "갈린다(불변식 8). 두 자리가 같은 상수를 참조하는지 확인하라"
+    )
+    # 🔴 그 원장 행을 가리키는지까지 본다 — 값이 같아도 다른 행을 가리키면 재현이 안 된다.
+    assert meta["execution_id"] == str(run.execution_id)
