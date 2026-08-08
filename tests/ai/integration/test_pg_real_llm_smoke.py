@@ -58,6 +58,7 @@ from ai.problem_generation.provider import (
     build_problem_providers,
     get_problem_provider_settings,
 )
+from ai.runtime.real_llm import real_llm_skip_reason
 from ai.runtime.tracing import external_tracing_active
 
 pytestmark = pytest.mark.integration
@@ -317,8 +318,10 @@ def test_t1_problem_generation_real_llm_roundtrip() -> None:
     """실 모델이 스키마 응답을 내고 게이트가 정상 상태를 결정한다."""
 
     settings = get_llm_settings()
-    if "localhost" in settings.openai_base_url:
-        pytest.skip("로컬 LLM 미설정(env OPENAI_BASE_URL) — 스모크 skip")
+    # 🔴 **opt-in 없이는 안 부른다**(99 #32) — 종전 조건은 `.env`가 덮으면 열렸다.
+    reason = real_llm_skip_reason(settings.openai_base_url)
+    if reason is not None:
+        pytest.skip(reason)
     if external_tracing_active():
         pytest.skip("B-14 P2 전 외부 트레이싱 비활성 전제 — 스모크 skip")
 

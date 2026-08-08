@@ -22,6 +22,7 @@ skip 조건이 `"localhost" in openai_base_url`이었고 `.env`의 `OPENAI_BASE_
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 from typing import Final
@@ -46,8 +47,27 @@ _CALL_SITES: Final = (
     "tests/ai/integration/test_briefing_smoke.py",
 )
 
-#: 종전 판정 — 이 문자열이 남아 있으면 **그 자리가 아직 fail-open**이다.
+#: 종전 판정 — 이 문자열이 **실행되는 줄에** 남아 있으면 그 자리가 아직 fail-open이다.
+#: 🔴 **주석·docstring은 대상이 아니다** — 첫 판이 *"종전 조건은 이러했다"* 를 적은 **내 주석을
+#: 잡았다.** 「검사가 판정과 설명을 못 가른다」이고, 그러면 **정정을 적을 수 없다**
+#: (적는 순간 red · 로그 103의 `오기`와 같은 ⓓ 논리). ⇒ `ast`로 **코드만** 본다.
 _OLD_GATE: Final = re.compile(r'"localhost"\s+in\s+\w*\.?openai_base_url')
+
+
+def _code_without_comments(path: Path) -> str:
+    """주석을 뺀 소스 — `ast.unparse`가 주석을 버린다(선례: `test_counsel_runtime_lifetime`).
+
+    ⚠ docstring은 `ast`가 노드로 들고 있어 남는다 — 그것까지 빼려면 아래에서 지운다.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            continue
+        body = node.body
+        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+            if isinstance(body[0].value.value, str):
+                node.body = body[1:] or [ast.Pass()]
+    return ast.unparse(tree)
 
 
 def test_the_site_census_is_not_empty() -> None:
@@ -102,7 +122,7 @@ def test_no_site_keeps_the_old_default_based_gate() -> None:
     stale = [
         site
         for site in _CALL_SITES
-        if _OLD_GATE.search((_ROOT / site).read_text(encoding="utf-8"))
+        if _OLD_GATE.search(_code_without_comments(_ROOT / site))
     ]
     assert not stale, (
         f"기본값 전제 판정이 남아 있다: {stale} — `.env`가 덮으면 그 자리는 fail-open이다"

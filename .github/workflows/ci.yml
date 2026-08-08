@@ -11,8 +11,13 @@ name: CI
 #     CI가 안 돌리면 같은 비대칭이 mypy에서 재발한다.
 #     `fail-fast: false` — 한쪽이 깨질 때 다른 쪽이 취소되면 신호를 잃는다.
 #  2) integration-pg — postgres:16 서비스 + `pytest -m integration`(99_open_items ⑫).
-#     PG 통합 3건(직접 접속·create_all·미가용 시 skip)이 실 PG로 돈다. LLM 스모크 2건은
-#     LOCAL_LLM env·서버가 없어 자동 skip.
+#     PG 통합 3건(직접 접속·create_all·미가용 시 skip)이 실 PG로 돈다.
+#     🔴 **LLM 스모크 넷은 `CHECKON_ALLOW_REAL_LLM`이 없어 skip한다**(99 #32 · 2026-08-09 정정).
+#     ⚠ 종전 주석은 *"2건 · LOCAL_LLM_* 미설정이라 skip"* 이었고 **둘 다 틀렸다** — 건수는
+#     넷이고 조건은 `LOCAL_LLM_*`이 아니었다. 사고 당시 문을 연 것은 `.env`의
+#     `OPENAI_BASE_URL`이었다(기본값 localhost를 덮어 skip 조건이 거짓이 됐다).
+#     🔴 **이 잡의 `env:`에 `CHECKON_ALLOW_REAL_LLM`을 넣으면 그 순간 열린다** —
+#     넣지 마라. 실 LLM 스모크는 사람이 셸에서 그 명령에만 붙여 돌린다.
 #     ⚠ **여기엔 매트릭스를 걸지 않는다** — GitHub Actions의 `services:` 컨테이너는
 #     Linux 러너 전용이라 Windows에서는 잡이 기동조차 못 한다. Linux 고정.
 # 소유: 박진희(A) — docs/02_ownership §2.
@@ -82,7 +87,8 @@ jobs:
 
       - name: Pytest -m integration (실 PG)
         # PG 통합 테스트는 database_url로 직접 접속(create_all로 스키마 생성 — alembic 불필요).
-        # LLM 스모크 2건은 LOCAL_LLM_* 미설정이라 skip.
+        # 🔴 LLM 스모크 넷은 `CHECKON_ALLOW_REAL_LLM`이 **없어서** skip한다(99 #32).
+        #    ⚠ 아래 `env:`에 그 변수를 넣으면 **실 API 호출이 열린다** — 넣지 마라.
         env:
           DATABASE_URL: postgresql+asyncpg://checkon:checkon@localhost:5432/checkon_ai
         run: uv run pytest -m integration

@@ -19,6 +19,8 @@ from ai.contracts.detection import DISPLAY_LABELS, Lifecycle, SignalType
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LlmError
 from ai.detection.segments import Segment
+from ai.llm.providers.openai_compat import get_llm_settings
+from ai.runtime.real_llm import real_llm_skip_reason
 
 pytestmark = pytest.mark.integration
 
@@ -57,6 +59,11 @@ def _context() -> ExecutionContext:
 
 def test_real_provider_single_brief() -> None:
     """실 provider로 1회 문장화 — 결과는 게이트를 통과하거나(신규 문장) 폴백(초안)."""
+    # 🔴 **종전에는 게이트가 아예 없었다**(99 #32) — `llm_provider="openai_compat"`를 강제해
+    #    `.env`가 실서버를 가리키면 **바로 호출**했다. 그래서 사고 집계에서 빠졌다.
+    reason = real_llm_skip_reason(get_llm_settings().openai_base_url)
+    if reason is not None:
+        pytest.skip(reason)
     try:
         provider = build_brief_provider(BriefingSettings(llm_provider="openai_compat"))
     except NotImplementedError:
