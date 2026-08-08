@@ -8,8 +8,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 from uuid import UUID
 
 from ai.contracts.agents import (
@@ -214,6 +215,17 @@ def _require_aware_datetime(field_name: str, value: datetime) -> None:
         raise ValueError(f"{field_name}은 timezone-aware datetime이어야 한다")
 
 
+logger = logging.getLogger(__name__)
+
+#: 🔴 **이건 상한이 아니라 「언제부터 적는가」의 시작점이다.** 상한은 아직 아무도 못
+#: 정한다 — 소유는 A 단독인데 **소비자가 둘**이고(B가 pg 워커에서 같은 팩토리를 부른다)
+#: 숫자를 정할 **근거가 0**이다(99 ㊐). **이 카운터가 그 근거를 만든다.**
+#: 이 값을 넘으면 한 번 적고 다음 지점을 10배로 밀어 올린다 — 같은 줄이 매 건 쌓이면
+#: 아무도 안 읽는다.
+_GROWTH_LOG_START: Final = 1_000
+_GROWTH_LOG_FACTOR: Final = 10
+
+
 class InMemoryJobStore:
     """테스트·개발 전용 저장소.
 
@@ -225,6 +237,34 @@ class InMemoryJobStore:
     def __init__(self) -> None:
         self._jobs: dict[UUID, WorkerJob] = {}
         self._lock = asyncio.Lock()
+        #: 누적 적재 수 — **감소하지 않는다.** 현재 크기(`len`)와 갈라 두는 이유는
+        #: 이 저장소가 **아무것도 지우지 않기 때문**이다: 지금은 둘이 같지만, 훗날
+        #: 정리가 생기면 *"몇 건이 지나갔나"* 와 *"몇 건이 남았나"* 는 다른 값이 된다.
+        self.added = 0
+        #: 다음으로 적을 지점. 사적 필드다 — **읽는 값은 `added`·`len`이지 이것이 아니다.**
+        self._next_growth_log = _GROWTH_LOG_START
+
+    def __len__(self) -> int:
+        """현재 적재 수 — 관측 지점(99 ㊐ ⓑ). 이 저장소는 줄어드는 자리가 없다."""
+        return len(self._jobs)
+
+    def _note_growth(self) -> None:
+        """규모를 **저장소가 스스로 말하게** 한다 — 지우지는 않는다(99 ㊐).
+
+        ⚠ 캐시(`_JobCache`)의 문구를 복사하지 않는다 — 거기는 *"상한 초과 · 가장 오래된
+        항목을 버린다"* 인데 **여기는 아무것도 안 버린다.** 같은 말을 쓰면 거짓이 된다.
+        """
+        size = len(self._jobs)
+        if size < self._next_growth_log:
+            return
+        logger.warning(
+            "인메모리 잡 원장이 커지고 있다 size=%d added=%d — **아무것도 지우지 않았다**"
+            "(밀려난 잡은 「없어진 잡」이라 상한을 안 뒀다 · 99 ㊐). 이 저장소는 A·B "
+            "공용이라 counsel 잡만 있는 것이 아니다. 프로덕션이면 store_backend=pg여야 한다",
+            size,
+            self.added,
+        )
+        self._next_growth_log *= _GROWTH_LOG_FACTOR
 
     async def add(self, job: WorkerJob) -> WorkerJob:
         if (
@@ -238,6 +278,8 @@ class InMemoryJobStore:
             if job.job_id in self._jobs:
                 raise JobAlreadyExistsError(f"이미 존재하는 job_id: {job.job_id}")
             self._jobs[job.job_id] = job
+            self.added += 1
+            self._note_growth()
             return job
 
     async def get(self, *, tenant_id: str, job_id: UUID) -> WorkerJob | None:
