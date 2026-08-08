@@ -461,7 +461,7 @@ erDiagram
     varchar source_text_hash "과제명 해시 = 캐시 키(재호출 방지)"
     varchar source_kind "trackA_upload|trackB_grading"
     varchar area_tag "수능 6영역: reading|literature|speech|writing|language|media (Open-11 확정 7/15)"
-    varchar type_tag "fact|infer|critic|concept + item_format(mcq|short|essay) 병행"
+    varchar type_tag "fact|infer|critic|concept — item_format(mcq|short|essay)와 병행 표기 · 정본은 V1_TYPE_TAGS(99 ㊣ 산출 축)"
     numeric confidence
     varchar status "suggested|confirmed|rejected"
     uuid llm_call_id FK
