@@ -64,7 +64,6 @@ from ai.composition.counsel.stores import (
     InMemoryAgentStepSink,
     InMemoryContextStore,
     InMemoryDraftResultStore,
-    InMemoryPackResultStore,
     PackResultStore,
     make_ref,
 )
@@ -94,6 +93,7 @@ from ai.db.repositories.run_store import (
 from ai.db.store_factory import (
     build_agent_job_store,
     build_idempotency_store,
+    build_pack_result_store,
     build_run_store,
 )
 from ai.runtime.errors import (
@@ -149,7 +149,7 @@ _idempotency_store: IdempotencyStore = build_idempotency_store()
 _run_store: RunStore = build_run_store()
 _context_store: ContextStore = InMemoryContextStore()
 _draft_store: DraftResultStore = InMemoryDraftResultStore()
-_pack_store: PackResultStore = InMemoryPackResultStore()
+_pack_store: PackResultStore = build_pack_result_store()
 _step_sink: AgentStepSink = InMemoryAgentStepSink()
 
 #: 인메모리 캐시 1개의 항목 상한 — `LlmCallCollector.MAX_PENDING_RUNS`와 **같은 계열**로
@@ -442,7 +442,7 @@ def reset_counsel_stores() -> None:
     _idempotency_store = build_idempotency_store()
     _context_store = InMemoryContextStore()
     _draft_store = InMemoryDraftResultStore()
-    _pack_store = InMemoryPackResultStore()
+    _pack_store = build_pack_result_store()
     _step_sink = InMemoryAgentStepSink()
     _view_cache.clear()
     _drafts.clear()

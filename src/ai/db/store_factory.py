@@ -10,6 +10,10 @@ from __future__ import annotations
 from functools import lru_cache
 
 from ai.agents.job_store import InMemoryJobStore, JobStore
+from ai.composition.counsel.stores import (
+    InMemoryPackResultStore,
+    PackResultStore,
+)
 from ai.db.repositories.agent_job import PgJobStore
 from ai.db.repositories.detection_store import (
     DetectionStore,
@@ -26,6 +30,7 @@ from ai.db.repositories.inquiry_class_store import (
     InquiryClassStore,
     PgInquiryClassStore,
 )
+from ai.db.repositories.pack_store import PgPackResultStore
 from ai.db.repositories.probe_stores import (
     PgAgentStepSink,
     PgProfileStore,
@@ -188,6 +193,20 @@ def build_spec_result_store(settings: DbSettings | None = None) -> SpecResultSto
     if settings.store_backend == _PG:
         return PgSpecResultStore(sessionmaker=get_sessionmaker())
     return InMemorySpecResultStore()
+
+
+def build_pack_result_store(settings: DbSettings | None = None) -> PackResultStore:
+    """counsel 팩 결과(`pack://`) 저장소 — `result_ref`가 가리키는 대상 (99 ㉕).
+
+    🔴 **기본값은 그대로 memory다** — `store_backend` 플립은 배포 결정이고 이 함수의
+    축이 아니다. 여기가 하는 일은 **PG를 도달 가능하게** 만드는 것이다: 팩토리 분기가
+    없으면 `PgPackResultStore`는 정의만 있고 **프로덕션 소비가 0**이 되고, 그건 99 #22가
+    등재한 형태(`ItemCandidate` — 정의·마이그레이션까지 있는데 아무도 안 쓴다)다.
+    """
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgPackResultStore(sessionmaker=get_sessionmaker())
+    return InMemoryPackResultStore()
 
 
 def build_agent_step_sink(settings: DbSettings | None = None) -> AgentStepSink:

@@ -54,6 +54,7 @@ from ai.composition.counsel.refine import refine_draft
 from ai.composition.provider import build_brief_gateway
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import LlmError, LLMProvider, LLMRequest, LLMResult
+from ai.db.repositories.pack_store import PgPackResultStore
 from ai.db.repositories.run_store import InMemoryRunStore
 from ai.db.store_factory import (
     build_agent_job_store,
@@ -792,6 +793,14 @@ def _run_s4(
         #   **관측이지 게이트가 아니다**(위 `collector_evicted_runs`와 같은 규율).
         "job_ledger_size": _job_ledger_observation()[0],
         "job_ledger_added": _job_ledger_observation()[1],
+        # ⓕ 🔴 **팩 결과 역참조 실패의 두 갈래**(99 #23 · 8/8 신설). 반환값은 둘 다
+        #   `None`이라 **운영에서 *"왜 404인가"* 를 물으면 반환값으로는 답이 안 나온다.**
+        #   ⚠ 로그만 가르면 **테스트가 셀 수 없어 리더를 만들 수 없다**(로그 59가 그 형태다)
+        #   ⇒ 저장소가 카운터로 세고 여기가 그 **읽는 자리**다.
+        #   ⚠ **PG 백엔드가 아니면 둘 다 `None`이다** — 인메모리는 이 카운터를 안 든다.
+        #   `0`으로 적으면 「PG인데 실패가 없었다」로 읽힌다(`job_ledger_size`와 같은 규율).
+        "pack_miss_absent": _pack_miss_observation()[0],
+        "pack_miss_foreign_tenant": _pack_miss_observation()[1],
         # ⓓ 🔴 **AI_RUN 원장의 사용 축**(#144) — 8/9 신설. 위 항목들은 전부 LLM_CALL
         #   레벨이고, `generation_params`는 **AI_RUN에만** 산다.
         "usage_axis": usage_axis_split(
@@ -897,6 +906,21 @@ def _captured_emphasis() -> list[str]:
         for points in record.emphasis_points.values()
         for point in points
     ]
+
+
+def _pack_miss_observation() -> tuple[int | None, int | None]:
+    """팩 결과 역참조 실패의 (부재, 남의 테넌트) 누적 — 관측만 한다(99 #23).
+
+    ⚠ **PG 구현만 이 카운터를 든다.** 인메모리는 술어로 거르기만 하고 세지 않는다 —
+    `None`을 돌려주는 이유는 *"PG인데 0건"* 과 *"인메모리라 안 센다"* 가 **다른 사실**이기
+    때문이다(`_job_ledger_observation`과 같은 규율).
+    """
+    from ai.api.routers import counsel as counsel_router  # noqa: PLC0415
+
+    store = counsel_router._pack_store
+    if not isinstance(store, PgPackResultStore):
+        return None, None
+    return store.miss_absent, store.miss_foreign_tenant
 
 
 def _pii_scan(data: dict[str, Any]) -> dict[str, Any]:
