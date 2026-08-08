@@ -393,7 +393,13 @@ async def post_problem(request: Request, response: Response) -> dict[str, Any]:
     )
     _views[(tenant_id, view.job_id)] = _CachedView(view=view, versions=versions)
     envelope = success_envelope(
-        data={"job_id": view.job_id},
+        # 🔴 `status`를 같이 싣는다 — counsel 202와 대칭이고(04 §3.9) **BE가 통지를 기다릴지
+        #    바로 GET할지를 이 값 하나로 정한다**(런북 §2 규칙). 종전에는 `job_id`만 실려서
+        #    ⓐ 인라인 실행으로 이미 종단인 잡을 두고 BE가 Kafka를 기다리거나
+        #    ⓑ 아직 `queued`인 잡을 종단으로 오해하거나 — 어느 쪽인지 응답만으로는 알 수 없었다.
+        #    ⚠ `run_next()`가 **자기 잡을 처리한다는 보장이 없다**(우선순위·aging 순) —
+        #    202가 `queued`로 나가는 경로가 실재한다.
+        data={"job_id": view.job_id, "status": view.status.value},
         execution_id=str(job.execution_id),
         versions=versions,
     )
