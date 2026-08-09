@@ -72,7 +72,10 @@ from ai.problem_generation.domain.policy import (
     T1DifficultyBandMap,
     VerifyConfig,
 )
-from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.config import (
+    load_area_specs,
+    load_verify_config,
+)
 from ai.problem_generation.infrastructure.graph_context import (
     GrammarNormGraphContextService,
 )
@@ -137,7 +140,7 @@ class _WorkflowHarness:
                 ),
             }
         )
-        self.generator = ProblemGenerator(gateway)
+        self.generator = ProblemGenerator(gateway, area_specs=load_area_specs())
         self.cross_solver = BlindCrossSolver(gateway)
         self.workflow = ProblemGenerationWorkflow(
             diagnosis=self.diagnosis,
@@ -187,7 +190,7 @@ class _WorkflowHarness:
                 engine_version="engine-v1",
                 schema_version="schema-v1",
                 contract_version="contract-v1",
-                prompt_version="v2",
+                prompt_version="v3",
                 graph_version=_GRAPH_VERSION,
                 taxonomy_version=_TAXONOMY_VERSION,
                 verify_config_version="verify-config.v1",

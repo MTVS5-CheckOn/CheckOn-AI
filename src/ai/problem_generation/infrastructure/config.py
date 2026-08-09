@@ -7,11 +7,16 @@ from pathlib import Path
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ValidationError
 
-from ai.problem_generation.domain.policy import BannedTopicsConfig, VerifyConfig
+from ai.problem_generation.domain.policy import (
+    AreaSpecs,
+    BannedTopicsConfig,
+    VerifyConfig,
+)
 
 _DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 _DEFAULT_VERIFY_CONFIG_PATH = _DATA_ROOT / "verify_config.yaml"
 _DEFAULT_BANNED_TOPICS_PATH = _DATA_ROOT / "pg_banned_topics.yaml"
+_DEFAULT_AREA_SPECS_PATH = _DATA_ROOT / "area_specs.yaml"
 
 #: R-1 문법 대조 정본 — 패키지에 동봉한다. 절대 경로·외부 마운트를 쓰지 않는다.
 #: 자료가 없으면 R-1 대조가 불가능해 T1 전체와 T2 어휘 문항이 발행 차단되므로
@@ -51,6 +56,17 @@ def load_banned_topics(
     """버전 관리된 문항 금칙 설정을 엄격히 로드한다."""
 
     return _load_yaml_model(path, BannedTopicsConfig, "금칙 설정")
+
+
+def load_area_specs(path: Path = _DEFAULT_AREA_SPECS_PATH) -> AreaSpecs:
+    """영역별 출제 규격을 엄격히 로드한다.
+
+    🔴 **fail-closed다** — 규격이 빠진 영역이 있으면 `AreaSpecs`의 검증이 여기서 죽는다.
+    조용히 빈 규격으로 생성하면 그 영역만 품질이 떨어지는데 **게이트가 못 잡는다**
+    (규칙 위반도 근거 미실존도 아니다). 기동에서 죽는 편이 낫다.
+    """
+
+    return _load_yaml_model(path, AreaSpecs, "출제 규격")
 
 
 def _load_yaml_model[ModelT: BaseModel](

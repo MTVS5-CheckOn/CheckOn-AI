@@ -22,15 +22,30 @@ from ai.contracts.taxonomy import (
 
 
 def test_area_tag_values_frozen() -> None:
-    """수능 6영역 — 어휘집 §1. 소비처 4곳이 같은 어휘를 써야 한다."""
+    """수능 **출제 5영역** — 어휘집 §1(2026-08-09 B 확정). 소비처 4곳이 같은 어휘를 쓴다.
+
+    🔴 **종전 6영역에서 `speech`·`writing`이 `speech_writing` 하나가 됐다.** 축이 과목이
+    아니라 **출제 단위**이고, 그 둘은 같은 출제 규격으로 만들어진다. 반대로 `language`·
+    `media`는 같은 선택과목이지만 **문항 형태가 달라 그대로 둘**이다.
+    """
     assert {tag.value for tag in AreaTag} == {
-        "reading",
-        "literature",
-        "speech",
-        "writing",
         "language",
         "media",
+        "literature",
+        "reading",
+        "speech_writing",
     }
+
+
+def test_area_tag_declaration_order_is_the_display_order() -> None:
+    """표시 순서가 곧 선언 순서다 — 강사 화면·요청 파라미터의 기본 나열."""
+    assert [tag.value for tag in AreaTag] == [
+        "language",
+        "media",
+        "literature",
+        "reading",
+        "speech_writing",
+    ]
 
 
 def test_subject_track_values_frozen() -> None:
@@ -80,8 +95,7 @@ def test_common_areas_frozen() -> None:
     [
         (AreaTag.READING, SubjectTrack.COMMON),
         (AreaTag.LITERATURE, SubjectTrack.COMMON),
-        (AreaTag.SPEECH, SubjectTrack.ELECTIVE),
-        (AreaTag.WRITING, SubjectTrack.ELECTIVE),
+        (AreaTag.SPEECH_WRITING, SubjectTrack.ELECTIVE),
         (AreaTag.LANGUAGE, SubjectTrack.ELECTIVE),
         (AreaTag.MEDIA, SubjectTrack.ELECTIVE),
     ],

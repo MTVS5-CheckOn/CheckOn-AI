@@ -173,7 +173,7 @@ def test_request_rejects_duplicate_type_tags() -> None:
 
 def test_problem_request_rejects_multiple_areas() -> None:
     with pytest.raises(ValueError, match="area_tag"):
-        _request(area_tag=(AreaTag.SPEECH, AreaTag.WRITING))
+        _request(area_tag=(AreaTag.SPEECH_WRITING, AreaTag.LANGUAGE))
 
 
 def test_passage_is_reading_only() -> None:

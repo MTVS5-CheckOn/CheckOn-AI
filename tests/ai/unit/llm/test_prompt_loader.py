@@ -42,8 +42,13 @@ def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
 
     assert "사람 이름을 쓰지 않고 학생 A·갑·을 같은 비인명 표기" in template.content
     assert "교차 풀이가 fail-closed로 차단" in template.content
-    assert template.version == "v2"
-    assert registry.get("pg.cross_solve.v1").version == "v2"
+    # 🔴 v3(2026-08-09) — 영역별 출제 규격 주입 + 발문 정형·오답 설계·부정 발문 규율.
+    #    프롬프트 문면이 바뀌면 버전이 바뀐다(불변식 8).
+    assert template.version == "v3"
+    assert "영역 출제 규격" in template.content
+    assert "발문 정형 중 하나를 따른다" in template.content
+    # 짝이다 — workflow가 두 버전이 다르면 기동에서 거부한다.
+    assert registry.get("pg.cross_solve.v1").version == "v3"
 
 
 @pytest.mark.parametrize(
@@ -55,7 +60,12 @@ def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
         ),
         (
             "pg.items.v1",
-            {"context_pack_json", "generation_input_json", "retry_context_json"},
+            {
+                "area_spec_block",
+                "context_pack_json",
+                "generation_input_json",
+                "retry_context_json",
+            },
         ),
         (
             "pg.cross_solve.v1",

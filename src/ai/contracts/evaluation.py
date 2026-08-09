@@ -36,7 +36,12 @@ class GoldenSuite(StrEnum):
     """게이트 공격 케이스(A1~A8) — 차단 미탐 0건이 CI 게이트."""
 
     REDACTION = "redaction"
-    """마스킹 failure 코퍼스 30건 — 미탐 0건이 CI 게이트."""
+    """마스킹 failure 코퍼스 **63건** — 미탐 0건이 CI 게이트.
+
+    ⚠ **(2026-08-09 정정) 「30건」이었다** — 코퍼스가 63건이 되도록 아홉 자리가 안 따라왔고
+    그 하나가 여기였다(99 #02). 🔴 **수를 적는 자리는 갱신 대상이다** — 세는 가드
+    (`test_redaction_coverage`)가 정본이고 여기는 재진술이다.
+    """
 
     IMPORT_CORPUS = "import_corpus"
     """타사 양식 10종."""

@@ -16,6 +16,7 @@ from ai.problem_generation.application.workflow import (
     ProblemGenerationWorkflow,
 )
 from ai.problem_generation.domain.policy import BannedTopicsConfig, VerifyConfig
+from ai.problem_generation.infrastructure.config import load_area_specs
 
 
 def build_problem_workflow(
@@ -34,7 +35,7 @@ def build_problem_workflow(
     return ProblemGenerationWorkflow(
         diagnosis=diagnosis,
         graph_context=graph_context,
-        generator=ProblemGenerator(gateway),
+        generator=ProblemGenerator(gateway, area_specs=load_area_specs()),
         cross_solver=BlindCrossSolver(gateway),
         candidate_store=candidate_store,
         item_store=item_store,

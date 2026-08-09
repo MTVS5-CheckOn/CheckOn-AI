@@ -7,7 +7,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ai.contracts.problem_generation import DifficultyBand
-from ai.contracts.taxonomy import V1_TYPE_TAGS, TypeTag
+from ai.contracts.taxonomy import V1_TYPE_TAGS, AreaTag, TypeTag
 
 
 class DifficultyRange(BaseModel):
@@ -201,3 +201,65 @@ class BannedTopicsConfig(BaseModel):
             for category in self.categories
             for term in category.match_terms
         ) + self.prompt_injection_patterns
+
+
+class AreaSpec(BaseModel):
+    """영역 하나의 출제 규격 — `data/area_specs.yaml` 한 항목과 1:1.
+
+    🔴 **문항 품질이 여기서 갈린다.** 종전 프롬프트는 `area_tag`를 *"그대로 보존한다"* 고만
+    지시해서, 모델이 **그 영역이 무엇을 묻는 영역인지 모른 채** 문항을 만들었다. 그러면
+    영역과 무관하게 「지문 읽고 고르기」가 나온다 — 수능 국어는 영역마다 발문·자료·선지의
+    형태가 다르고 그 차이가 문항의 값이다.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label_ko: str = Field(min_length=1)
+    """강사 화면·출제 프롬프트가 쓰는 **정식 라벨**(정본).
+
+    ⚠ R6 브리핑의 짧은 라벨(`briefing_context._AREA_KO`)과 **다른 축**이다 — 그쪽은
+    `"영역·유형"` 조립이라 두 글자여야 한다.
+    """
+
+    measures: str = Field(min_length=1)
+    """그 영역이 무엇을 측정하는가 — 발문이 향할 대상."""
+
+    stem_forms: tuple[str, ...] = Field(min_length=1)
+    """수능 발문 정형. 모델이 스스로 틀을 만들면 모의고사처럼 안 읽힌다."""
+
+    distractors: str = Field(min_length=1)
+    """매력적 오답이 만들어지는 방식.
+
+    🔴 없으면 오답이 **명백히 틀린 문장**이 되어 변별력이 0이 된다 — 게이트는 그걸 못
+    잡는다(규칙 위반도 근거 미실존도 아니라서 전부 통과한다).
+    """
+
+    avoid: str = Field(min_length=1)
+    """그 영역에서 반복적으로 나오는 실패 형태."""
+
+
+class AreaSpecs(BaseModel):
+    """영역별 출제 규격 전체 — `AreaTag` 전 항목을 덮어야 한다.
+
+    ⚠ **누락은 `KeyError`가 아니라 「규격 없는 생성」으로 조용히 빠진다.** 그래서
+    로딩 시점에 fail-closed로 막는다 — 영역이 늘면 이 파일을 같이 고치게 된다.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = Field(min_length=1)
+    areas: dict[AreaTag, AreaSpec]
+
+    @model_validator(mode="after")
+    def validate_every_area_is_covered(self) -> Self:
+        missing = sorted(tag.value for tag in AreaTag if tag not in self.areas)
+        if missing:
+            raise ValueError(
+                f"출제 규격이 없는 영역: {missing} — "
+                "영역을 늘렸으면 area_specs.yaml에 규격을 같이 적어야 한다"
+            )
+        return self
+
+    def spec_for(self, area: AreaTag) -> AreaSpec:
+        """규격을 꺼낸다 — 검증이 전수를 보장하므로 여기서 `KeyError`는 안 난다."""
+        return self.areas[area]

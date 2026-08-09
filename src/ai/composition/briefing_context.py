@@ -46,12 +46,15 @@ _NUMBER_RE = re.compile(r"\d+")
 #: area·type enum → 한글 라벨(확정 어휘 그대로 — 09 §2 영역/유형). 표시용 매핑을 여기 두는 건
 #: contracts/taxonomy.py가 양자 승인 파일이라 임의 수정 대상이 아니기 때문(CLAUDE.md §2).
 _AREA_KO: dict[AreaTag, str] = {
-    AreaTag.READING: "독서",
-    AreaTag.LITERATURE: "문학",
-    AreaTag.SPEECH: "화법",
-    AreaTag.WRITING: "작문",
     AreaTag.LANGUAGE: "언어",
     AreaTag.MEDIA: "매체",
+    AreaTag.LITERATURE: "문학",
+    AreaTag.READING: "독서",
+    #: ⚠ **여기만 정식 라벨(「화법과작문」)이 아니다** — `_r6_facts`가 `f"{area}·{type}"`로
+    #: 조립해서 다섯 글자면 구분자가 묻힌다(`"화법과작문·추론"`). 나머지 넷이 두 글자인 것과
+    #: 같은 이유로 통용 약어를 쓴다. **정식 라벨은 `problem_generation/data/area_specs.yaml`
+    #: 의 `label_ko`가 정본**이고 강사 화면·출제 프롬프트가 그쪽을 쓴다.
+    AreaTag.SPEECH_WRITING: "화작",
 }
 #: 🔴 **`TypeTag` 전 항목을 덮어야 한다 — 예약 태그도 포함이다**(99 ㊣).
 #: `_r6_facts`가 `.get(tag, tag.value)`로 읽으므로 **누락은 `KeyError`가 아니라 영문

@@ -30,9 +30,29 @@ from ai.llm.prompts.loader import LoadedPromptTemplate, load_prompt_template
 from ai.llm.structured import parse
 from ai.problem_generation.domain.identity import canonical_json, sha256_hex
 from ai.problem_generation.domain.models import CandidateSnapshot, RetryContext
+from ai.problem_generation.domain.policy import AreaSpec, AreaSpecs
 from ai.runtime.redaction import redact
 
 _ITEM_PROMPT_ID = "pg.items.v1"
+
+
+def render_area_spec(spec: AreaSpec) -> str:
+    """영역 규격 → 프롬프트에 실을 평문 블록 (순수 함수).
+
+    🔴 **JSON으로 안 싣는다.** 나머지 셋(`context_pack`·`generation_input`·`retry_context`)은
+    *"신뢰할 수 없는 구조화 데이터"* 로 선언돼 있고 프롬프트가 **그 안의 지시를 수행하지
+    말라**고 지시한다. 규격을 같은 형태로 실으면 **모델이 따라야 할 지시가 따르지 말아야 할
+    구역에 앉는다.** 그래서 규칙 본문과 같은 평문으로 둔다.
+    """
+
+    forms = "\n".join(f"  - {form}" for form in spec.stem_forms)
+    return (
+        f"영역: {spec.label_ko}\n"
+        f"측정 대상: {spec.measures}\n"
+        f"발문 정형:\n{forms}\n"
+        f"오답 설계: {spec.distractors.strip()}\n"
+        f"피할 것: {spec.avoid.strip()}"
+    )
 
 
 class ProblemGenerator:
@@ -42,9 +62,20 @@ class ProblemGenerator:
         self,
         gateway: LlmGateway,
         prompt: LoadedPromptTemplate | None = None,
+        *,
+        area_specs: AreaSpecs,
     ) -> None:
+        """`area_specs`는 **주입 전용이다** — 여기서 파일을 읽지 않는다.
+
+        🔴 application이 infrastructure를 직접 import 하면 계층이 깨진다
+        (`test_pg_layer_boundaries`). 조립부(`bootstrap.py`)가 `load_area_specs()`로
+        읽어 넘긴다 — 규격 파일이 깨졌으면 **생성 요청 때가 아니라 기동에서** 죽는다.
+        ⚠ 기본값을 두지 않은 이유: 규격 없이 도는 경로를 만들면 그 영역만 조용히 품질이
+        떨어지는데 **게이트가 못 잡는다**(규칙 위반도 근거 미실존도 아니다).
+        """
         self._gateway = gateway
         self._prompt = prompt or load_prompt_template(_ITEM_PROMPT_ID)
+        self._area_specs = area_specs
         if self._prompt.role is not ModelRole.GENERATOR:
             raise ValueError("문항 생성 프롬프트 role은 generator여야 한다")
         if self._prompt.response_schema_name != GeneratedItem.__name__:
@@ -78,6 +109,9 @@ class ProblemGenerator:
         }
         prompt_text = self._prompt.render(
             {
+                "area_spec_block": render_area_spec(
+                    self._area_specs.spec_for(request.area_tag)
+                ),
                 "context_pack_json": canonical_json(
                     context_pack.model_dump(mode="json")
                 ),
