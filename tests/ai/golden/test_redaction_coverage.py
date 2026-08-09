@@ -230,12 +230,9 @@ _OTHER_CORPUS_MARKERS: Final = {
 #: 값은 **사유**이고 `test_the_pending_exception_still_violates`가 **만료 조건**이다:
 #: 그 자리가 고쳐지면 **예외 자신이 red**가 되어 목록에서 지우게 만든다.
 #: ⚠ 범위에서 빼면 승인이 와도 아무도 안 고친다.
-_PENDING_APPROVAL: Final = {
-    "src/ai/contracts/evaluation.py": (
-        "양자 승인 파일(13곳) — 8/8 승인 대기. `db/models.py:3`(양자 12곳)·"
-        "`CounselPackResult` docstring과 함께 세 줄 승인 요청 중(99 #02)"
-    ),
-}
+#: ✅ **비었다 — 셋 다 2026-08-09 B 승인·반영 완료.** 목록이 빈 것이 정상이고,
+#: 새 승인 대기가 생기면 **사유와 함께** 여기 넣는다(만료 조건은 위 규약 그대로).
+_PENDING_APPROVAL: Final[dict[str, str]] = {}
 
 
 def _posix_rel(path: PurePath, root: PurePath) -> str:
@@ -368,6 +365,12 @@ def test_relative_paths_are_normalized_for_windows() -> None:
     assert "\\" not in _posix_rel(target, root)
     # str()이면 이 값이 나온다 — 예외 키(`/` 표기)와 불일치하는 그 값.
     assert str(target.relative_to(root)) == "src\\ai\\contracts\\evaluation.py"
-    assert any(
-        _posix_rel(target, root) == key for key in _PENDING_APPROVAL
-    ), "승인 대기 키가 POSIX 상대경로와 일치하지 않는다 — Windows에서 예외가 안 걸린다"
+
+    # 🔴 **`_PENDING_APPROVAL`을 픽스처로 쓰지 않는다**(2026-08-09 정정). 종전에는
+    # `any(... for key in _PENDING_APPROVAL)`이라 **목록이 비면 red**였다 — 목록이 빈 것은
+    # 「승인이 다 끝난 정상 상태」인데 그때 이 가드가 죽는다. 검사 대상은 **매칭 방식**이지
+    # 그때그때의 대기 건수가 아니다. 실물 목록은 위 `test_pending_keys_are_posix_paths`가 본다.
+    sample_keys = {"src/ai/contracts/evaluation.py": "표기 회귀용 고정 키"}
+    assert any(_posix_rel(target, root) == key for key in sample_keys), (
+        "POSIX 상대경로가 예외 키와 매칭되지 않는다 — Windows에서 예외가 안 걸린다"
+    )
