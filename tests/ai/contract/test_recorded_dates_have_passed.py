@@ -77,14 +77,19 @@ _PLAN_TABLES: Final = {
 }
 
 #: 🔴 **통보 축이 붙은 자리 — 조용히 범위 밖으로 밀지 않는다.**
-#: `04_api_contract.md`는 **BE에 나간 계약 문서**라 날짜 변경에 통보가 따른다(99 #30).
-#: `test_the_pending_notification_still_violates`가 **만료 조건**이다 — 고쳐지면 이 예외
-#: 자신이 red가 되어 목록에서 지우게 만든다(선례: `test_redaction_coverage._PENDING_APPROVAL`).
-_PENDING_NOTIFICATION: Final = {
-    "docs/04_api_contract.md": (
-        "BE에 나간 계약 문서 — 날짜 정정에 통보 축이 붙는다. 준영님·승우님 통보 후 함께 고친다"
-    ),
-}
+#: `test_the_pending_notification_still_violates`가 **만료 조건**이다 — 위반이 아니게 되면
+#: 이 예외 자신이 red가 되어 목록에서 지우게 만든다
+#: (선례: `test_redaction_coverage._PENDING_APPROVAL`).
+#:
+#: ✅ **비었다 — `docs/04_api_contract.md`가 2026-08-10에 이 가드의 축에서 벗어났다.**
+#: 🔴 **만료 사유가 「고쳐졌다」가 아니다.** 그 문서의 `8/10` 표기는 **한 글자도 안 바뀌었고**,
+#: 기준일(`_newest_commit_date()`)이 그 날짜를 지나면서 *"아직 안 온 날짜"* 라는 **이 가드의
+#: 위반 조건**만 자연 소멸했다. 예외를 남겨 두면 만료 가드가 계속 red라 develop이 막힌다.
+#: ⚠ **A가 99 #30에 등재한 문제는 그대로 열려 있다** — 정본은 `git log -S`의 `2026-08-07`이고
+#: `04`는 `8/10`이라 **값이 다르다.** 그건 「미래 날짜」가 아니라 **「값 불일치」** 라 이 가드가
+#: 보는 축이 아니었다(`test_the_cited_section_date_divergence_is_disclosed`가 그 축을 든다).
+#: 통보 후 정정은 `part_b/09`의 공용 문서 변경 요청에 남아 있다.
+_PENDING_NOTIFICATION: Final[dict[str, str]] = {}
 
 
 def _parse_commit_stamp(raw: str) -> datetime.date:

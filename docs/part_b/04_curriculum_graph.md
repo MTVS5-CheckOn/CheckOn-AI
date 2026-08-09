@@ -1,6 +1,6 @@
 # [체크온] curriculum_graph 사양서 v1 — 진단 입력 계약 · 그래프 3종 · 약점 판정 · 결정론 규격
 
-> **지위:** member-B(염준영) 공식 사양 v1. `src/ai/diagnosis/`(skill_graph.py · diagnoser.py)와 `diagnosis/data/curriculum_graph.yaml`의 사양 원본. 영역 어휘는 `contracts/taxonomy.py` 준수 — **5영역 enum과 측정 대상 기준 경계 사례 7건은 확정**.
+> **지위:** member-B(염준영) 공식 사양 v1. `src/ai/diagnosis/`(skill_graph.py · diagnoser.py)와 `diagnosis/data/curriculum_graph.yaml`의 사양 원본. 영역 어휘는 `contracts/taxonomy.py` 준수 — **출제 5영역 enum(2026-08-09 개정)과 측정 대상 기준 경계 사례 7건(7/27 확정)**.
 >
 > **변경 이력**
 > - v1.5 (2026-08-04): §4 `[잠정]` 근거에 **③ 골든 코퍼스 대표성**을 추가했다(실질 5/24셀 · `critic` 0건). 표본 희석 논의의 A 쪽 대칭 서술이 `part_a/13` **§5-4**이며 §5-2(“그룹당 8문항”)는 `unknown`의 근거이지 오차 논거가 아니라는 점도 명시했다 — A 회신 ④ 수용.

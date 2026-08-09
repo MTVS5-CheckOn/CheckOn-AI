@@ -67,7 +67,7 @@ M2 T1의 범위를 억지로 넓히지 않는다. 기존 수직 슬라이스는 
 | `EvidenceAnchor` | 최소 1개 근거 필수 | 적합 |
 | `AreaTag` | 독서·문학·화법과 작문·언어·매체 5영역 | 어휘는 적합 |
 | `TypeTag` | `fact`·`infer`·`critic`·`concept` 4종 | 표현력 부족 — 상세 근거·제안은 [`09`](09_integration_proposals.md) §2-13 |
-| `ProblemGenerationWorkflow` | `AreaTag.LANGUAGE`·`passage=None`만 허용 | T1 파일럿 |
+| `ProblemGenerationWorkflow` | `SUPPORTED_AREAS`(현재 `language`)·`passage=None`만 허용 — 거절은 `enqueue()` 문 앞이고 워크플로 검사는 이중 방어다(99 #01) | T1 파일럿 |
 | `ProblemRequest.area_tag` | 세트 전체 단일 영역 | 선택과목 조립 불가 |
 | `GeneratedItem` | `stem`·`choices` 중심 | 복합 자료 구조 없음 |
 | `BlindCrossSolver` | 문두·선지만 전달 | 지문형 확장 전 보완 필요 |
