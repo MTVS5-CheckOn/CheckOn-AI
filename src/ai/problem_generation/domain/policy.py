@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ai.contracts.problem_generation import DifficultyBand
 from ai.contracts.taxonomy import V1_TYPE_TAGS, AreaTag, TypeTag
+
+#: 자료 조달 능력이 구현된 영역만 명시적으로 연다. 새 영역은 기본 미지원이어야 하므로
+#: `V1_TYPE_TAGS`처럼 전체에서 예약값을 빼지 않는다 — 자료 조달 노드가 준비된 영역을 이
+#: 집합에 더해야만 열리는 fail-closed 정책이다.
+SUPPORTED_AREAS: Final[frozenset[AreaTag]] = frozenset({AreaTag.LANGUAGE})
 
 
 class DifficultyRange(BaseModel):

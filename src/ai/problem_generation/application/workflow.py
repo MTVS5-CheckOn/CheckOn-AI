@@ -44,7 +44,7 @@ from ai.contracts.problem_generation import (
     TargetSource,
     assert_problem_generation_state_transition,
 )
-from ai.contracts.taxonomy import AreaTag, TypeTag
+from ai.contracts.taxonomy import TypeTag
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import (
     ProblemGenerator,
@@ -68,7 +68,11 @@ from ai.problem_generation.domain.models import (
     RetryContext,
     TargetPlan,
 )
-from ai.problem_generation.domain.policy import BannedTopicsConfig, VerifyConfig
+from ai.problem_generation.domain.policy import (
+    SUPPORTED_AREAS,
+    BannedTopicsConfig,
+    VerifyConfig,
+)
 from ai.problem_generation.domain.rules import (
     RuleValidationResult,
     RuleValidator,
@@ -567,7 +571,8 @@ class ProblemGenerationWorkflow:
         # ⚠ 생성 노드를 붙일 때 이 조건문도 같이 풀어야 한다 — `area_tag` 검사는
         # '자료가 필요 없는 유일한 영역'의 대리이지 트랙 제한이 아니다. 조건이 OR라
         # `area_tag=language`이면서 `passage` 없음, 둘 다 만족해야 통과한다.
-        if request.area_tag is not AreaTag.LANGUAGE or request.passage is not None:
+        # enqueue 문 앞 이후의 도달 불가 이중 방어이며, 같은 조건이 두 자리에 있다.
+        if request.area_tag not in SUPPORTED_AREAS or request.passage is not None:
             raise ProblemSourceUnsupported(
                 "자료 조달 방식이 '자료 없음'인 요청만 처리할 수 있다 "
                 "— 생성·저작물 노드 미구현(05 §1.2)",

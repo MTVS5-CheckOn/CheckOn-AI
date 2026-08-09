@@ -18,21 +18,29 @@ from ai.contracts.agents import (
 from ai.contracts.problem_generation import ProblemRequest
 from ai.contracts.taxonomy import V1_TYPE_TAGS
 from ai.problem_generation.domain.identity import request_hash
+from ai.problem_generation.domain.policy import SUPPORTED_AREAS
 from ai.runtime.errors import DomainException
 
 #: 요청에 v1 산출 축 밖의 유형 태그가 실렸다 — `error_codes` §6 · 04 §3.11.
 TYPE_TAG_NOT_SUPPORTED = "type_tag_not_supported"
+#: 현재 워크플로에 없는 자료 조달 방식이 필요하다 — `error_codes` §6 · 04 §3.11.
+SOURCE_PROCUREMENT_NOT_IMPLEMENTED = "source_procurement_not_implemented"
 
 
 class ProblemTypeTagUnsupported(DomainException):
     """v1이 산출하지 않는 예약 태그가 출제 요청에 실렸다 (99 ㊣·㊨).
 
-    🔴 **문 앞 예외다** — `workflow.py`의 `ProblemSourceUnsupported`와 사유 코드는
-    이웃이지만 **자리가 다르다.** 조달 미구현은 *실행 조건*이라 워크플로에서 나고,
-    예약 태그는 *요청 어휘*라 **잡을 만들기 전**에 난다. 그래서 이쪽만 실패 잡을
-    남기지 않는다 — 남은 자리(`source_procurement_not_implemented`)를 문 앞으로
-    옮기는 것이 후속이다(99 #01).
+    🔴 **문 앞 예외다.** 자료 조달 미구현도 문 앞으로 이동했다(2026-08-09 · 99 #01).
+    둘 다 위반한 요청은 기존 관측 순서를 보존해 이 예외가 먼저 나며, 어느 400도 실패 잡을
+    남기지 않는다.
     """
+
+    code = "INVALID_SCHEMA"
+    http_status = 400
+
+
+class ProblemSourceProcurementUnsupported(DomainException):
+    """현재 구현이 조달할 수 없는 자료가 필요한 출제 요청."""
 
     code = "INVALID_SCHEMA"
     http_status = 400
@@ -64,6 +72,25 @@ def reject_unsupported_type_tags(request: ProblemRequest) -> None:
     )
 
 
+def reject_unsupported_source_procurement(request: ProblemRequest) -> None:
+    """현재 구현된 자료 조달 범위 밖의 요청을 400으로 끊는다 — 순수 판정, I/O 없음.
+
+    `passage` 분기는 현재 `ProblemRequest` 검증상 단독 도달할 수 없지만, `reading`이 지원
+    영역이 되는 날 필요하다. 그때까지는 지원 영역과 별개인 자료 동반 여부의 이중 방어다.
+    """
+
+    if request.area_tag not in SUPPORTED_AREAS or request.passage is not None:
+        raise ProblemSourceProcurementUnsupported(
+            "자료 조달 방식이 '자료 없음'인 요청만 처리할 수 있다 "
+            "— 생성·저작물 노드 미구현(05 §1.2)",
+            {
+                "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
+                "area_tag": request.area_tag.value,
+                "passage": request.passage is not None,
+            },
+        )
+
+
 class ProblemRequestStore(Protocol):
     """잡 payload_ref로 문제 생성 요청을 역참조하는 저장 경계."""
 
@@ -91,10 +118,11 @@ class ProblemGenerationEnqueuer:
         self._now = now
 
     async def enqueue(self, request: ProblemRequest) -> WorkerJob:
-        # 🔴 **최상단이다** — 아래 `put()`이 요청 레코드를 만들고 그다음 잡이 선다. 지키려는
-        #    불변식은 「400이 난다」가 아니라 **「미지원 태그로는 잡이 만들어지지 않는다」**이고,
-        #    그건 잡을 만드는 이 자리에서만 지켜진다(호출자가 라우터 하나가 아니게 돼도).
+        # 🔴 **최상단이다** — 아래 `put()`보다 앞에서 호출자가 고칠 두 400을 끊어 요청 레코드와
+        #    잡을 만들지 않는다. 순서는 현행 관측 보존이다: 둘 다 위반한 요청은 종전에도
+        #    `type_tag_not_supported`가 먼저였고, 바꾸면 사유 코드가 조용히 달라진다.
         reject_unsupported_type_tags(request)
+        reject_unsupported_source_procurement(request)
         payload_hash = request_hash(request)
         request_ref = await self._requests.put(request)
         operation = OperationKind.PROBLEM_SET_GENERATE
@@ -119,10 +147,13 @@ def problem_generation_priority() -> PriorityClass:
 
 
 __all__ = [
+    "SOURCE_PROCUREMENT_NOT_IMPLEMENTED",
     "TYPE_TAG_NOT_SUPPORTED",
     "ProblemGenerationEnqueuer",
     "ProblemRequestStore",
+    "ProblemSourceProcurementUnsupported",
     "ProblemTypeTagUnsupported",
     "problem_generation_priority",
+    "reject_unsupported_source_procurement",
     "reject_unsupported_type_tags",
 ]
