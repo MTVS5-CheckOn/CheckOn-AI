@@ -280,3 +280,89 @@ def test_the_cited_section_date_divergence_is_disclosed() -> None:
                 f"{path}의 갈림 공개 문면이 낡았다 — 04가 `8/{own}`으로 맞춰졌으니 "
                 "그 줄을 지워라(자동 만료)"
             )
+
+
+# ── 갈림이 99에 미해소 한 줄로 서 있는가 (02_ownership §4-6 · 99 #33) ──
+#
+# 🔴 **축이 다르다 — 위 `…divergence_is_disclosed`는 「코드가 갈림을 말하는가」이고
+# 이것은 「색인이 그 갈림을 세는가」다.** 02_ownership §4-6이 *"미해소 안건은 소유와 무관하게
+# 99에 한 줄이 반드시 있다 — 「미해소 전부를 세려면 99만 보면 된다」가 성립해야 한다"* 를
+# 규약으로 세웠는데, 지금 이 갈림을 세려면 **B 문서**(`part_b/09` §2)를 봐야 한다.
+#
+# ⚠ **이 검사가 생긴 경위가 이 검사의 요점이다**(99 #33): 8/9에 `_PENDING_NOTIFICATION`이
+# 04를 붙잡고 *"고쳐라"* 를 말했는데, 8/10에 기준일이 `8/10`을 지나며 **위반 조건이 자연
+# 소멸**해 만료 검사가 red가 되고 예외가 지워졌다. 🔴 **04 문면은 한 글자도 안 바뀌었다** —
+# **틀린 것이 남았는데 그것을 「고쳐라」라고 말하던 자리가 사라졌다.**
+#
+# 🔴 **그래서 시간에 안 매달리는 축으로 옮겼다.** 이 검사의 전제는 「날짜가 미래인가」가
+# 아니라 **「두 값이 다른가」**라 시간이 지나도 안 사라진다.
+
+#: 🔴 **자동 만료** — 04가 정본으로 맞춰지면 전제(두 값이 다르다)가 거짓이 되어 이 검사가
+#: 아무것도 요구하지 않는다. ⚠ **그때 등재를 지우라고 red를 내지는 않는다** — 등재는 해소
+#: 이력으로 남는 것이 맞고, 「미해소로 남아 있어야 한다」만 요구한다.
+_OPEN_MARKS: Final = ("☐", "◐")
+
+
+#: 🔴 **이 갈림을 가리키는 등재의 고정 표식.** 말로 좁히려다 두 번 실패했다(실측):
+#: `"04 §2.2"` 하나면 **미해소 여섯**이 매치하고(B-8·㊼·㊮·㊯·㉾·#02 — 전부 **다른 안건**),
+#: `("04 §2.2", "확정일")`로 좁혀도 **#02**(AI_RUN ERD 갈림)가 남는다.
+#: ⚠ **한국어 문면으로는 「어느 갈림인가」를 못 가른다** — 같은 절을 여러 안건이 인용한다.
+#: ⇒ **등재가 지녀야 할 문구를 정한다**(형제 가드가 src에 `_DISCLOSURE`를 요구하는 것과
+#: 같은 형태). 🔴 **가드와 등재문이 이 한 줄로 묶인다** — 등재문을 고칠 때 이 표식을
+#: 지우면 red다.
+_REGISTRY_MARKER: Final = "04 §2.2 확정일 정본 불일치"
+
+
+def _open_items_mentioning(*needles: str) -> list[str]:
+    """99의 **미해소**(☐·◐) 등재 중 주어진 말을 **전부** 담은 행."""
+    rows = [
+        line
+        for line in _REGISTRY_TEXT().splitlines()
+        if line.startswith("|") and any(mark in line for mark in _OPEN_MARKS)
+    ]
+    return [row for row in rows if all(needle in row for needle in needles)]
+
+
+def _REGISTRY_TEXT() -> str:  # noqa: N802 — 파일 읽기를 한 자리로
+    return (_ROOT / "docs" / "99_open_items.md").read_text(encoding="utf-8")
+
+
+def test_the_registry_scan_sees_open_rows() -> None:
+    """🔴 검사 경로가 끊기면 통과가 아니라 실패다.
+
+    ⚠ **이 회차의 안건 자체가 「검사가 대상을 잃고도 통과한 것」이다** — 같은 형태를 새로
+    만들지 않는다. 미해소 행이 비정상적으로 적으면 **99를 못 읽은 것**이다.
+    """
+    rows = [
+        line
+        for line in _REGISTRY_TEXT().splitlines()
+        if line.startswith("|") and any(mark in line for mark in _OPEN_MARKS)
+    ]
+    assert len(rows) >= 20, f"99의 미해소 행을 못 읽었다: {len(rows)}행"
+
+
+def test_the_divergence_is_counted_in_the_registry() -> None:
+    """🔴 **갈림이 99에 미해소 한 줄로 서 있어야 한다**(02_ownership §4-6).
+
+    ⚠ 위 `…divergence_is_disclosed`(코드가 말하는가)와 **축이 다르다.** 코드가 갈림을
+    공개해도 **색인에 없으면 「99만 보면 다 센다」가 거짓**이 되고, 이 갈림을 세려면
+    B 문서를 봐야 한다.
+    """
+    own_match = _SECTION_OWN.search(
+        (_ROOT / "docs" / "04_api_contract.md").read_text(encoding="utf-8")
+    )
+    assert own_match is not None, "04 §2.2 확정일 표기를 못 찾았다 — 제목 문면이 바뀌었나"
+    citing = _citing_files()
+    assert citing, "04 §2.2를 인용하는 src 자리를 못 찾았다"
+
+    own = own_match.group(1)
+    if all(cited == own for cited in citing.values()):
+        return  # 🔴 자동 만료 — 갈림이 없으면 요구하지 않는다
+
+    counted = _open_items_mentioning(_REGISTRY_MARKER)
+    assert counted, (
+        "04 §2.2의 확정일이 src 인용과 갈렸는데 99에 **그 갈림을 가리키는 미해소 등재가 "
+        "없다** — "
+        "지금 이 갈림을 세려면 B 문서를 봐야 하고 그건 02_ownership §4-6 위반이다"
+        "(「미해소 전부를 세려면 99만 보면 된다」)"
+    )

@@ -94,7 +94,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 
       "area_tag": "reading",
           // 수능 영역 (없으면 생략 가능 — 태깅 제안이 나중에 채움)
-          // reading(독서) | literature(문학) | speech(화법) | writing(작문) | language(언어/문법) | media(매체)
+          // reading(독서) | literature(문학) | speech_writing(화법과 작문) | language(언어/문법) | media(매체)
 
       "subject_track": "common",
           // common(공통과목) | elective(선택과목). 없으면 생략 가능
