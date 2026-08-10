@@ -39,13 +39,30 @@ def external_tracing_active() -> bool:
     return tracing_is_enabled() is not False
 
 
+#: 🔴 **명시적으로 「꺼짐」인 값** — 이것만 비활성이고 **나머지는 전부 활성**이다(fail-closed).
+#: 화이트리스트(`{"true","1",…}`)로 좁히면 `"local"`처럼 **수집이 도는 값**이나 새 표기가
+#: 조용히 안 잡힌다. ⚠ 라이브러리 판정(`external_tracing_active`)이 정본이고 이 목록은
+#: **어떤 이름이 그렇게 만들었는지**를 고르는 용도다.
+_DISABLED_ENV_VALUES: Final = frozenset({"", "false", "0", "no", "off"})
+
+
 def active_tracing_env_names() -> tuple[str, ...]:
-    """켜져 있는 env **이름**만 돌려준다 — ⚠ **값은 절대 담지 않는다.**
+    """**켜져 있는** env 이름만 돌려준다 — ⚠ **값은 절대 담지 않는다.**
 
     가드가 막으려던 유출을 에러 메시지가 하면 안 된다(근처에 `LANGSMITH_API_KEY`가 있다).
     이름만으로도 "내가 뭘 켰는지"를 즉시 알 수 있어 디버깅에 충분하다.
+
+    🔴 **종전엔 「적혀 있는」 이름을 냈다** — `os.environ.get(name)`은 `"false"`도 참이라
+    **끄려고 명시한 env가 활성으로 보고**됐다(6차 실측 2026-08-10 · `LANGSMITH_TRACING=false`).
+    ⚠ 스모크 리포트 0절은 이 목록이 비었을 때만 「전부 비활성」을 찍으므로,
+    **가장 안전하게 돌린 회차가 「⚠ 추적 활성」으로 기록될 뻔했다.** 종전 회차는 env를
+    아예 안 걸어 목록이 비었고 그래서 안 보였다 — **이름이 보는 것보다 넓었다.**
     """
-    return tuple(name for name in TRACING_ENV_SYNONYMS if os.environ.get(name))
+    return tuple(
+        name
+        for name in TRACING_ENV_SYNONYMS
+        if os.environ.get(name, "").strip().lower() not in _DISABLED_ENV_VALUES
+    )
 
 
 def require_tracing_disabled(worker_kind: str) -> None:
