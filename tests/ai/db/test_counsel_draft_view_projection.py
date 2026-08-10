@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import fields
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 
+from ai.api.routers.counsel import _CachedView, _DraftState
 from ai.contracts.agents import JobPhase
 from ai.contracts.composition import (
     CommStyle,
@@ -21,6 +23,8 @@ from ai.contracts.composition import (
 from ai.contracts.counsel import Citation, CounselDraftJobView
 from ai.db.counsel_draft_view import (
     NON_PROJECTED_COLUMNS,
+    _CachedViewSnapshot,
+    _DraftStateSnapshot,
     counsel_draft_view_projection,
 )
 from ai.db.models import CounselDraftView
@@ -61,6 +65,17 @@ def _draft_snapshot() -> dict[str, Any]:
         "snapshot_hash": "sha256:read-model-fixture",
         "emphasis": ["최근 정답률"],
     }
+
+
+def test_persistence_snapshots_match_the_router_dataclasses_exactly() -> None:
+    """라우터 private 읽기 모델과 영속 손사본의 필드 드리프트를 막는다."""
+    cached_view_fields = {field.name for field in fields(_CachedView)}
+    draft_state_fields = {field.name for field in fields(_DraftState)}
+
+    assert cached_view_fields, "_CachedView 원본 필드를 하나도 읽지 못했다"
+    assert draft_state_fields, "_DraftState 원본 필드를 하나도 읽지 못했다"
+    assert cached_view_fields == set(_CachedViewSnapshot.model_fields)
+    assert draft_state_fields == set(_DraftStateSnapshot.model_fields)
 
 
 def test_projection_is_derived_from_key_and_view_snapshot() -> None:

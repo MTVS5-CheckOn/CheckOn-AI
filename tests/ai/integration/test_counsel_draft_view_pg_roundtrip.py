@@ -24,7 +24,11 @@ from ai.contracts.composition import (
     Sensitivity,
 )
 from ai.contracts.counsel import Citation, CounselDraftJobView
-from ai.db.counsel_draft_view import counsel_draft_view_projection
+from ai.db.counsel_draft_view import (
+    _CachedViewSnapshot,
+    _DraftStateSnapshot,
+    counsel_draft_view_projection,
+)
 from ai.db.models import CounselDraftView
 
 pytestmark = pytest.mark.integration
@@ -130,8 +134,14 @@ async def _insert_and_read(
 
 
 def test_both_snapshots_round_trip_losslessly_and_match_projections() -> None:
+    """JSONB를 실제 읽기 모델로 복원한다.
+
+    두 스냅숏 계약에는 datetime 필드가 없다. 행의 `updated_at`은 스냅숏 밖의 저장 시각이므로
+    여기서 존재하지 않는 tz-aware 왕복 축을 지어내지 않는다.
+    """
     job_id = f"job-both-{uuid.uuid4()}"
     view_snapshot, draft_snapshot = _snapshots(job_id=job_id)
+    original_context = DraftContext.model_validate(draft_snapshot["context"])
 
     def scenario(sessionmaker: async_sessionmaker[AsyncSession]) -> Awaitable[None]:
         async def inner() -> None:
@@ -144,6 +154,21 @@ def test_both_snapshots_round_trip_losslessly_and_match_projections() -> None:
             )
             assert row.view_snapshot == view_snapshot
             assert row.draft_snapshot == draft_snapshot
+            restored_view = _CachedViewSnapshot.model_validate(row.view_snapshot)
+            restored_draft = _DraftStateSnapshot.model_validate(row.draft_snapshot)
+
+            assert restored_draft.citations
+            assert type(restored_draft.citations) is tuple
+            assert all(isinstance(citation, Citation) for citation in restored_draft.citations)
+            assert restored_draft.emphasis
+            assert type(restored_draft.emphasis) is tuple
+            assert all(isinstance(value, str) for value in restored_draft.emphasis)
+            assert isinstance(restored_view.execution_id, uuid.UUID)
+            assert isinstance(restored_view.correlation_id, uuid.UUID)
+            # CounselDraftJobView.status는 NonEmptyStr 계약이라 경계에서 JobPhase 변환을 확인한다.
+            assert JobPhase(restored_view.view.status) is JobPhase.SUCCEEDED
+            assert isinstance(restored_draft.context, DraftContext)
+            assert restored_draft.context == original_context
             derived = counsel_draft_view_projection(
                 (row.tenant_id, row.job_id),
                 view_snapshot=row.view_snapshot,
@@ -173,6 +198,10 @@ def test_each_nullable_snapshot_inserts_independently(present: str) -> None:
             )
             assert (row.view_snapshot is not None) is (present == "view")
             assert (row.draft_snapshot is not None) is (present == "draft")
+            if row.view_snapshot is not None:
+                _CachedViewSnapshot.model_validate(row.view_snapshot)
+            if row.draft_snapshot is not None:
+                _DraftStateSnapshot.model_validate(row.draft_snapshot)
 
         return inner()
 

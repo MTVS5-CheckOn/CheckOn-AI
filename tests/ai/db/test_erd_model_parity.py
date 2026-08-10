@@ -59,7 +59,7 @@ def _sa_category(t: TypeEngine[object]) -> str:
     return f"unknown:{type(t).__name__}"
 
 
-def test_erd_parsed_38_tables() -> None:
+def test_erd_parsed_34_tables() -> None:
     """파서 경로가 틀리면 아래 대조가 조용히 0건 통과한다 — 38테이블 상수로 고정."""
     assert ERD_PATH.is_file()
     # 34 → 36(2026-08-03): 기대치 입력 층 — passage_type_stat(조합 실측 누적) ·
