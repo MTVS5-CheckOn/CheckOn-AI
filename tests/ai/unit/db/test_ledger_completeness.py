@@ -303,6 +303,18 @@ def test_a_result_ref_is_not_call_evidence() -> None:
     )
 
 
+def test_the_call_violation_reason_does_not_cite_the_result_ref() -> None:
+    """🔴 **사유에도 `result_ref`를 안 싣는다** — 옆에 적으면 근거로 읽힌다.
+
+    호출 판정의 근거는 `AGENT_STEP.llm_call_id` **하나뿐**이다.
+    """
+    reason = judge_ledger_row(
+        _obs(status=JobPhase.FAILED, steps_with_llm_call=2, result_ref="pack://x")
+    ).reason
+    assert "result_ref" not in reason, f"사유가 호출 증거가 아닌 것을 근거처럼 적는다: {reason}"
+    assert "llm_call 2건" in reason
+
+
 def test_an_unknown_capability_is_a_violation_not_a_crash() -> None:
     """🔴 **낯선 `capability` 하나가 점검 전체를 죽이면 안 된다.**
 

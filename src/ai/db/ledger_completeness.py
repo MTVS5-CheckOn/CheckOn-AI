@@ -21,7 +21,8 @@
 | **`AGENT_STEP`** | ✅ **된다.** `agent_run_id`가 **`agent_run` FK**이고 |
 | | `llm_call_id`는 **FK가 없는 nullable UUID**라 |
 | | 원장이 비어도 **행과 값이 남는다** |
-| `AGENT_RUN.result_ref` | ✅ 결과 계약 저장 = **실행이 끝까지 갔다** |
+| `AGENT_RUN.result_ref` | ❌ **호출 증거가 아니다** — **산출물 저장·종단 도달** 증거다 |
+| | ⚠ **LLM 0콜 성공도 `result_ref`를 만든다** |
 | `AGENT_RUN.status`·`agent_kind` | ⚠ 생애주기 축이지 호출 축이 아니다 |
 | `LlmCallCollector` · Fake 기록 | ❌ **프로세스 안**에만 있다 — 사후 점검이 못 본다 |
 
@@ -178,9 +179,11 @@ def _verdict_for(o: LedgerObservation) -> tuple[LedgerVerdict, str]:
     if o.consumed_a_call:
         return (
             LedgerVerdict.VIOLATION,
+            #: 🔴 **사유에도 `result_ref`를 안 싣는다** — 호출 판정의 근거는
+            #: `AGENT_STEP.llm_call_id` **하나뿐**이다. 옆에 적어 두면 읽는 사람이
+            #: 그것도 근거였다고 읽는다.
             "실제 LLM 호출을 소비한 양성 증거가 있는데 AI_RUN이 없다"
-            f"(agent_step llm_call {o.steps_with_llm_call}건 · result_ref="
-            f"{'있음' if o.result_ref else '없음'})",
+            f"(agent_step llm_call {o.steps_with_llm_call}건)",
         )
     return (
         LedgerVerdict.UNKNOWN,
