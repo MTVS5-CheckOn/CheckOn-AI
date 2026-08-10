@@ -1,0 +1,40 @@
+schema_version: problem-golden.v1
+suite: passage_generation
+cases:
+  - case_id: PG1
+    title: T2 승인 근거 기반 지문 생성 후 문항 생성
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: &draft
+      stem: 윗글의 내용과 일치하는 것을 고르시오.
+      choices:
+        - 첫 번째 내용 초안
+        - 두 번째 내용 초안
+        - 세 번째 내용 초안
+        - 네 번째 내용 초안
+        - 다섯 번째 내용 초안
+      answer_draft: 1
+      rationale_draft: 생성 지문 근거를 따르는 해설 초안 — 전문가 검수 대기
+      evidence_draft: [reading.source.approved.001]
+      difficulty_draft: null
+    mutation:
+      code: passage_generation_then_item
+      detail: 요청 문단 수와 승인 앵커가 일치하는 PassageDraft를 먼저 생성한다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 3
+      notes: 지문·문항 생성과 blind 검증을 각 1회 수행하고 생성 지문을 ContextPack에 보존한다.
+  - case_id: PG2
+    title: T2 지문 생성 불가 응답
+    track: T2
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: passage_generation_unavailable
+      detail: 지문 생성 응답을 generation_unavailable로 고정한다.
+    expected:
+      decision: rejected_insufficient
+      rule_ids: []
+      llm_calls: 1
+      notes: 빈 지문으로 우회하지 않고 문항 생성 전에 중단한다.

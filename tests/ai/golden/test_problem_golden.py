@@ -26,7 +26,7 @@ def test_problem_golden_evaluator_passes_offline() -> None:
     report = ProblemGoldenEvaluator(GOLDEN_ROOT).evaluate()
 
     assert report.passed
-    assert report.total_cases == 67
+    assert report.total_cases == 69
     assert report.prompt_snapshot_count == 3
     assert report.educational_review_status == "expert_review_pending"
     assert report.real_model_evaluated is False
@@ -37,6 +37,7 @@ def test_problem_golden_evaluator_passes_offline() -> None:
         "refine": 11,
         "graphrag": 11,
         "suneung_format": 6,
+        "passage_generation": 2,
     }
 
 
@@ -63,6 +64,16 @@ def test_suneung_format_design_gap_forbids_llm_call() -> None:
 
     with pytest.raises(ValueError, match="LLM"):
         ProblemGoldenCase.model_validate(design_gap)
+
+
+def test_passage_generation_suite_covers_success_and_fail_closed() -> None:
+    suite = _load_suite(GOLDEN_ROOT, "passage_generation")
+
+    assert tuple(case.expected.decision for case in suite.cases) == (
+        "verified",
+        "rejected_insufficient",
+    )
+    assert tuple(case.expected.llm_calls for case in suite.cases) == (3, 1)
 
 
 def test_suneung_format_requires_explicit_contract_support(tmp_path: Path) -> None:
