@@ -18,24 +18,14 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Any, Final
+from typing import Final
 
 import pytest
+from counsel_read_model_fixtures import draft_snapshot, view_snapshot
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from ai.contracts.agents import JobPhase
-from ai.contracts.composition import (
-    CommStyle,
-    DraftContext,
-    EvidenceFact,
-    Frequency,
-    Interest,
-    LabelSnapshot,
-    Sensitivity,
-)
-from ai.contracts.counsel import Citation
 from ai.db.counsel_read_model import PgCounselDraftViewStore
 from ai.db.models import CounselDraftView as CounselDraftViewRow
 from ai.db.settings import get_db_settings
@@ -46,41 +36,6 @@ _TENANT: Final = "t_wiring"
 _OTHER_TENANT: Final = "t_other"
 
 
-def _view_snapshot(job_id: str, *, status: JobPhase = JobPhase.SUCCEEDED) -> dict[str, Any]:
-    return {
-        "view": {"job_id": job_id, "status": status.value, "result": None},
-        "execution_id": str(uuid.uuid4()),
-        "correlation_id": str(uuid.uuid4()),
-    }
-
-
-def _draft_snapshot(*, text: str = "본문") -> dict[str, Any]:
-    """🔴 **계약 모델로 만든다** — 손으로 적은 dict는 계약이 바뀌면 조용히 낡는다."""
-    context = DraftContext(
-        student_ref="student-merge",
-        guardian_ref="guardian-merge",
-        label_snapshot=LabelSnapshot(
-            comm=CommStyle.NARRATIVE,
-            sensitivity=Sensitivity.DIRECT,
-            interest=Interest.ATTITUDE,
-            frequency=Frequency.FREQUENT,
-        ),
-        facts=(EvidenceFact(label="학습 참여", value="꾸준함", record_id="record-merge"),),
-        evidence_summaries=("수업 참여 기록",),
-        period_label="2026년 8월",
-        fallback_text="확인 가능한 기록을 안내합니다.",
-    )
-    return {
-        "context": context.model_dump(mode="json"),
-        "citations": [
-            Citation(
-                cite_id="cite-merge", record_id="record-merge", summary="수업 참여 기록"
-            ).model_dump(mode="json")
-        ],
-        "text": text,
-        "snapshot_hash": "sha256:wiring",
-        "emphasis": ["학습 참여"],
-    }
 
 
 _Scenario = Callable[[async_sessionmaker[AsyncSession]], Awaitable[None]]
@@ -141,7 +96,7 @@ def test_the_scan_actually_touches_real_rows() -> None:
         await _clean(sessions)
         store = PgCounselDraftViewStore(sessions)
         key = (_TENANT, f"job-{uuid.uuid4()}")
-        await store.save_view(key, snapshot=_view_snapshot(key[1]))
+        await store.save_view(key, snapshot=view_snapshot(key[1]))
         assert await _row_count(sessions, _TENANT) == 1
         await _clean(sessions)
 
@@ -153,7 +108,7 @@ def test_view_and_draft_round_trip() -> None:
         await _clean(sessions)
         store = PgCounselDraftViewStore(sessions)
         key = (_TENANT, f"job-{uuid.uuid4()}")
-        view, draft = _view_snapshot(key[1]), _draft_snapshot()
+        view, draft = view_snapshot(key[1]), draft_snapshot()
         await store.save_view(key, snapshot=view)
         await store.save_draft(key, snapshot=draft)
         loaded_view, loaded_draft = await store.load(key)
@@ -172,7 +127,7 @@ def test_either_order_keeps_both_snapshots(first: str) -> None:
         await _clean(sessions)
         store = PgCounselDraftViewStore(sessions)
         key = (_TENANT, f"job-{uuid.uuid4()}")
-        view, draft = _view_snapshot(key[1]), _draft_snapshot()
+        view, draft = view_snapshot(key[1]), draft_snapshot()
         if first == "view":
             await store.save_view(key, snapshot=view)
             await store.save_draft(key, snapshot=draft)
@@ -194,9 +149,9 @@ def test_a_single_sided_row_loads_back(present: str) -> None:
         store = PgCounselDraftViewStore(sessions)
         key = (_TENANT, f"job-{uuid.uuid4()}")
         if present == "view":
-            await store.save_view(key, snapshot=_view_snapshot(key[1]))
+            await store.save_view(key, snapshot=view_snapshot(key[1]))
         else:
-            await store.save_draft(key, snapshot=_draft_snapshot())
+            await store.save_draft(key, snapshot=draft_snapshot())
         loaded_view, loaded_draft = await store.load(key)
         assert (loaded_view is not None) is (present == "view")
         assert (loaded_draft is not None) is (present == "draft")
@@ -212,10 +167,10 @@ def test_updating_one_side_preserves_the_other() -> None:
         await _clean(sessions)
         store = PgCounselDraftViewStore(sessions)
         key = (_TENANT, f"job-{uuid.uuid4()}")
-        original_view = _view_snapshot(key[1])
+        original_view = view_snapshot(key[1])
         await store.save_view(key, snapshot=original_view)
-        await store.save_draft(key, snapshot=_draft_snapshot(text="1턴"))
-        await store.save_draft(key, snapshot=_draft_snapshot(text="2턴"))
+        await store.save_draft(key, snapshot=draft_snapshot(text="1턴"))
+        await store.save_draft(key, snapshot=draft_snapshot(text="2턴"))
         loaded_view, loaded_draft = await store.load(key)
         assert loaded_view == original_view, "초안 갱신이 뷰를 바꿨다"
         assert loaded_draft is not None and loaded_draft["text"] == "2턴"
@@ -231,7 +186,7 @@ def test_another_tenant_never_sees_the_same_job_id() -> None:
         await _clean(sessions)
         store = PgCounselDraftViewStore(sessions)
         job_id = f"job-{uuid.uuid4()}"
-        await store.save_view((_TENANT, job_id), snapshot=_view_snapshot(job_id))
+        await store.save_view((_TENANT, job_id), snapshot=view_snapshot(job_id))
         loaded_view, loaded_draft = await store.load((_OTHER_TENANT, job_id))
         assert loaded_view is None and loaded_draft is None
         await _clean(sessions)
@@ -255,7 +210,7 @@ def test_a_mismatched_job_id_is_refused() -> None:
         store = PgCounselDraftViewStore(sessions)
         key = (_TENANT, f"job-{uuid.uuid4()}")
         with pytest.raises(ValueError):
-            await store.save_view(key, snapshot=_view_snapshot("some-other-job"))
+            await store.save_view(key, snapshot=view_snapshot("some-other-job"))
         assert await _row_count(sessions, _TENANT) == 0, "거부됐는데 행이 남았다"
 
     _run(scenario)
@@ -277,10 +232,10 @@ def test_the_absent_side_is_sql_null_not_json_null(present: str) -> None:
         store = PgCounselDraftViewStore(sessions)
         key = (_TENANT, f"job-{uuid.uuid4()}")
         if present == "view":
-            await store.save_view(key, snapshot=_view_snapshot(key[1]))
+            await store.save_view(key, snapshot=view_snapshot(key[1]))
             absent = CounselDraftViewRow.draft_snapshot
         else:
-            await store.save_draft(key, snapshot=_draft_snapshot())
+            await store.save_draft(key, snapshot=draft_snapshot())
             absent = CounselDraftViewRow.view_snapshot
         async with sessions() as session:
             nulls = (
