@@ -885,10 +885,50 @@ def _s1_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "gate_recovered": len(recovered),
         "fallback": sum(1 for r in rows if r["fallback_used"]),
         "outcomes": dict(Counter(r["outcome"].split(":")[0] for r in rows)),
-        "median_ms": latencies[len(latencies) // 2] if latencies else 0,
-        "max_ms": latencies[-1] if latencies else 0,
+        #: 🔴 **표본이 없으면 `0`이 아니라 결손이다.** `0`으로 두면 *"0ms 걸렸다"* 와
+        #: 구분이 안 되고 **`0 <= 1200` 비교에 그대로 들어가** 전 호출이 실패한 회차가
+        #: **「0.0초 (부합)」**으로 보고된다(실측). **측정 안 한 것은 측정 안 했다고 낸다.**
+        "median_ms": latencies[len(latencies) // 2] if latencies else None,
+        "max_ms": latencies[-1] if latencies else None,
         "mask_residue": sum(1 for r in rows if r["mask_residue"]),
     }
+
+
+#: 기획서 검증치 *"신호 문장화 평균 0.6초"* 대조 임계(ms) — 값은 8/6 회차 그대로다.
+_S1_LATENCY_THRESHOLD_MS: Final = 1200
+#: 🔴 **성공 표본이 없을 때의 문면** — 「부합」도 「미달」도 아니다.
+_S1_LATENCY_WITHHELD: Final = "측정 불가 — 성공 표본 0건"
+
+
+def _s1_latency_verdict(summary: dict[str, Any]) -> str:
+    """§1 지연 판정 한 줄 — 🔴 **표본이 없으면 판정을 안 찍는다.**
+
+    ⚠ **분모를 옆에 싣는 것만으로는 안 막힌다** — *"0.0초 (부합) · 성공 0건 기준"* 은
+    분모가 있어도 **판정이 이미 찍혀 있다.** 표본 0건은 **판정 자체가 없어야** 한다.
+    """
+    median = summary["median_ms"]
+    sample = summary["latency_sample"]
+    if median is None:
+        return (
+            f"> 기획서 검증치 **\"신호 문장화 평균 0.6초\"** 대조 — **{_S1_LATENCY_WITHHELD}**"
+            f"(전체 {summary['total']}건 · 전부 문 앞에서 떨어졌다)."
+            " 🔴 **성능 판정을 안 찍는다** — 성공 경로를 한 번도 재지 않았다."
+        )
+    verdict = "부합" if median <= _S1_LATENCY_THRESHOLD_MS else "**미달 — 아래 결함 참고**"
+    return (
+        f"> 기획서 검증치 **\"신호 문장화 평균 0.6초\"** 대조 — 실측 중앙값 "
+        f"**{median / 1000:.1f}초** ({verdict})"
+        f" · **성공 {sample}건 기준**(전체 {summary['total']}건 ·"
+        " 실패 행은 문 앞에서 떨어져 지연이 매우 작다)."
+    )
+
+
+def _s1_console_latency(summary: dict[str, Any]) -> str:
+    """실행 끝 콘솔의 지연 조각 — 🔴 **리포트만 고치면 콘솔이 거짓말을 계속한다.**"""
+    median = summary["median_ms"]
+    if median is None:
+        return f"중앙값 {_S1_LATENCY_WITHHELD}"
+    return f"중앙값 {median}ms"
 
 
 #: 마스킹 조각 앞뒤로 남길 문맥 글자 수 — 오탐 판정에 필요한 최소한.
@@ -1204,19 +1244,17 @@ def _render(data: dict[str, Any]) -> str:
                 ["폴백(게이트 소진·실패)", f"{summary['fallback']}/{summary['total']}"
                  f" ({summary['fallback'] / summary['total']:.0%})"],
                 ["outcome 분포", ", ".join(f"`{k}` {v}" for k, v in summary["outcomes"].items())],
+                #: 🔴 결손은 `0ms`가 아니라 `—`다 — 표에서도 실측값처럼 안 보이게.
                 ["호출당 시간 (중앙값 / 최대)",
-                 f"{summary['median_ms']}ms / {summary['max_ms']}ms"],
+                 "—" if summary["median_ms"] is None
+                 else f"{summary['median_ms']}ms / {summary['max_ms']}ms"],
                 ["마스킹 토큰 ⟪⟫ 잔존", f"**{summary['mask_residue']}건**"],
             ],
         ),
         "",
-        # 🔴 **분모를 수치 옆에 싣는다**(99 ⓥ ⓔ) — 판정과 근거가 같은 분모에서 나온다는 것을
-        #   읽는 사람이 볼 수 있어야 한다. 종전에는 전체 행 기준이라 실패가 섞여 있었다.
-        f"> 기획서 검증치 **\"신호 문장화 평균 0.6초\"** 대조 — 실측 중앙값 "
-        f"**{summary['median_ms'] / 1000:.1f}초**"
-        f" ({'부합' if summary['median_ms'] <= 1200 else '**미달 — 아래 결함 참고**'})"
-        f" · **성공 {summary['latency_sample']}건 기준**(전체 {summary['total']}건 ·"
-        f" 실패 행은 문 앞에서 떨어져 지연이 매우 작다).",
+        # 🔴 **분모를 수치 옆에 싣고, 표본이 없으면 판정을 안 찍는다**(99 ⓥ ⓔ) —
+        #   문면 규칙은 `_s1_latency_verdict`가 든다(콘솔과 **같은 규칙**을 쓰기 위해).
+        _s1_latency_verdict(summary),
         "",
         "규칙별 결과:",
         "",
@@ -1634,7 +1672,7 @@ async def _main_async(run_date: str) -> int:
 
     summary = _s1_summary(s1["rows"])
     print(f"S1 1차통과 {summary['gate_first_try']}/{summary['total']}"
-          f" · 폴백 {summary['fallback']} · 중앙값 {summary['median_ms']}ms")
+          f" · 폴백 {summary['fallback']} · {_s1_console_latency(summary)}")
     misses = _s3_misses(s3["rows"])
     failures = s3_failures(s3["rows"])
     print(f"S3 차단 미탐 {len(misses)}건 · **장애 {len(failures)}건** "
