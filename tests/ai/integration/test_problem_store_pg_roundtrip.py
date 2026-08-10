@@ -20,13 +20,18 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import pytest
+from first_sql_barrier import (
+    FirstSqlBarrierSession,
+    RecordingSession,
+    barrier_sessionmaker,
+    wait_until_parked,
+)
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -54,32 +59,12 @@ _Scenario = Callable[[async_sessionmaker[AsyncSession]], Awaitable[None]]
 _CONCURRENT_SAVE_TIMEOUT_SECONDS = 15.0
 
 
-class _BarrierSession:
-    """첫 SQL 문에서 배리어에 걸리는 세션 — 최초 저장을 결정론으로 겹친다."""
-
-    def __init__(self, session: AsyncSession, barrier: asyncio.Barrier) -> None:
-        self._session = session
-        self._barrier: asyncio.Barrier | None = barrier
-
-    async def execute(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-        if self._barrier is not None:
-            barrier, self._barrier = self._barrier, None
-            await barrier.wait()
-        return await self._session.execute(*args, **kwargs)
-
-    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
-        return getattr(self._session, name)
-
-
 def _barrier_sessions(
     sessions: async_sessionmaker[AsyncSession], barrier: asyncio.Barrier
 ) -> Callable[[], Any]:
-    @asynccontextmanager
-    async def factory() -> AsyncIterator[_BarrierSession]:
-        async with sessions() as session:
-            yield _BarrierSession(session, barrier)
-
-    return factory
+    """🔴 **공용 프록시를 쓴다** — 종전엔 counsel 경합 테스트와 **같은 15줄을 각자** 들고
+    있었다(99 #02). 감싸는 대상만 여기서 정한다."""
+    return barrier_sessionmaker(sessions, barrier)
 
 
 async def _with_pg(scenario: _Scenario) -> str:
@@ -330,24 +315,40 @@ def test_same_slot_twice_is_idempotent_and_conflicts_on_change() -> None:
     _run(scenario)
 
 
-def test_the_barrier_really_overlaps_the_problem_item_writers() -> None:
-    """🔴 절단 가드 — 배리어가 안 걸리면 뒤 검사는 직렬 저장을 여러 번 잰다."""
-    barrier = asyncio.Barrier(4)
+def test_the_first_problem_item_sql_waits_for_all_writers() -> None:
+    """🔴 **절단 가드 — 프록시가 네 writer의 「첫 SQL」을 같은 배리어에 세우는가.**
 
-    async def scenario() -> list[int]:
-        order: list[int] = []
+    ⚠ **종전 가드는 `asyncio.Barrier`만 봤다** — `FirstSqlBarrierSession.execute()`의
+    `await barrier.wait()`를 **지워도 통과**했다(로그 85 계열).
+    ⚠ **이 가드가 증명하는 것은 딱 여기까지다** — 최초 저장 경합의 승자/패자 판정은
+    **아래 실 PG 검사**가 증명한다. PG 없이 돈다.
+    """
 
-        async def leg(index: int) -> None:
-            order.append(index)
-            await barrier.wait()
-            order.append(index + 10)
+    async def scenario() -> None:
+        party = 4
+        barrier = asyncio.Barrier(party)
+        inners = [RecordingSession() for _ in range(party)]
+        proxies = [FirstSqlBarrierSession(inner, barrier) for inner in inners]
 
-        await asyncio.gather(*(leg(index) for index in range(4)))
-        return order
+        early: list[asyncio.Task[Any]] = [
+            asyncio.ensure_future(proxy.execute(f"SQL-{index}"))
+            for index, proxy in enumerate(proxies[:-1])
+        ]
+        await wait_until_parked(barrier, early, expected=party - 1)
 
-    order = asyncio.run(scenario())
-    assert set(order[:4]) == {0, 1, 2, 3}, f"넷 다 배리어 앞에 서지 않았다: {order}"
-    assert set(order[4:]) == {10, 11, 12, 13}, f"배리어 뒤가 안 열렸다: {order}"
+        #: 🔴 **셋이 서 있어도 내부 SQL은 0회여야 한다.**
+        assert barrier.n_waiting == party - 1, "세 writer가 배리어 앞에 안 섰다"
+        assert sum(i.execute_calls for i in inners) == 0, (
+            "party가 다 오기 전에 실제 SQL이 나갔다 — 겹침이 안 만들어진다"
+        )
+
+        last: asyncio.Task[Any] = asyncio.ensure_future(proxies[-1].execute("SQL-last"))
+        async with asyncio.timeout(2.0):
+            await asyncio.gather(*early, last)
+
+        assert [i.execute_calls for i in inners] == [1] * party
+
+    asyncio.run(scenario())
 
 
 def test_concurrent_first_writes_lose_with_the_contract_error_not_a_driver_error() -> None:
