@@ -1386,6 +1386,31 @@ select(ProblemItem).join(
 따라서 A가 모델 선택지를 승인한 뒤 같은 모델 변경 PR에서 함께 리뷰하면 된다
 (`docs/02_ownership.md:60`).
 
+#### 2-20.4 최초 저장 경합 전수 조사 `[2026-08-10]`
+
+`SELECT`로 부재를 확인한 뒤 `INSERT`하는 최초 저장 경로를 저장소 전수에서 다시 대조했다.
+같은 형태는 셋이며 계약에 따라 처리가 갈린다.
+
+| 저장소 | 판정 | 처리 |
+| --- | --- | --- |
+| `problem_store.py` | 같은 슬롯의 동시 최초 저장에서 진 트랜잭션이 23505로 새어 `ImmutableStoreConflict` 계약을 위반 | **이번 처리** — `problem_item\x1f{tenant_id}\x1f{set_id}\x1f{slot_index}` 자문 잠금으로 읽기 전부터 직렬화 |
+| `inquiry_class_store.py` | 같은 최초 저장 경합 | **A 별도 처리** — 이 PR에서 수정하지 않음 |
+| `idempotency.py` | 저장 실패를 요청 실패로 올리지 않는 fail-open 계약 | **대상 아님** — 같은 처방을 강제하지 않음 |
+
+`problem_item`은 결정론 UUID PK와 `UNIQUE(set_id, slot_index)`에 같은 자연키가 두 번
+적힌다. `ON CONFLICT DO NOTHING`은 지정한 arbiter만 투기적 삽입으로 보호하므로,
+자연키를 arbiter로 둔 동시 4쓰기 20회 중 2회는 PK 23505가 먼저 걸렸다
+(실측 2026-08-10). 예외를 성공으로 번역하지 않고 `pg_advisory_xact_lock`으로 충돌 자체를
+없애는 이유다.
+
+**별건 등재 — `problem_set`.** 저장소 전체에 `problem_set`을 `INSERT`하는 코드는 0건이고
+`problem_store.py`는 읽기·조인만 하므로 지금은 무해하다. 향후 쓰기 경로를 여는 시점에는
+자연키와 최초 저장 경합을 함께 설계해야 한다. 이번에는 고치지 않는다.
+
+**제안만 남김 — SQLSTATE 추출 공용화.** 향후 여러 저장소에서 예외 번역이 실제로 필요해지면
+`agent_job.py`의 `_sqlstate`와 같은 드라이버 차이 흡수 헬퍼를 공용 경계로 올린다. 지금은
+A 소유 파일을 리팩터링하거나 이 PR에 공용 헬퍼를 만들지 않는다.
+
 ---
 
 ### 2-21. Step 1 그리드 축과 v1 출제 범위 `[2026-08-08]`

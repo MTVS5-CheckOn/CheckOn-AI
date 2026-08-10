@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -48,6 +50,34 @@ pytestmark = pytest.mark.integration
 
 _NOW = datetime(2026, 8, 8, tzinfo=UTC)
 _Scenario = Callable[[async_sessionmaker[AsyncSession]], Awaitable[None]]
+
+
+class _BarrierSession:
+    """첫 SQL 문에서 배리어에 걸리는 세션 — 최초 저장을 결정론으로 겹친다."""
+
+    def __init__(self, session: AsyncSession, barrier: asyncio.Barrier) -> None:
+        self._session = session
+        self._barrier: asyncio.Barrier | None = barrier
+
+    async def execute(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        if self._barrier is not None:
+            barrier, self._barrier = self._barrier, None
+            await barrier.wait()
+        return await self._session.execute(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
+        return getattr(self._session, name)
+
+
+def _barrier_sessions(
+    sessions: async_sessionmaker[AsyncSession], barrier: asyncio.Barrier
+) -> Callable[[], Any]:
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[_BarrierSession]:
+        async with sessions() as session:
+            yield _BarrierSession(session, barrier)
+
+    return factory
 
 
 async def _with_pg(scenario: _Scenario) -> str:
@@ -294,6 +324,138 @@ def test_same_slot_twice_is_idempotent_and_conflicts_on_change() -> None:
                 candidate_ref=f"item-candidate:{set_id}:4:1",
                 item=_item(),
             )
+
+    _run(scenario)
+
+
+def test_the_barrier_really_overlaps_the_problem_item_writers() -> None:
+    """🔴 절단 가드 — 배리어가 안 걸리면 뒤 검사는 직렬 저장을 여러 번 잰다."""
+    barrier = asyncio.Barrier(4)
+
+    async def scenario() -> list[int]:
+        order: list[int] = []
+
+        async def leg(index: int) -> None:
+            order.append(index)
+            await barrier.wait()
+            order.append(index + 10)
+
+        await asyncio.gather(*(leg(index) for index in range(4)))
+        return order
+
+    order = asyncio.run(scenario())
+    assert set(order[:4]) == {0, 1, 2, 3}, f"넷 다 배리어 앞에 서지 않았다: {order}"
+    assert set(order[4:]) == {10, 11, 12, 13}, f"배리어 뒤가 안 열렸다: {order}"
+
+
+def test_concurrent_first_writes_lose_with_the_contract_error_not_a_driver_error() -> None:
+    """🔴 같은 슬롯을 **동시에** 처음 쓰면 진 쪽이 계약 오류로 진다 — 500이 아니라.
+
+    앞의 멱등 테스트는 두 저장을 **차례로** 부른다. 그건 「이미 있는 행」 경로라 최초 저장이
+    겹치는 창을 안 지난다. 종전 구현은 `SELECT`(없다) → `INSERT`가 갈라져 있어서 동시에
+    치면 **둘 다 「없다」를 보고 둘 다 INSERT**했고, 진 쪽은 계약이 정한
+    `ImmutableStoreConflict`가 아니라 asyncpg `UniqueViolation`(23505)이 `IntegrityError`로
+    올라와 **핸들러 없이 500**이 됐다.
+
+    ⚠ **재는 것은 「하나만 이긴다」가 아니라 「진 쪽이 무엇으로 지는가」다.** 종전 코드도
+    행은 하나만 남았다 — 갈린 것은 **밖으로 나가는 오류의 부류**뿐이다. 행 개수만 세면
+    이 테스트는 옛 코드에서도 통과한다.
+    """
+    tenant = f"t_{uuid.uuid4().hex[:8]}"
+
+    async def scenario(sm: async_sessionmaker[AsyncSession]) -> None:
+        from ai.db.models import ProblemItem
+        from ai.db.repositories.problem_store import PgProblemItemStore
+        from ai.problem_generation.application.ports import ImmutableStoreConflict
+        from ai.problem_generation.domain.models import StoredProblemItem
+
+        set_id = await _make_problem_set(sm, tenant=tenant)
+        item_id = problem_item_id(set_id, 7)
+        barrier = asyncio.Barrier(4)
+        # 저장소 인스턴스를 따로 준다 — 워커가 갈리는 상황이 이 형태다(세션도 갈린다).
+        outcomes = await asyncio.gather(
+            *(
+                PgProblemItemStore(
+                    sessionmaker=_barrier_sessions(sm, barrier),  # type: ignore[arg-type]
+                    tenant_id=tenant,
+                ).save(
+                    set_id=set_id,
+                    slot_index=7,
+                    result=ItemResult(
+                        item_id=item_id,
+                        status=ProblemItemStatus.NEEDS_REVIEW,
+                        attempt_no=1,
+                        difficulty_est=0.5,
+                        difficulty_band=DifficultyBand.MEDIUM,
+                        review_reason=ReviewReason.DIFFICULTY_BAND_MISMATCH,
+                    ),
+                    # 🔴 경쟁자마다 **다른 값**이다 — 같은 값이면 진 쪽도 정상 반환이라
+                    #    오류 부류가 안 드러난다. 가르는 축을 `candidate_ref`로 둔 것은
+                    #    `attempt_no`가 재생성 상한(≤3 · 불변식 6)에 묶여 있어서다.
+                    candidate_ref=f"item-candidate:{set_id}:7:1:{rival}",
+                    item=_item(),
+                )
+                for rival in range(4)
+            ),
+            return_exceptions=True,
+        )
+
+        won = [one for one in outcomes if isinstance(one, StoredProblemItem)]
+        lost = [one for one in outcomes if isinstance(one, BaseException)]
+        assert len(won) == 1, f"최초 저장이 둘 이상 성공했다: {outcomes}"
+        # 🔴 이 단정이 이 테스트의 전부다 — 진 쪽은 전부 계약 오류여야 한다.
+        assert [type(one) for one in lost] == [ImmutableStoreConflict] * 3, (
+            f"진 쪽이 계약 밖 오류로 샜다: {[repr(one) for one in lost]}"
+        )
+
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(ProblemItem).where(ProblemItem.set_id == set_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(rows) == 1
+        # 이긴 값이 그대로 앉아 있다 — 진 쪽이 덮어쓰지 않았다.
+        assert StoredProblemItem.model_validate(rows[0].snapshot) == won[0]
+
+    _run(scenario)
+
+
+def test_concurrent_identical_writes_all_return_the_same_record() -> None:
+    """같은 값을 동시에 쓰면 **전부 성공**하고 같은 레코드를 받는다 — 멱등의 동시 판이다.
+
+    ⚠ 재시도·재개가 겹치는 실제 형태가 이쪽이다(`recover_expired` 재진입). 여기서
+    `ImmutableStoreConflict`가 나면 **같은 값을 쓰는 재시도가 실패로 보이게** 된다.
+    """
+    tenant = f"t_{uuid.uuid4().hex[:8]}"
+
+    async def scenario(sm: async_sessionmaker[AsyncSession]) -> None:
+        from ai.db.repositories.problem_store import PgProblemItemStore
+
+        set_id = await _make_problem_set(sm, tenant=tenant)
+        barrier = asyncio.Barrier(4)
+        args = {
+            "set_id": set_id,
+            "slot_index": 3,
+            "result": _result(problem_item_id(set_id, 3)),
+            "candidate_ref": f"item-candidate:{set_id}:3:3",
+            "item": _item(),
+        }
+        saved = await asyncio.gather(
+            *(
+                PgProblemItemStore(
+                    sessionmaker=_barrier_sessions(sm, barrier),  # type: ignore[arg-type]
+                    tenant_id=tenant,
+                ).save(**args)  # type: ignore[arg-type]
+                for _ in range(4)
+            )
+        )
+
+        assert all(one == saved[0] for one in saved)
 
     _run(scenario)
 

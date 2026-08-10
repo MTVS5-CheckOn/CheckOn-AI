@@ -17,6 +17,10 @@
   단정한다(99 #04).
 - **ⓒ** 어느 쪽이 정본인지는 `db/models.py`의 `ProblemItem` docstring에 적혀 있다.
 
+🔴 **최초 저장은 읽기 전에 같은 자연키로 줄을 세운다**(#35와 같은 처방 · 2026-08-10).
+행이 없는 상태에서는 `SELECT`가 잠글 대상이 없으므로, 트랜잭션 범위 자문 잠금으로
+`_require_own_set → _select_row → INSERT` 전체를 직렬화한다.
+
 ⚠ **테넌트 격리는 생성자 주입이다**(§2-20.3) — Protocol 시그니처에 `tenant_id`가 없어
 인스턴스를 테넌트 단위로 스코프하고 모든 조회에서 부모 `problem_set`을 조인한다.
 `problem_item`에 `tenant_id` 직접 컬럼을 두지 않은 것은 누락이 아니다(A 판정 §1).
@@ -28,7 +32,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai.contracts.problem_generation import GeneratedItem, ItemResult
@@ -96,6 +100,8 @@ class PgProblemItemStore:
     같은 슬롯은 같은 행이고, 내용이 다르면 `ImmutableStoreConflict`다(인메모리와 같은 규약).
     """
 
+    _LOCK_SQL = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
+
     def __init__(
         self,
         *,
@@ -123,6 +129,22 @@ class PgProblemItemStore:
             item=item,
         )
         async with self._sessionmaker() as session, session.begin():
+            # 🔴 현재 워크플로는 슬롯을 순차 처리하고 lease도 테넌트로 갈려 오늘 경로에서
+            # 이 경합이 이미 난다는 뜻은 아니다. 크래시 후 recover_expired 재진입, 배경 워커
+            # 분리, 다중 소비자에서도 저장소 무결성이 유지되도록 첫 SQL에서 같은 키에 선다.
+            await session.execute(
+                self._LOCK_SQL,
+                # ⚠ PG는 문자열의 NUL(`\x00`)을 거부하므로 구분자는 `\x1f`를 쓴다.
+                {
+                    "key": (
+                        f"problem_item\x1f{self._tenant_id}\x1f{set_id}\x1f{slot_index}"
+                    )
+                },
+            )
+            # `ON CONFLICT DO NOTHING`은 쓰지 않는다. 이 표는 같은 자연키를 결정론 UUID PK와
+            # `uq_problem_item_slot`에 두 번 기록한다. PG는 지정한 arbiter만 투기적 삽입으로
+            # 보호하므로 자연키를 arbiter로 둔 동시 4쓰기 20회 중 2회는 PK 23505가 먼저
+            # 샜다(2026-08-10). 자문 잠금은 어느 인덱스가 먼저 걸리는지에 기대지 않는다.
             await self._require_own_set(session, set_id)
             existing = await self._select_row(session, set_id, slot_index)
             if existing is not None:
