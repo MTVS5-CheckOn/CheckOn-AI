@@ -228,3 +228,92 @@ def test_every_verdict_is_reachable() -> None:
         )
     }
     assert reached == set(LedgerVerdict), f"도달 못 한 판정이 있다: {set(LedgerVerdict) - reached}"
+
+
+# ── (지시서 59) 숨은 결합·판정 순서 ─────────────────────────────
+
+
+def test_a_run_id_owned_by_another_tenant_is_a_violation() -> None:
+    """🔴 **테넌트 결합 위반이 실 PG에서 도달 불가였다**(실측 8/10).
+
+    조회가 `AI_RUN`을 **테넌트까지 걸어** 조인하므로, 같은 `execution_id`가 **남의 테넌트에**
+    있으면 `AI_RUN` 열이 전부 `None`이 되고 판정은 **`allowed_absence`**가 됐다 —
+    *"queued라 아직 없다"* 와 **구분이 안 된다.**
+
+    ⚠ **조인에서 테넌트를 빼서 남의 행 전문을 읽는 방식으로 고치지 않는다** — 그건 경계를
+    넘는다. **존재 여부만** 별도 관측으로 받고 **남의 식별자는 안 싣는다.**
+    """
+    assert (
+        _verdict(status=JobPhase.QUEUED, run_id_exists_in_other_tenant=True)
+        is LedgerVerdict.VIOLATION
+    )
+
+
+def test_the_cross_tenant_check_outranks_a_normal_absence() -> None:
+    """🔴 **판정 순서** — 정상 부재보다 **먼저** 걸려야 한다."""
+    for status in (JobPhase.QUEUED, JobPhase.RUNNING, JobPhase.PAUSED):
+        assert (
+            _verdict(status=status, run_id_exists_in_other_tenant=True)
+            is LedgerVerdict.VIOLATION
+        ), f"{status.value}에서 교차 테넌트 충돌이 정상 부재에 가려졌다"
+
+
+def test_a_paused_job_with_call_evidence_is_a_violation() -> None:
+    """🔴 **`paused`가 in-flight라는 이유로 증거를 덮으면 안 된다.**
+
+    서킷 개방은 **호출을 이미 소비한 뒤**에 온다 — 증거가 있으면 원장이 있어야 한다.
+    """
+    assert (
+        _verdict(status=JobPhase.PAUSED, steps_with_llm_call=1)
+        is LedgerVerdict.VIOLATION
+    )
+
+
+def test_a_running_job_with_call_evidence_is_still_allowed() -> None:
+    """⚠ `running`은 **아직 `finally` 전**일 수 있다 — 증거가 있어도 red로 만들지 않는다."""
+    assert (
+        _verdict(status=JobPhase.RUNNING, steps_with_llm_call=3)
+        is LedgerVerdict.ALLOWED_ABSENCE
+    )
+
+
+def test_a_cancelled_after_start_follows_the_evidence() -> None:
+    """실행 후 취소 — 증거가 있으면 violation, 없으면 unknown."""
+    assert (
+        _verdict(status=JobPhase.CANCELLED, started_at_is_set=True, steps_with_llm_call=1)
+        is LedgerVerdict.VIOLATION
+    )
+    assert (
+        _verdict(status=JobPhase.CANCELLED, started_at_is_set=True)
+        is LedgerVerdict.UNKNOWN
+    )
+
+
+def test_a_result_ref_is_not_call_evidence() -> None:
+    """🔴 **`result_ref`는 호출 증거가 아니다** — 산출물 저장·종단 증거다.
+
+    ⚠ **LLM 0콜 성공 경로도 결과를 만든다.** 호출 증거라고 부르면
+    **관측의 이름이 실제로 보는 것보다 넓어진다**(로그 85 계열).
+    """
+    assert _obs(result_ref="pack://x").consumed_a_call is False
+    assert _obs(steps_with_llm_call=1).consumed_a_call is True
+    #: `failed` + `result_ref`만으로는 결함을 확정할 수 없다 ⇒ **증명 불가**다.
+    assert (
+        _verdict(status=JobPhase.FAILED, result_ref="pack://x") is LedgerVerdict.UNKNOWN
+    )
+
+
+def test_an_unknown_capability_is_a_violation_not_a_crash() -> None:
+    """🔴 **낯선 `capability` 하나가 점검 전체를 죽이면 안 된다.**
+
+    DB 문자열을 변환 단계에서 바로 enum으로 바꾸면 **미등록 값 하나에 리포트가 통째로
+    안 나온다.** 그 행만 `violation`이고 나머지는 계속 렌더돼야 한다.
+    """
+    assert (
+        _verdict(
+            ai_run_execution_id=_RUN,
+            ai_run_tenant_id=_TENANT,
+            ai_run_capability="future_unknown",
+        )
+        is LedgerVerdict.VIOLATION
+    )
