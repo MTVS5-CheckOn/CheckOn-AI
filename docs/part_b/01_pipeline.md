@@ -57,7 +57,7 @@ flowchart LR
   DG --> OUT["WeaknessMap<br/>PG 저장 → 출제 입력 + 백엔드 반환"]
 ```
 
-**불변식:** ① area 어휘와 B-3 측정 대상 경계는 `contracts/taxonomy.py`·`policies/taxonomy.md`만(6영역·경계 7건 확정) ② `cell_min_items` 미만 셀은 `unknown`(억지 진단 금지) ③ 미확정 태그(ai_suggested) 집계 미반영 ④ 그래프 개정은 `graph_version`으로만 ⑤ `suspect`는 확정 약점으로 사용 금지 — 탐색 출제만.
+**불변식:** ① area 어휘와 B-3 측정 대상 경계는 `contracts/taxonomy.py`·`policies/taxonomy.md`만(5영역·경계 7건 확정) ② `cell_min_items` 미만 셀은 `unknown`(억지 진단 금지) ③ 미확정 태그(ai_suggested) 집계 미반영 ④ 그래프 개정은 `graph_version`으로만 ⑤ `suspect`는 확정 약점으로 사용 금지 — 탐색 출제만.
 
 **데이터 부족 분기(확정):** 진단 표본이 기준 미달이면 자동 개인화 출제는 `rejected_insufficient`(200 + 정상 상태)로 종료. 단 **강사가 영역·노드를 직접 선택한 수동 목표 출제는 허용** — 결과 메타와 화면에 "약점 데이터 기반 개인화 아님"을 필수 표기(`target_source=teacher_manual`, [`05_problem_generation.md`](05_problem_generation.md) §4.1).
 

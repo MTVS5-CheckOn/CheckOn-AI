@@ -13,6 +13,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
+from ai.agents.job_store import InMemoryJobStore
 from ai.agents.supervisor import Supervisor
 from ai.api.app import create_app
 from ai.api.routers import problem as problem_router
@@ -352,7 +353,9 @@ def test_problem_provider_has_no_silent_fake_fallback() -> None:
 def test_problem_unsupported_source_is_400_with_reason_code(
     with_passage: bool,
 ) -> None:
-    _prepare()
+    run_store, _stores, _generator, _verifier = _prepare()
+    job_store = build_agent_job_store()
+    assert isinstance(job_store, InMemoryJobStore)
     body = _body(area_tag="reading")
     if with_passage:
         body["passage"] = {
@@ -373,6 +376,28 @@ def test_problem_unsupported_source_is_400_with_reason_code(
         "area_tag": "reading",
         "passage": with_passage,
     }
+    assert len(job_store) == 0
+    assert job_store.added == 0
+    assert run_store.runs == {}
+
+
+def test_type_tag_reason_precedes_source_reason_for_a_request_violating_both() -> None:
+    run_store, _stores, _generator, _verifier = _prepare()
+    job_store = build_agent_job_store()
+    assert isinstance(job_store, InMemoryJobStore)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/v1/problems",
+            headers=_HEADERS,
+            json=_body(area_tag="reading", type_tags=("apply",)),
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["detail"]["reason"] == "type_tag_not_supported"
+    assert len(job_store) == 0
+    assert job_store.added == 0
+    assert run_store.runs == {}
 
 
 def test_problem_get_hides_other_tenants_job() -> None:

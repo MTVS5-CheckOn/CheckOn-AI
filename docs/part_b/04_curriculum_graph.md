@@ -1,6 +1,6 @@
 # [체크온] curriculum_graph 사양서 v1 — 진단 입력 계약 · 그래프 3종 · 약점 판정 · 결정론 규격
 
-> **지위:** member-B(염준영) 공식 사양 v1. `src/ai/diagnosis/`(skill_graph.py · diagnoser.py)와 `diagnosis/data/curriculum_graph.yaml`의 사양 원본. 영역 어휘는 `contracts/taxonomy.py` 준수 — **6영역 enum과 측정 대상 기준 경계 사례 7건은 7/27 확정**.
+> **지위:** member-B(염준영) 공식 사양 v1. `src/ai/diagnosis/`(skill_graph.py · diagnoser.py)와 `diagnosis/data/curriculum_graph.yaml`의 사양 원본. 영역 어휘는 `contracts/taxonomy.py` 준수 — **출제 5영역 enum(2026-08-09 개정)과 측정 대상 기준 경계 사례 7건(7/27 확정)**.
 >
 > **변경 이력**
 > - v1.5 (2026-08-04): §4 `[잠정]` 근거에 **③ 골든 코퍼스 대표성**을 추가했다(실질 5/24셀 · `critic` 0건). 표본 희석 논의의 A 쪽 대칭 서술이 `part_a/13` **§5-4**이며 §5-2(“그룹당 8문항”)는 `unknown`의 근거이지 오차 논거가 아니라는 점도 명시했다 — A 회신 ④ 수용.
@@ -31,7 +31,7 @@ area×type 셀 정답률만으로는 "언어(문법) 약함"까지만 말할 수
 | 독해 기능 사다리 | `reading` | 레벨 있는 DAG | `builds_on` — 기능 누적 관계 | 사실적 이해 → 추론적 → 비판적 → 통합·적용 |
 | 문학 개념어 그래프 | `literature` | 느슨한 DAG + 관련 엣지 | `requires`(약) + `related` | 화자/서술자 → 시점 · 심상 ↔ 표현법 |
 
-`speech`·`writing`·`media`는 v1 그래프 미구축 — 셀 정답률 판정만 제공. 그래프 부재 영역도 WeaknessMap 산출은 정상 동작한다(propagated만 빈 값). **중등·내신은 v1 범위 아님(7/15 확정)** — 그래프는 수능 고등 기준 단일, 중등 분기 금지.
+`speech_writing`·`media`는 v1 그래프 미구축 — 셀 정답률 판정만 제공. 그래프 부재 영역도 WeaknessMap 산출은 정상 동작한다(propagated만 빈 값). **중등·내신은 v1 범위 아님(7/15 확정)** — 그래프는 수능 고등 기준 단일, 중등 분기 금지.
 
 **실파일 산출물:** 문법 DAG 약 25~40노드의 실제 YAML 제작은 별도 작업 항목 — 독해 사다리·문학 그래프는 골격(레벨·대분류)만 우선. 등록: [`09_integration_proposals.md`](09_integration_proposals.md) §2-6.
 
@@ -50,7 +50,7 @@ class DiagnosisInput(BaseModel):
 
 class DiagnosisEvent(BaseModel):
     event_id: str                        # learning_event 논리 참조 — 중복 제거 키
-    area_tag: AreaTag                    # contracts/taxonomy enum (6영역 — 7/15 확정)
+    area_tag: AreaTag                    # contracts/taxonomy enum (5영역 — 현행)
     type_tag: TypeTag
     item_format: ItemFormat | None       # 분리 리포팅용 — 판정 축 아님 (v1 데이터는 mcq 중심)
     skill_node_id: str | None            # B 출제 문항만 보유

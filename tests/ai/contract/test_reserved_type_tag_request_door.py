@@ -22,8 +22,8 @@
     🔴 **잡도 요청 레코드도 만들어지지 않는다** — 거절이 `put()`보다 앞이다.
 
 🔴 **거절 자리가 「잡을 만들기 전」인 것이 이 파일의 두 번째 주장이다.** 주체 3분할상
-호출자가 고칠 요청이라 4xx이고, 잡을 만들면 **실패 원장만 늘어난다**(99 #01 — 남은 자리는
-`source_procurement_not_implemented` 하나).
+호출자가 고칠 요청이라 4xx이고, 잡을 만들면 **실패 원장만 늘어난다**. 자료 조달 미구현도
+같은 문 앞으로 이동해 99 #01의 남은 자리가 해소됐다(2026-08-09).
 """
 
 from __future__ import annotations
@@ -80,10 +80,9 @@ async def _unused_diagnosis(_: ProblemRequest) -> DiagnosisResult:
 def _body(*, type_tags: tuple[str, ...]) -> dict[str, Any]:
     """⚠ `area_tag="language"` · `passage` 없음은 **의도적이다.**
 
-    🔴 다른 조합이면 `workflow.py:536`의 소스 게이트가 **먼저**
-    `ProblemSourceUnsupported`를 내서, 이 테스트가 *예약 태그와 무관한 이유로* 통과한다.
-    조용한 통과가 이 저장소의 반복 사고다(#122·#126·#133 · 로그 70) — 그래서 여기에
-    적어 둔다. 이 조합만이 `difficulty.py`까지 실제로 도달한다.
+    이 조합은 자료 조달 문을 통과하므로 예약 태그 거절만 격리해 본다. 둘 다 위반할 때도
+    관측 호환성을 위해 예약 태그가 먼저지만, 그 순서만으로 소스 가드의 정상 배선을 증명할
+    수는 없다. 조용한 통과가 이 저장소의 반복 사고라 전제까지 고정한다.
     """
     return {
         "target_kind": "student",
