@@ -19,24 +19,39 @@ from first_sql_barrier import (
 
 
 def test_the_second_sql_does_not_wait_again() -> None:
-    """🔴 **첫 SQL 뒤에는 새 party 없이 지나야 한다.**
+    """🔴 **첫 SQL 뒤에는 새 party 없이 지나야 한다** — `_barrier`가 끊기는 동작을 고정한다.
 
     ⚠ 매번 세우면 **두 번째 문에서 party가 모자라 영원히 멈춘다** — 트랜잭션이 안 끝난다.
-    이 단정이 `_barrier`가 첫 실행 뒤 `None`으로 끊기는 동작을 고정한다.
+
+    🔴 **종전 판은 `Barrier(1)`이라 이 사실을 못 봤다**(미탐 · 8/10 지적). party가 1이면
+    **재진입해도 혼자 즉시 통과**하므로, 프록시가 `_barrier`를 안 끊어도 green이었다.
+    ⇒ **party 2 + 프록시 둘**로 세대를 실제로 연 뒤 **한 쪽만** 두 번째 SQL을 낸다.
+    끊기지 않았다면 **두 번째 party를 기다리다 `TimeoutError`**가 나야 한다.
     """
 
     async def scenario() -> None:
-        barrier = asyncio.Barrier(1)  # party 1 — 첫 문은 혼자서도 열린다
-        inner = RecordingSession()
-        proxy = FirstSqlBarrierSession(inner, barrier)
+        barrier = asyncio.Barrier(2)
+        inners = [RecordingSession(), RecordingSession()]
+        proxies = [
+            FirstSqlBarrierSession(inners[0], barrier),
+            FirstSqlBarrierSession(inners[1], barrier),
+        ]
 
-        await proxy.execute("첫 SQL")
-        assert inner.execute_calls == 1
-
-        #: 두 번째는 **배리어를 아예 안 쓴다** — party가 1이라 다시 서면 여기서 멈춘다.
+        #: ① 첫 세대를 **실제로** 연다 — 둘이 함께 지나야 열린다.
         async with asyncio.timeout(2.0):
-            await proxy.execute("둘째 SQL")
-        assert inner.execute_calls == 2, "두 번째 SQL이 안 지나갔다"
+            await asyncio.gather(
+                proxies[0].execute("첫 SQL A"),
+                proxies[1].execute("첫 SQL B"),
+            )
+        assert [inner.execute_calls for inner in inners] == [1, 1]
+
+        #: ② 🔴 **한 프록시만** 두 번째 SQL을 낸다 — 새 party는 오지 않는다.
+        #:    `_barrier`가 안 끊겼으면 여기서 두 번째 party를 기다려 timeout이다.
+        async with asyncio.timeout(2.0):
+            await proxies[0].execute("둘째 SQL A")
+        assert [inner.execute_calls for inner in inners] == [2, 1], (
+            "두 번째 SQL이 안 지나갔거나 엉뚱한 세션으로 갔다"
+        )
 
     asyncio.run(scenario())
 
@@ -60,8 +75,7 @@ def test_waiting_gives_up_when_a_task_finishes_early() -> None:
 
     async def scenario() -> None:
         barrier = asyncio.Barrier(2)
-        finished = asyncio.get_running_loop().create_future()
-        finished.set_result(None)
+        #: ⚠ 조기 종료 태스크 **하나면 충분하다** — 종전엔 안 쓰는 future도 만들었다.
         task: asyncio.Task[None] = asyncio.ensure_future(asyncio.sleep(0))
         await asyncio.sleep(0)
         async with asyncio.timeout(2.0):
