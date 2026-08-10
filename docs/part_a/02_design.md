@@ -583,7 +583,7 @@ erDiagram
     varchar tenant_id
     varchar source_text_hash "과제명 해시 = 캐시 키(재호출 방지)"
     varchar source_kind "trackA_upload|trackB_grading"
-    varchar area_tag "수능 6영역: reading|literature|speech|writing|language|media (Open-11 확정 7/15)"
+    varchar area_tag "수능 5영역: reading|literature|speech_writing|language|media (Open-11 확정 7/15 · 8/10 #179로 speech+writing → speech_writing)"
     varchar type_tag "fact|infer|critic|concept + item_format(mcq|short|essay)"
     numeric confidence
     varchar status "suggested|confirmed|rejected"

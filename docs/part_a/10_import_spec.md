@@ -14,7 +14,7 @@
 
 공통: envelope는 `04 §2.2`(`data`/`error`/`meta.versions` — 실패도 `meta.versions` 항상), 에러 코드는 `error_codes §1`이 정본(여기서 중복 정의 안 함). 필수 헤더 `X-Tenant-Id`·`X-Request-Id`, **쓰기(`POST`·`confirm`)는 `Idempotency-Key`**. 비동기 규약: `202 + job_id`, 완료 통지는 **Kafka 이벤트**(7/15), `GET`은 상태 보조 조회, **작업 총 5분 초과 시 `failed`**(04 line 119).
 
-`meta.versions`(Import 실행 관련 키만 non-null): `pipeline` · `prompt`(매핑 추론 프롬프트) · `schema`(표준 스키마 = `std-1`, 07 §5) · `contract` · `taxonomy`(매핑 목적지의 수능 6영역/유형 enum) · `graph`(매핑 조사 에이전트 그래프). `engine`·`threshold`·`verify_config`·`difficulty_calib` = null.
+`meta.versions`(Import 실행 관련 키만 non-null): `pipeline` · `prompt`(매핑 추론 프롬프트) · `schema`(표준 스키마 = `std-1`, 07 §5) · `contract` · `taxonomy`(매핑 목적지의 수능 5영역/유형 enum) · `graph`(매핑 조사 에이전트 그래프). `engine`·`threshold`·`verify_config`·`difficulty_calib` = null.
 
 ### 1.1 `POST /v1/imports` — 업로드 접수 (202)
 
