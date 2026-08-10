@@ -869,9 +869,18 @@ def _s1_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     passed = [r for r in rows if r["gate_passed"]]
     first_try = [r for r in passed if r["attempts"] == 1]
     recovered = [r for r in passed if r["attempts"] > 1]
-    latencies = sorted(r["elapsed_ms"] for r in rows)
+    #: 🔴 **지연 통계는 성공 축에서만 낸다**(99 ⓥ ⓔ). 종전에는 `rows` 전체였고, **실패 행은
+    #: 지연이 매우 작아**(문 앞에서 떨어진다) 중앙값을 아래로 끌어내려 **성공 경로가 느린데도
+    #: 「부합」**을 만들었다. 8/6 1차의 *"실측 중앙값 0.2초 (부합)"* 이 그 값이었다 —
+    #: **그 0.2초는 400이 즉시 떨어진 시간**이다.
+    #: ⚠ **판정과 근거 수치는 같은 분모에서 나온다** — 그게 이 두 줄의 규칙이다.
+    #: ⚠ **좁히기만 하면 표본이 몇이었는지가 사라진다** ⇒ `latency_sample`을 함께 낸다.
+    #:   성공 1건의 중앙값과 성공 20건의 중앙값은 **같은 무게가 아니다.**
+    latencies = sorted(r["elapsed_ms"] for r in rows if r["outcome"] == "ok")
     return {
         "total": total,
+        #: 지연 통계의 **분모** — `total`과 다른 축이다(전체 건수는 위가 든다).
+        "latency_sample": len(latencies),
         "gate_first_try": len(first_try),
         "gate_recovered": len(recovered),
         "fallback": sum(1 for r in rows if r["fallback_used"]),
@@ -1201,9 +1210,13 @@ def _render(data: dict[str, Any]) -> str:
             ],
         ),
         "",
+        # 🔴 **분모를 수치 옆에 싣는다**(99 ⓥ ⓔ) — 판정과 근거가 같은 분모에서 나온다는 것을
+        #   읽는 사람이 볼 수 있어야 한다. 종전에는 전체 행 기준이라 실패가 섞여 있었다.
         f"> 기획서 검증치 **\"신호 문장화 평균 0.6초\"** 대조 — 실측 중앙값 "
         f"**{summary['median_ms'] / 1000:.1f}초**"
-        f" ({'부합' if summary['median_ms'] <= 1200 else '**미달 — 아래 결함 참고**'}).",
+        f" ({'부합' if summary['median_ms'] <= 1200 else '**미달 — 아래 결함 참고**'})"
+        f" · **성공 {summary['latency_sample']}건 기준**(전체 {summary['total']}건 ·"
+        f" 실패 행은 문 앞에서 떨어져 지연이 매우 작다).",
         "",
         "규칙별 결과:",
         "",
