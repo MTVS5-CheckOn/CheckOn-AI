@@ -44,6 +44,21 @@ def _agent_run_ai_run_fk_still_exists() -> bool:
     )
 
 
+async def _db_has_agent_run_fk(sessions: async_sessionmaker[AsyncSession]) -> bool:
+    """**DB에 물리 제약이 실제로 남아 있는가** — ORM 메타데이터와 다른 층이다."""
+    async with sessions() as session:
+        return bool(
+            (
+                await session.execute(
+                    text(
+                        "SELECT 1 FROM pg_constraint"
+                        " WHERE conname = 'fk_agent_run_run_id_ai_run'"
+                    )
+                )
+            ).scalar_one_or_none()
+        )
+
+
 def _run(scenario: Callable[[async_sessionmaker[AsyncSession]], Awaitable[None]]) -> None:
     async def go() -> str:
         engine = create_async_engine(get_db_settings().database_url, poolclass=NullPool)
@@ -265,5 +280,33 @@ def test_an_orphan_agent_run_is_flagged() -> None:
         assert [f.verdict for f in findings] == [LedgerVerdict.VIOLATION], [
             f.reason for f in findings
         ]
+
+    _run(scenario)
+
+
+def test_the_orm_and_the_database_agree_about_the_fk() -> None:
+    """🔴 **ORM에서 FK를 지워도 로컬 DB에는 물리 제약이 남는다**(준영님 실측 8/10).
+
+    위 고아 테스트의 `xfail` 조건은 **ORM 메타데이터**에서 온다. G1이 `models.py`에서 FK를
+    지우는 순간 **마커가 안 붙어 본 검사가 실행**되는데, **로컬 DB 스키마를 갱신하지 않으면**
+    INSERT가 **DB 레벨에서** 그대로 터진다.
+
+    ⚠ **그때 나는 실패는 `ForeignKeyViolationError`라 원인을 오진하기 쉽다** —
+    *"G2 판정이 틀렸다"* 로 읽힌다. 실제로는 **스키마가 낡은 것**이다.
+    ⇒ 두 층이 갈리면 **그 사실을 말하는 실패**를 낸다.
+
+    ⚠ CI(`integration-pg`)는 `create_all`이라 항상 일치한다 — 이 검사는 **로컬 오진**을 막는다.
+    """
+
+    async def scenario(sessions: async_sessionmaker[AsyncSession]) -> None:
+        in_orm = _agent_run_ai_run_fk_still_exists()
+        in_db = await _db_has_agent_run_fk(sessions)
+        assert in_orm == in_db, (
+            f"ORM과 DB가 FK에 대해 다른 말을 한다(ORM={in_orm} · DB={in_db}) — "
+            "G1 반영 뒤라면 **로컬 스키마를 재생성**하라"
+            "(`uv run alembic upgrade head` 또는 컨테이너 재생성). "
+            "이 상태로 고아 테스트를 돌리면 DB 레벨 FK 위반이 나고 "
+            "**G2 판정 결함으로 오진**하게 된다"
+        )
 
     _run(scenario)
