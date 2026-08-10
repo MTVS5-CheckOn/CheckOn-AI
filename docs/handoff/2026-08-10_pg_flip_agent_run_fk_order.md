@@ -196,13 +196,35 @@ except Exception:
 ⚠ **저장소에 FK를 흉내 내는 검사를 만들면 안 된다.** *"`AGENT_RUN`에는 있는데 `AI_RUN`에는
 없다"* 를 **전부 red로 만들면 정상 생애주기가 red가 된다.** 갈라야 한다:
 
-| 상태 | `AI_RUN` 없음 | 판정 |
+🔴 **(8/10 정정 · 준영님 지적)** 종전 표는 **코드보다 좁았고 한 줄은 틀렸다.**
+`leased`가 없었고 `cancelled` 두 갈래가 통째로 빠졌으며, `failed` 무증거를 *"정상"* 이라
+적었는데 **코드는 `unknown`**이다. ⇒ **판정 함수를 실측해 전 조합을 옮겨 적는다.**
+
+| 상태 | 호출 증거 **없음** | 호출 증거 **있음** |
 | --- | --- | --- |
-| `queued` · `running` · `paused` | 아직 안 만들어졌을 뿐 | ✅ **정상 가능** |
-| **실제 LLM 호출을 소비했는데 없음** | 원장이 빠졌다 | 🔴 **red** |
-| **`succeeded`인 counsel / problem_generation인데 없음** | 종단인데 기록이 없다 | 🔴 **red** |
-| `failed` | **호출 여부와 함께** 판정한다 | ⚠ 호출 0이면 정상 · 호출 있었으면 red |
-| `mapping_probe` | `record_run()` 0건이라 **구조적으로 없음** | ⚠ **㉾로 명시 보고** — 별도 구현 전까지 **플립 관문과 안 섞는다** |
+| `queued` | `allowed_absence` | 🔴 `violation` |
+| `leased` | `allowed_absence` | 🔴 `violation` |
+| **`running`** | `allowed_absence` | **`allowed_absence`** ← ⚠ 유일한 예외 |
+| `paused` | `allowed_absence` | 🔴 `violation` |
+| `succeeded`(counsel · problem_generation) | 🔴 `violation` | 🔴 `violation` |
+| `failed` | ⚠ **`unknown`** | 🔴 `violation` |
+| `cancelled` — **실행 전**(`started_at` 없음) | `allowed_absence` | — |
+| `cancelled` — **실행 후** | ⚠ **`unknown`** | 🔴 `violation` |
+| `mapping_probe`(상태 무관) | ⚠ `separate_gap` — ㉾ | ⚠ `separate_gap` |
+| 같은 `run_id`가 **남의 테넌트에** 있음(상태 무관) | 🔴 `violation` | 🔴 `violation` |
+| **`AI_RUN`이 있고 논리 결합이 맞음**(상태 무관) | `ok` | `ok` |
+| `AI_RUN`은 있는데 `run_id`·테넌트·capability 불일치 | 🔴 `violation` | 🔴 `violation` |
+
+⚠ **`running`만 증거가 있어도 허용한다** — `finally`의 원장 적재 **직전**일 수 있고,
+그 시점엔 「아직 안 썼다」와 「안 쓸 것이다」를 **못 가른다.**
+⚠ **`failed`·실행 후 `cancelled`의 무증거가 `unknown`인 이유** — 실패 경로는
+`swallow_errors=True`라 **적재 실패를 삼킨다.** 「안 불렀다」와 「부르고 기록을 잃었다」가
+**증거상 같다** ⇒ **초록으로 세지 않는다**(플립을 막는다).
+🔴 **호출 증거는 `AGENT_STEP.llm_call_id` 하나뿐**이다 — `result_ref`는 산출물 증거이지
+호출 증거가 아니다(§ 관측 가능성 전수).
+
+⚠ **표가 코드보다 좁으면 다음 사람이 표를 읽고 「거기까지만 본다」고 믿는다** —
+그래서 **표를 코드에 맞추는 것이 이 절의 일**이다. 반대로 고치지 않는다.
 
 🔴 **`failed`가 「호출 여부와 함께」인 이유** — 실패 경로는 `swallow_errors=True`라
 **적재 실패를 삼킨다**(§1-4). 그래서 「실패해서 원장이 없다」와 「원장 적재가 조용히 실패했다」가
