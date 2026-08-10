@@ -1,0 +1,40 @@
+schema_version: problem-golden.v1
+suite: literature_selection
+cases:
+  - case_id: LS1
+    title: T3 만료 작품 결정론 선택과 정본 인용
+    track: T3
+    review_status: expert_review_pending
+    educational_draft: &draft
+      stem: 윗글의 표현과 서술 방식에 대한 설명으로 가장 적절한 것은?
+      choices:
+        - 첫 번째 문학 해석 초안
+        - 두 번째 문학 해석 초안
+        - 세 번째 문학 해석 초안
+        - 네 번째 문학 해석 초안
+        - 다섯 번째 문학 해석 초안
+      answer_draft: 1
+      rationale_draft: 선택된 만료 작품의 원문 인용에 따른 해설 초안 — 전문가 검수 대기
+      evidence_draft: [work:memilkkot:426852:4723:4893]
+      difficulty_draft: null
+    mutation:
+      code: literature_deterministic_selection
+      detail: 같은 WorkSelection을 주고 작품 목록 순서만 뒤집어도 slug·start·end·quote가 같다.
+    expected:
+      decision: needs_review
+      rule_ids: []
+      llm_calls: 2
+      notes: 작품 선택은 LLM을 호출하지 않고 문항 생성과 blind 검증만 각 1회 수행한다.
+  - case_id: LS2
+    title: T3 조건에 맞는 만료 작품 없음
+    track: T3
+    review_status: expert_review_pending
+    educational_draft: *draft
+    mutation:
+      code: literature_selection_unavailable
+      detail: 작품 풀에 없는 갈래·시대 조합으로 선택 후보를 0건으로 만든다.
+    expected:
+      decision: rejected_insufficient
+      rule_ids: []
+      llm_calls: 0
+      notes: 작품을 생성하거나 조건을 임의 보정하지 않고 문항 생성 전에 중단한다.

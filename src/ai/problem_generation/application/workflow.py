@@ -43,13 +43,19 @@ from ai.contracts.problem_generation import (
     ReviewReason,
     SetStopReason,
     TargetSource,
+    WorkExcerpt,
     assert_problem_generation_state_transition,
 )
-from ai.contracts.taxonomy import TypeTag
+from ai.contracts.taxonomy import AreaTag, TypeTag
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import (
     ProblemGenerator,
     build_candidate_snapshot,
+)
+from ai.problem_generation.application.literature_selector import (
+    LiteratureSelectionUnavailable,
+    LiteratureSelector,
+    attach_work_excerpt,
 )
 from ai.problem_generation.application.passage_generator import (
     PassageGenerationUnavailable,
@@ -90,7 +96,7 @@ type DiagnosisCallable = Callable[[ProblemRequest], Awaitable[DiagnosisResult]]
 
 SOURCE_PROCUREMENT_NOT_IMPLEMENTED = "source_procurement_not_implemented"
 
-_PROCURE_PASSAGE = "procure_passage"
+_PROCURE_SOURCE = "procure_source"
 _BEGIN_ATTEMPT = "begin_attempt"
 _BEGIN_DIFFICULTY_REGEN = "begin_difficulty_regen"
 _RUN_ATTEMPT = "run_attempt"
@@ -182,6 +188,7 @@ class ProblemGenerationWorkflow:
         graph_context: GraphContextService,
         generator: ProblemGenerator,
         passage_generator: PassageGenerator,
+        literature_selector: LiteratureSelector,
         cross_solver: BlindCrossSolver,
         candidate_store: CandidateStore,
         item_store: ProblemItemStore,
@@ -193,6 +200,7 @@ class ProblemGenerationWorkflow:
         self._graph_context = graph_context
         self._generator = generator
         self._passage_generator = passage_generator
+        self._literature_selector = literature_selector
         self._cross_solver = cross_solver
         self._candidate_store = candidate_store
         self._item_store = item_store
@@ -268,6 +276,10 @@ class ProblemGenerationWorkflow:
             return RejectedInsufficientOutcome(
                 status_reason="승인된 기준 자료로 T2 지문을 생성할 수 없다"
             )
+        except LiteratureSelectionUnavailable:
+            return RejectedInsufficientOutcome(
+                status_reason="요청 조건에 맞는 저작권 만료 문학 원문을 선택할 수 없다"
+            )
         final_state = ProblemGenerationState.model_validate(result)
         return final_state.to_result()
 
@@ -283,27 +295,34 @@ class ProblemGenerationWorkflow:
 
         feedback: dict[tuple[int, int], _AttemptFeedback] = {}
 
-        async def procure_passage(
+        async def procure_source(
             state: ProblemGenerationState,
         ) -> dict[str, object]:
             passage_request = request.passage
-            if passage_request is None or state.passage_draft is not None:
-                return {}
-            target = targets[0]
-            type_tag = request.type_tags[0]
-            context_pack = await self._resolve_context(
-                request=request,
-                type_tag=type_tag,
-                target=target,
-            )
-            if not has_reference_data(context_pack):
-                raise GraphContextReferenceInsufficient
-            draft = await self._passage_generator.generate(
-                passage_request=passage_request,
-                context_pack=context_pack,
-                execution_context=execution_context,
-            )
-            return _checked_update(state, passage_draft=draft)
+            if passage_request is not None:
+                if state.passage_draft is not None:
+                    return {}
+                target = targets[0]
+                type_tag = request.type_tags[0]
+                context_pack = await self._resolve_context(
+                    request=request,
+                    type_tag=type_tag,
+                    target=target,
+                )
+                if not has_reference_data(context_pack):
+                    raise GraphContextReferenceInsufficient
+                draft = await self._passage_generator.generate(
+                    passage_request=passage_request,
+                    context_pack=context_pack,
+                    execution_context=execution_context,
+                )
+                return _checked_update(state, passage_draft=draft)
+
+            work_selection = request.work_selection
+            if work_selection is not None and state.work_excerpt is None:
+                excerpt = self._literature_selector.select(work_selection)
+                return _checked_update(state, work_excerpt=excerpt)
+            return {}
 
         async def begin_attempt(
             state: ProblemGenerationState,
@@ -342,6 +361,8 @@ class ProblemGenerationWorkflow:
             type_tag = request.type_tags[state.cursor % len(request.type_tags)]
             if request.passage is not None and state.passage_draft is None:
                 raise RuntimeError("T2 문항 생성 전에 passage_draft가 준비되지 않았다")
+            if request.work_selection is not None and state.work_excerpt is None:
+                raise RuntimeError("T3 문항 생성 전에 work_excerpt가 준비되지 않았다")
 
             try:
                 context_pack = await self._resolve_context(
@@ -349,6 +370,7 @@ class ProblemGenerationWorkflow:
                     type_tag=type_tag,
                     target=target,
                     passage_draft=state.passage_draft,
+                    work_excerpt=state.work_excerpt,
                 )
             except (GraphContextUnavailable, TimeoutError) as error:
                 if state.fallback_ref is not None:
@@ -522,12 +544,12 @@ class ProblemGenerationWorkflow:
             return _BEGIN_ATTEMPT
 
         builder = StateGraph(ProblemGenerationState)
-        builder.add_node(_PROCURE_PASSAGE, procure_passage)
+        builder.add_node(_PROCURE_SOURCE, procure_source)
         builder.add_node(_BEGIN_ATTEMPT, begin_attempt)
         builder.add_node(_BEGIN_DIFFICULTY_REGEN, begin_difficulty_regen)
         builder.add_node(_RUN_ATTEMPT, run_attempt)
-        builder.add_edge(START, _PROCURE_PASSAGE)
-        builder.add_edge(_PROCURE_PASSAGE, _BEGIN_ATTEMPT)
+        builder.add_edge(START, _PROCURE_SOURCE)
+        builder.add_edge(_PROCURE_SOURCE, _BEGIN_ATTEMPT)
         builder.add_edge(_BEGIN_ATTEMPT, _RUN_ATTEMPT)
         builder.add_edge(_BEGIN_DIFFICULTY_REGEN, _RUN_ATTEMPT)
         routes: dict[Hashable, str] = {
@@ -610,14 +632,16 @@ class ProblemGenerationWorkflow:
         if not supports_source_procurement(
             area_tag=request.area_tag,
             has_passage_request=request.passage is not None,
+            has_work_selection=request.work_selection is not None,
         ):
             raise ProblemSourceUnsupported(
-                "지원되는 자료 조달 조합은 language+자료 없음과 "
-                "reading+PassageRequest이다(05 §1.2)",
+                "지원되는 자료 조달 조합은 language+자료 없음, reading+PassageRequest, "
+                "literature+WorkSelection이다(05 §1.2)",
                 {
                     "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
                     "area_tag": request.area_tag.value,
                     "passage": request.passage is not None,
+                    "work_selection": request.work_selection is not None,
                 },
             )
         if execution_context.capability is not Capability.PROBLEM_GENERATION:
@@ -654,6 +678,7 @@ class ProblemGenerationWorkflow:
         type_tag: TypeTag,
         target: TargetPlan,
         passage_draft: PassageDraft | None = None,
+        work_excerpt: WorkExcerpt | None = None,
     ) -> ContextPack:
         graph_request = GraphContextRequest(
             tenant_id=request.tenant_id,
@@ -687,6 +712,8 @@ class ProblemGenerationWorkflow:
             raise GraphContextError("GraphContextService가 요청과 다른 ContextPack을 반환했다")
         if passage_draft is not None:
             return attach_passage_draft(context_pack, passage_draft)
+        if work_excerpt is not None:
+            return attach_work_excerpt(context_pack, work_excerpt)
         return context_pack
 
     async def _previous_items(
@@ -878,6 +905,8 @@ class ProblemGenerationWorkflow:
     ) -> ReviewReason | None:
         if difficulty_review:
             return ReviewReason.DIFFICULTY_BAND_MISMATCH
+        if request.area_tag is AreaTag.LITERATURE:
+            return ReviewReason.T3_LITERATURE
         candidate_low = (
             candidate.solve_result.confidence
             < self._verify_config.cross_confidence_high

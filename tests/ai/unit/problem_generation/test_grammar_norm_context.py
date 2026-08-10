@@ -119,6 +119,53 @@ def test_generator_hydrates_omitted_quote_from_approved_context() -> None:
     assert "‘ㄷ, ㅌ’ 받침 뒤에" in quote
 
 
+def test_generator_replaces_model_quote_with_approved_context_quote() -> None:
+    context = asyncio.run(
+        GrammarNormGraphContextService().resolve_generation_context(_request())
+    )
+    refs = context.retrieval_trace["allowed_evidence_refs"]
+    anchors = context.retrieval_trace["evidence_anchors"]
+    assert isinstance(refs, list)
+    assert isinstance(anchors, list)
+    ref = refs[4]
+    assert isinstance(ref, str)
+    canonical_quote = next(
+        anchor["quote"]
+        for anchor in anchors
+        if isinstance(anchor, dict) and anchor.get("ref") == ref
+    )
+    model_quote = "모델이 ContextPack과 다르게 작성한 인용"
+    item = GeneratedItem(
+        area_tag=AreaTag.LANGUAGE,
+        type_tag=TypeTag.INFER,
+        item_format=ItemFormat.MCQ,
+        skill_node_id=_NODE,
+        stem="음운 변동에 대한 설명으로 옳은 것을 고르시오.",
+        choices=tuple(
+            Choice(
+                no=no,
+                text=f"선택지 {no}",
+                why_wrong=None if no == 1 else "근거와 다르다.",
+            )
+            for no in range(1, 6)
+        ),
+        answer=Answer(correct_no=1),
+        rationale="승인된 규정에 따른다.",
+        evidence=(
+            EvidenceAnchor(
+                kind=EvidenceKind.GRAMMAR_RULE,
+                ref=ref,
+                quote=model_quote,
+            ),
+        ),
+    )
+
+    hydrated = hydrate_evidence_quotes(item, context)
+
+    assert hydrated.evidence[0].quote == canonical_quote
+    assert hydrated.evidence[0].quote != model_quote
+
+
 def test_loader_uses_one_process_wide_csv_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

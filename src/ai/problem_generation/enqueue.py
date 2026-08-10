@@ -78,14 +78,16 @@ def reject_unsupported_source_procurement(request: ProblemRequest) -> None:
     if not supports_source_procurement(
         area_tag=request.area_tag,
         has_passage_request=request.passage is not None,
+        has_work_selection=request.work_selection is not None,
     ):
         raise ProblemSourceProcurementUnsupported(
-            "지원되는 자료 조달 조합은 language+자료 없음과 "
-            "reading+PassageRequest이다(05 §1.2)",
+            "지원되는 자료 조달 조합은 language+자료 없음, reading+PassageRequest, "
+            "literature+WorkSelection이다(05 §1.2)",
             {
                 "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
                 "area_tag": request.area_tag.value,
                 "passage": request.passage is not None,
+                "work_selection": request.work_selection is not None,
             },
         )
 

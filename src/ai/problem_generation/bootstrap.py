@@ -10,6 +10,7 @@ from ai.contracts.graphrag import GraphContextService
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import ProblemGenerator
+from ai.problem_generation.application.literature_selector import LiteratureSelector
 from ai.problem_generation.application.passage_generator import PassageGenerator
 from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
 from ai.problem_generation.application.workflow import (
@@ -22,6 +23,7 @@ from ai.problem_generation.infrastructure.config import (
     load_banned_topics,
     load_verify_config,
 )
+from ai.problem_generation.infrastructure.literature_pool import load_literature_pool
 
 
 def build_problem_workflow(
@@ -47,6 +49,7 @@ def build_problem_workflow(
             gateway,
             banned_topics=resolved_banned_topics,
         ),
+        literature_selector=LiteratureSelector(load_literature_pool()),
         cross_solver=BlindCrossSolver(gateway),
         candidate_store=candidate_store,
         item_store=item_store,

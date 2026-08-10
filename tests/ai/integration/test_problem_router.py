@@ -364,6 +364,31 @@ def test_problem_reading_without_passage_is_400_with_reason_code() -> None:
         "reason": "source_procurement_not_implemented",
         "area_tag": "reading",
         "passage": False,
+        "work_selection": False,
+    }
+    assert len(job_store) == 0
+    assert job_store.added == 0
+    assert run_store.runs == {}
+
+
+def test_problem_literature_without_work_selection_is_400_before_job() -> None:
+    run_store, _stores, _generator, _verifier = _prepare()
+    job_store = build_agent_job_store()
+    assert isinstance(job_store, InMemoryJobStore)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/v1/problems",
+            headers=_HEADERS,
+            json=_body(area_tag="literature"),
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["detail"] == {
+        "reason": "source_procurement_not_implemented",
+        "area_tag": "literature",
+        "passage": False,
+        "work_selection": False,
     }
     assert len(job_store) == 0
     assert job_store.added == 0

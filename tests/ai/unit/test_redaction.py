@@ -124,3 +124,10 @@ def test_clean_text_unchanged_and_certain() -> None:
     assert result.masked_text == "오늘 수업은 비문학 독해였어요"
     assert result.uncertain is False
     assert result.findings == ()
+
+
+def test_literature_area_spec_narrator_term_is_not_a_name_candidate() -> None:
+    result = redact("화자·서술자의 태도를 인접 정서로 바꾼 선지")
+
+    assert result.uncertain is False
+    assert result.findings == ()

@@ -143,7 +143,12 @@ class ProblemGenerator:
 def hydrate_evidence_quotes(
     item: GeneratedItem, context_pack: ContextPack
 ) -> GeneratedItem:
-    """LLM이 생략한 quote를 승인된 ContextPack 원문으로 결정론 보완한다."""
+    """LLM quote를 승인된 ContextPack 원문으로 항상 교체한다.
+
+    ㊩ 종전 문면은 quote 생략 보완만 설명했지만 실제 정본성 요건은 모델이 다른 인용을
+    넣은 경우에도 ContextPack이 이기는 것이다. 영역·kind를 가르지 않으므로 T1·T2·T3의
+    모든 승인 앵커에 같은 규칙이 적용된다.
+    """
 
     raw_anchors = context_pack.retrieval_trace.get("evidence_anchors")
     if not isinstance(raw_anchors, list):
@@ -158,7 +163,7 @@ def hydrate_evidence_quotes(
             quotes[ref] = quote
     evidence = tuple(
         anchor.model_copy(update={"quote": quotes[anchor.ref]})
-        if anchor.quote is None and anchor.ref in quotes
+        if anchor.ref in quotes
         else anchor
         for anchor in item.evidence
     )

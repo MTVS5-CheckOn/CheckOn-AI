@@ -35,6 +35,7 @@ from ai.contracts.problem_generation import (
     EvidenceKind,
     GeneratedItem,
     ItemResult,
+    LiteratureGenre,
     ProblemFailureReason,
     ProblemGenerationState,
     ProblemItemStatus,
@@ -45,6 +46,7 @@ from ai.contracts.problem_generation import (
     SolveResult,
     TargetKind,
     TargetSource,
+    WorkSelection,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.evaluation.fake_snapshot import fixture_stable
@@ -53,6 +55,7 @@ from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application import workflow as workflow_module
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import ProblemGenerator
+from ai.problem_generation.application.literature_selector import LiteratureSelector
 from ai.problem_generation.application.passage_generator import PassageGenerator
 from ai.problem_generation.application.workflow import (
     SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
@@ -78,6 +81,7 @@ from ai.problem_generation.infrastructure.config import (
 from ai.problem_generation.infrastructure.graph_context import (
     GrammarNormGraphContextService,
 )
+from ai.problem_generation.infrastructure.literature_pool import load_literature_pool
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
@@ -146,12 +150,14 @@ class _WorkflowHarness:
             gateway,
             banned_topics=self.banned_topics,
         )
+        self.literature_selector = LiteratureSelector(load_literature_pool())
         self.cross_solver = BlindCrossSolver(gateway)
         self.workflow = ProblemGenerationWorkflow(
             diagnosis=self.diagnosis,
             graph_context=self.graph,
             generator=self.generator,
             passage_generator=self.passage_generator,
+            literature_selector=self.literature_selector,
             cross_solver=self.cross_solver,
             candidate_store=self.candidates,
             item_store=self.items,
@@ -166,6 +172,8 @@ class _WorkflowHarness:
         count: int = 1,
         target_source: TargetSource = TargetSource.WEAKNESS_AUTO,
         requested_difficulty: DifficultyBand | None = None,
+        area_tag: AreaTag = AreaTag.LANGUAGE,
+        work_selection: WorkSelection | None = None,
     ) -> ProblemRequest:
         common: dict[str, object] = {
             "request_id": "req-workflow",
@@ -176,11 +184,12 @@ class _WorkflowHarness:
             "target_source": target_source,
             "snapshot_hash": self.snapshot.snapshot_meta.snapshot_hash,
             "taxonomy_version": _TAXONOMY_VERSION,
-            "area_tag": AreaTag.LANGUAGE,
+            "area_tag": area_tag,
             "type_tags": (TypeTag.INFER,),
             "item_format": ItemFormat.MCQ,
             "count": count,
             "requested_difficulty": requested_difficulty,
+            "work_selection": work_selection,
         }
         if target_source is TargetSource.TEACHER_MANUAL:
             common["manual_targets"] = (_SKILL_NODE_ID,)
@@ -210,9 +219,12 @@ def _item_json(
     *,
     duplicate_choices: bool = False,
     evidence_refs: tuple[str, ...] = ("grammar:rule-1",),
+    area_tag: AreaTag = AreaTag.LANGUAGE,
+    evidence_kind: EvidenceKind = EvidenceKind.GRAMMAR_RULE,
+    evidence_quote: str | None = None,
 ) -> str:
     item = GeneratedItem(
-        area_tag=AreaTag.LANGUAGE,
+        area_tag=area_tag,
         type_tag=TypeTag.INFER,
         item_format=ItemFormat.MCQ,
         skill_node_id=_SKILL_NODE_ID,
@@ -232,7 +244,7 @@ def _item_json(
         answer=Answer(correct_no=1),
         rationale="승인된 근거에 따른 해설이다.",
         evidence=tuple(
-            EvidenceAnchor(kind=EvidenceKind.GRAMMAR_RULE, ref=ref)
+            EvidenceAnchor(kind=evidence_kind, ref=ref, quote=evidence_quote)
             for ref in evidence_refs
         ),
     )
@@ -351,6 +363,43 @@ def test_fake_snapshot_to_generation_store_result_vertical_slice() -> None:
     stored = asyncio.run(harness.items.list_all())
     assert len(stored) == 1
     assert stored[0].item is not None
+
+
+def test_literature_selection_reaches_generation_without_a_passage_llm_call() -> None:
+    selection = WorkSelection(
+        genre=LiteratureGenre.MODERN_NOVEL,
+        era="근대",
+        concept_keywords=("달",),
+    )
+    expected = LiteratureSelector(load_literature_pool()).select(selection)
+    harness = _WorkflowHarness(
+        generator_steps=(
+            _item_json(
+                "문학",
+                area_tag=AreaTag.LITERATURE,
+                evidence_refs=(expected.evidence_ref,),
+                evidence_kind=EvidenceKind.WORK_SPAN,
+                evidence_quote="모델이 낸 비정본 인용",
+            ),
+        ),
+        verifier_steps=(_solve_json(),),
+    )
+    request = harness.request(
+        target_source=TargetSource.TEACHER_MANUAL,
+        area_tag=AreaTag.LITERATURE,
+        work_selection=selection,
+    )
+
+    result = _run(harness, request)
+
+    assert result.status is ProblemSetStatus.GENERATED, result.model_dump_json(indent=2)
+    assert result.items[0].status is ProblemItemStatus.NEEDS_REVIEW
+    assert result.items[0].review_reason is ReviewReason.T3_LITERATURE
+    assert len(harness.generator_provider.requests) == 1
+    assert len(harness.verifier_provider.requests) == 1
+    stored = asyncio.run(harness.items.list_all())[0]
+    assert stored.item is not None
+    assert stored.item.evidence[0].quote == expected.quote
 
 
 def test_same_idempotency_request_reuses_checkpoint_and_saved_result() -> None:
@@ -778,6 +827,7 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
         graph_context=harness.graph,
         generator=harness.generator,
         passage_generator=harness.passage_generator,
+        literature_selector=harness.literature_selector,
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,
         item_store=harness.items,
@@ -814,6 +864,7 @@ def test_workflow_rejects_reading_without_passage_request() -> None:
         "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
         "area_tag": AreaTag.READING.value,
         "passage": False,
+        "work_selection": False,
     }
     assert not harness.generator_provider.requests
 
@@ -825,6 +876,7 @@ def test_unmapped_reference_node_converges_to_rejected_insufficient() -> None:
         graph_context=GrammarNormGraphContextService(),
         generator=harness.generator,
         passage_generator=harness.passage_generator,
+        literature_selector=harness.literature_selector,
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,
         item_store=harness.items,
