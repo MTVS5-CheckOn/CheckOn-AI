@@ -19,71 +19,37 @@ import uuid
 from typing import Any, Final
 
 import pytest
+from counsel_read_model_fixtures import draft_snapshot, view_snapshot
 
 from ai.contracts.agents import JobPhase
-from ai.contracts.composition import (
-    CommStyle,
-    DraftContext,
-    EvidenceFact,
-    Frequency,
-    Interest,
-    LabelSnapshot,
-    Sensitivity,
-)
-from ai.contracts.counsel import Citation
 from ai.db.counsel_read_model import merge_snapshots
 
 _KEY: Final = ("t_merge", "job-merge-1")
 _EXECUTION: Final = uuid.UUID("00000000-0000-0000-0000-0000000003a1")
+_CORRELATION: Final = uuid.UUID("00000000-0000-0000-0000-0000000003b2")
 
 
-def _view_snapshot(*, status: JobPhase = JobPhase.SUCCEEDED) -> dict[str, Any]:
-    return {
-        "view": {"job_id": _KEY[1], "status": status.value, "result": None},
-        "execution_id": str(_EXECUTION),
-        "correlation_id": str(uuid.UUID("00000000-0000-0000-0000-0000000003b2")),
-    }
-
-
-def _draft_snapshot(*, text: str = "본문") -> dict[str, Any]:
-    """🔴 **계약 모델로 만든다** — 손으로 적은 dict는 계약이 바뀌면 조용히 낡는다."""
-    context = DraftContext(
-        student_ref="student-merge",
-        guardian_ref="guardian-merge",
-        label_snapshot=LabelSnapshot(
-            comm=CommStyle.NARRATIVE,
-            sensitivity=Sensitivity.DIRECT,
-            interest=Interest.ATTITUDE,
-            frequency=Frequency.FREQUENT,
-        ),
-        facts=(EvidenceFact(label="학습 참여", value="꾸준함", record_id="record-merge"),),
-        evidence_summaries=("수업 참여 기록",),
-        period_label="2026년 8월",
-        fallback_text="확인 가능한 기록을 안내합니다.",
+def _view(*, status: JobPhase = JobPhase.SUCCEEDED) -> dict[str, Any]:
+    """🔴 **값을 고정한다** — 이 파일은 같은 스냅숏을 두 번 만들어 **동등성**을 본다.
+    공용 픽스처는 기본이 랜덤 UUID라 그대로 쓰면 자기 자신과 안 같아진다.
+    """
+    return view_snapshot(
+        _KEY[1], status=status, execution_id=_EXECUTION, correlation_id=_CORRELATION
     )
-    return {
-        "context": context.model_dump(mode="json"),
-        "citations": [
-            Citation(
-                cite_id="cite-merge", record_id="record-merge", summary="수업 참여 기록"
-            ).model_dump(mode="json")
-        ],
-        "text": text,
-        "snapshot_hash": "sha256:merge",
-        "emphasis": ["학습 참여"],
-    }
+
+
 
 
 def test_saving_a_draft_keeps_the_existing_view() -> None:
     """🔴 **핵심 조건** — draft만 갱신해도 최종 행에 뷰가 남아야 한다."""
     row = merge_snapshots(
         _KEY,
-        existing_view=_view_snapshot(),
+        existing_view=_view(),
         existing_draft=None,
-        new_draft=_draft_snapshot(),
+        new_draft=draft_snapshot(),
     )
-    assert row["view_snapshot"] == _view_snapshot(), "draft 저장이 뷰를 지웠다"
-    assert row["draft_snapshot"] == _draft_snapshot()
+    assert row["view_snapshot"] == _view(), "draft 저장이 뷰를 지웠다"
+    assert row["draft_snapshot"] == draft_snapshot()
 
 
 def test_saving_a_view_keeps_the_existing_draft() -> None:
@@ -91,11 +57,11 @@ def test_saving_a_view_keeps_the_existing_draft() -> None:
     row = merge_snapshots(
         _KEY,
         existing_view=None,
-        existing_draft=_draft_snapshot(),
-        new_view=_view_snapshot(),
+        existing_draft=draft_snapshot(),
+        new_view=_view(),
     )
-    assert row["draft_snapshot"] == _draft_snapshot(), "뷰 저장이 초안을 지웠다"
-    assert row["view_snapshot"] == _view_snapshot()
+    assert row["draft_snapshot"] == draft_snapshot(), "뷰 저장이 초안을 지웠다"
+    assert row["view_snapshot"] == _view()
 
 
 def test_the_projection_follows_the_surviving_view() -> None:
@@ -105,9 +71,9 @@ def test_the_projection_follows_the_surviving_view() -> None:
     """
     row = merge_snapshots(
         _KEY,
-        existing_view=_view_snapshot(status=JobPhase.RUNNING),
+        existing_view=_view(status=JobPhase.RUNNING),
         existing_draft=None,
-        new_draft=_draft_snapshot(),
+        new_draft=draft_snapshot(),
     )
     assert row["status"] == JobPhase.RUNNING.value, (
         f"살아 있는 뷰의 상태가 draft 저장에 덮였다: {row['status']}"
@@ -118,7 +84,7 @@ def test_the_projection_follows_the_surviving_view() -> None:
 def test_a_draft_only_row_is_succeeded_with_no_execution() -> None:
     """뷰가 **없을 때만** draft-only 판정이 정직하다(#182 A 승인 근거)."""
     row = merge_snapshots(
-        _KEY, existing_view=None, existing_draft=None, new_draft=_draft_snapshot()
+        _KEY, existing_view=None, existing_draft=None, new_draft=draft_snapshot()
     )
     assert row["status"] == JobPhase.SUCCEEDED.value
     assert row["execution_id"] is None
@@ -126,13 +92,13 @@ def test_a_draft_only_row_is_succeeded_with_no_execution() -> None:
 
 def test_resaving_the_same_snapshot_is_idempotent() -> None:
     once = merge_snapshots(
-        _KEY, existing_view=None, existing_draft=None, new_view=_view_snapshot()
+        _KEY, existing_view=None, existing_draft=None, new_view=_view()
     )
     twice = merge_snapshots(
         _KEY,
         existing_view=once["view_snapshot"],
         existing_draft=once["draft_snapshot"],
-        new_view=_view_snapshot(),
+        new_view=_view(),
     )
     assert once == twice
 
@@ -154,5 +120,5 @@ def test_a_snapshot_for_another_job_is_refused() -> None:
             ("t_merge", "other-job"),
             existing_view=None,
             existing_draft=None,
-            new_view=_view_snapshot(),
+            new_view=_view(),
         )

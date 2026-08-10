@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable, Mapping
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import Any, Protocol
 
-from sqlalchemy import null, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy import null, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai.db.counsel_draft_view import counsel_draft_view_projection
 from ai.db.models import CounselDraftView as CounselDraftViewRow
@@ -33,6 +34,9 @@ from ai.db.repositories.idempotency import system_utc_now
 
 #: `(tenant_id, job_id)` — 라우터 캐시와 **같은 키**다.
 type CacheKey = tuple[str, str]
+#: 세션 하나를 여는 것 — `async_sessionmaker`가 이 모양이다. 🔴 **필요한 만큼만 요구한다**:
+#: 이 저장소는 세션을 열 줄만 알면 되고, 그래야 테스트가 감싼 세션을 넣을 수 있다.
+type SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 type Snapshot = Mapping[str, Any]
 
 
@@ -115,15 +119,32 @@ class NullCounselDraftViewStore:
 class PgCounselDraftViewStore:
     """`counsel_draft_view` 한 행을 읽고-합치고-쓴다.
 
-    🔴 **`SELECT … FOR UPDATE`로 잠그고 한 트랜잭션에서 끝낸다.** 뷰와 초안이 **다른 시점에**
-    쓰이므로, 잠그지 않으면 두 쓰기가 각자 읽은 옛 행 위에 써서 **나중 것이 먼저 것을
-    지운다**(lost update). 이 테이블은 그 경합이 **정상 경로**다 — POST가 뷰를 쓰는 사이
-    같은 잡의 초안이 쓰인다.
+    🔴 **자연키를 자문 잠금으로 직렬화하고 한 트랜잭션에서 끝낸다.**
+
+    ⚠ **`SELECT … FOR UPDATE`만으로는 모자란다** — 그건 **있는 행**만 잠근다. 최초 저장에는
+    잠글 행이 없어 두 트랜잭션이 나란히 *"행이 없다"* 를 보고 **둘 다 INSERT**하고,
+    `uq_counsel_draft_view_job`이 하나를 죽인다(실측: `UniqueViolationError` · 99 #35).
+    ⚠ **현재 동작을 과장하지 않는다** — 단일 POST 내부는 `await`로 **직렬 실행**된다.
+    다만 뷰와 초안은 **독립 갱신 축**이고, **독립 요청·향후 배경 워커 분리·다중 소비자**가
+    같은 자연키를 갱신하면 **동시 최초 저장이 가능하다.** 저장소는 그 배포·실행 형상에서도
+    무결성을 보장해야 한다 — 그래서 이 잠금은 **지금 쓰이지 않아도 필요하다.**
+
+    ⇒ **행이 있든 없든 같은 키에 서는 것**을 `pg_advisory_xact_lock`으로 만든다. 뒤에 온
+    트랜잭션은 앞이 **커밋할 때까지 기다렸다가** 그 결과를 **읽고 합친다** —
+    ⚠ **`IntegrityError`를 삼키고 성공으로 치는 것이 아니다.** 충돌 자체가 안 난다.
+
+    ⚠ 잠금은 트랜잭션과 함께 풀린다(`_xact_`) — 세션에 남지 않는다.
+    ⚠ 해시 충돌이면 **무관한 키가 잠깐 줄을 설 뿐** 정확성은 그대로다.
+    ⚠ `FOR UPDATE`도 남겨 둔다 — 기존 행의 lost update 방지는 그 줄이 말한다.
     """
+
+    #: 🔴 **잠금은 「이 테이블의 이 키」 하나에만 건다** — 테이블 이름을 섞어 두지 않으면
+    #: 다른 테이블이 같은 자연키를 쓸 때 서로를 막는다.
+    _LOCK_SQL = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
 
     def __init__(
         self,
-        sessionmaker: async_sessionmaker[AsyncSession],
+        sessionmaker: SessionFactory,
         *,
         now: Callable[[], datetime] = system_utc_now,
     ) -> None:
@@ -163,6 +184,13 @@ class PgCounselDraftViewStore:
             raise ValueError("저장할 스냅숏이 없다 — view·draft 중 하나는 넘겨야 한다")
         tenant_id, job_id = key
         async with self._sessions() as session, session.begin():
+            #: 🔴 **읽기 전에 잠근다** — 행이 없어도 키에 줄을 세우려면 이 순서여야 한다.
+            await session.execute(
+                self._LOCK_SQL,
+                #: ⚠ 구분자는 `\x00`이 아니라 `\x1f`다 — PG는 문자열에 NUL 바이트를 못 넣는다
+                #: (실측: `invalid byte sequence for encoding "UTF8": 0x00`).
+                {"key": f"counsel_draft_view\x1f{tenant_id}\x1f{job_id}"},
+            )
             row = (
                 await session.execute(
                     select(CounselDraftViewRow)
