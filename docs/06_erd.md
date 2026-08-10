@@ -8,6 +8,8 @@ v3 확장: `AGENT_RUN`을 워커 3종의 영속 `WorkerJob` 실행 원장으로 
 
 v4 확장: A-1 승인에 따라 [PART_B] 문제생성·진단 8테이블(`WEAKNESS_MAP`·`PASSAGE`·`PROBLEM_SET`·`PROBLEM_ITEM`·`VERIFICATION_RESULT`·`ITEM_REVISION`·`DIFFICULTY_CALIB`·`ITEM_CANDIDATE`)을 편입했다. 애플리케이션 소유 테이블은 **총 34개**다. `EVIDENCE_ITEM.owner_kind`에는 A-2 승인값 `problem_item`을 추가했다.
 
+v5 확장: 기대치 입력 2테이블과 `COUNSEL_PACK_RESULT`에 이어 `COUNSEL_DRAFT_VIEW`를 편입했다. 애플리케이션 소유 테이블은 **총 38개**다. 읽기 모델 테이블은 `_CachedView`·`_DraftState` 배선 전의 자리이며 두 스냅숏을 독립 nullable 정본으로 둔다.
+
 **`AI_RUN` 버전 세트:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이다. 공통 6종(`pipeline` · `engine` · `threshold` · `prompt` · `schema` · `contract`)과 [PART_B] 실행 전용 nullable 4종(`graph` · `taxonomy` · `verify_config` · `difficulty_calib`)으로 구성되며, **버전 컬럼은 총 10개**다. 실행 식별자·모델 정보·재현성 키·생성 시각까지 포함한 `AI_RUN` 전체 컬럼은 **총 18개**다.
 
 `threshold_version`은 감지 임계값 시트(`threshold_config`) 버전으로 `detection` 실행에만 의미가 있고, 그 외 실행에서는 null이다. 이 값이 없으면 과거 경보를 재현할 수 없다(CLAUDE.md 불변식 8).
@@ -269,6 +271,16 @@ erDiagram
     varchar plan_outcome "ok|llm_failed|redaction_blocked|unparsed|all_dropped — 강조점 0건의 사유를 세는 집계 축"
     timestamptz created_at "보존기간·정리 배치의 축 — INDEX(tenant_id, created_at)"
     jsonb snapshot "🔴 정본 — CounselPackResultRecord 전문. 위 넷은 여기서 유도한 파생이다"
+  }
+  COUNSEL_DRAFT_VIEW {
+    uuid id PK
+    varchar tenant_id "격리 술어 — 전 테이블 필수 · UNIQUE(tenant_id, job_id)"
+    varchar job_id "GET·refine 조회 키 — AGENT_RUN 물리 FK가 아닌 varchar 논리 참조"
+    varchar status "queued|leased|running|paused|succeeded|failed|cancelled — CounselDraftJobView의 JobPhase 조회 투영"
+    uuid execution_id "AI_RUN 조인 축 · template_only·근거 0건처럼 원장 행이 없으면 null"
+    timestamptz updated_at "정리 배치 축 — 두 캐시에 없는 저장 시각"
+    jsonb view_snapshot "🔴 정본 ① — _CachedView 전문 · 독립 축출되므로 null 가능"
+    jsonb draft_snapshot "🔴 정본 ② — _DraftState 전문 · 독립 축출되므로 null 가능"
   }
   WEAKNESS_MAP {
     uuid id PK
