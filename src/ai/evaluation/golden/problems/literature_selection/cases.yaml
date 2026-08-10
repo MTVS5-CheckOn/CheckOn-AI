@@ -15,7 +15,7 @@ cases:
         - 다섯 번째 문학 해석 초안
       answer_draft: 1
       rationale_draft: 선택된 만료 작품의 원문 인용에 따른 해설 초안 — 전문가 검수 대기
-      evidence_draft: [work:memilkkot:426852:4791:4961]
+      evidence_draft: [work:memilkkot:426852:4723:4893]
       difficulty_draft: null
     mutation:
       code: literature_deterministic_selection

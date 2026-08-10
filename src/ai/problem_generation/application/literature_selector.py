@@ -7,7 +7,11 @@ import re
 from uuid import uuid5
 
 from ai.contracts.graphrag import ContextPack
-from ai.contracts.problem_generation import WorkExcerpt, WorkSelection
+from ai.contracts.problem_generation import (
+    LiteratureGenre,
+    WorkExcerpt,
+    WorkSelection,
+)
 from ai.problem_generation.domain.identity import canonical_json, sha256_hex
 from ai.problem_generation.domain.literature import LiteraturePool, LiteratureWork
 
@@ -39,7 +43,7 @@ class LiteratureSelector:
         # 선택은 index 배열 순서가 아니라 불변 메타데이터인 slug 정렬에만 기대게 한다.
         ordered_works = tuple(sorted(best_works, key=lambda value: value.metadata.slug))
         work = ordered_works[_stable_index(len(ordered_works), seed)]
-        spans = _paragraph_spans(work.content)
+        spans = _excerpt_spans(work)
         if not spans:
             raise LiteratureSelectionUnavailable("선택한 작품에 발췌 가능한 원문이 없다")
         best_spans = _best_span_matches(work.content, spans, selection)
@@ -140,6 +144,17 @@ def _keyword_score(text: str, selection: WorkSelection) -> int:
 
 def _paragraph_spans(content: str) -> tuple[tuple[int, int], ...]:
     return tuple((match.start(), match.end()) for match in _PARAGRAPH.finditer(content))
+
+
+def _excerpt_spans(work: LiteratureWork) -> tuple[tuple[int, int], ...]:
+    # 수능 제시 단위에 맞춰 운문은 전문, 소설은 문단 발췌를 쓴다. 길이 하한으로 짧은
+    # 작품을 배제하지 않고 갈래 자체가 요구하는 읽기 단위를 보존하기 위한 분기다.
+    if work.metadata.genre in {
+        LiteratureGenre.CLASSICAL_POETRY,
+        LiteratureGenre.MODERN_POETRY,
+    }:
+        return ((0, len(work.content)),)
+    return _paragraph_spans(work.content)
 
 
 def _stable_index(length: int, seed: str) -> int:

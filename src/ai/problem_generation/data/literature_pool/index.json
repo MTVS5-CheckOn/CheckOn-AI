@@ -17,8 +17,8 @@
       "source_ref": "https://ko.wikisource.org/w/index.php?oldid=430437",
       "revision_id": 430437,
       "collected_at": "2026-08-10",
-      "content_sha256": "sha256:1f6ab07da80441e655c91790dc376e9cfe1a80e1c1aa858490f0f3dd5f0dc998",
-      "char_count": 1455,
+      "content_sha256": "sha256:4e94503e67eb3eb590feecf45779a730dec880da42bfc977a431e905ffc57f6e",
+      "char_count": 559,
       "file": "cheongsan_byeolgok.txt"
     },
     {
@@ -33,8 +33,8 @@
       "source_ref": "https://ko.wikisource.org/w/index.php?oldid=385172",
       "revision_id": 385172,
       "collected_at": "2026-08-10",
-      "content_sha256": "sha256:46523e862d34ff3bd829e2efa157a11e84101bfe8e04b8082b2e6c47dfd514b6",
-      "char_count": 3430,
+      "content_sha256": "sha256:13bc38f47eef1b3e9e36dd258edab220dd22cb00d41a9a4e38ef15aca584f708",
+      "char_count": 3279,
       "file": "gwandong_byeolgok.txt"
     },
     {
@@ -49,8 +49,8 @@
       "source_ref": "https://ko.wikisource.org/w/index.php?oldid=430575",
       "revision_id": 430575,
       "collected_at": "2026-08-10",
-      "content_sha256": "sha256:3b1ac506b8b88fd24afbb46f2d30c107c78f33f53f453cd1038c216fe61a181e",
-      "char_count": 364,
+      "content_sha256": "sha256:439b7d5ba74c7d7327c44ebafeb00a3acebae81f68c2356c6b9fbb2c73042db7",
+      "char_count": 151,
       "file": "jindallaekkot.txt"
     },
     {
@@ -65,8 +65,8 @@
       "source_ref": "https://ko.wikisource.org/w/index.php?oldid=457472",
       "revision_id": 457472,
       "collected_at": "2026-08-10",
-      "content_sha256": "sha256:c25bc0c421b42254dca0f2bdf4205f78749db19e83be465a85ee1f672705b4c0",
-      "char_count": 10764,
+      "content_sha256": "sha256:38569537471c9b67f441607fecb3cbe2368997f6a5146216c370b498a8e9e32d",
+      "char_count": 10350,
       "file": "unsu_joeun_nal.txt"
     },
     {
@@ -81,8 +81,8 @@
       "source_ref": "https://ko.wikisource.org/w/index.php?oldid=426852",
       "revision_id": 426852,
       "collected_at": "2026-08-10",
-      "content_sha256": "sha256:9c842cfd3ec8660523f3a44860ac812360ae46d8a60711e060802b0903a05e4f",
-      "char_count": 8758,
+      "content_sha256": "sha256:8d2117670049e3bce4e746e285ee6605b7ac508bf95d801ab94d783b3700a18c",
+      "char_count": 8353,
       "file": "memilkkot.txt"
     }
   ]

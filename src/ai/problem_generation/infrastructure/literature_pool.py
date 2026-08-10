@@ -18,6 +18,16 @@ DEFAULT_LITERATURE_POOL_ROOT = (
     Path(__file__).resolve().parents[1] / "data" / "literature_pool"
 )
 
+_WIKISOURCE_UI_MARKERS = (
+    "[편집]",
+    "Public domain",
+    "자매 프로젝트",
+    "저자:",
+    "↑ ",
+    "←",
+    "→",
+)
+
 
 class LiteraturePoolLoadError(ValueError):
     """문학 풀 스키마·권리·본문 무결성이 유효하지 않음."""
@@ -57,6 +67,15 @@ def load_literature_pool(
             raise LiteraturePoolLoadError(f"문학 작품 본문 해시 불일치: {metadata.slug}")
         if len(content) != metadata.char_count:
             raise LiteraturePoolLoadError(f"문학 작품 문자 수 불일치: {metadata.slug}")
+        contaminated = next(
+            (marker for marker in _WIKISOURCE_UI_MARKERS if marker in content),
+            None,
+        )
+        if contaminated is not None:
+            raise LiteraturePoolLoadError(
+                f"문학 작품 본문에 위키문헌 UI 표식이 남아 있다: "
+                f"{metadata.slug}: {contaminated!r}"
+            )
         works.append(LiteratureWork(metadata=metadata, content=content))
 
     return LiteraturePool(schema_version=index.schema_version, works=tuple(works))

@@ -1,5 +1,7 @@
 """T3 문학 작품·오프셋 선택의 결정론과 원문 보존."""
 
+import pytest
+
 from ai.contracts.problem_generation import LiteratureGenre, WorkSelection
 from ai.problem_generation.application.literature_selector import (
     LiteratureSelector,
@@ -51,3 +53,17 @@ def test_short_modern_poem_is_selected_without_a_length_floor() -> None:
 
     assert excerpt.slug == "jindallaekkot"
     assert excerpt.quote
+
+
+@pytest.mark.parametrize(
+    "genre",
+    [LiteratureGenre.CLASSICAL_POETRY, LiteratureGenre.MODERN_POETRY],
+)
+def test_poetry_excerpt_is_the_complete_work(genre: LiteratureGenre) -> None:
+    pool = load_literature_pool()
+
+    excerpt = LiteratureSelector(pool).select(WorkSelection(genre=genre))
+    work = next(work for work in pool.works if work.metadata.slug == excerpt.slug)
+
+    assert (excerpt.start, excerpt.end) == (0, len(work.content))
+    assert excerpt.quote == work.content

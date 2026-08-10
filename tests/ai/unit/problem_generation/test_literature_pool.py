@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -55,6 +56,30 @@ def test_loader_rejects_content_hash_mismatch(tmp_path: Path) -> None:
     target.write_bytes(target.read_bytes() + b"tampered")
 
     with pytest.raises(LiteraturePoolLoadError, match="해시 불일치"):
+        load_literature_pool(root)
+
+
+@pytest.mark.parametrize(
+    "marker",
+    ["[편집]", "Public domain", "자매 프로젝트", "저자:", "↑ ", "←", "→"],
+)
+def test_loader_rejects_ui_marker_even_when_hash_and_char_count_match(
+    tmp_path: Path,
+    marker: str,
+) -> None:
+    root = _copy_pool(tmp_path)
+    target = root / "jindallaekkot.txt"
+    contaminated = target.read_text(encoding="utf-8") + f"\n{marker}\n"
+    target.write_text(contaminated, encoding="utf-8")
+    raw = _index(root)
+    metadata = next(work for work in raw["works"] if work["file"] == target.name)
+    metadata["content_sha256"] = (
+        f"sha256:{hashlib.sha256(target.read_bytes()).hexdigest()}"
+    )
+    metadata["char_count"] = len(target.read_bytes().decode("utf-8"))
+    _write_index(root, raw)
+
+    with pytest.raises(LiteraturePoolLoadError, match="UI 표식"):
         load_literature_pool(root)
 
 
