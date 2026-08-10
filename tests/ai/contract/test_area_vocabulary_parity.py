@@ -89,8 +89,13 @@ def _pending_complaint(
     ⚠ **「한쪽만 정정」이 가장 위험하다** — 영역 수만 맞추면 대조는 *"맞춰졌다"* 로 읽는데
     **화면 축은 여전히 틀렸다.** 면제는 **두 값을 묶어** 받았으므로 **함께** 풀려야 한다.
     """
-    #: 🔴 **이것이 앞 PR의 판정이다** — 레이더 축(`axis`)을 **받아 놓고 안 본다.**
-    del axis
+    if area is None or axis is None:
+        return f"차트 ① 행에서 영역 수·레이더 축을 못 읽었다(area={area!r}, axis={axis!r})"
+    if (area == canonical) != (axis == canonical):
+        return (
+            f"한쪽만 정정됐다(영역 {area} · 축 {axis}) — 면제는 두 값을 묶어 받았다. "
+            "영역 수만 맞고 화면 축이 틀린 채로 자동 만료가 거짓으로 열린다"
+        )
     diverged = area != canonical
     if diverged and not disclosed:
         return "정본과 갈렸는데 그 사실이 문서에 없다 — 다음 사람이 참인 쪽(코드)을 거짓으로 고친다"
@@ -99,17 +104,31 @@ def _pending_complaint(
     return None
 
 
+def _counts_outside(text: str, *, exempt_row: str | None) -> list[tuple[int, int]]:
+    """`(행번호, 수)` — 🔴 **면제는 「그 한 행」뿐이다.**
+
+    ⚠ 파일 단위 면제는 *"이 문서는 안 본다"* 와 같다. 제품 확인이 걸린 것은
+    **차트 ①의 두 값**뿐이고, 같은 문서의 **다른 낡은 표기까지 조용히 통과**시키면
+    면제가 문서 전체의 방패가 된다.
+    """
+    return [
+        (lineno, int(match.group(1)))
+        for lineno, line in enumerate(text.splitlines(), start=1)
+        if line != exempt_row
+        for match in _AREA_COUNT.finditer(line)
+    ]
+
+
 def _area_count_sites() -> list[tuple[str, int, int]]:
     """`part_a`의 「N영역」 자리 — `(파일, 행번호, 수)`. **면제 행은 뺀다.**"""
     found: list[tuple[str, int, int]] = []
     for path in sorted(_PART_A.rglob("*.md")):
         text = path.read_text(encoding="utf-8")
-        #: 🔴 **이것이 앞 PR의 면제다** — 파일 하나를 통째로 안 본다.
-        if path.name in _PENDING_CHART_ROW:
-            continue
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            for match in _AREA_COUNT.finditer(line):
-                found.append((path.name, lineno, int(match.group(1))))
+        exempt = _chart_one_row(text) if path.name in _PENDING_CHART_ROW else None
+        found += [
+            (path.name, lineno, count)
+            for lineno, count in _counts_outside(text, exempt_row=exempt)
+        ]
     return found
 
 
@@ -127,7 +146,9 @@ def _area_value_lists() -> list[tuple[str, int, frozenset[str]]]:
 
 def test_the_document_scan_finds_area_counts() -> None:
     """🔴 검사 경로가 끊기면 통과가 아니라 실패다 — 0건이면 **문서 축을 못 읽은 것**이다."""
-    assert _area_count_sites(), f"`part_a/`에서 「N영역」 표기를 못 찾았다 — 경로가 틀렸나: {_PART_A}"
+    assert _area_count_sites(), (
+        f"`part_a/`에서 「N영역」 표기를 못 찾았다 — 경로가 틀렸나: {_PART_A}"
+    )
 
 
 def test_every_exclusion_carries_a_reason() -> None:
@@ -155,12 +176,19 @@ def test_the_value_list_scan_finds_enumerations() -> None:
     )
 
 
-def test_part_a_value_lists_are_exactly_the_canonical_set() -> None:
-    """🔴 **폐기값 금지보다 넓게 — 집합이 정확히 같은지** 본다.
+def test_part_a_value_lists_contain_exactly_the_canonical_values() -> None:
+    """🔴 **폐기값 금지보다 넓게 — 정본 어휘 위에서 집합이 정확히 같은지** 본다.
 
-    ⚠ *"옛 값을 안 썼다"* 만 보면 **정본 값 하나가 빠진 목록**과 **없는 값이 낀 목록**을 놓친다.
-    이 저장소의 세 자리는 전부 **전체 enum을 선언하는 문면**이라 **정확 대조가 맞다.**
+    ⚠ *"옛 값을 안 썼다"* 만 보면 **정본 값 하나가 빠진 목록**과 **다른 값으로 바뀐 목록**을
+    놓친다. 이 저장소의 세 자리는 전부 **전체 enum을 선언하는 문면**이라 정확 대조가 맞다.
     ⚠ **순서는 계약이 아니다** — 집합으로 비교한다.
+
+    🔴 **이 검사가 못 보는 것 — 이름이 그만큼만 넓다.** 대조는 **정본 ∪ 폐기 어휘로 투영한
+    집합** 위에서 한다 ⇒ **아무 값이 「추가만」 된 경우**(정본 다섯이 다 있고 낯선 값이 하나 더)는
+    **안 걸린다.** ⚠ **구간 대조를 시도했다가 접었다** — 실측: `03_usecases.md`의 같은 줄에
+    `type`·`item_format`이 섞여 **구간이 넘치고**, 목록 뒤에 붙은 값은 **구간 밖**이라 어차피
+    안 잡힌다. **문서 산문에서 토큰 경계를 신뢰할 수 없다** ⇒ *"완전성까지 본다"* 고
+    **주장하지 않는다.** 잡는 것은 **폐기값 재사용 · 정본 값 누락 · 정본 값 치환** 셋이다.
     """
     wrong = [
         (
@@ -173,7 +201,8 @@ def test_part_a_value_lists_are_exactly_the_canonical_set() -> None:
         if used != _CANONICAL_VALUES
     ]
     assert not wrong, (
-        f"A 소유 문서의 영역 값 목록이 정본 집합과 다르다 `(파일, 행, 남는 값, 빠진 값)`: {wrong} — "
+        "A 소유 문서의 영역 값 목록이 정본 집합과 다르다 "
+        f"`(파일, 행, 남는 값, 빠진 값)`: {wrong} — "
         "정본은 `contracts/taxonomy.AreaTag`다(#179로 speech+writing → speech_writing)"
     )
 
@@ -181,15 +210,32 @@ def test_part_a_value_lists_are_exactly_the_canonical_set() -> None:
 def test_the_pending_row_is_the_only_thing_exempted() -> None:
     """🔴 **면제가 파일 전체를 덮지 않는다** — 같은 문서의 다른 낡은 표기는 그대로 걸려야 한다.
 
-    ⚠ 파일 단위 면제는 *"이 문서는 안 본다"* 와 같다 — 제품 확인이 걸린 것은 **두 값뿐**이다.
+    ⚠ **살아 있는 문서로는 이걸 못 묻는다** — 지금 07엔 차트 ① 행 밖에 낡은 표기가 **없어서**
+    파일 면제로도 통과한다(**빈 목록에 `all()`은 참이다**). **합성 문면으로 묻는다.**
     """
+    synthetic = "\n".join(
+        [
+            "| # | 차트 | 데이터 소스 | 형태 |",
+            "| ① | 영역별 약점 현황 | 수능 6영역(`area_tag`) | 레이더(6축) |",
+            "본문 어딘가의 낡은 표기: 수능 6영역을 쓴다.",
+        ]
+    )
+    exempt = _chart_one_row(synthetic)
+    assert exempt is not None, "합성 문면에서 차트 ① 행을 못 찾았다 — 앵커가 틀렸다"
+    seen = _counts_outside(synthetic, exempt_row=exempt)
+    assert seen == [(3, 6)], f"면제가 차트 ① 행 밖까지 덮는다: {seen}"
+
+
+def test_the_live_pending_document_has_nothing_else_stale() -> None:
+    """면제 대상 문서의 **차트 ① 행 밖**은 지금 정본과 같아야 한다."""
     canonical = len(list(AreaTag))
     for name in _PENDING_CHART_ROW:
         path = _PART_A / name
         assert path.is_file(), f"면제 대상 문서가 없다: {name}"
-        row = _chart_one_row(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        row = _chart_one_row(text)
         assert row is not None, f"{name}에서 차트 ① 행을 못 찾았다 — 면제 범위를 못 정한다"
-        others = [(lineno, count) for found, lineno, count in _area_count_sites() if found == name]
+        others = _counts_outside(text, exempt_row=row)
         assert all(count == canonical for _, count in others), (
             f"{name}의 차트 ① 행 **밖**에 낡은 영역 수가 있다: {others} — 면제는 그 행뿐이다"
         )
