@@ -179,17 +179,79 @@ def test_another_tenant_still_gets_404(pg_client: TestClient) -> None:
     ).status_code == 404
 
 
+def _refine(client: TestClient, job_id: str, *, turn: int = 1) -> httpx.Response:
+    response: httpx.Response = client.post(
+        f"/v1/counsel/drafts/{job_id}/refine",
+        json={"instruction": "조금 더 부드럽게 써줘", "turn_no": turn},
+        headers={**_HEADERS, "Idempotency-Key": f"{_TENANT}:refine:{turn}"},
+    )
+    return response
+
+
 def test_refine_survives_an_emptied_cache(pg_client: TestClient) -> None:
-    """㉿ ⓑ — GET과 refine이 **같은 축**으로 살아나야 한다(두 캐시가 독립 축출이었다)."""
+    """㉿ ⓑ — GET과 refine이 **같은 축**으로 살아나야 한다(두 캐시가 독립 축출이었다).
+
+    🔴 **종전 단정은 `status_code != 404`였고 그건 거짓 green이었다.**
+    실측 판정표: `200 통과 · 422 통과 · 500 통과 · 503 통과`. **404만 아니면 다 성공**이라
+    *"복원 뒤 refine이 터진다"* 를 **그대로 통과**시켰다 — **검사 이름이 「살아난다」인데
+    보는 것은 「404가 아니다」**였다(로그 85 계열).
+
+    ⇒ **성공 응답까지 본다** — 200 + 계약대로의 `applied`/`blocked_reason`,
+    그리고 **복원된 초안의 인용이 그대로 실렸는지**(다른 초안을 되살린 것이 아니다).
+    """
     job_id = _post(pg_client)
     _forget_caches()
-    response = pg_client.post(
-        f"/v1/counsel/drafts/{job_id}/refine",
-        json={"instruction": "조금 더 부드럽게 써줘", "turn_no": 1},
-        headers={**_HEADERS, "Idempotency-Key": f"{_TENANT}:refine:1"},
+    response = _refine(pg_client, job_id)
+
+    assert response.status_code == 200, (
+        f"복원 뒤 refine이 {response.status_code}다 — 404가 아니라고 성공이 아니다: "
+        f"{response.text[:400]}"
     )
+    data = response.json()["data"]
+    #: 🔴 **차단도 200이다**(불변식 4) — 두 갈래를 계약대로 가른다.
+    assert set(data) <= {"applied", "text", "citations", "blocked_reason"}, data
+    if data["applied"]:
+        assert (data.get("text") or "").strip(), "반영인데 본문이 없다"
+        assert data.get("citations"), "반영 턴에도 근거가 1건 이상이어야 한다(불변식 2)"
+    else:
+        assert data.get("blocked_reason"), "차단인데 사유가 없다(사유 없는 거부 금지)"
+
+    #: **복원한 그 초안인가** — 인용은 `_DraftState`가 들고 있던 값이다.
+    restored = counsel_router._drafts.get((_TENANT, job_id))
+    assert restored is not None, "refine이 캐시를 안 채웠다 — 복원 경로를 안 탔다"
+    if data["applied"]:
+        assert len(data["citations"]) == len(restored.citations)
+
+
+def test_a_broken_refine_is_not_reported_as_survival(pg_client: TestClient) -> None:
+    """🔴 **뒤집기 — 복원은 됐는데 refine 자체가 터지면 red여야 한다.**
+
+    ⚠ 종전 단정(`!= 404`)은 **이 상태를 green으로** 받았다. 여기서 그 사실을 실측한다.
+    """
+    job_id = _post(pg_client)
+    _forget_caches()
+
+    def explode(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("refine 내부 실패(대역)")
+
+    #: ⚠ `setattr`/`getattr`로 간다 — 모듈이 재수출하지 않는 이름이라 정적으로는 안 보인다.
+    original = getattr(counsel_router, "refine_draft")  # noqa: B009
+    setattr(counsel_router, "refine_draft", explode)  # noqa: B010
+    try:
+        #: ⚠ **`raise_server_exceptions=False`** — 기본 `TestClient`는 핸들러 밖 예외를
+        #: 되던져서 **실서버가 실제로 내는 응답**을 못 본다. 여기서 재려는 것은
+        #: *"그 상태를 종전 단정이 통과시켰는가"* 이므로 **응답 코드**를 봐야 한다.
+        with TestClient(create_app(), raise_server_exceptions=False) as raw:
+            response = _refine(raw, job_id, turn=2)
+    finally:
+        setattr(counsel_router, "refine_draft", original)  # noqa: B010
+
+    assert response.status_code >= 500, (
+        f"refine이 터졌는데 {response.status_code}다 — 대역이 안 걸렸다"
+    )
+    #: 🔴 **종전 단정(`!= 404`)은 이 응답을 green으로 받는다** — 그게 이 보완의 이유다.
     assert response.status_code != 404, (
-        "캐시를 비우니 refine이 404다 — 초안 상태가 PG에서 안 살아난다"
+        "이 상태에서 종전 단정은 통과한다 — 그래서 「살아난다」가 거짓이 될 수 있었다"
     )
 
 

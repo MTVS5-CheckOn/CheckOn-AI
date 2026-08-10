@@ -353,14 +353,22 @@ async def _draft_state_of(key: tuple[str, str]) -> _DraftState | None:
 
 
 async def _remember_view(key: tuple[str, str], cached: _CachedView) -> None:
-    """캐시와 PG에 **함께** 쓴다 — 한쪽만 쓰면 재시작 뒤 값이 갈린다."""
-    _view_cache.put(key, cached)
+    """🔴 **영속이 먼저, 캐시가 나중이다.**
+
+    ⚠ 순서를 뒤집으면 **저장이 터져도 캐시에는 값이 남고**, 그 뒤 GET·refine이
+    **방금 저장에 실패한 값**을 정상인 것처럼 돌려준다 — **프로세스가 죽으면 사라질 값**을
+    「있다」고 말하는 것이다. 예외는 호출자에게 올라가지만 **캐시는 이미 오염**됐고,
+    그러면 **「저장 실패」와 「저장 성공 뒤 축출」이 구분되지 않는다.**
+    ⚠ memory 백엔드에서는 `NullCounselDraftViewStore`가 성공하므로 **현행 동작 그대로**다.
+    """
     await _draft_view_store.save_view(key, snapshot=_view_to_snapshot(cached))
+    _view_cache.put(key, cached)
 
 
 async def _remember_draft(key: tuple[str, str], state: _DraftState) -> None:
-    _drafts.put(key, state)
+    """`_remember_view`와 **같은 순서** — 영속이 먼저다."""
     await _draft_view_store.save_draft(key, snapshot=_draft_to_snapshot(state))
+    _drafts.put(key, state)
 
 
 def _view_to_snapshot(cached: _CachedView) -> dict[str, Any]:

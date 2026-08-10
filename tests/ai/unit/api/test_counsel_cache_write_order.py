@@ -34,6 +34,7 @@ from ai.api.routers.counsel import (
     set_counsel_draft_view_store,
 )
 from ai.db.counsel_read_model import CacheKey, Snapshot
+from ai.db.store_factory import reset_shared_agent_runtime
 
 _KEY: Final = ("t_order", "job-order-1")
 
@@ -84,8 +85,12 @@ class _RecordingStore(_ExplodingStore):
 
 @pytest.fixture(autouse=True)
 def _clean_stores() -> Any:  # noqa: ANN401 — pytest fixture
+    #: ⚠ **둘을 나란히 부른다** — 잡과 체크포인트는 `thread_id`(=`job_id`)로 엮여 있어
+    #: 한쪽만 지우면 짝 없는 것이 남는다(99 ㊒ · 기존 가드가 이 파일을 잡아 줬다).
+    reset_shared_agent_runtime()
     reset_counsel_stores()
     yield
+    reset_shared_agent_runtime()
     reset_counsel_stores()
 
 
