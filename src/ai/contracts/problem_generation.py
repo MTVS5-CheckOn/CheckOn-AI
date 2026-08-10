@@ -493,6 +493,7 @@ class ProblemGenerationState(BaseModel):
     fallback_ref: str | None = Field(default=None, min_length=1)
     difficulty_regen_used: bool = False
     passage_draft: PassageDraft | None = None
+    work_excerpt: WorkExcerpt | None = None
 
     @model_validator(mode="after")
     def validate_checkpoint(self) -> Self:
@@ -607,6 +608,15 @@ def assert_problem_generation_state_transition(
         if previous.cursor or previous.item_attempt or current.cursor or current.item_attempt:
             raise InvalidProblemGenerationStateTransition(
                 "passage_draft는 문항 처리를 시작하기 전에만 설정할 수 있다"
+            )
+    if previous.work_excerpt is not None and current.work_excerpt != previous.work_excerpt:
+        raise InvalidProblemGenerationStateTransition(
+            "선택된 work_excerpt는 변경하거나 제거할 수 없다"
+        )
+    if previous.work_excerpt is None and current.work_excerpt is not None:
+        if previous.cursor or previous.item_attempt or current.cursor or current.item_attempt:
+            raise InvalidProblemGenerationStateTransition(
+                "work_excerpt는 문항 처리를 시작하기 전에만 설정할 수 있다"
             )
 
     cursor_delta = current.cursor - previous.cursor

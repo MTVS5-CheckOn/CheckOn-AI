@@ -13,19 +13,29 @@ from ai.contracts.taxonomy import V1_TYPE_TAGS, AreaTag, TypeTag
 #: `V1_TYPE_TAGS`처럼 전체에서 예약값을 빼지 않는다 — 자료 조달 노드가 준비된 영역을 이
 #: 집합에 더해야만 열리는 fail-closed 정책이다.
 SUPPORTED_AREAS: Final[frozenset[AreaTag]] = frozenset(
-    {AreaTag.LANGUAGE, AreaTag.READING}
+    {AreaTag.LANGUAGE, AreaTag.READING, AreaTag.LITERATURE}
 )
+
+# 영역이 셋이면 독서 여부와 passage 존재의 동치식으로는 문학 선택 조건을 표현할 수 없다.
+# 허용 조합을 표로 닫아 새 영역이 추가돼도 명시적 행 없이는 열리지 않게 한다.
+_SOURCE_REQUEST_SHAPES: Final[dict[AreaTag, tuple[bool, bool]]] = {
+    AreaTag.LANGUAGE: (False, False),
+    AreaTag.READING: (True, False),
+    AreaTag.LITERATURE: (False, True),
+}
 
 
 def supports_source_procurement(
     *,
     area_tag: AreaTag,
     has_passage_request: bool,
+    has_work_selection: bool,
 ) -> bool:
     """현재 구현이 자료를 조달할 수 있는 영역·요청 형태인지 반환한다."""
 
-    return area_tag in SUPPORTED_AREAS and (
-        (area_tag is AreaTag.READING) == has_passage_request
+    return area_tag in SUPPORTED_AREAS and _SOURCE_REQUEST_SHAPES.get(area_tag) == (
+        has_passage_request,
+        has_work_selection,
     )
 
 

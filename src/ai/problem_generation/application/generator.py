@@ -158,7 +158,7 @@ def hydrate_evidence_quotes(
             quotes[ref] = quote
     evidence = tuple(
         anchor.model_copy(update={"quote": quotes[anchor.ref]})
-        if anchor.quote is None and anchor.ref in quotes
+        if anchor.ref in quotes
         else anchor
         for anchor in item.evidence
     )
