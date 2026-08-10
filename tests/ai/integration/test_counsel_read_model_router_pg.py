@@ -33,6 +33,7 @@ from sqlalchemy.pool import NullPool
 from ai.api.app import create_app
 from ai.api.routers import counsel as counsel_router
 from ai.api.routers.counsel import reset_counsel_stores, set_counsel_draft_view_store
+from ai.contracts.counsel import Citation
 from ai.db.counsel_read_model import PgCounselDraftViewStore
 from ai.db.settings import get_db_settings
 from ai.db.store_factory import reset_shared_agent_runtime
@@ -119,6 +120,21 @@ def _post(client: TestClient) -> str:
     assert response.status_code == 202, response.text
     job_id: str = response.json()["data"]["job_id"]
     return job_id
+
+
+def _assert_citations_match(
+    payload: object, restored: tuple[Citation, ...]
+) -> None:
+    """응답의 인용과 **복원한 초안의 인용**을 값으로 대조한다.
+
+    🔴 **개수만 보면 다른 초안을 되살려도 통과한다** — `cite_id`·`record_id`·`summary`가
+    전부 같아야 한다(evidence는 불변식 2의 축이다).
+    """
+    expected = [citation.model_dump(mode="json") for citation in restored]
+    assert payload == expected, (
+        f"응답의 인용이 복원한 초안과 다르다 — 다른 초안을 되살렸을 수 있다: "
+        f"{payload!r} != {expected!r}"
+    )
 
 
 def _forget_caches() -> None:
@@ -216,11 +232,40 @@ def test_refine_survives_an_emptied_cache(pg_client: TestClient) -> None:
     else:
         assert data.get("blocked_reason"), "차단인데 사유가 없다(사유 없는 거부 금지)"
 
-    #: **복원한 그 초안인가** — 인용은 `_DraftState`가 들고 있던 값이다.
+    #: 🔴 **복원한 「그」 초안인가** — 개수만 보면 **다른 초안을 되살려도 통과한다.**
+    #: `cite_id`·`record_id`·`summary`까지 **값으로** 대조한다(evidence는 불변식 2의 축이다).
     restored = counsel_router._drafts.get((_TENANT, job_id))
     assert restored is not None, "refine이 캐시를 안 채웠다 — 복원 경로를 안 탔다"
     if data["applied"]:
-        assert len(data["citations"]) == len(restored.citations)
+        _assert_citations_match(data["citations"], restored.citations)
+
+
+@pytest.mark.parametrize("field", ["cite_id", "record_id", "summary"])
+def test_a_same_sized_but_different_citation_is_caught(
+    pg_client: TestClient, field: str
+) -> None:
+    """🔴 **개수 대조의 미탐을 실측한다 — 같은 단정 함수를 태워서.**
+
+    ⚠ *"같은 개수인데 값이 다르면 red다"* 를 **손으로 다시 적으면 동어반복**이다.
+    본 검사가 쓰는 `_assert_citations_match`를 **그대로 불러** 잡히는지 본다.
+    ⚠ 종전 `len(...) == len(...)`은 이 입력을 **통과시킨다** — 그 사실도 함께 단정한다.
+    """
+    job_id = _post(pg_client)
+    _forget_caches()
+    assert _refine(pg_client, job_id).status_code == 200
+
+    restored = counsel_router._drafts.get((_TENANT, job_id))
+    assert restored is not None and restored.citations, "대조할 인용이 없다"
+    original = [c.model_dump(mode="json") for c in restored.citations]
+    tampered = [{**original[0], field: f"{original[0][field]}-다른값"}, *original[1:]]
+
+    #: 🔴 **개수는 같다** — 종전 단정은 여기서 green이다.
+    assert len(tampered) == len(restored.citations)
+    with pytest.raises(AssertionError):
+        _assert_citations_match(tampered, restored.citations)
+
+    #: 뒤집기의 뒤집기 — 안 건드린 값은 통과해야 한다(단정이 늘 터지는 것이 아니다).
+    _assert_citations_match(original, restored.citations)
 
 
 def test_a_broken_refine_is_not_reported_as_survival(pg_client: TestClient) -> None:

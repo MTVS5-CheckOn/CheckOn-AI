@@ -7,8 +7,10 @@
 ⚠ **#186의 순차 양방향 테스트는 이 경합을 구조적으로 못 본다** — 첫 쓰기가 **커밋된 뒤에**
 둘째가 시작하므로 둘째는 항상 행을 본다. **순서를 바꿔 봐도 같은 축을 두 번 재는 것**이다.
 
-🔴 **그리고 이건 정상 경로다** — POST 한 번이 뷰와 초안을 **둘 다** 쓴다. 지금은 `await`가
-직렬화하지만 워커·라우터가 갈리거나 프로세스가 둘이면 바로 겹친다.
+⚠ **현재 동작을 과장하지 않는다.** 단일 POST 내부는 `await`로 **직렬 실행**된다 — 이 경합이
+**오늘 프로덕션에서 난다는 뜻이 아니다.** 다만 뷰와 초안은 **독립 갱신 축**이고,
+**독립 요청·향후 배경 워커 분리·다중 소비자**가 같은 자연키를 갱신하면 **동시 최초 저장이
+가능하다.** 저장소는 그 배포·실행 형상에서도 무결성을 보장해야 한다.
 
 **결정론적으로 겹치게 한다** — `asyncio.gather()`만으로는 두 트랜잭션이 **같은 순간에 문 앞에**
 선다는 보장이 없다. 세션 프록시가 **첫 SQL 문에서 배리어에 걸리게** 해서, 둘 다 첫 문을
@@ -167,7 +169,7 @@ def test_the_barrier_really_overlaps_the_two_writers() -> None:
 
 
 def test_view_and_draft_first_writes_converge_to_one_row() -> None:
-    """🔴 **정상 경로다** — POST 한 번이 뷰와 초안을 둘 다 쓴다."""
+    """뷰와 초안이 **같은 새 키에 겹칠 때** 한 행으로 수렴하는가 — 두 축이 독립이라 가능하다."""
     for round_index, result in enumerate(_run(_save_view, _save_draft)):
         assert result["rows"] == 1, f"{round_index}회차 행 수가 {result['rows']}다"
         assert result["view"] is not None, f"{round_index}회차에서 뷰가 사라졌다"
@@ -195,7 +197,11 @@ def test_two_first_writes_on_the_same_side_converge(side: str) -> None:
 
 
 def test_no_row_is_left_behind_by_a_race() -> None:
-    """경합 뒤에도 **테넌트에 남는 행은 라운드 수만큼**이어야 한다(중복 행 없음)."""
+    """🔴 **한 자연키의 경합이 중복 행 없이 정확히 한 행으로 수렴하는가.**
+
+    ⚠ 위 검사들은 **그 키의 행**만 셌다 — 경합이 **같은 키로 두 행**을 남기면 유니크 제약이
+    막지만, 제약이 없거나 키가 어긋나면 조용히 둘이 된다. 여기서는 **테넌트 전체**를 센다.
+    """
     dsn = get_db_settings().database_url
 
     async def scenario() -> int:
