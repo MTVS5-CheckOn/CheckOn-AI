@@ -201,6 +201,9 @@ _ERD_PAIRS: Final = (
     _Pair("agent_kind", _DOCS / "06_erd.md", WorkerKind, "AGENT_RUN"),
     _Pair("priority_class", _DOCS / "06_erd.md", PriorityClass, "AGENT_RUN"),
     _Pair("status", _DOCS / "06_erd.md", JobPhase, "AGENT_RUN"),
+    # 읽기 모델 status도 `_CachedView.view.status`의 같은 JobPhase 투영이다. 값 목록을
+    # 생략하면 목록·필터 축이 새 상태를 조용히 받아 문서와 갈릴 수 있어 명시 대조한다.
+    _Pair("status", _DOCS / "06_erd.md", JobPhase, "COUNSEL_DRAFT_VIEW"),
     # [PART_B] 같은 `status` 컬럼명이 세 테이블에 있다 — 앵커가 이 둘을 가능하게 한다.
     _Pair("status", _DOCS / "06_erd.md", ProblemSetStatus, "PROBLEM_SET"),
     _Pair("status", _DOCS / "06_erd.md", ProblemItemStatus, "PROBLEM_ITEM"),

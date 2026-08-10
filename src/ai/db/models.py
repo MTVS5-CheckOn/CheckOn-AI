@@ -1,4 +1,4 @@
-"""ERD 37테이블 ORM — 06_erd.md 정본을 그대로 옮긴다.
+"""ERD 38테이블 ORM — 06_erd.md 정본을 그대로 옮긴다.
 
 소유: 공통 계약 (A+B 확인 완료 — 양자 목록은 02_ownership.md §4가 정본).
 ⚠ **여기 수를 다시 적지 않는다** — 「12곳」이 v5(`graphrag.py` 편입)로 13이 된 뒤에도
@@ -318,6 +318,40 @@ class CounselPackResult(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ)
     #: 🔴 정본 — CounselPackResultRecord 전문. 위 넷은 여기서 유도한 파생이다.
     snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
+
+
+class CounselDraftView(Base):
+    """상담 읽기 모델 — 두 독립 캐시의 스냅숏이 정본이다.
+
+    `view_snapshot`은 `_CachedView` 전문이고 `draft_snapshot`은 `_DraftState` 전문이다.
+    두 캐시는 서로 다른 시점에 채워지고 독립적으로 축출되므로 둘 다 nullable이어야 한다.
+    그래야 "GET은 404인데 refine은 200"인 비대칭도 한 행으로 표현할 수 있다. 다음 사람이
+    컬럼 하나로 합치면 그 상태가 사라지므로 두 정본을 의도적으로 분리한다.
+
+    🔴 스냅숏이 정본이고 `tenant_id`·`job_id`·`status`·`execution_id` 넷은 조회용 파생이다.
+    유도는 `db/counsel_draft_view.py::counsel_draft_view_projection()` 한 함수만 담당한다.
+    `updated_at`은 두 캐시에 없는 값을 지어내지 않고 향후 저장소의 쓰기 시각으로 남기는
+    정리 배치 축이다. 이 PR은 자리만 만들며 `_view_cache`·`_drafts` 배선은 A의 축이다.
+
+    `execution_id`는 `template_only`·근거 0건처럼 AI_RUN 행이 없는 경우 null이 정직하다.
+    `job_id`는 `AGENT_RUN`과 물리 FK로 잇지 않는 varchar 논리 참조다.
+    """
+
+    __tablename__ = "counsel_draft_view"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "job_id", name="uq_counsel_draft_view_job"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    job_id: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)
+    execution_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ)
+    view_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    draft_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
 
 # ───────────────── 진단·문제생성 계열 ([PART_B]) ─────────────────
