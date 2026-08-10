@@ -349,22 +349,11 @@ def test_problem_provider_has_no_silent_fake_fallback() -> None:
         problem_router.require_problem_providers()
 
 
-@pytest.mark.parametrize("with_passage", [False, True])
-def test_problem_unsupported_source_is_400_with_reason_code(
-    with_passage: bool,
-) -> None:
+def test_problem_reading_without_passage_is_400_with_reason_code() -> None:
     run_store, _stores, _generator, _verifier = _prepare()
     job_store = build_agent_job_store()
     assert isinstance(job_store, InMemoryJobStore)
     body = _body(area_tag="reading")
-    if with_passage:
-        body["passage"] = {
-            "domain": "science",
-            "word_count": 500,
-            "sentence_complexity": "standard",
-            "paragraph_count": 3,
-            "banned_topics_version": "pg-banned-topics.v1",
-        }
 
     with TestClient(create_app()) as client:
         response = client.post("/v1/problems", headers=_HEADERS, json=body)
@@ -374,7 +363,7 @@ def test_problem_unsupported_source_is_400_with_reason_code(
     assert response.json()["error"]["detail"] == {
         "reason": "source_procurement_not_implemented",
         "area_tag": "reading",
-        "passage": with_passage,
+        "passage": False,
     }
     assert len(job_store) == 0
     assert job_store.added == 0

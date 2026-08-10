@@ -22,6 +22,7 @@ _EXPECTED_GATEWAY_CALLS = frozenset(
     {
         ("problem_generation/application/cross_solver.py", "solve"),
         ("problem_generation/application/generator.py", "generate"),
+        ("problem_generation/application/passage_generator.py", "generate"),
     }
 )
 

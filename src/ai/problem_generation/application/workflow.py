@@ -33,6 +33,7 @@ from ai.contracts.problem_generation import (
     DifficultyBand,
     GeneratedItem,
     ItemResult,
+    PassageDraft,
     ProblemFailureReason,
     ProblemGenerationOutcome,
     ProblemGenerationState,
@@ -49,6 +50,11 @@ from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import (
     ProblemGenerator,
     build_candidate_snapshot,
+)
+from ai.problem_generation.application.passage_generator import (
+    PassageGenerationUnavailable,
+    PassageGenerator,
+    attach_passage_draft,
 )
 from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
 from ai.problem_generation.domain.cross_solve import validate_cross_solve
@@ -69,18 +75,14 @@ from ai.problem_generation.domain.models import (
     TargetPlan,
 )
 from ai.problem_generation.domain.policy import (
-    SUPPORTED_AREAS,
     BannedTopicsConfig,
     VerifyConfig,
+    supports_source_procurement,
 )
 from ai.problem_generation.domain.rules import (
     RuleValidationResult,
     RuleValidator,
     has_reference_data,
-)
-from ai.problem_generation.infrastructure.config import (
-    load_banned_topics,
-    load_verify_config,
 )
 from ai.runtime.errors import DomainException
 
@@ -88,6 +90,7 @@ type DiagnosisCallable = Callable[[ProblemRequest], Awaitable[DiagnosisResult]]
 
 SOURCE_PROCUREMENT_NOT_IMPLEMENTED = "source_procurement_not_implemented"
 
+_PROCURE_PASSAGE = "procure_passage"
 _BEGIN_ATTEMPT = "begin_attempt"
 _BEGIN_DIFFICULTY_REGEN = "begin_difficulty_regen"
 _RUN_ATTEMPT = "run_attempt"
@@ -97,8 +100,8 @@ _RUN_ATTEMPT = "run_attempt"
 #: 늘려야 하고, 안 늘리면 아래 상한이 정상 실행을 자른다(설정 파일로 뺄 값이 아니다).
 _STEPS_PER_ATTEMPT = 2
 
-#: START 진입과 종단 판정이 쓰는 여유분.
-_GRAPH_STEP_MARGIN = 2
+#: START 진입·요청당 자료 조달 노드·종단 판정이 쓰는 여유분.
+_GRAPH_STEP_MARGIN = 3
 
 
 def graph_recursion_limit(*, count: int, config: VerifyConfig) -> int:
@@ -178,23 +181,25 @@ class ProblemGenerationWorkflow:
         diagnosis: DiagnosisCallable,
         graph_context: GraphContextService,
         generator: ProblemGenerator,
+        passage_generator: PassageGenerator,
         cross_solver: BlindCrossSolver,
         candidate_store: CandidateStore,
         item_store: ProblemItemStore,
         checkpointer: BaseCheckpointSaver[Any],
-        verify_config: VerifyConfig | None = None,
-        banned_topics: BannedTopicsConfig | None = None,
+        verify_config: VerifyConfig,
+        banned_topics: BannedTopicsConfig,
     ) -> None:
         self._diagnosis = diagnosis
         self._graph_context = graph_context
         self._generator = generator
+        self._passage_generator = passage_generator
         self._cross_solver = cross_solver
         self._candidate_store = candidate_store
         self._item_store = item_store
         self._checkpointer = checkpointer
-        self._verify_config = verify_config or load_verify_config()
+        self._verify_config = verify_config
         self._rule_validator = RuleValidator(
-            banned_topics or load_banned_topics(),
+            banned_topics,
             duplicate_similarity_max=self._verify_config.dup_similarity_max,
         )
 
@@ -208,6 +213,13 @@ class ProblemGenerationWorkflow:
         if self._generator.prompt_version != self._cross_solver.prompt_version:
             raise ProblemWorkflowConfigurationError(
                 "generator와 verifier 프롬프트 버전이 다르다"
+            )
+        if (
+            self._passage_generator.banned_topics_version
+            != self._rule_validator.banned_topics_version
+        ):
+            raise ProblemWorkflowConfigurationError(
+                "지문 생성기와 규칙 검증기의 금칙 설정 버전이 다르다"
             )
 
     async def run(
@@ -252,6 +264,10 @@ class ProblemGenerationWorkflow:
             return RejectedInsufficientOutcome(
                 status_reason="출제 목표에 승인된 기준 자료가 없다"
             )
+        except PassageGenerationUnavailable:
+            return RejectedInsufficientOutcome(
+                status_reason="승인된 기준 자료로 T2 지문을 생성할 수 없다"
+            )
         final_state = ProblemGenerationState.model_validate(result)
         return final_state.to_result()
 
@@ -266,6 +282,28 @@ class ProblemGenerationWorkflow:
         """호출 전 attempt 체크포인트를 남기는 비동기 StateGraph를 만든다."""
 
         feedback: dict[tuple[int, int], _AttemptFeedback] = {}
+
+        async def procure_passage(
+            state: ProblemGenerationState,
+        ) -> dict[str, object]:
+            passage_request = request.passage
+            if passage_request is None or state.passage_draft is not None:
+                return {}
+            target = targets[0]
+            type_tag = request.type_tags[0]
+            context_pack = await self._resolve_context(
+                request=request,
+                type_tag=type_tag,
+                target=target,
+            )
+            if not has_reference_data(context_pack):
+                raise GraphContextReferenceInsufficient
+            draft = await self._passage_generator.generate(
+                passage_request=passage_request,
+                context_pack=context_pack,
+                execution_context=execution_context,
+            )
+            return _checked_update(state, passage_draft=draft)
 
         async def begin_attempt(
             state: ProblemGenerationState,
@@ -302,12 +340,15 @@ class ProblemGenerationWorkflow:
                 return self._complete_slot(state, existing)
             target = targets[state.cursor % len(targets)]
             type_tag = request.type_tags[state.cursor % len(request.type_tags)]
+            if request.passage is not None and state.passage_draft is None:
+                raise RuntimeError("T2 문항 생성 전에 passage_draft가 준비되지 않았다")
 
             try:
                 context_pack = await self._resolve_context(
                     request=request,
                     type_tag=type_tag,
                     target=target,
+                    passage_draft=state.passage_draft,
                 )
             except (GraphContextUnavailable, TimeoutError) as error:
                 if state.fallback_ref is not None:
@@ -481,10 +522,12 @@ class ProblemGenerationWorkflow:
             return _BEGIN_ATTEMPT
 
         builder = StateGraph(ProblemGenerationState)
+        builder.add_node(_PROCURE_PASSAGE, procure_passage)
         builder.add_node(_BEGIN_ATTEMPT, begin_attempt)
         builder.add_node(_BEGIN_DIFFICULTY_REGEN, begin_difficulty_regen)
         builder.add_node(_RUN_ATTEMPT, run_attempt)
-        builder.add_edge(START, _BEGIN_ATTEMPT)
+        builder.add_edge(START, _PROCURE_PASSAGE)
+        builder.add_edge(_PROCURE_PASSAGE, _BEGIN_ATTEMPT)
         builder.add_edge(_BEGIN_ATTEMPT, _RUN_ATTEMPT)
         builder.add_edge(_BEGIN_DIFFICULTY_REGEN, _RUN_ATTEMPT)
         routes: dict[Hashable, str] = {
@@ -563,19 +606,14 @@ class ProblemGenerationWorkflow:
         execution_context: ExecutionContext,
     ) -> None:
         versions = execution_context.versions
-        # **트랙 제한이 아니라 자료 조달 방식 제한이다**(05 §1.0·§1.2).
-        # 게이트·프롬프트는 전 영역 공용이고, 지금 구현된 조달 방식은 "자료 없음"뿐이다.
-        # "생성"(지문·담화·매체를 LLM이 만든다)과 "저작물"(풀에서 선택) 노드가 없어서
-        # 자료를 동반한 요청을 받을 수 없다. 생성 노드 1개가 붙으면 T2 본문·T4·T5가
-        # 함께 열린다 — 트랙마다 파이프라인을 다시 만드는 구조가 아니다.
-        # ⚠ 생성 노드를 붙일 때 이 조건문도 같이 풀어야 한다 — `area_tag` 검사는
-        # '자료가 필요 없는 유일한 영역'의 대리이지 트랙 제한이 아니다. 조건이 OR라
-        # `area_tag=language`이면서 `passage` 없음, 둘 다 만족해야 통과한다.
-        # enqueue 문 앞 이후의 도달 불가 이중 방어이며, 같은 조건이 두 자리에 있다.
-        if request.area_tag not in SUPPORTED_AREAS or request.passage is not None:
+        # enqueue 문 앞 이후의 도달 불가 이중 방어이며, 같은 순수 판정을 공유한다.
+        if not supports_source_procurement(
+            area_tag=request.area_tag,
+            has_passage_request=request.passage is not None,
+        ):
             raise ProblemSourceUnsupported(
-                "자료 조달 방식이 '자료 없음'인 요청만 처리할 수 있다 "
-                "— 생성·저작물 노드 미구현(05 §1.2)",
+                "지원되는 자료 조달 조합은 language+자료 없음과 "
+                "reading+PassageRequest이다(05 §1.2)",
                 {
                     "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
                     "area_tag": request.area_tag.value,
@@ -615,6 +653,7 @@ class ProblemGenerationWorkflow:
         request: ProblemRequest,
         type_tag: TypeTag,
         target: TargetPlan,
+        passage_draft: PassageDraft | None = None,
     ) -> ContextPack:
         graph_request = GraphContextRequest(
             tenant_id=request.tenant_id,
@@ -646,6 +685,8 @@ class ProblemGenerationWorkflow:
             or context_pack.locked_fields != graph_request.locked_fields
         ):
             raise GraphContextError("GraphContextService가 요청과 다른 ContextPack을 반환했다")
+        if passage_draft is not None:
+            return attach_passage_draft(context_pack, passage_draft)
         return context_pack
 
     async def _previous_items(

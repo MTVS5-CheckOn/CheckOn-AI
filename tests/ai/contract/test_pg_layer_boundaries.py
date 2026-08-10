@@ -26,11 +26,8 @@ _PG = Path(__file__).resolve().parents[3] / "src" / "ai" / "problem_generation"
 #: pydantic은 값 객체 정의에 쓴다. 그 밖은 전부 바깥 세계다.
 _DOMAIN_ALLOWED_ROOTS = frozenset({"ai.contracts", "ai.problem_generation.domain"})
 
-#: application이 infrastructure를 직접 import 해도 되는 **유일한** 지점.
-#: `ProblemGenerationWorkflow`가 주입받지 못했을 때 쓰는 설정 로딩 폴백이며,
-#: 주입 경로(`verify_config=` 인자)가 정본이다. 이 목록을 늘리기 전에
-#: 조립부에서 주입하는 쪽을 먼저 검토한다 — 13 §4 참조.
-_APPLICATION_TO_INFRASTRUCTURE_ALLOWED = frozenset({"application/workflow.py"})
+#: application 설정도 조립부에서 주입한다. infrastructure 역참조 예외는 없다.
+_APPLICATION_TO_INFRASTRUCTURE_ALLOWED: frozenset[str] = frozenset()
 
 
 def _modules(layer: str) -> list[Path]:
@@ -81,7 +78,7 @@ def test_domain_has_no_io_or_llm_dependency(module: Path) -> None:
 
 @pytest.mark.parametrize("module", _modules("application"), ids=lambda p: p.name)
 def test_application_to_infrastructure_stays_on_whitelist(module: Path) -> None:
-    """application → infrastructure는 화이트리스트 1곳으로 묶는다."""
+    """application → infrastructure 역참조는 허용하지 않는다."""
     uses_infra = any(
         root.startswith("ai.problem_generation.infrastructure")
         for root in _imported_roots(module)
