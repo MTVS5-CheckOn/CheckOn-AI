@@ -94,10 +94,16 @@ class LedgerObservation(BaseModel):
     #: `AGENT_STEP` — 🔴 **원장 없이도 남는 유일한 증거**(위 표).
     step_count: int = 0
     steps_with_llm_call: int = 0
-    #: `AI_RUN` 쪽 — 없으면 전부 `None`.
+    #: `AI_RUN` 쪽(**같은 테넌트만**) — 없으면 전부 `None`.
     ai_run_execution_id: UUID | None = None
     ai_run_tenant_id: str | None = None
-    ai_run_capability: Capability | None = None
+    #: 🔴 **enum이 아니라 raw string이다.** 변환 단계에서 바로 `Capability(...)`로 바꾸면
+    #: **미등록 값 하나가 점검 전체를 예외로 죽인다** — 그 행만 결함이어야 한다.
+    ai_run_capability: str | None = None
+    #: 🔴 **같은 `execution_id`가 남의 테넌트에 있는가**(존재 여부만).
+    #: ⚠ **남의 테넌트 ID는 안 담는다** — 조인에서 테넌트를 빼고 전문을 읽는 방식으로
+    #: 고치지 않는다. 그건 경계를 넘는 것이다.
+    run_id_exists_in_other_tenant: bool = False
 
     @property
     def has_ledger(self) -> bool:
@@ -105,8 +111,13 @@ class LedgerObservation(BaseModel):
 
     @property
     def consumed_a_call(self) -> bool:
-        """🔴 **실 호출의 「양성」 증거만** 센다 — 없다고 0콜로 읽지 않는다."""
-        return self.steps_with_llm_call > 0 or self.result_ref is not None
+        """🔴 **실 호출의 「양성」 증거만** 센다 — 없다고 0콜로 읽지 않는다.
+
+        ⚠ **`result_ref`는 여기 안 넣는다** — 그건 **산출물 저장·종단 증거**이고
+        **LLM 0콜 성공 경로도 결과를 만든다.** 호출 증거라고 부르면
+        **관측의 이름이 실제로 보는 것보다 넓어진다**(로그 85 계열).
+        """
+        return self.steps_with_llm_call > 0
 
 
 class LedgerFinding(BaseModel):
@@ -124,6 +135,14 @@ def judge_ledger_row(observation: LedgerObservation) -> LedgerFinding:
 
 
 def _verdict_for(o: LedgerObservation) -> tuple[LedgerVerdict, str]:
+    #: 🔴 **교차 테넌트 충돌이 가장 먼저다.** 뒤에 두면 `queued`가 먼저 걸려
+    #: **정상 부재로 조용히 통과**한다(실측 8/10 — 그 분기는 실 PG로 도달 불가였다).
+    if o.run_id_exists_in_other_tenant:
+        return (
+            LedgerVerdict.VIOLATION,
+            "같은 run_id의 AI_RUN이 **다른 테넌트에** 있다 — 논리 결합이 경계를 넘었다"
+            "(남의 식별자는 싣지 않는다)",
+        )
     if o.has_ledger:
         return _logical_binding(o)
     if o.agent_kind is WorkerKind.MAPPING_PROBE:
@@ -132,7 +151,16 @@ def _verdict_for(o: LedgerObservation) -> tuple[LedgerVerdict, str]:
             "mapping_probe는 record_run()을 한 번도 안 부른다 — ㉾의 별도 결손이다"
             "(이 관문에 섞지 않는다)",
         )
-    if o.status in _IN_FLIGHT:
+    #: ⚠ **`running`은 증거가 있어도 허용한다** — `finally`의 원장 적재 **직전**일 수 있다.
+    #:   「아직 안 썼다」와 「안 쓸 것이다」를 이 시점엔 못 가른다.
+    if o.status is JobPhase.RUNNING:
+        return (
+            LedgerVerdict.ALLOWED_ABSENCE,
+            "running — 원장 적재 전 정상 순간일 수 있다(증거가 있어도 red로 만들지 않는다)",
+        )
+    #: 🔴 **`paused`는 다르다** — 서킷 개방은 **호출을 이미 소비한 뒤**에 온다.
+    #:   증거가 있으면 원장이 있어야 한다. 종전엔 `_IN_FLIGHT`가 먼저 걸려 **증거를 덮었다.**
+    if o.status in _IN_FLIGHT and not o.consumed_a_call:
         return (
             LedgerVerdict.ALLOWED_ABSENCE,
             f"{o.status.value}는 실행이 안 끝났다 — 원장이 없는 것이 정상이다",
@@ -175,11 +203,13 @@ def _logical_binding(o: LedgerObservation) -> tuple[LedgerVerdict, str]:
             "AI_RUN이 다른 테넌트의 행이다 — 논리 결합이 경계를 넘었다",
         )
     expected = WORKER_CAPABILITY.get(o.agent_kind)
-    if expected is not None and o.ai_run_capability is not expected:
+    #: 🔴 **문자열로 대조한다** — 관측이 raw string을 들고 오므로 미등록 값도 **여기서**
+    #: 결함이 된다(변환 단계에서 죽지 않는다).
+    if expected is not None and o.ai_run_capability != expected.value:
         return (
             LedgerVerdict.VIOLATION,
             f"{o.agent_kind.value} 잡인데 AI_RUN.capability가 "
-            f"{o.ai_run_capability}다(기대 {expected.value})",
+            f"{o.ai_run_capability!r}다(기대 {expected.value!r})",
         )
     return (LedgerVerdict.OK, "원장이 있고 논리 결합이 맞다")
 

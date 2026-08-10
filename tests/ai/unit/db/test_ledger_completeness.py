@@ -56,15 +56,15 @@ def test_a_succeeded_job_without_a_ledger_is_a_violation(kind: WorkerKind) -> No
     )
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [("steps_with_llm_call", 2), ("result_ref", "pack://x")],
-)
-def test_a_failed_job_with_call_evidence_is_a_violation(
-    field: str, value: int | str
-) -> None:
-    """🔴 **실패해도 호출 양성 증거가 있으면 결함**이다."""
-    assert _verdict(status=JobPhase.FAILED, **{field: value}) is LedgerVerdict.VIOLATION
+def test_a_failed_job_with_call_evidence_is_a_violation() -> None:
+    """🔴 **실패해도 호출 양성 증거가 있으면 결함**이다.
+
+    ⚠ **`result_ref`는 이 축에서 뺐다**(지시서 59) — 산출물 저장 증거이지 호출 증거가
+    아니다. 그 경우는 `test_a_result_ref_is_not_call_evidence`가 따로 본다.
+    """
+    assert _verdict(status=JobPhase.FAILED, steps_with_llm_call=2) is (
+        LedgerVerdict.VIOLATION
+    )
 
 
 def test_a_ledger_from_another_tenant_is_a_violation() -> None:

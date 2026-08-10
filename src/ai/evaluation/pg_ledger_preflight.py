@@ -31,6 +31,19 @@ from ai.db.session import get_sessionmaker
 _SAMPLE = 20
 
 
+def preflight_blocks(findings: Sequence[LedgerFinding]) -> bool:
+    """🔴 **리포트와 종료 코드가 함께 쓰는 단 하나의 판정.**
+
+    ⚠ 종전엔 0건 문면과 종료 코드가 **각자 판정**했다 — 같은 규칙을 두 곳에 두면
+    **언젠가 반대로 움직인다**(99 #02). 실제로 0건에서 종료 코드는 1인데
+    문면은 「차단 사유 없음」이었다.
+
+    **막는 것:** `violation` · `unknown` · **관측 0건**(측정 없이 관문을 열면 관문이 아니다).
+    **안 막는 것:** `separate_gap`(㉾는 별도 결손 — 섞으면 관문이 영영 안 열린다).
+    """
+    return not findings or blocks_flip(summarize(findings))
+
+
 def render_report(findings: Sequence[LedgerFinding], *, tenant_id: str) -> str:
     """🔴 **네 축을 각각 따로 낸다** — 합치면 어느 것이 결함인지 알 수 없다."""
     counts = summarize(findings)
@@ -71,14 +84,13 @@ def render_report(findings: Sequence[LedgerFinding], *, tenant_id: str) -> str:
             )
         if len(rows) > _SAMPLE:
             lines.append(f"- … 외 {len(rows) - _SAMPLE}건(전량은 종료 코드로 판정)")
-    #: 🔴 **0건을 「차단 사유 없음」으로 찍지 않는다** — 종료 코드만 1이고 문면이 통과로
-    #: 읽히면, 리포트를 붙여 넣는 사람이 **측정 없음을 통과로 옮긴다**(실측으로 잡았다).
-    if not findings:
-        judgement = "🔴 **플립 차단** — 관측 0건이라 **판정 자체를 못 했다.**"
-    elif blocks_flip(counts):
-        judgement = "🔴 **플립 차단** — violation 또는 unknown이 있다."
-    else:
+    #: 🔴 **문면도 `preflight_blocks` 하나를 읽는다** — 종료 코드와 갈릴 자리를 없앤다.
+    if not preflight_blocks(findings):
         judgement = "✅ 플립 차단 사유 없음(violation 0 · unknown 0)."
+    elif not findings:
+        judgement = "🔴 **플립 차단** — 관측 0건이라 **판정 자체를 못 했다.**"
+    else:
+        judgement = "🔴 **플립 차단** — violation 또는 unknown이 있다."
     lines += [
         "",
         "---",
@@ -94,11 +106,8 @@ async def _main_async(tenant_id: str) -> int:
     observations = await audit.observe(tenant_id=tenant_id)
     findings = [judge_ledger_row(o) for o in observations]
     print(render_report(findings, tenant_id=tenant_id))
-    counts = summarize(findings)
-    #: 🔴 **관측 0건도 통과시키지 않는다** — 측정 없이 관문을 열면 관문이 아니다.
-    if not findings or blocks_flip(counts):
-        return 1
-    return 0
+    #: 🔴 **문면과 같은 함수를 읽는다.**
+    return 1 if preflight_blocks(findings) else 0
 
 
 def main() -> None:

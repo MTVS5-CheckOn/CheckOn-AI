@@ -101,6 +101,11 @@ async def _insert_agent_run(
     tenant_id: str,
     status: str,
 ) -> uuid.UUID:
+    #: ⚠ 스키마가 종단 상태의 모양을 강제한다 — `ck_agent_run_finished`(시각)와
+    #:   `ck_agent_run_success_result`(`succeeded`엔 `result_ref`). **픽스처도 실제 모양을
+    #:   따른다** — 제약을 우회하려고 상태를 바꾸지 않는다.
+    terminal = status in {"succeeded", "failed", "cancelled"}
+    result_ref = f"pack://{uuid.uuid4()}" if status == "succeeded" else None
     job_id = uuid.uuid4()
     async with sessions() as session, session.begin():
         await session.execute(
@@ -108,11 +113,21 @@ async def _insert_agent_run(
                 "INSERT INTO agent_run (id, run_id, tenant_id, agent_kind, operation,"
                 " payload_ref, payload_hash, priority_class, dispatch_attempt,"
                 " lease_generation, recovery_count, max_recovery_attempts,"
-                " state_checkpoint, progress, status, queued_at, updated_at)"
+                " state_checkpoint, progress, status, queued_at, updated_at,"
+                " started_at, finished_at, result_ref)"
                 " VALUES (:j, :x, :t, 'counsel_pack', 'counsel_pack.generate',"
-                " 'context://p', :h, 'batch', 0, 0, 0, 3, '{}', '0', :s, now(), now())"
+                " 'context://p', :h, 'batch', 0, 0, 0, 3, '{}', '0', :s, now(), now(),"
+                " CASE WHEN :term THEN now() END, CASE WHEN :term THEN now() END, :r)"
             ),
-            {"j": job_id, "x": run_id, "t": tenant_id, "h": _HASH, "s": status},
+            {
+                "j": job_id,
+                "x": run_id,
+                "t": tenant_id,
+                "h": _HASH,
+                "s": status,
+                "term": terminal,
+                "r": result_ref,
+            },
         )
     return job_id
 

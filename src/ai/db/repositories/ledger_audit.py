@@ -16,13 +16,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, and_, func, select
 
 from ai.contracts.agents import JobPhase, WorkerKind
-from ai.contracts.execution import Capability
 from ai.db.counsel_read_model import SessionFactory
 from ai.db.ledger_completeness import LedgerObservation
 from ai.db.models import AgentRun, AgentStep, AiRun
+
+#: 🔴 **같은 테이블을 두 목적으로 본다** — 하나는 「같은 테넌트 결합」(조인), 하나는
+#: 「남의 테넌트 존재 여부」(EXISTS). 별칭이 없으면 상관 서브쿼리가 바깥과 뭉친다.
+_other_tenant_run = AiRun.__table__.alias("ai_run_other_tenant")
 
 
 def observation_query(tenant_id: str) -> Select[tuple[object, ...]]:
@@ -30,6 +33,11 @@ def observation_query(tenant_id: str) -> Select[tuple[object, ...]]:
 
     ⚠ `AI_RUN` 조인도 **테넌트를 함께 건다** — `execution_id`만으로 이으면
     남의 테넌트 행이 붙을 수 있고, 그러면 「원장이 있다」가 거짓이 된다.
+
+    🔴 **그 대가로 「남의 테넌트에 같은 `execution_id`가 있다」가 안 보였다**(실측 8/10) —
+    열이 전부 `None`이라 판정이 **정상 부재**로 통과했다. ⇒ **존재 여부만** 별도
+    상관 `EXISTS`로 받는다. ⚠ **남의 테넌트 ID·행 내용은 안 읽는다** — 조인에서 테넌트를
+    빼고 전문을 읽는 방식으로 고치지 않는다. 그건 경계를 넘는 것이다.
     """
     if not tenant_id:
         raise ValueError("원장 점검은 테넌트 범위를 반드시 받는다")
@@ -57,6 +65,21 @@ def observation_query(tenant_id: str) -> Select[tuple[object, ...]]:
             AiRun.execution_id,
             AiRun.tenant_id.label("ai_run_tenant_id"),
             AiRun.capability,
+            #: 🔴 **존재 여부만** — `boolean` 하나이고 남의 식별자는 안 나온다.
+            #: ⚠ `AiRun`을 위에서 이미 조인하므로 **별칭을 따로 둔다** — 안 그러면
+            #: 자동 상관으로 FROM이 사라진다(실측: `returned no FROM clauses`).
+            select(1)
+            .select_from(_other_tenant_run)
+            .where(
+                and_(
+                    _other_tenant_run.c.execution_id == AgentRun.run_id,
+                    _other_tenant_run.c.tenant_id != AgentRun.tenant_id,
+                )
+            )
+            #: ⚠ `correlate`를 명시한다 — 안 하면 자동 상관이 바깥 FROM을 삼킨다(실측).
+            .correlate(AgentRun.__table__)
+            .exists()
+            .label("run_id_exists_in_other_tenant"),
         )
         .outerjoin(steps, steps.c.agent_run_id == AgentRun.id)
         #: 🔴 **테넌트를 조인 조건에 함께 건다** — 남의 원장이 붙으면 안 된다.
@@ -97,6 +120,7 @@ def _to_observation(row: Any) -> LedgerObservation:  # noqa: ANN401 — SQLAlche
         execution_id,
         ai_run_tenant,
         capability,
+        other_tenant_has_run_id,
     ) = row
     return LedgerObservation(
         tenant_id=str(tenant),
@@ -111,7 +135,10 @@ def _to_observation(row: Any) -> LedgerObservation:  # noqa: ANN401 — SQLAlche
         steps_with_llm_call=int(steps_with_llm_call),
         ai_run_execution_id=execution_id,
         ai_run_tenant_id=None if ai_run_tenant is None else str(ai_run_tenant),
-        ai_run_capability=None if capability is None else Capability(str(capability)),
+        #: 🔴 **enum으로 안 바꾼다** — 미등록 값 하나가 **점검 전체를 예외로 죽인다.**
+        #: 그 행만 결함이 되도록 문자열 그대로 넘기고 판정이 대조한다.
+        ai_run_capability=None if capability is None else str(capability),
+        run_id_exists_in_other_tenant=bool(other_tenant_has_run_id),
     )
 
 
