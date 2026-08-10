@@ -15,6 +15,7 @@ _EXPECTED_CASE_IDS: dict[str, tuple[str, ...]] = {
     "graphrag": tuple(f"GR{index}" for index in range(1, 12)),
     "suneung_format": tuple(f"SF{index}" for index in range(1, 7)),
     "passage_generation": ("PG1", "PG2"),
+    "literature_selection": ("LS1", "LS2"),
 }
 
 type SuneungFormatFeature = Literal[
