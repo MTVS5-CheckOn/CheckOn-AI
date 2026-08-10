@@ -20,6 +20,7 @@ from ai.contracts.problem_generation import (
     ItemResult,
     ItemRevision,
     ItemRevisionRequest,
+    LiteratureGenre,
     PassageDomain,
     PassageDraft,
     PassageRequest,
@@ -39,6 +40,7 @@ from ai.contracts.problem_generation import (
     TargetKind,
     TargetSelection,
     TargetSource,
+    WorkSelection,
     assert_problem_generation_state_transition,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
@@ -199,6 +201,48 @@ def test_passage_is_reading_only() -> None:
     )
     with pytest.raises(ValueError, match="reading"):
         _request(passage=passage)
+
+
+def test_work_selection_roundtrip_and_literature_scope() -> None:
+    selection = WorkSelection(
+        genre=LiteratureGenre.MODERN_NOVEL,
+        era="근대",
+        concept_keywords=("공간", "인물"),
+    )
+    request = _request(area_tag=AreaTag.LITERATURE, work_selection=selection)
+
+    assert WorkSelection.model_validate(selection.model_dump(mode="json")) == selection
+    assert request.work_selection == selection
+
+
+def test_work_selection_is_literature_only() -> None:
+    with pytest.raises(ValueError, match="literature"):
+        _request(
+            work_selection=WorkSelection(genre=LiteratureGenre.MODERN_POETRY)
+        )
+
+
+def test_passage_and_work_selection_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match="함께 사용할 수 없다"):
+        _request(
+            area_tag=AreaTag.LITERATURE,
+            passage=PassageRequest(
+                domain=PassageDomain.ART,
+                word_count=500,
+                sentence_complexity=SentenceComplexity.STANDARD,
+                paragraph_count=2,
+                banned_topics_version="v1",
+            ),
+            work_selection=WorkSelection(genre=LiteratureGenre.MODERN_POETRY),
+        )
+
+
+def test_work_selection_rejects_duplicate_keywords() -> None:
+    with pytest.raises(ValueError, match="중복"):
+        WorkSelection(
+            genre=LiteratureGenre.CLASSICAL_POETRY,
+            concept_keywords=("화자", "화자"),
+        )
 
 
 def test_passage_draft_roundtrip_and_exact_fields() -> None:

@@ -42,6 +42,14 @@ class SentenceComplexity(StrEnum):
     ADVANCED = "advanced"
 
 
+class LiteratureGenre(StrEnum):
+    """버전 고정 문학 풀의 갈래 어휘."""
+
+    CLASSICAL_POETRY = "classical_poetry"
+    MODERN_POETRY = "modern_poetry"
+    MODERN_NOVEL = "modern_novel"
+
+
 class PassageRequest(BaseModel):
     """T2 비문학 지문 생성 요청."""
 
@@ -54,6 +62,50 @@ class PassageRequest(BaseModel):
     sentence_complexity: SentenceComplexity
     paragraph_count: int = Field(ge=2, le=6)
     banned_topics_version: str = Field(min_length=1)
+
+
+class WorkSelection(BaseModel):
+    """T3 문학 작품 선택 조건 — 작품 생성 파라미터가 아니다."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    genre: LiteratureGenre
+    era: str | None = Field(default=None, min_length=1)
+    concept_keywords: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+
+    @model_validator(mode="after")
+    def validate_keywords(self) -> Self:
+        if len(set(self.concept_keywords)) != len(self.concept_keywords):
+            raise ValueError("concept_keywords는 중복될 수 없다")
+        return self
+
+
+class WorkExcerpt(BaseModel):
+    """결정론 선택기가 고른 원문 오프셋 구간."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    slug: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    author: str = Field(min_length=1)
+    era: str = Field(min_length=1)
+    genre: LiteratureGenre
+    source_ref: str = Field(min_length=1)
+    revision_id: int = Field(gt=0)
+    content_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    quote: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_span(self) -> Self:
+        if self.end <= self.start:
+            raise ValueError("work excerpt의 end는 start보다 커야 한다")
+        return self
+
+    @property
+    def evidence_ref(self) -> str:
+        return f"work:{self.slug}:{self.revision_id}:{self.start}:{self.end}"
 
 
 class PassageDraft(BaseModel):
@@ -119,6 +171,7 @@ class ProblemRequest(BaseModel):
     requested_difficulty: DifficultyBand | None = None
     target: TargetSelection = TargetSelection.AUTO
     passage: PassageRequest | None = None
+    work_selection: WorkSelection | None = None
     topic_hint: str | None = Field(default=None, min_length=1)
 
     @field_validator("item_format")
@@ -143,8 +196,15 @@ class ProblemRequest(BaseModel):
         elif self.manual_targets is not None:
             raise ValueError("자동 약점 출제에는 manual_targets를 사용할 수 없다")
 
+        if self.passage is not None and self.work_selection is not None:
+            raise ValueError("passage와 work_selection은 함께 사용할 수 없다")
         if self.passage is not None and self.area_tag is not AreaTag.READING:
             raise ValueError("PassageRequest는 reading 영역에서만 사용할 수 있다")
+        if (
+            self.work_selection is not None
+            and self.area_tag is not AreaTag.LITERATURE
+        ):
+            raise ValueError("WorkSelection은 literature 영역에서만 사용할 수 있다")
         return self
 
 
