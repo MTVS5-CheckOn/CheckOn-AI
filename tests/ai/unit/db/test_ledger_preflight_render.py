@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from typing import Any, Final
 
 import pytest
@@ -18,7 +19,7 @@ from ai.db.ledger_completeness import (
     LedgerVerdict,
     judge_ledger_row,
 )
-from ai.evaluation.pg_ledger_preflight import render_report
+from ai.evaluation.pg_ledger_preflight import preflight_blocks, render_report
 
 _TENANT: Final = "t_render"
 _RUN: Final = uuid.UUID("00000000-0000-0000-0000-0000000005a1")
@@ -111,3 +112,41 @@ def test_the_report_carries_no_payload_text() -> None:
     )
     assert "pack://abc" not in report, "결과 참조 문자열이 그대로 나갔다"
     assert "payload" not in report
+
+
+# ── (지시서 59) 리포트와 종료 코드가 **한 판정**을 공유하는가 ────
+
+
+@pytest.mark.parametrize(
+    ("findings_factory", "expect_block"),
+    [
+        pytest.param(lambda: [], True, id="0행 → 차단"),
+        pytest.param(
+            lambda: [_finding(status=JobPhase.FAILED)], True, id="unknown 1행 → 차단"
+        ),
+        pytest.param(
+            lambda: [_finding(status=JobPhase.SUCCEEDED)], True, id="violation 1행 → 차단"
+        ),
+        pytest.param(
+            lambda: [_healthy(), _finding(agent_kind=WorkerKind.MAPPING_PROBE)],
+            False,
+            id="정상 + ㉾만 → 통과",
+        ),
+    ],
+)
+def test_the_report_and_the_exit_code_share_one_judgement(
+    findings_factory: Callable[[], list[LedgerFinding]], expect_block: bool
+) -> None:
+    """🔴 **문면과 종료 코드가 갈리면 안 된다** — 각자 판정하면 언젠가 반대로 움직인다.
+
+    ⚠ 소스 문자열이 아니라 **실제 함수 결과**를 본다.
+    """
+    findings = findings_factory()
+    blocked = preflight_blocks(findings)
+    report = render_report(findings, tenant_id=_TENANT)
+
+    assert blocked is expect_block, "판정 함수가 기대와 다르다"
+    assert ("🔴 **플립 차단**" in report) is blocked, (
+        f"문면과 판정이 반대로 움직인다(blocked={blocked}):\n{report}"
+    )
+    assert ("✅ 플립 차단 사유 없음" in report) is (not blocked)
