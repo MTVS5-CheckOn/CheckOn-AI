@@ -1,4 +1,4 @@
-"""A 소유 문서가 말하는 영역 수가 **코드 정본과 같은가** (99 · #179 5영역 확정).
+"""A 소유 문서의 영역 **수와 값 목록**이 **코드 정본과 같은가** (99 · #179 5영역 확정).
 
 준영님 #179가 breaking change로 `speech` + `writing` → `speech_writing`을 확정했다 ⇒
 **정본은 `contracts/taxonomy.AreaTag`의 5영역**이다.
@@ -9,6 +9,10 @@
 ⚠ **범위는 A 소유 `docs/part_a/`뿐이다** — 공용(`policies/`·`04`·`05`·`06_erd`·`07_standard_schema`·
 `02_ownership`)은 **승인 축이 다르고** B 소유(`part_b/`)는 무접촉이며 `99`는 **이력 문면**이다.
 🔴 **검사 이름을 문서 축보다 넓게 짓지 않는다**(로그 85) — `src/`를 범위에 넣지 않는다.
+
+🔴 **축이 둘인 이유** — 처음엔 「N영역」 **수만** 셌는데, 그러면
+`03_usecases.md`처럼 **수는 5로 고쳐지고 바로 뒤 값 목록은 여섯인** 줄이 green으로 지나간다.
+*"어휘 정합"* 이라는 **이름이 보는 것보다 넓었다**(로그 85). 값 목록 축을 같이 세운다.
 """
 
 from __future__ import annotations
@@ -38,12 +42,33 @@ _PENDING_PRODUCT_REVIEW: Final = {
 }
 _DISCLOSURE: Final = "영역 정본은"
 
+#: 값 목록 축 — `AreaTag` 값과 **#179가 폐기한 옛 값**을 합쳐 후보 어휘로 본다.
+_CANONICAL_VALUES: Final = frozenset(a.value for a in AreaTag)
+_RETIRED_VALUES: Final = frozenset({"speech", "writing"})
+#: 🔴 한 줄에 후보 어휘가 이만큼 모이면 **값 목록**으로 본다 — 산문의 우연한 단어 하나를
+#: 목록으로 오인하지 않기 위한 하한이다.
+_LIST_ARITY: Final = 3
+_WORD: Final = re.compile(r"[a-z_]+")
+
 
 def _area_count_sites() -> list[tuple[str, int]]:
     found: list[tuple[str, int]] = []
     for path in sorted(_PART_A.rglob("*.md")):
         for match in _AREA_COUNT.finditer(path.read_text(encoding="utf-8")):
             found.append((path.name, int(match.group(1))))
+    return found
+
+
+def _area_value_lists() -> list[tuple[str, int, frozenset[str]]]:
+    """part_a 문서에서 **영역 값을 열거하는 줄**과 그 줄이 쓴 어휘를 돌려준다."""
+    vocabulary = _CANONICAL_VALUES | _RETIRED_VALUES
+    found: list[tuple[str, int, frozenset[str]]] = []
+    for path in sorted(_PART_A.rglob("*.md")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for lineno, line in enumerate(lines, start=1):
+            used = frozenset(w for w in _WORD.findall(line) if w in vocabulary)
+            if len(used) >= _LIST_ARITY:
+                found.append((path.name, lineno, used))
     return found
 
 
@@ -96,3 +121,23 @@ def test_the_pending_document_discloses_the_divergence() -> None:
             assert _DISCLOSURE not in text, (
                 f"{name}의 갈림 공개 문면이 낡았다 — 정본과 맞춰졌으니 그 줄을 지워라(자동 만료)"
             )
+
+
+def test_the_value_list_scan_finds_enumerations() -> None:
+    """🔴 절단 가드 — 값 목록을 0건 찾으면 *"위반 없음"* 이 아니라 **안 본 것**이다."""
+    assert _area_value_lists(), (
+        f"`part_a/`에서 영역 **값 목록**을 못 찾았다 — 어휘나 하한이 틀렸나: {_PART_A}"
+    )
+
+
+def test_part_a_value_lists_use_the_canonical_vocabulary() -> None:
+    """🔴 **수만 맞고 값이 옛것인 줄**을 잡는다 — 같은 줄 안에서 모순인 자리가 실제로 있었다."""
+    stale = [
+        (name, lineno, sorted(used - _CANONICAL_VALUES))
+        for name, lineno, used in _area_value_lists()
+        if used - _CANONICAL_VALUES and name not in _PENDING_PRODUCT_REVIEW
+    ]
+    assert not stale, (
+        f"A 소유 문서의 영역 값 목록이 폐기된 값을 쓴다: {stale} — "
+        "정본은 `contracts/taxonomy.AreaTag`다(#179로 speech+writing → speech_writing)"
+    )
