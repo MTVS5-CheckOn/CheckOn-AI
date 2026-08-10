@@ -518,4 +518,11 @@ def test_the_plan_masking_log_has_a_reader() -> None:
     assert '"emphasis": emphasis' in source, (
         "s2 행에 강조점이 안 실린다 — `_pii_scan`이 볼 것이 없다"
     )
-    assert '"emphasis_scanned"' in source, "리포트에 관측 크기가 안 실린다"
+    #: 🔴 **여기서 「리포트에 실리는가」를 묻지 않는다** — 종전엔 이 자리에
+    #: `'"emphasis_scanned"' in source`가 있었고, 그건 **모듈 소스 문자열**을 grep할 뿐이라
+    #: **리포트에 행이 없어도 참**이었다(99 #34 · 6차 재실행에서 실제로 새어 나갔다).
+    #: **메시지는 「리포트에」인데 보는 것은 「소스에」**였다 — 미탐이라 green으로 보였다.
+    #: ⇒ 문면 단정은 `test_smoke_report_emphasis_row.py`가 **렌더 결과**로 한다.
+    assert '"emphasis_scanned": len(emphasis)' in source, (
+        "관측값 자체가 안 만들어진다 — 배선이 끊겼다"
+    )
