@@ -50,6 +50,8 @@ pytestmark = pytest.mark.integration
 
 _NOW = datetime(2026, 8, 8, tzinfo=UTC)
 _Scenario = Callable[[async_sessionmaker[AsyncSession]], Awaitable[None]]
+# 정상 실 PG 4쓰기보다 충분히 길고, CI 잡 전체가 매달리기 전에는 확실히 끊는 상한이다.
+_CONCURRENT_SAVE_TIMEOUT_SECONDS = 15.0
 
 
 class _BarrierSession:
@@ -373,32 +375,37 @@ def test_concurrent_first_writes_lose_with_the_contract_error_not_a_driver_error
         item_id = problem_item_id(set_id, 7)
         barrier = asyncio.Barrier(4)
         # 저장소 인스턴스를 따로 준다 — 워커가 갈리는 상황이 이 형태다(세션도 갈린다).
-        outcomes = await asyncio.gather(
-            *(
-                PgProblemItemStore(
-                    sessionmaker=_barrier_sessions(sm, barrier),  # type: ignore[arg-type]
-                    tenant_id=tenant,
-                ).save(
-                    set_id=set_id,
-                    slot_index=7,
-                    result=ItemResult(
-                        item_id=item_id,
-                        status=ProblemItemStatus.NEEDS_REVIEW,
-                        attempt_no=1,
-                        difficulty_est=0.5,
-                        difficulty_band=DifficultyBand.MEDIUM,
-                        review_reason=ReviewReason.DIFFICULTY_BAND_MISMATCH,
-                    ),
-                    # 🔴 경쟁자마다 **다른 값**이다 — 같은 값이면 진 쪽도 정상 반환이라
-                    #    오류 부류가 안 드러난다. 가르는 축을 `candidate_ref`로 둔 것은
-                    #    `attempt_no`가 재생성 상한(≤3 · 불변식 6)에 묶여 있어서다.
-                    candidate_ref=f"item-candidate:{set_id}:7:1:{rival}",
-                    item=_item(),
-                )
-                for rival in range(4)
-            ),
-            return_exceptions=True,
-        )
+        # `return_exceptions=True`는 도착한 태스크의 예외만 값으로 바꾼다. 한 writer가 첫
+        # execute 전에 죽어 party가 모자라면 나머지 wait는 끝나지 않으므로 시간 상한이 필요하다.
+        async with asyncio.timeout(_CONCURRENT_SAVE_TIMEOUT_SECONDS):
+            outcomes = await asyncio.gather(
+                *(
+                    PgProblemItemStore(
+                        sessionmaker=_barrier_sessions(  # type: ignore[arg-type]
+                            sm, barrier
+                        ),
+                        tenant_id=tenant,
+                    ).save(
+                        set_id=set_id,
+                        slot_index=7,
+                        result=ItemResult(
+                            item_id=item_id,
+                            status=ProblemItemStatus.NEEDS_REVIEW,
+                            attempt_no=1,
+                            difficulty_est=0.5,
+                            difficulty_band=DifficultyBand.MEDIUM,
+                            review_reason=ReviewReason.DIFFICULTY_BAND_MISMATCH,
+                        ),
+                        # 🔴 경쟁자마다 **다른 값**이다 — 같은 값이면 진 쪽도 정상 반환이라
+                        #    오류 부류가 안 드러난다. 가르는 축을 `candidate_ref`로 둔 것은
+                        #    `attempt_no`가 재생성 상한(≤3 · 불변식 6)에 묶여 있어서다.
+                        candidate_ref=f"item-candidate:{set_id}:7:1:{rival}",
+                        item=_item(),
+                    )
+                    for rival in range(4)
+                ),
+                return_exceptions=True,
+            )
 
         won = [one for one in outcomes if isinstance(one, StoredProblemItem)]
         lost = [one for one in outcomes if isinstance(one, BaseException)]
@@ -445,15 +452,18 @@ def test_concurrent_identical_writes_all_return_the_same_record() -> None:
             "candidate_ref": f"item-candidate:{set_id}:3:3",
             "item": _item(),
         }
-        saved = await asyncio.gather(
-            *(
-                PgProblemItemStore(
-                    sessionmaker=_barrier_sessions(sm, barrier),  # type: ignore[arg-type]
-                    tenant_id=tenant,
-                ).save(**args)  # type: ignore[arg-type]
-                for _ in range(4)
+        async with asyncio.timeout(_CONCURRENT_SAVE_TIMEOUT_SECONDS):
+            saved = await asyncio.gather(
+                *(
+                    PgProblemItemStore(
+                        sessionmaker=_barrier_sessions(  # type: ignore[arg-type]
+                            sm, barrier
+                        ),
+                        tenant_id=tenant,
+                    ).save(**args)  # type: ignore[arg-type]
+                    for _ in range(4)
+                )
             )
-        )
 
         assert all(one == saved[0] for one in saved)
 
