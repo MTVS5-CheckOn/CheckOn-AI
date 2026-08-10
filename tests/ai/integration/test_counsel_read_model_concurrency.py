@@ -22,12 +22,17 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable
 from typing import Any, Final
 
 import pytest
 from counsel_read_model_fixtures import draft_snapshot, view_snapshot
+from first_sql_barrier import (
+    FirstSqlBarrierSession,
+    RecordingSession,
+    barrier_sessionmaker,
+    wait_until_parked,
+)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -45,34 +50,14 @@ _TENANT: Final = "t_concurrent"
 _ROUNDS: Final = 5
 
 
-class _BarrierSession:
-    """첫 SQL 문에서 배리어에 걸리는 세션 — **겹침을 결정론으로 만든다.**"""
-
-    def __init__(self, session: AsyncSession, barrier: asyncio.Barrier) -> None:
-        self._session = session
-        self._barrier: asyncio.Barrier | None = barrier
-
-    async def execute(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-        if self._barrier is not None:
-            barrier, self._barrier = self._barrier, None
-            await barrier.wait()
-        return await self._session.execute(*args, **kwargs)
-
-    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
-        return getattr(self._session, name)
-
-
 def _barrier_sessions(
     engine: Any, barrier: asyncio.Barrier  # noqa: ANN401
 ) -> Callable[[], Any]:
-    inner = async_sessionmaker(engine, expire_on_commit=False)
-
-    @asynccontextmanager
-    async def factory() -> AsyncIterator[_BarrierSession]:
-        async with inner() as session:
-            yield _BarrierSession(session, barrier)
-
-    return factory
+    """🔴 **공용 프록시를 쓴다** — 종전엔 이 파일과 pg 왕복 테스트가 **같은 15줄을 각자**
+    들고 있었다(99 #02). 감싸는 대상만 여기서 정한다."""
+    return barrier_sessionmaker(
+        async_sessionmaker(engine, expire_on_commit=False), barrier
+    )
 
 
 type _Save = Callable[[PgCounselDraftViewStore, tuple[str, str]], Awaitable[None]]
@@ -148,24 +133,40 @@ def _run(first: _Save, second: _Save) -> list[dict[str, Any]]:
         raise
 
 
-def test_the_barrier_really_overlaps_the_two_writers() -> None:
-    """🔴 절단 가드 — 배리어가 안 걸리면 이 파일은 **직렬 저장을 두 번 재는 것**이다."""
-    barrier = asyncio.Barrier(2)
+def test_the_first_counsel_sql_waits_for_both_writers() -> None:
+    """🔴 **절단 가드 — 프록시가 각 writer의 「첫 SQL」을 같은 배리어에 세우는가.**
 
-    async def scenario() -> list[int]:
-        order: list[int] = []
+    ⚠ **종전 가드는 `asyncio.Barrier`만 봤다.** 이름은 *"writer가 실제로 겹친다"* 인데
+    보는 것은 *"표준 라이브러리 배리어가 작동한다"* 였다 — `FirstSqlBarrierSession.execute()`의
+    `await barrier.wait()`를 **지워도 통과**했다(로그 85 계열).
 
-        async def leg(index: int) -> None:
-            order.append(index)
-            await barrier.wait()
-            order.append(index + 10)
+    ⚠ **이 가드가 증명하는 것은 딱 여기까지다** — 저장소 경합과 자문 잠금 효과는
+    **아래 실 PG 검사**가 증명한다.
+    ⚠ PG 없이 돈다 — 기록용 대역의 **내부 `execute` 호출 수**로 판정한다.
+    """
 
-        await asyncio.gather(leg(0), leg(1))
-        return order
+    async def scenario() -> None:
+        barrier = asyncio.Barrier(2)
+        inners = [RecordingSession(), RecordingSession()]
+        proxies = [FirstSqlBarrierSession(inner, barrier) for inner in inners]
 
-    order = asyncio.run(scenario())
-    assert set(order[:2]) == {0, 1}, f"둘 다 배리어 앞에 서지 않았다: {order}"
-    assert set(order[2:]) == {10, 11}, f"배리어 뒤가 안 열렸다: {order}"
+        first: asyncio.Task[Any] = asyncio.ensure_future(proxies[0].execute("SQL-1"))
+        await wait_until_parked(barrier, [first], expected=1)
+
+        #: 🔴 **한 명만 왔을 때 내부 SQL은 0회여야 한다.**
+        assert barrier.n_waiting == 1, "첫 writer가 배리어 앞에 안 섰다"
+        assert sum(i.execute_calls for i in inners) == 0, (
+            "party가 다 오기 전에 실제 SQL이 나갔다 — 겹침이 안 만들어진다"
+        )
+
+        second: asyncio.Task[Any] = asyncio.ensure_future(proxies[1].execute("SQL-2"))
+        async with asyncio.timeout(2.0):
+            await asyncio.gather(first, second)
+
+        #: 둘 다 지난 뒤에야 실제 SQL이 **정확히 두 번** 나간다.
+        assert [i.execute_calls for i in inners] == [1, 1]
+
+    asyncio.run(scenario())
 
 
 def test_view_and_draft_first_writes_converge_to_one_row() -> None:
