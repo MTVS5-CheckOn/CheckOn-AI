@@ -239,7 +239,7 @@
 **상황.** 김서현 강사가 트랙 B로 "6월 모의고사 비문학 대비 #3" 채점을 입력한다. 영역·유형 태그 선택이 귀찮다.
 
 1. 과제명 텍스트가 태깅 제안에 입력된다 — `source_text_hash` 캐시 조회. 같은 명명 패턴("비문학 대비 #n")은 **재호출 없이** 캐시 히트.
-2. 캐시 miss면 LLM 제안 — **(v3 개정 · 8/10 #179) 수능 5영역 enum 강제**: `area=reading(독서), type=infer, item_format=mcq (0.92)`. area 값은 `reading·literature·speech·writing·language·media`(어휘집 v0 — Open-11 확정 7/15).
+2. 캐시 miss면 LLM 제안 — **(v3 개정 · 8/10 #179) 수능 5영역 enum 강제**: `area=reading(독서), type=infer, item_format=mcq (0.92)`. area 값은 `reading·literature·speech_writing·language·media`(어휘집 v0 — Open-11 확정 7/15 · 8/10 #179로 화법+작문이 한 값).
 3. 경계 사례(융합 지문·화작 통합형 등 — 어휘집 §2)는 confidence를 낮춰 제시 — 과신 금지, 강사 확정에 맡긴다.
 4. 입력 화면에 제안 태그가 미리 선택돼 표시, 강사가 원탭 확정(또는 수정 — "언매 문법 N제"를 `language`로).
 5. **확정 전에는 learning_event 태그로 반영되지 않는다** — 미확정 태그는 detection 피처(R6)에도 들어가지 않는다.
