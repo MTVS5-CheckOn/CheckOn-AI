@@ -259,3 +259,44 @@ def test_a_mismatched_job_id_is_refused() -> None:
         assert await _row_count(sessions, _TENANT) == 0, "거부됐는데 행이 남았다"
 
     _run(scenario)
+
+
+@pytest.mark.parametrize("present", ["view", "draft"])
+def test_the_absent_side_is_sql_null_not_json_null(present: str) -> None:
+    """🔴 **없는 쪽은 SQL NULL이어야 한다** — JSON `null`이면 `IS NULL`이 거짓이 된다.
+
+    ⚠ **파이썬 왕복만 보면 안 걸린다** — `'null'::jsonb`를 읽어도 `None`이라
+    `loaded_view is None`이 그대로 참이다. **SQL 쪽에서만 갈린다**: 인덱스·운영 쿼리·
+    「둘 다 비었는가」 점검이 전부 거짓을 본다.
+    🔴 실측으로 잡았다(2026-08-10) — 뷰를 한 번도 안 쓴 행이 `IS NOT NULL`로 세어져
+    **배선 뒤집기가 안 물었다.** `JSON.none_as_null` 기본값이 `False`다.
+    """
+
+    async def scenario(sessions: async_sessionmaker[AsyncSession]) -> None:
+        await _clean(sessions)
+        store = PgCounselDraftViewStore(sessions)
+        key = (_TENANT, f"job-{uuid.uuid4()}")
+        if present == "view":
+            await store.save_view(key, snapshot=_view_snapshot(key[1]))
+            absent = CounselDraftViewRow.draft_snapshot
+        else:
+            await store.save_draft(key, snapshot=_draft_snapshot())
+            absent = CounselDraftViewRow.view_snapshot
+        async with sessions() as session:
+            nulls = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(CounselDraftViewRow)
+                    .where(
+                        CounselDraftViewRow.tenant_id == key[0],
+                        CounselDraftViewRow.job_id == key[1],
+                        absent.is_(None),
+                    )
+                )
+            ).scalar_one()
+        assert nulls == 1, (
+            f"안 쓴 쪽이 SQL NULL이 아니다({present} 저장) — JSON null로 들어갔다"
+        )
+        await _clean(sessions)
+
+    _run(scenario)

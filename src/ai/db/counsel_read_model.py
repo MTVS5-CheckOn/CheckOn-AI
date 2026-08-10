@@ -24,7 +24,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import null, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai.db.counsel_draft_view import counsel_draft_view_projection
@@ -66,6 +66,18 @@ def merge_snapshots(
         "view_snapshot": dict(resolved_view) if resolved_view is not None else None,
         "draft_snapshot": dict(resolved_draft) if resolved_draft is not None else None,
     }
+
+
+def _as_column_value(snapshot: dict[str, Any] | None) -> Any:  # noqa: ANN401 — SQL NULL 센티널
+    """🔴 **`None`을 그대로 넣으면 SQL NULL이 아니라 JSON `null`이 된다.**
+
+    `JSON.none_as_null`의 기본값이 `False`라 파이썬 `None`이 `'null'::jsonb`로 저장된다 —
+    파이썬으로 읽으면 똑같이 `None`이라 **왕복 테스트는 통과하는데** SQL의
+    `view_snapshot IS NULL`이 **거짓**이 된다. 실측으로 잡았다(2026-08-10): 뷰를 한 번도
+    안 쓴 행이 `IS NOT NULL`로 세어져 **뒤집기가 안 물었다.**
+    ⚠ `db/models.py`는 무접촉이라 컬럼 설정 대신 **쓰는 쪽에서 센티널**을 준다.
+    """
+    return null() if snapshot is None else snapshot
 
 
 class CounselDraftViewStore(Protocol):
@@ -168,14 +180,18 @@ class PgCounselDraftViewStore:
                 new_view=new_view,
                 new_draft=new_draft,
             )
+            columns = {
+                name: _as_column_value(value) if name.endswith("_snapshot") else value
+                for name, value in values.items()
+            }
             if row is None:
                 session.add(
                     CounselDraftViewRow(
-                        id=uuid.uuid4(), updated_at=self._now(), **values
+                        id=uuid.uuid4(), updated_at=self._now(), **columns
                     )
                 )
                 return
-            for column, value in values.items():
+            for column, value in columns.items():
                 setattr(row, column, value)
             #: ⚠ 스냅숏 파생이 아닌 축 — 쓰기 시각이다(#182 `NON_PROJECTED_COLUMNS`).
             row.updated_at = self._now()
