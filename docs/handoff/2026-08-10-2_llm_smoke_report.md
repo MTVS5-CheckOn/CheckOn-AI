@@ -194,4 +194,3 @@
 | refine 턴의 원장 | S3는 `refine_draft()`를 **직접** 부르고 라우터를 안 탄다 — `_record_refine_run`이 **한 번도 안 불린다**. ⚠ 그 함수는 `generation_params`를 **무조건** 적는다(워커는 조건부) — **#144의 사용 축이 refine에는 아직 안 적용됐고 이 스모크가 그걸 못 본다** | S3를 라우터 경유로 바꾸거나 별도 케이스 |
 | LLM 실패 서킷(99 #08) | 라우터 `enqueue`가 **N=1**이라 연속 실패 최대 1 · 임계는 3 | N>1이 생기는 때(월별 리포트 벌크·Kafka) |
 | PG 영속 | `memory` 고정 — 측정 변수를 LLM 하나로 두려는 **의도된** 제약 | `test_pg_restart.py`·`test_pg_store_roundtrip.py` |
-

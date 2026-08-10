@@ -14,6 +14,11 @@ from ai.composition.counsel.stores import (
     InMemoryPackResultStore,
     PackResultStore,
 )
+from ai.db.counsel_read_model import (
+    CounselDraftViewStore,
+    NullCounselDraftViewStore,
+    PgCounselDraftViewStore,
+)
 from ai.db.repositories.agent_job import PgJobStore
 from ai.db.repositories.detection_store import (
     DetectionStore,
@@ -207,6 +212,21 @@ def build_pack_result_store(settings: DbSettings | None = None) -> PackResultSto
     if settings.store_backend == _PG:
         return PgPackResultStore(sessionmaker=get_sessionmaker())
     return InMemoryPackResultStore()
+
+
+def build_counsel_draft_view_store(
+    settings: DbSettings | None = None,
+) -> CounselDraftViewStore:
+    """상담 읽기 모델(`COUNSEL_DRAFT_VIEW`) 저장소 — `_view_cache`·`_drafts`의 뒷면 (99 ㉿).
+
+    🔴 **memory에서는 `Null…`이다** — 인메모리 dict를 하나 더 두면 라우터 캐시와 **정본이
+    둘**이 되고, 축출·재시작 증상이 어느 쪽 때문인지 못 가린다. memory의 v1 정본은 캐시다.
+    ⚠ 이 분기가 없으면 `PgCounselDraftViewStore`는 **프로덕션 소비가 0**이 된다(99 #22).
+    """
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgCounselDraftViewStore(get_sessionmaker())
+    return NullCounselDraftViewStore()
 
 
 def build_agent_step_sink(settings: DbSettings | None = None) -> AgentStepSink:
