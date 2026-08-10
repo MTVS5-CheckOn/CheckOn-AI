@@ -34,6 +34,7 @@ import math
 import re
 import sys
 import time
+import tomllib
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -401,6 +402,39 @@ async def _run_s1(observers: list[_CountingProvider]) -> dict[str, Any]:
 # ── S2 — 문의 초안 end-to-end (라우터 경유) ──────────────────────
 
 
+#: 저장소 루트 — `src/ai/evaluation/counsel_llm_smoke.py`에서 네 칸 위.
+#: 🔴 **`Path.cwd()`가 아니다** — 어디서 실행하든 같아야 한다(종전엔 cwd였고 그래서
+#: 실행 위치가 조건에 섞였다).
+_REPO_ROOT: Final = Path(__file__).resolve().parents[3]
+
+
+def _test_import_roots() -> tuple[Path, ...]:
+    """골든 테스트를 import하려면 `sys.path`에 있어야 하는 경로 — **정본은 pytest ini다.**
+
+    🔴 **목록을 손으로 베끼지 않는다**(99 #02 — 두 곳 중 한쪽만 고쳐진다). `tests/ai/fakes`의
+    평면 import(`from counsel_text import …`)는 `pyproject.toml`의
+    `[tool.pytest.ini_options].pythonpath`가 만든 규약이고, 러너는 **그 규약을 읽어서**
+    같은 경로를 세운다. ini에 세 번째 항목이 생기면 여기도 자동으로 따라간다.
+
+    ⚠ **저장소 루트를 앞에 둔다** — `tests.ai.integration.…` 패키지 경로는 그것으로 열린다.
+    """
+    config = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    declared = config["tool"]["pytest"]["ini_options"]["pythonpath"]
+    return (_REPO_ROOT, *(_REPO_ROOT / entry for entry in declared))
+
+
+def _ensure_test_import_path() -> None:
+    """🔴 **pytest 밖에서도 골든 정의를 읽을 수 있게 한다** (6차 장애 2026-08-10).
+
+    6차 실 LLM 회차가 **S1을 마치고(21콜) S2 문 앞에서** `ModuleNotFoundError: counsel_text`로
+    죽었다. pytest 안에서는 ini가 경로를 깔아 줘서 **테스트로는 안 보이는 결함**이었다.
+    """
+    for root in reversed(_test_import_roots()):
+        entry = str(root)
+        if entry not in sys.path:
+            sys.path.insert(0, entry)
+
+
 def _golden(module: str) -> Any:  # noqa: ANN401 — 테스트 모듈의 동적 로드
     """골든·통합 테스트의 **정의를 재사용**한다 — 복제하면 fake판과 실서버판이 갈린다.
 
@@ -408,6 +442,7 @@ def _golden(module: str) -> Any:  # noqa: ANN401 — 테스트 모듈의 동적 
     두 모듈명(`test_x` · `tests.ai...test_x`)으로 잡아 실패시키기 때문이다(`tests/`에
     `__init__.py`가 없다). 런타임 동작은 동일하고 **정의 중복은 0**이다.
     """
+    _ensure_test_import_path()
     return importlib.import_module(module)
 
 
@@ -931,6 +966,18 @@ def _s1_console_latency(summary: dict[str, Any]) -> str:
     return f"중앙값 {median}ms"
 
 
+def _tracing_cell(pre: Mapping[str, Any]) -> str:
+    """리포트 0절의 추적 칸 — 🔴 **끈 것을 경고로 적지 않는다** (6차 실측 2026-08-10).
+
+    ⚠ 판정은 `active_tracing_env_names()`가 이미 했다(**「적혀 있는」이 아니라 「켜져 있는」**).
+    이 함수는 그 결과를 문면으로 옮기기만 한다 — **값은 절대 안 싣는다**(근처에 API 키가 있다).
+    """
+    names = pre["tracing_env_active"]
+    if not names:
+        return "**전부 비활성** ✅ — 외부 전송 0"
+    return f"⚠ **활성** — {', '.join(names)}"
+
+
 #: 마스킹 조각 앞뒤로 남길 문맥 글자 수 — 오탐 판정에 필요한 최소한.
 _HIT_CONTEXT: Final = 16
 
@@ -1220,8 +1267,7 @@ def _render(data: dict[str, Any]) -> str:
         _table(
             ["항목", "값"],
             [
-                ["추적 4종(C-1)", "**전부 비활성** ✅ — 외부 전송 0"
-                 if not pre["tracing_env_active"] else f"⚠ {pre['tracing_env_active']}"],
+                ["추적 4종(C-1)", _tracing_cell(pre)],
                 ["서버", f"`{pre['base_url']}`"],
                 ["모델", f"`{pre['model']}`"],
                 ["저장 백엔드", "`memory` — 측정 변수를 LLM 하나로 고정(§한계 ①)"],
@@ -1693,7 +1739,9 @@ def main() -> None:
         help="실행일 YYYY-MM-DD(같은 날 재실행은 -N 접미) — 리포트 파일명이 된다",
     )
     args = parser.parse_args()
-    sys.path.insert(0, str(Path.cwd()))  # 골든 공격 테이블 import(정의 중복 회피)
+    #: 골든 공격 테이블 import(정의 중복 회피) — 🔴 종전엔 `Path.cwd()` 하나였고
+    #: `tests/ai/fakes`가 빠져 **6차가 S2 문 앞에서 죽었다**. 정본은 pytest ini다.
+    _ensure_test_import_path()
     raise SystemExit(asyncio.run(_main_async(args.date)))
 
 
