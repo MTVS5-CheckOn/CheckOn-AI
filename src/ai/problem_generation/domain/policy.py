@@ -12,7 +12,21 @@ from ai.contracts.taxonomy import V1_TYPE_TAGS, AreaTag, TypeTag
 #: 자료 조달 능력이 구현된 영역만 명시적으로 연다. 새 영역은 기본 미지원이어야 하므로
 #: `V1_TYPE_TAGS`처럼 전체에서 예약값을 빼지 않는다 — 자료 조달 노드가 준비된 영역을 이
 #: 집합에 더해야만 열리는 fail-closed 정책이다.
-SUPPORTED_AREAS: Final[frozenset[AreaTag]] = frozenset({AreaTag.LANGUAGE})
+SUPPORTED_AREAS: Final[frozenset[AreaTag]] = frozenset(
+    {AreaTag.LANGUAGE, AreaTag.READING}
+)
+
+
+def supports_source_procurement(
+    *,
+    area_tag: AreaTag,
+    has_passage_request: bool,
+) -> bool:
+    """현재 구현이 자료를 조달할 수 있는 영역·요청 형태인지 반환한다."""
+
+    return area_tag in SUPPORTED_AREAS and (
+        (area_tag is AreaTag.READING) == has_passage_request
+    )
 
 
 class DifficultyRange(BaseModel):

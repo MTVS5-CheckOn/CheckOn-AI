@@ -18,7 +18,7 @@ from ai.contracts.agents import (
 from ai.contracts.problem_generation import ProblemRequest
 from ai.contracts.taxonomy import V1_TYPE_TAGS
 from ai.problem_generation.domain.identity import request_hash
-from ai.problem_generation.domain.policy import SUPPORTED_AREAS
+from ai.problem_generation.domain.policy import supports_source_procurement
 from ai.runtime.errors import DomainException
 
 #: 요청에 v1 산출 축 밖의 유형 태그가 실렸다 — `error_codes` §6 · 04 §3.11.
@@ -73,16 +73,15 @@ def reject_unsupported_type_tags(request: ProblemRequest) -> None:
 
 
 def reject_unsupported_source_procurement(request: ProblemRequest) -> None:
-    """현재 구현된 자료 조달 범위 밖의 요청을 400으로 끊는다 — 순수 판정, I/O 없음.
+    """현재 구현된 자료 조달 범위 밖의 요청을 400으로 끊는다 — 순수 판정, I/O 없음."""
 
-    `passage` 분기는 현재 `ProblemRequest` 검증상 단독 도달할 수 없지만, `reading`이 지원
-    영역이 되는 날 필요하다. 그때까지는 지원 영역과 별개인 자료 동반 여부의 이중 방어다.
-    """
-
-    if request.area_tag not in SUPPORTED_AREAS or request.passage is not None:
+    if not supports_source_procurement(
+        area_tag=request.area_tag,
+        has_passage_request=request.passage is not None,
+    ):
         raise ProblemSourceProcurementUnsupported(
-            "자료 조달 방식이 '자료 없음'인 요청만 처리할 수 있다 "
-            "— 생성·저작물 노드 미구현(05 §1.2)",
+            "지원되는 자료 조달 조합은 language+자료 없음과 "
+            "reading+PassageRequest이다(05 §1.2)",
             {
                 "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
                 "area_tag": request.area_tag.value,

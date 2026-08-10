@@ -56,6 +56,23 @@ class PassageRequest(BaseModel):
     banned_topics_version: str = Field(min_length=1)
 
 
+class PassageDraft(BaseModel):
+    """승인 근거에만 기반한 T2 지문 생성 성공 출력.
+
+    paragraph_count는 독립 산출물도 요청과 같은 2..6 범위를 벗어나지 않게 한다.
+    요청값과의 일치는 이 모델이 PassageRequest를 포함하지 않으므로 생성기 경계에서
+    대조한다. generation_unavailable은 성공 출력이 아니며 구조화 파싱 실패로 닫는다.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    passage_text: str = Field(min_length=1)
+    paragraph_count: int = Field(ge=2, le=6)
+    evidence_anchor_ids: tuple[
+        Annotated[str, Field(min_length=1)], ...
+    ] = Field(min_length=1)
+
+
 class TargetKind(StrEnum):
     STUDENT = "student"
     CLASS = "class"
@@ -415,6 +432,7 @@ class ProblemGenerationState(BaseModel):
     stop_reason: SetStopReason | None = None
     fallback_ref: str | None = Field(default=None, min_length=1)
     difficulty_regen_used: bool = False
+    passage_draft: PassageDraft | None = None
 
     @model_validator(mode="after")
     def validate_checkpoint(self) -> Self:
@@ -521,6 +539,15 @@ def assert_problem_generation_state_transition(
         )
     if previous.is_terminal:
         raise InvalidProblemGenerationStateTransition("종료 state는 더 전이할 수 없다")
+    if previous.passage_draft is not None and current.passage_draft != previous.passage_draft:
+        raise InvalidProblemGenerationStateTransition(
+            "생성된 passage_draft는 변경하거나 제거할 수 없다"
+        )
+    if previous.passage_draft is None and current.passage_draft is not None:
+        if previous.cursor or previous.item_attempt or current.cursor or current.item_attempt:
+            raise InvalidProblemGenerationStateTransition(
+                "passage_draft는 문항 처리를 시작하기 전에만 설정할 수 있다"
+            )
 
     cursor_delta = current.cursor - previous.cursor
     if cursor_delta not in {0, 1}:

@@ -6,6 +6,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from ai.contracts.gates import BlockedReason
+from ai.contracts.llm import ParseFailed
 from ai.contracts.problem_generation import (
     Answer,
     Choice,
@@ -20,6 +21,7 @@ from ai.contracts.problem_generation import (
     ItemRevision,
     ItemRevisionRequest,
     PassageDomain,
+    PassageDraft,
     PassageRequest,
     ProblemFailureReason,
     ProblemGenerationOutcome,
@@ -40,6 +42,7 @@ from ai.contracts.problem_generation import (
     assert_problem_generation_state_transition,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
+from ai.llm.structured import parse
 
 SET_ID = UUID("00000000-0000-4000-8000-000000000010")
 ITEM_ID = UUID("00000000-0000-4000-8000-000000000011")
@@ -104,6 +107,16 @@ def _state(**changes: object) -> ProblemGenerationState:
     }
     data.update(changes)
     return ProblemGenerationState.model_validate(data)
+
+
+def _passage_draft(**changes: object) -> PassageDraft:
+    data: dict[str, object] = {
+        "passage_text": "첫째 문단입니다.\n\n둘째 문단입니다.",
+        "paragraph_count": 2,
+        "evidence_anchor_ids": ("reading:source-1",),
+    }
+    data.update(changes)
+    return PassageDraft.model_validate(data)
 
 
 def test_problem_request_roundtrip() -> None:
@@ -186,6 +199,52 @@ def test_passage_is_reading_only() -> None:
     )
     with pytest.raises(ValueError, match="reading"):
         _request(passage=passage)
+
+
+def test_passage_draft_roundtrip_and_exact_fields() -> None:
+    draft = _passage_draft()
+
+    assert PassageDraft.model_validate(draft.model_dump(mode="json")) == draft
+    assert set(PassageDraft.model_fields) == {
+        "passage_text",
+        "paragraph_count",
+        "evidence_anchor_ids",
+    }
+
+
+@pytest.mark.parametrize("paragraph_count", [1, 7])
+def test_passage_draft_rejects_out_of_range_paragraph_count(
+    paragraph_count: int,
+) -> None:
+    with pytest.raises(ValueError, match="paragraph_count"):
+        _passage_draft(paragraph_count=paragraph_count)
+
+
+def test_passage_draft_rejects_empty_evidence_anchor_ids() -> None:
+    with pytest.raises(ValueError, match="evidence_anchor_ids"):
+        _passage_draft(evidence_anchor_ids=())
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("passage_text", ""), ("evidence_anchor_ids", ("",))],
+)
+def test_passage_draft_rejects_empty_required_text(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValueError, match=field):
+        _passage_draft(**{field: value})
+
+
+def test_passage_draft_rejects_extra_fields() -> None:
+    with pytest.raises(ValueError, match="extra_forbidden"):
+        _passage_draft(word_count=100)
+
+
+def test_generation_unavailable_is_not_a_passage_draft() -> None:
+    with pytest.raises(ParseFailed):
+        parse("generation_unavailable", PassageDraft)
 
 
 def test_generated_item_roundtrip() -> None:
@@ -683,6 +742,29 @@ def test_problem_generation_state_rejects_attempt_on_terminal_checkpoint() -> No
 def test_problem_generation_state_rejects_unknown_schema_version() -> None:
     with pytest.raises(ValueError, match="state_schema_version"):
         _state(state_schema_version="problem_generation.v2")
+
+
+def test_problem_generation_state_sets_passage_before_item_attempt() -> None:
+    initial = _state()
+    passage_ready = _state(passage_draft=_passage_draft())
+
+    assert_problem_generation_state_transition(initial, passage_ready)
+
+
+def test_problem_generation_state_keeps_generated_passage_immutable() -> None:
+    previous = _state(passage_draft=_passage_draft())
+    changed = _state(passage_draft=_passage_draft(passage_text="바뀐 지문"))
+
+    with pytest.raises(InvalidProblemGenerationStateTransition, match="passage_draft"):
+        assert_problem_generation_state_transition(previous, changed)
+
+
+def test_problem_generation_state_rejects_late_passage_generation() -> None:
+    attempt_started = _state(item_attempt=1)
+    passage_added = _state(item_attempt=1, passage_draft=_passage_draft())
+
+    with pytest.raises(InvalidProblemGenerationStateTransition, match="시작하기 전에"):
+        assert_problem_generation_state_transition(attempt_started, passage_added)
 
 
 def test_problem_generation_state_transition_preserves_current_attempt() -> None:

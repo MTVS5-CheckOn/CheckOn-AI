@@ -35,8 +35,6 @@ from ai.contracts.problem_generation import (
     EvidenceKind,
     GeneratedItem,
     ItemResult,
-    PassageDomain,
-    PassageRequest,
     ProblemFailureReason,
     ProblemGenerationState,
     ProblemItemStatus,
@@ -44,7 +42,6 @@ from ai.contracts.problem_generation import (
     ProblemSetResult,
     ProblemSetStatus,
     ReviewReason,
-    SentenceComplexity,
     SolveResult,
     TargetKind,
     TargetSource,
@@ -56,6 +53,7 @@ from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application import workflow as workflow_module
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import ProblemGenerator
+from ai.problem_generation.application.passage_generator import PassageGenerator
 from ai.problem_generation.application.workflow import (
     SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
     ProblemExecutionContextMismatch,
@@ -74,6 +72,7 @@ from ai.problem_generation.domain.policy import (
 )
 from ai.problem_generation.infrastructure.config import (
     load_area_specs,
+    load_banned_topics,
     load_verify_config,
 )
 from ai.problem_generation.infrastructure.graph_context import (
@@ -140,17 +139,25 @@ class _WorkflowHarness:
                 ),
             }
         )
+        self.verify_config = config
+        self.banned_topics = load_banned_topics()
         self.generator = ProblemGenerator(gateway, area_specs=load_area_specs())
+        self.passage_generator = PassageGenerator(
+            gateway,
+            banned_topics=self.banned_topics,
+        )
         self.cross_solver = BlindCrossSolver(gateway)
         self.workflow = ProblemGenerationWorkflow(
             diagnosis=self.diagnosis,
             graph_context=self.graph,
             generator=self.generator,
+            passage_generator=self.passage_generator,
             cross_solver=self.cross_solver,
             candidate_store=self.candidates,
             item_store=self.items,
             checkpointer=InMemorySaver(),
-            verify_config=config,
+            verify_config=self.verify_config,
+            banned_topics=self.banned_topics,
         )
 
     def request(
@@ -770,10 +777,13 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
         diagnosis=insufficient,
         graph_context=harness.graph,
         generator=harness.generator,
+        passage_generator=harness.passage_generator,
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,
         item_store=harness.items,
         checkpointer=InMemorySaver(),
+        verify_config=harness.verify_config,
+        banned_topics=harness.banned_topics,
     )
 
     result = asyncio.run(harness.workflow.run(harness.request(), harness.context()))
@@ -783,36 +793,15 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
     assert not harness.generator_provider.requests
 
 
-@pytest.mark.parametrize(
-    "request_update",
-    (
-        {"area_tag": AreaTag.READING},
-        {
-            "area_tag": AreaTag.READING,
-            "passage": PassageRequest(
-                domain=PassageDomain.SCIENCE,
-                word_count=500,
-                sentence_complexity=SentenceComplexity.STANDARD,
-                paragraph_count=3,
-                banned_topics_version="pg-banned-topics.v1",
-            ),
-        },
-    ),
-)
-def test_workflow_rejects_requests_needing_unimplemented_material_source(
-    request_update: dict[str, object],
-) -> None:
-    """자료 조달 방식이 '자료 없음'인 요청만 받는다 — `05` §1.0·§1.2.
-
-    트랙 제한이 아니다. 게이트·프롬프트는 전 영역 공용이고, 막는 것은
-    "생성"·"저작물" 조달 노드가 아직 없다는 사실 하나다. 자료를 동반한 요청은
-    LLM을 부르기 전에 막혀야 한다.
-    """
+def test_workflow_rejects_reading_without_passage_request() -> None:
+    """독서 지문 생성 규격이 없는 요청은 LLM 호출 전에 거절한다."""
     harness = _WorkflowHarness(
         generator_steps=(),
         verifier_steps=(),
     )
-    unsupported = harness.request().model_copy(update=request_update)
+    payload = harness.request().model_dump(mode="json")
+    payload["area_tag"] = AreaTag.READING.value
+    unsupported = ProblemRequest.model_validate(payload)
 
     with pytest.raises(ProblemSourceUnsupported) as raised:
         asyncio.run(harness.workflow.run(unsupported, harness.context()))
@@ -824,7 +813,7 @@ def test_workflow_rejects_requests_needing_unimplemented_material_source(
     assert error.detail == {
         "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
         "area_tag": AreaTag.READING.value,
-        "passage": unsupported.passage is not None,
+        "passage": False,
     }
     assert not harness.generator_provider.requests
 
@@ -835,10 +824,13 @@ def test_unmapped_reference_node_converges_to_rejected_insufficient() -> None:
         diagnosis=harness.diagnosis,
         graph_context=GrammarNormGraphContextService(),
         generator=harness.generator,
+        passage_generator=harness.passage_generator,
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,
         item_store=harness.items,
         checkpointer=InMemorySaver(),
+        verify_config=harness.verify_config,
+        banned_topics=harness.banned_topics,
     )
 
     result = asyncio.run(workflow.run(harness.request(), harness.context()))
@@ -908,7 +900,7 @@ def test_graph_recursion_limit_is_derived_not_borrowed_from_the_library() -> Non
 
     # 한 슬롯은 최악의 경우 (최초 + 재생성) + 난이도 재생성만큼 돈다.
     assert per_slot == (config.item_attempt_limit + config.difficulty_regen_max) * 2
-    assert one > per_slot, "여유분이 없으면 START·종단 판정에서 잘린다"
+    assert one - per_slot == 3, "START·자료 조달·종단 판정 여유분이 필요하다"
 
     # 🔴 계약 최대(`count` ≤ 20)가 종전 라이브러리 기본값(25)을 이미 넘는다.
     largest = graph_recursion_limit(count=20, config=config)
