@@ -30,6 +30,7 @@ import json
 import logging
 import uuid
 from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Final
@@ -85,6 +86,8 @@ from ai.contracts.counsel import (
 from ai.contracts.execution import Capability, ExecutionContext
 from ai.contracts.gates import BlockedReason
 from ai.contracts.llm import LlmError
+from ai.db.counsel_draft_view import _CachedViewSnapshot, _DraftStateSnapshot
+from ai.db.counsel_read_model import CounselDraftViewStore
 from ai.db.repositories.idempotency import IdempotencyStore
 from ai.db.repositories.run_store import (
     RunStore,
@@ -92,6 +95,7 @@ from ai.db.repositories.run_store import (
 )
 from ai.db.store_factory import (
     build_agent_job_store,
+    build_counsel_draft_view_store,
     build_idempotency_store,
     build_pack_result_store,
     build_run_store,
@@ -303,6 +307,101 @@ class _DraftState:
 #: 없고, BE가 Kafka 완료 통지로 이미 받은 값을 그대로 쓸 수 있어서다(04 §3.9).
 _drafts: _JobCache[_DraftState] = _JobCache("counsel_draft")
 
+#: 읽기 모델 영속 — 🔴 **캐시를 대체하지 않고 뒤에 선다**(㉿). memory 백엔드에서는
+#: `NullCounselDraftViewStore`라 **현재 동작이 그대로**이고, pg에서만 축출·재시작을 살려낸다.
+_draft_view_store: CounselDraftViewStore = build_counsel_draft_view_store()
+
+
+def set_counsel_draft_view_store(store: CounselDraftViewStore) -> None:
+    """읽기 모델 저장소 주입점 — 테스트가 **이 축 하나만** 바꿀 수 있게 한다.
+
+    ⚠ 앱 전체를 `store_backend=pg`로 돌리면 이 축과 무관한 FK 순서(`agent_run.run_id →
+    ai_run`)에 먼저 걸린다 — **플립 점검표의 안건**이고, 섞으면 무엇이 실패했는지 못 가린다.
+    """
+    global _draft_view_store
+    _draft_view_store = store
+
+
+async def _cached_view_of(key: tuple[str, str]) -> _CachedView | None:
+    """캐시 → 없으면 **PG에서 되살린다**. 🔴 미스 처리 자리를 **한 곳으로** 모은다.
+
+    ⚠ 두 자리(GET·POST 재조회)에 같은 복원 코드를 복제하면 한쪽만 고쳐진다(99 #02).
+    """
+    hit = _view_cache.get(key)
+    if hit is not None:
+        return hit
+    snapshot, _ = await _draft_view_store.load(key)
+    if snapshot is None:
+        return None
+    restored = _view_from_snapshot(snapshot)
+    #: 🔴 되살린 값은 **다시 저장하지 않는다** — 읽기 복원이지 쓰기가 아니다.
+    _view_cache.put(key, restored)
+    return restored
+
+
+async def _draft_state_of(key: tuple[str, str]) -> _DraftState | None:
+    """refine 대상 초안 — 캐시 → 없으면 PG."""
+    hit = _drafts.get(key)
+    if hit is not None:
+        return hit
+    _, snapshot = await _draft_view_store.load(key)
+    if snapshot is None:
+        return None
+    restored = _draft_from_snapshot(snapshot)
+    _drafts.put(key, restored)
+    return restored
+
+
+async def _remember_view(key: tuple[str, str], cached: _CachedView) -> None:
+    """캐시와 PG에 **함께** 쓴다 — 한쪽만 쓰면 재시작 뒤 값이 갈린다."""
+    _view_cache.put(key, cached)
+    await _draft_view_store.save_view(key, snapshot=_view_to_snapshot(cached))
+
+
+async def _remember_draft(key: tuple[str, str], state: _DraftState) -> None:
+    _drafts.put(key, state)
+    await _draft_view_store.save_draft(key, snapshot=_draft_to_snapshot(state))
+
+
+def _view_to_snapshot(cached: _CachedView) -> dict[str, Any]:
+    #: 🔴 표현은 `db/counsel_draft_view.py`의 모델이 정본이다 — 손으로 dict를 짜면
+    #: 투영 함수가 검증하는 모양과 갈린다.
+    return _CachedViewSnapshot(
+        view=cached.view,
+        execution_id=cached.execution_id,
+        correlation_id=cached.correlation_id,
+    ).model_dump(mode="json")
+
+
+def _view_from_snapshot(snapshot: Mapping[str, Any]) -> _CachedView:
+    parsed = _CachedViewSnapshot.model_validate(snapshot)
+    return _CachedView(
+        view=parsed.view,
+        execution_id=parsed.execution_id,
+        correlation_id=parsed.correlation_id,
+    )
+
+
+def _draft_to_snapshot(state: _DraftState) -> dict[str, Any]:
+    return _DraftStateSnapshot(
+        context=state.context,
+        citations=state.citations,
+        text=state.text,
+        snapshot_hash=state.snapshot_hash,
+        emphasis=state.emphasis,
+    ).model_dump(mode="json")
+
+
+def _draft_from_snapshot(snapshot: Mapping[str, Any]) -> _DraftState:
+    parsed = _DraftStateSnapshot.model_validate(snapshot)
+    return _DraftState(
+        context=parsed.context,
+        citations=parsed.citations,
+        text=parsed.text,
+        snapshot_hash=parsed.snapshot_hash,
+        emphasis=parsed.emphasis,
+    )
+
 #: LLM 접점 — 🔴 **기본값이 없다.** 조립부가 주입하지 않으면 서비스는 뜨지 않는다.
 #:
 #: ⚠ 종전 기본값은 `FakeCounselProvider()`였다. Fake는 시나리오가 없으면
@@ -435,7 +534,7 @@ def reset_counsel_stores() -> None:
     엮여 있어 한쪽만 지우면 짝 없는 것이 남는다. 그 자리에서는 두 함수를 나란히 부른다.
     """
     global _idempotency_store, _context_store, _draft_store, _pack_store, _step_sink
-    global _run_store
+    global _run_store, _draft_view_store
     reset_default_memory_checkpointer()
     _run_store = build_run_store()
     default_llm_call_collector().reset()
@@ -446,6 +545,8 @@ def reset_counsel_stores() -> None:
     _step_sink = InMemoryAgentStepSink()
     _view_cache.clear()
     _drafts.clear()
+    #: 🔴 읽기 모델 저장소도 되돌린다 — 안 되돌리면 PG를 주입한 테스트가 **다음 테스트로 샌다**.
+    _draft_view_store = build_counsel_draft_view_store()
     set_counsel_provider(FakeCounselProvider())
 
 
@@ -749,7 +850,7 @@ async def _wire_result(
         # refine 대상 등록 — 키는 **응답이 싣는 job_id**다(04 §3.9). 종전에는 내부
         # `record.id`로 등록했는데 그 값은 어떤 응답에도 실리지 않아, BE가 refine 대상
         # 키를 얻을 계약 경로가 없었다(호출하면 404 확정 · 99 D).
-        _drafts.put(
+        await _remember_draft(
             (tenant_id, job_id),
             _DraftState(
                 context=_draft_context(request),
@@ -817,7 +918,7 @@ async def post_counsel_draft(request: Request, response: Response) -> dict[str, 
     cached = _CachedView(
         view=view, execution_id=execution_id, correlation_id=uuid.uuid4()
     )
-    _view_cache.put((tenant_id, view.job_id), cached)
+    await _remember_view((tenant_id, view.job_id), cached)
 
     envelope = success_envelope(
         data={"job_id": view.job_id, "status": view.status},
@@ -884,7 +985,7 @@ async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
     tenant_id = request.headers.get("X-Tenant-Id")
     if not tenant_id:
         raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": ["X-Tenant-Id"]})
-    cached = _view_cache.get((tenant_id, job_id))
+    cached = await _cached_view_of((tenant_id, job_id))
     if cached is None:  # 존재 은닉 — 다른 테넌트의 job_id도 여기로 떨어진다
         raise NotFound("job_id 부재", {"job_id": job_id})
     view = await _refresh_view(cached.view, tenant_id=tenant_id)
@@ -895,7 +996,7 @@ async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
         execution_id=cached.execution_id,
         correlation_id=cached.correlation_id,
     )
-    _view_cache.put((tenant_id, job_id), refreshed)
+    await _remember_view((tenant_id, job_id), refreshed)
     return success_envelope(
         data=view.model_dump(mode="json"),
         execution_id=refreshed.envelope_execution_id(),
@@ -980,7 +1081,7 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
             "요청 바디 스키마 위반", _format_validation_error(exc)
         ) from exc
 
-    state = _drafts.get((tenant_id, job_id))
+    state = await _draft_state_of((tenant_id, job_id))
     if state is None:  # 존재 은닉 — 다른 테넌트의 job_id도 여기로 떨어진다
         raise NotFound("job_id 부재", {"job_id": job_id})
 
