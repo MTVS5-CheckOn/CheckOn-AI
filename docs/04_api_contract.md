@@ -121,7 +121,8 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 | `POST /v1/classify` — **비캐시**(LLM 호출) | 🔴 **원장 키** | 위와 같다 |
 | `POST /v1/classify` — **캐시 히트** | 🔴 **원장 키** | ✅ **(8/7 해소)** 캐시 조회를 `try` 안으로 옮겨 `finally`의 원장 적재를 타게 했다 — **예측 재사용도 실행이다**(불변식 8). ⚠ 그 실행은 **LLM 호출 0건**이라 `model_provider`·`model_name`·`generation_params`가 **전부 null**이다(원장에서 그렇게 구분한다 · 99 ㊧). 🔴 **캐시 히트도 원장 적재 실패 시 5xx다** — 저장된 예측이 있어도 나간다. 종전에는 캐시 히트가 원장을 안 타서 **5xx가 구조적으로 불가능한 경로**였는데 이제 가능하다. ⚠ **캐시가 뜨면 항상 200이라는 뜻이 아니다.** 새 사유 코드는 없다(기존 5xx). *원장을 못 남긴 채 「기록했다」로 응답하는 것이 더 나쁘다* 는 판정과 일관된다 |
 | `POST /v1/problems` · `GET /v1/problems/{job_id}` | 🔴 **원장 키** | 잡을 **항상** 만든다(잡 없는 성공 경로 없음). ⚠ `GET`은 현재 응답마다 새로 발급 — **아래 미정합** |
-| `POST/GET /v1/imports` | ⚠ **상관 ID** | 이 축은 **원장을 쓰지 않는다**(라우터·워커에 `AI_RUN` 참조 0건 · 99 ㉾). `job_id`가 그대로 실리며 반복 조회는 같은 값 |
+| `POST/GET /v1/imports` — **조사(probing) 기동** | 🔴 **원장 키** | ✅ **(8/12 · ㉾ 해소)** 조사 워커가 `AI_RUN`을 남기고(`capability=import_mapping` · 잡 **한 건당 한 행**) 응답이 그 `WorkerJob.execution_id`를 싣는다 — **`AI_RUN` PK와 같은 값**이다. POST·GET·멱등 재응답이 같다. ⚠ 현재 planner가 Fake라 그 실행의 **LLM 호출은 0건**이고 `model_provider`·`model_name`·`generation_params`가 **전부 null**이다(`/v1/classify` 캐시 히트와 같은 구분 · 99 ㊧) |
+| `POST/GET /v1/imports` — **조사 없음**(`preview_ready`·`failed`) | ⚠ **상관 ID** | 워커도 LLM도 안 타므로 **가리킬 실행이 없다** — `job_id`가 그대로 실리며 반복 조회는 같은 값. ⚠ **없는 실행을 지어내지 않는다.** 종전에는 이 축 전체가 상관 ID였다(그때는 `AI_RUN` 참조가 0건이었다) |
 | `POST /v1/confirmations` | ⚠ **미정합** | 원장을 쓰지 않는데 **호출마다 새 값**이라 상관 ID로도 기능하지 않는다 — 아래 |
 
 🔴 **아직 이 규정과 어긋나는 자리 둘** `[미정합 · 수정 대기]` — 계약이 정본이고 구현을 여기 맞춘다:

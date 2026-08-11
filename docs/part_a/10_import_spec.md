@@ -123,6 +123,8 @@ POST → profiling → inferring → [probing] → preview_ready ──confirm�
 - **기동 조건:** 1-shot 결과에 `confidence < 0.9` 컬럼이 하나라도 있으면 `agent_run(mapping_probe)` 생성.
 - **도구(전부 결정론·마스킹 뒤):** `get_unique_values(col)` · `get_more_sample(sheet, n)` · `check_join_key(sheetA, sheetB)`. 인명 후보 컬럼은 **값 대신 통계만** 반환(masking §4) — 에이전트 플래너는 마스킹 통과분 외 원문을 볼 경로가 구조적으로 없다.
 - **루프 상한 5회**(불변식 6). 저신뢰 컬럼이 소진되면 수렴, 상한 도달 시 미해결 컬럼을 `unmapped`로 명시. 도구 호출·중간 가설 전부 `agent_step` + LangSmith trace.
+- 🔴 **실행 원장은 잡 한 건당 한 행**(✅ 8/12 · 99 ㉾). `AI_RUN.execution_id = WorkerJob.execution_id` · `capability = import_mapping` · `input_snapshot_hash = job.payload_hash` · 버전은 응답 `meta.versions`와 **같은 함수**. ⚠ **루프 회전마다 만들지 않는다** — 도구 호출은 같은 실행 아래 `AGENT_STEP`으로 남는다(위 줄). **실행 경계**는 프로파일 역참조·`start()` **뒤**다: 입력 자체가 없으면 원장을 만들지 않고, 그 뒤의 성공·그래프 실패·상한 실패는 **전부** 남긴다. ⚠ 현재 planner가 Fake라 그 실행의 **LLM 호출은 0건**이고 `model_provider`·`model_name`·`generation_params`는 **null**이다(실 planner는 별건).
+- 🔴 **응답의 `meta.execution_id`가 그 실행을 가리킨다** — 조사를 띄우면 **원장 키**, 안 띄우면 `job_id` **상관 ID**다(04 §2.2 부류 표 · 99 ㊯). POST·GET·멱등 재응답이 같은 값이다.
 
 ### 3.4 confidence·needs_review·reused 산정 규약
 

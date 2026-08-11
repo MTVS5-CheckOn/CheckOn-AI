@@ -115,12 +115,37 @@ def test_the_contract_promotion_item_stays_open() -> None:
     )
 
 
-def test_the_probe_ledger_gap_stays_open() -> None:
-    """㉾는 **닫지 않는다** — #36 해소가 그것을 덮으면 안 된다."""
+def test_the_probe_ledger_gap_is_closed_by_measurement() -> None:
+    """㉾는 **8/12에 닫혔다** — 실 PG 실측으로.
+
+    ⚠ **종전 이름은 `..._stays_open`이었다** — 그때는 *"#36 해소가 ㉾를 덮으면 안 된다"* 가
+    지킬 값이었다(#36은 잡이 PG에 앉는 축이고 `record_run()` 0건은 그대로였다).
+    그 결손이 실제로 없어졌으므로 **검사도 현재 사실로 옮긴다** — 낡은 가드를 남겨 두면
+    다음 사람이 **사실이 아닌 것을 지키려고** 코드를 되돌린다.
+
+    🔴 **닫힘 표시만 보지 않는다** — 무엇으로 닫았는지가 문면에 있어야 한다.
+    """
     rows = [
         line
         for line in _OPEN_ITEMS.read_text(encoding="utf-8").splitlines()
         if line.startswith("| ㉾ ")
     ]
     assert len(rows) == 1, f"99에서 ㉾ 행이 {len(rows)}개다"
-    assert "☐" in rows[0].rsplit("|", 2)[1], "㉾가 닫혔다"
+    status = rows[0].rsplit("|", 2)[1]
+    assert "✅" in status, "㉾가 다시 열렸다 — 원장 배선이 되돌아갔는지 확인하라"
+    assert "실 PG" in status, "닫은 근거(실측)가 상태 칸에 없다"
+
+
+def test_the_step_record_duplication_stays_open() -> None:
+    """🔴 **㉾가 닫혔다고 ⑱까지 닫히지 않는다** — 같은 회차에 섞이기 쉬운 자리다.
+
+    ⑱은 `AgentStepRecord`·`AgentStepSink`가 두 capability에 **각자 정의**된 것이고,
+    조사 축이 원장을 쓰게 된 것과 **다른 축**이다.
+    """
+    rows = [
+        line
+        for line in _OPEN_ITEMS.read_text(encoding="utf-8").splitlines()
+        if line.startswith("| ⑱ ")
+    ]
+    assert len(rows) == 1, f"99에서 ⑱ 행이 {len(rows)}개다"
+    assert "☐" in rows[0].rsplit("|", 2)[1], "⑱이 ㉾와 함께 닫혔다 — 별건이다"

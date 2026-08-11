@@ -210,7 +210,7 @@ except Exception:
 | `failed` | ⚠ **`unknown`** | 🔴 `violation` |
 | `cancelled` — **실행 전**(`started_at` 없음) | `allowed_absence` | — |
 | `cancelled` — **실행 후** | ⚠ **`unknown`** | 🔴 `violation` |
-| `mapping_probe`(상태 무관) | ⚠ `separate_gap` — ㉾ | ⚠ `separate_gap` |
+| ~~`mapping_probe`(상태 무관)~~ | ~~⚠ `separate_gap` — ㉾~~ | **8/12 · ㉾ 해소로 이 행이 없어졌다** — 다른 둘과 **같은 규칙**을 받는다(`separate_gap` 판정값 자체를 제거) |
 | 같은 `run_id`가 **남의 테넌트에** 있음(상태 무관) | 🔴 `violation` | 🔴 `violation` |
 | **`AI_RUN`이 있고 논리 결합이 맞음**(상태 무관) | `ok` | `ok` |
 | `AI_RUN`은 있는데 `run_id`·테넌트·capability 불일치 | 🔴 `violation` | 🔴 `violation` |
@@ -355,13 +355,14 @@ except Exception:
 | --- | --- | --- | --- |
 | `counsel_pack` | `AGENT_RUN` 1건 · `run_id == execution_id` · **`AI_RUN` 없음(정상)** · PG 복원 성공 | `succeeded` · `result_ref` 있음 · `AI_RUN` 1건 · 결합·테넌트 일치 · capability `composition` | **`ok`** |
 | `problem_generation` | 동일(부모 선삽입 없음) | `succeeded` · `result_ref` 있음 · `AI_RUN` 1건 · capability `problem_generation` | **`ok`** |
-| `mapping_probe` | `AGENT_RUN` 1건 · 복원 성공 | 계약 종단 도달 · 🔴 **`AI_RUN` 없음** | ⚠ **`separate_gap`** — ㉾ |
+| `mapping_probe` | `AGENT_RUN` 1건 · 복원 성공(부모 선삽입 없음) | ✅ **(8/12 갱신)** `succeeded` · `AI_RUN` **1건** · capability `import_mapping` · `LLM_CALL` 0건 | **`ok`** |
 
-**세 경로를 한 테넌트에서 합친 판정**: `ok 2 · separate_gap 1 · violation 0 · unknown 0` ·
+**세 경로를 한 테넌트에서 합친 판정**: ✅ **(8/12) `ok 3 · violation 0 · unknown 0`** ·
 `preflight_blocks = False`. 🔴 **행 순서에 기대지 않고 `execution_id`로 정확 대조**했다.
+⚠ **8/11 당시에는 `ok 2 · separate_gap 1`이었다** — `mapping_probe`가 원장을 안 쓰던 때다.
 
-⚠ **`mapping_probe`는 ㉾로 분리 유지** — G1이 연 것은 **잡이 PG에 앉는 것**이고
-`record_run()` 0건은 그대로다. **`ok`로도 `violation`으로도 판정하지 않았다.**
+⚠ **종전 이 자리의 판단은 *"`mapping_probe`는 ㉾로 분리 유지 — G1이 연 것은 잡이 PG에 앉는
+것이고 `record_run()` 0건은 그대로다"*** 였고, **8/12에 그 0건이 없어졌다**(99 ㉾).
 
 🔴 **G3에서 발견한 것 — counsel에는 타입이 맞는 PG step sink가 없다.**
 `PgAgentStepSink`는 **probe 축의 `AgentStepRecord`**로 타입돼 있고, counsel의 동명 클래스와
@@ -380,7 +381,7 @@ mypy가 거부한다. **런타임은 되고 타입만 안 맞는다** ⇒ **별�
 | 생애주기 원장 점검 | ✅ **#202** |
 | G3 실제 enqueue 3종 | ✅ **#202** |
 | **counsel `AGENT_STEP` PG 배선** | ☐ **#37** — 🔴 **전면 플립 전 해소 관문** |
-| `mapping_probe` 원장 | ☐ **㉾** |
+| `mapping_probe` 원장 | ✅ **㉾ 해소(8/12)** |
 | 실행 식별자 분리(④) | ☐ 별도(99 ㊮ 계열) |
 | `PROBLEM_SET` 쓰기 0건 | ☐ 별도 |
 | 기본 PG 플립 · ㉿ⓓ·㉬·㉻ | ⏭ **다음 단계** |
