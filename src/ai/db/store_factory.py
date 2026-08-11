@@ -254,7 +254,8 @@ def build_counsel_agent_step_sink(
     settings = settings or get_db_settings()
     if settings.store_backend == _PG:
         return PgCounselAgentStepSink(sessionmaker=get_sessionmaker())
-    #: 미등록 값은 **memory fail-safe** — 모르는 설정에서 PG를 열지 않는다.
+    #: ⚠ 여기 오는 값은 **`memory` 하나뿐**이다 — 미등록 값은 `DbSettings`가 **기동 시
+    #: 거부**한다(99 #38). 팩토리에 판정을 복제하지 않는다.
     return InMemoryCounselAgentStepSink()
 
 

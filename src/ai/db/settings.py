@@ -6,8 +6,12 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: 지원하는 저장소 백엔드 — 🔴 **허용 값의 정본**이다(99 #38).
+type StoreBackend = Literal["memory", "pg"]
 
 
 class DbSettings(BaseSettings):
@@ -36,11 +40,20 @@ class DbSettings(BaseSettings):
     절대 닿지 않게 하되, 폭주 입력이 프로세스 메모리를 밀어내지 못하게 막는다.
     """
 
-    store_backend: str = "memory"
-    """저장소 선택 — "memory"(기본·테스트/데모, DB 없이 동작) | "pg"(실 DB 적재).
+    store_backend: StoreBackend = "memory"
+    """저장소 선택 — **정확히 두 값만** 받는다(99 #38).
 
-    database_url에 기본값이 있어 URL 유무로는 백엔드를 못 고른다 — 명시 플래그로 고른다.
+    `memory`는 **명시적으로 고른 테스트·데모 백엔드**이고, `pg`는 실 DB 적재다.
+    `database_url`에 기본값이 있어 URL 유무로는 백엔드를 못 고른다 — 명시 플래그로 고른다.
     기본 회귀는 memory로 돌고, PR 전 로컬 검증의 integration 단계만 실 PG를 주입한다.
+
+    🔴 **미등록 값은 기동 설정 오류로 거부한다.** 종전에는 `str`이라 `pgg`·`PG`·`postgres`·
+    `"memory "`·`""` 가 전부 **조용히 memory로 강등**됐다 — 설정 오타 하나로 **잡 원장·실행
+    원장·멱등 저장·읽기 모델·`AGENT_STEP` 영속성이 한꺼번에** 사라지는데 **아무것도 안 터진다.**
+    ⚠ **대소문자·공백을 보정하거나 오타를 추측하지 않는다** — 보정하면 **설정에 적힌 것과
+    실제로 도는 것이 갈린다.**
+    ⚠ **정본은 이 타입 하나다** — 팩토리마다 `if unknown: raise`를 복제하면 새 팩토리가
+    생길 때 **한쪽만 낡는다**(99 #02).
     """
 
 
