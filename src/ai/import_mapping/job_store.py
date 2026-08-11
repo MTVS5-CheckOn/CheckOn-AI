@@ -25,6 +25,15 @@ class ImportJob:
     preview: MappingPreview | None = None
     status_reason: str | None = None
 
+    #: 🔴 **조사 워커의 실행 신원**(99 ㉾ · ㊯). probe를 띄운 경우에만 채워진다 —
+    #: 그 값이 `AI_RUN.execution_id`(=PK)와 **같은 값**이라 응답의 `meta.execution_id`가
+    #: 처음으로 **실재하는 원장 행**을 가리킨다.
+    #: ⚠ **`None`이 거짓이 아니다** — `preview_ready`·`failed`처럼 조사를 안 띄운 경로는
+    #:   가리킬 실행이 **없고**, 그때 응답은 `job_id`를 **상관 ID**로 싣는다(04 §2.2 부류).
+    #: ⚠ **`str`이다** — `WorkerJob.execution_id`는 `UUID`지만 이 dataclass의 `job_id`가
+    #:   `str`이고 응답 envelope도 `str`을 받는다. 한 자리에서만 변환한다.
+    execution_id: str | None = None
+
 
 class ImportJobStore(Protocol):
     """작업 저장소 인터페이스 — 라우터는 이 타입에만 의존한다."""

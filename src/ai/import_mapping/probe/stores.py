@@ -127,13 +127,31 @@ def deserialize_profile(sheets: dict[str, Any]) -> SourceProfile:
 class ProfileStore(Protocol):
     async def put(self, record: ProfileRecord) -> str: ...
 
-    async def get(self, ref: str) -> ProfileRecord | None: ...
+    async def get(self, ref: str, *, tenant_id: str) -> ProfileRecord | None:
+        """참조 해소 — 🔴 **테넌트 스코프 필수**(CLAUDE.md §4 · 99 #40).
+
+        종전에는 `ref`만 받았다. `profile://{uuid}`는 **테넌트를 담지 않으므로**
+        저장소가 안 받으면 **「어느 테넌트 행인가」를 물을 자리가 없다** — 실측으로
+        확인했다: 남의 프로파일을 내 잡의 `payload_ref`로 넣으면 **그대로 실행돼**
+        `AI_RUN`·`AGENT_STEP`·`MAPPING_SPEC`이 **내 테넌트 산출물로 재포장**됐다.
+        ⚠ **`ref`가 UUID라 추측 불가한 것은 격리가 아니다** — enqueue 밖의 경로
+        (재개·수동 재큐·다음 소비자)에서 잘못된 참조가 들어오면 막을 것이 없다.
+        ⚠ `counsel/stores.py`의 셋이 이미 같은 계약이다(8/8 · 99 #23) — 그 판단을
+        probe 축에도 맞춘다.
+        """
+        ...
 
 
 class SpecResultStore(Protocol):
     async def put(self, record: SpecRecord) -> str: ...
 
-    async def get(self, ref: str) -> SpecRecord | None: ...
+    async def get(self, ref: str, *, tenant_id: str) -> SpecRecord | None:
+        """`ProfileStore.get`과 **동형**(99 #40).
+
+        ⚠ **지금 소비자가 적다는 이유로 테넌트 없는 계약을 남기지 않는다** — 다음
+        result resolver가 그걸 그대로 쓴다. 두 저장소의 계약이 갈리면 **한쪽만 낡는다**.
+        """
+        ...
 
 
 class AgentStepSink(Protocol):
@@ -150,8 +168,11 @@ class InMemoryProfileStore:
         self._rows[record.id] = record
         return make_ref(PROFILE_SCHEME, record.id)
 
-    async def get(self, ref: str) -> ProfileRecord | None:
-        return self._rows.get(parse_ref(ref, PROFILE_SCHEME))
+    async def get(self, ref: str, *, tenant_id: str) -> ProfileRecord | None:
+        row = self._rows.get(parse_ref(ref, PROFILE_SCHEME))
+        if row is None or row.tenant_id != tenant_id:  # 저장소 수준 격리
+            return None
+        return row
 
 
 class InMemorySpecResultStore:
@@ -162,8 +183,11 @@ class InMemorySpecResultStore:
         self._rows[record.id] = record
         return make_ref(SPEC_SCHEME, record.id)
 
-    async def get(self, ref: str) -> SpecRecord | None:
-        return self._rows.get(parse_ref(ref, SPEC_SCHEME))
+    async def get(self, ref: str, *, tenant_id: str) -> SpecRecord | None:
+        row = self._rows.get(parse_ref(ref, SPEC_SCHEME))
+        if row is None or row.tenant_id != tenant_id:  # 저장소 수준 격리
+            return None
+        return row
 
 
 class InMemoryAgentStepSink:

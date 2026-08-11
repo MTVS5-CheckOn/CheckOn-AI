@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai.db.models import MappingSpec as MappingSpecRow
@@ -53,10 +54,22 @@ class PgProfileStore:
             )
         return make_ref(PROFILE_SCHEME, record.id)
 
-    async def get(self, ref: str) -> ProfileRecord | None:
+    async def get(self, ref: str, *, tenant_id: str) -> ProfileRecord | None:
+        """🔴 **술어를 SQL에 건다**(99 #40) — PK로 꺼내 파이썬에서 거르지 않는다.
+
+        ⚠ 파이썬 필터로 끝내면 **남의 행을 프로세스로 가져온 뒤** 버리는 것이고,
+        로그·예외 문면·디버거에 그 내용이 실릴 경로가 남는다. 애초에 **안 읽는다.**
+        """
         row_id = parse_ref(ref, PROFILE_SCHEME)
         async with self._sessionmaker() as session:
-            row = await session.get(SourceProfileRow, row_id)
+            row = (
+                await session.execute(
+                    select(SourceProfileRow).where(
+                        SourceProfileRow.id == row_id,
+                        SourceProfileRow.tenant_id == tenant_id,
+                    )
+                )
+            ).scalar_one_or_none()
             if row is None:
                 return None
             return ProfileRecord(
@@ -92,10 +105,18 @@ class PgSpecResultStore:
             )
         return make_ref(SPEC_SCHEME, record.id)
 
-    async def get(self, ref: str) -> SpecRecord | None:
+    async def get(self, ref: str, *, tenant_id: str) -> SpecRecord | None:
+        """`PgProfileStore.get`과 **같은 형태** — 술어를 SQL에 건다(99 #40)."""
         row_id = parse_ref(ref, SPEC_SCHEME)
         async with self._sessionmaker() as session:
-            row = await session.get(MappingSpecRow, row_id)
+            row = (
+                await session.execute(
+                    select(MappingSpecRow).where(
+                        MappingSpecRow.id == row_id,
+                        MappingSpecRow.tenant_id == tenant_id,
+                    )
+                )
+            ).scalar_one_or_none()
             if row is None:
                 return None
             return SpecRecord(

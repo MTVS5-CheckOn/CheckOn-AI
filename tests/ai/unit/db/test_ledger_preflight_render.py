@@ -60,7 +60,6 @@ def test_the_three_axes_are_printed_separately() -> None:
             _healthy(),
             _finding(status=JobPhase.SUCCEEDED),                      # violation
             _finding(status=JobPhase.FAILED),                         # unknown
-            _finding(agent_kind=WorkerKind.MAPPING_PROBE),            # separate_gap
             _finding(status=JobPhase.QUEUED),                         # allowed
         ],
         tenant_id=_TENANT,
@@ -69,8 +68,6 @@ def test_the_three_axes_are_printed_separately() -> None:
         assert verdict.value in report, f"{verdict.value} 축이 리포트에 없다"
     assert "## violation" in report
     assert "## unknown" in report
-    assert "## separate_gap" in report
-    assert "㉾" in report, "mapping_probe가 ㉾ 안건과 연결되지 않았다"
 
 
 def test_zero_rows_is_not_reported_as_a_pass() -> None:
@@ -95,13 +92,27 @@ def test_violation_or_unknown_blocks_the_flip_in_the_report(case: dict[str, Any]
     assert "🔴 **플립 차단**" in report
 
 
-def test_a_separate_gap_alone_does_not_block() -> None:
-    """㉾만 있으면 관문을 막지 않는다 — 섞으면 관문이 영영 안 열린다."""
+def test_a_probe_without_a_ledger_now_blocks() -> None:
+    """🔴 **㉾ 해소 뒤에는 조사 축도 관문을 막는다**(8/12).
+
+    ⚠ 종전 이름은 `test_a_separate_gap_alone_does_not_block`이었고 *"㉾만 있으면 관문을
+    막지 않는다"* 를 단정했다 — 그 판단은 **그 워커가 원장을 안 쓰던 동안** 옳았다.
+    """
     report = render_report(
-        [_healthy(), _finding(agent_kind=WorkerKind.MAPPING_PROBE)], tenant_id=_TENANT
+        [
+            _healthy(),
+            _finding(agent_kind=WorkerKind.MAPPING_PROBE, status=JobPhase.SUCCEEDED),
+        ],
+        tenant_id=_TENANT,
     )
-    assert "✅ 플립 차단 사유 없음" in report
-    assert "separate_gap" in report, "안 막는다고 숨기면 안 된다"
+    assert "🔴 **플립 차단**" in report
+    assert "✅ 플립 차단 사유 없음" not in report
+
+
+def test_the_report_no_longer_advertises_a_bypass() -> None:
+    """🔴 리포트가 **「이건 안 막는다」**를 말하지 않는다 — 예외 통로가 없다."""
+    report = render_report([_healthy()], tenant_id=_TENANT)
+    assert "separate_gap" not in report
 
 
 def test_the_report_carries_no_payload_text() -> None:
@@ -128,9 +139,22 @@ def test_the_report_carries_no_payload_text() -> None:
             lambda: [_finding(status=JobPhase.SUCCEEDED)], True, id="violation 1행 → 차단"
         ),
         pytest.param(
-            lambda: [_healthy(), _finding(agent_kind=WorkerKind.MAPPING_PROBE)],
+            lambda: [
+                _healthy(),
+                _finding(agent_kind=WorkerKind.MAPPING_PROBE, status=JobPhase.QUEUED),
+            ],
             False,
-            id="정상 + ㉾만 → 통과",
+            id="정상 + 조사 대기 → 통과",
+        ),
+        pytest.param(
+            lambda: [
+                _healthy(),
+                _finding(
+                    agent_kind=WorkerKind.MAPPING_PROBE, status=JobPhase.SUCCEEDED
+                ),
+            ],
+            True,
+            id="정상 + 원장 없는 조사 완주 → 차단(㉾ 해소 뒤)",
         ),
     ],
 )
