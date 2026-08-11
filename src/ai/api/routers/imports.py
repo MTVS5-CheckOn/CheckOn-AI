@@ -24,7 +24,6 @@ from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
 from ai.api.version_scope import RouterScope
-from ai.contracts.execution import VersionSet
 from ai.contracts.imports import (
     ConfirmRequest,
     ImportCreateRequest,
@@ -58,19 +57,16 @@ from ai.import_mapping.signature import (
     form_signature,
 )
 from ai.import_mapping.state import assert_transition
+
+#: 🔴 **정본은 capability 쪽이다**(99 ㉾) — 조사 워커가 같은 함수를 읽는다.
+#: 여기서 재선언하면 응답 `meta.versions`와 `AI_RUN.versions`가 갈린다(99 #20).
+from ai.import_mapping.versions import import_versions
 from ai.runtime.errors import IdempotencyConflict, NotFound, SnapshotInvalid
 from ai.runtime.redaction import redact
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_PIPELINE_VERSION = "0.1.0"
-_ENGINE_VERSION = "import-mapping-0.1"
-_SCHEMA_VERSION = "0.1"
-_CONTRACT_VERSION = "0.1"
-_PROMPT_VERSION = "mapping-0.1"
-_TAXONOMY_VERSION = "taxonomy-0.1"
 
 _POST_ENDPOINT = "POST /v1/imports"
 _CONFIRM_ENDPOINT = "POST /v1/imports/confirm"
@@ -131,18 +127,6 @@ def reset_import_stores() -> None:
     )
     _redactor = None
     _probe_enqueuer = None
-
-
-def import_versions() -> VersionSet:
-    """Import 엔드포인트 버전 세트 — engine/threshold/graph 등 미해당 키는 None(§2.2)."""
-    return VersionSet(
-        pipeline_version=_PIPELINE_VERSION,
-        engine_version=_ENGINE_VERSION,
-        schema_version=_SCHEMA_VERSION,
-        contract_version=_CONTRACT_VERSION,
-        prompt_version=_PROMPT_VERSION,
-        taxonomy_version=_TAXONOMY_VERSION,
-    )
 
 
 def _require_headers(request: Request, names: tuple[str, ...]) -> None:
