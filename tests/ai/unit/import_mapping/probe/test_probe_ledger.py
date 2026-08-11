@@ -259,7 +259,7 @@ def test_a_failure_after_the_execution_boundary_still_records() -> None:
     async def explode(*args: object, **kwargs: object) -> None:
         raise RuntimeError("그래프 실행 실패(대역)")
 
-    harness.runner._steps.record = explode  # type: ignore[method-assign,assignment]
+    harness.runner._steps.record = explode  # type: ignore[method-assign]
 
     async def scenario() -> None:
         await harness.enqueue(ref)

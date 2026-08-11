@@ -25,10 +25,12 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.agents.checkpointer import open_checkpointer
 from ai.agents.supervisor import Supervisor
+from ai.db.repositories.run_store import default_llm_call_collector
 from ai.db.settings import DbSettings, get_db_settings
 from ai.db.store_factory import (
     build_agent_step_sink,
     build_profile_store,
+    build_run_store,
     build_spec_result_store,
 )
 from ai.import_mapping.probe.worker import MappingProbeRunner
@@ -73,4 +75,10 @@ async def open_mapping_probe_runner(
             loop_max=resolved_import.import_probe_loop_max,
             lease_owner=lease_owner,
             new_id=new_id,
+            #: 🔴 **같은 `DbSettings`로 고른다**(99 ㉾) — 저장소 셋과 다른 설정을 읽으면
+            #: `STORE_BACKEND=pg`인데 원장만 인메모리로 남는 조합이 생긴다.
+            run_store=build_run_store(resolved_db),
+            #: 🔴 **프로세스 공용 수집기**다 — 여기서 새로 만들면 게이트웨이가 적재한
+            #: 호출을 워커가 못 꺼낸다(counsel·pg가 같은 규약을 쓴다).
+            call_log=default_llm_call_collector(),
         )

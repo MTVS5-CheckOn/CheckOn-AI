@@ -15,13 +15,16 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any, Final
 from uuid import UUID, uuid4
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from ai.agents.supervisor import Supervisor
+from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.contracts.agents import WorkerJob, WorkerKind
+from ai.contracts.execution import Capability, ExecutionContext
+from ai.db.repositories.run_store import LlmCallCollector, RunStore
 from ai.import_mapping.probe.graph import build_probe_graph, graph_recursion_limit
 from ai.import_mapping.probe.planner import FakeProbePlanner, ProbePlanner
 from ai.import_mapping.probe.state import MappingProbeState, MappingSpecDraft
@@ -34,6 +37,7 @@ from ai.import_mapping.probe.stores import (
     deserialize_profile,
 )
 from ai.import_mapping.probe.tools import FakeProbeTools
+from ai.import_mapping.versions import import_versions
 
 _SPEC_VERSION = 1
 
@@ -60,6 +64,9 @@ class MappingProbeRunner:
         loop_max: int,
         lease_owner: str,
         new_id: Callable[[], UUID] = uuid4,
+        run_store: RunStore,
+        call_log: LlmCallCollector,
+        now: Callable[[], datetime] = system_utc_now,
     ) -> None:
         self._sv = supervisor
         self._profiles = profile_store
@@ -70,6 +77,13 @@ class MappingProbeRunner:
         self._loop_max = loop_max
         self._lease_owner = lease_owner
         self._new_id = new_id
+        #: 🔴 **기본값을 두지 않는다**(99 ㉾). 여기에 `RunStore | None = None`을 두고
+        #: 안에서 만들면 **조립부가 안 넘겨도 검사가 초록**이라 배선 결손이 안 보인다 —
+        #: `#37`(counsel 스텝 싱크)이 정확히 그 형태로 넉 달 살아남았다.
+        self._runs = run_store
+        self._call_log = call_log
+        #: 시계 주입 — `datetime.now()` 직접 호출 금지(03 §3).
+        self._now = now
 
     async def run_next(self, *, tenant_id: str) -> WorkerJob | None:
         """다음 mapping_probe 잡을 lease해 실행하고 succeeded로 수렴한다. 없으면 None."""
@@ -124,6 +138,10 @@ class MappingProbeRunner:
             raise
 
     async def _execute(self, job: WorkerJob) -> WorkerJob:
+        # ── 🔴 **여기까지는 「실행 전」이다** — 원장을 만들지 않는다 (99 ㉾) ──
+        #    실행할 **입력 자체가 없으면** 실행이 없었던 것이고, 없는 실행의 기록을
+        #    지어내는 것은 불변식 8이 요구하는 바가 아니다. counsel이 같은 판단이다
+        #    (`bundle_missing`·`tenant_mismatch`는 `_execution_context` 앞에서 죽는다).
         profile_rec = await self._profiles.get(job.payload_ref)
         if profile_rec is None:
             raise ValueError(f"source_profile 참조 해소 실패: {job.payload_ref}")
@@ -139,6 +157,19 @@ class MappingProbeRunner:
             checkpoint_ref=thread_id,
         )
 
+        # ── 🔴 **여기부터가 실행이다** — 이 뒤의 성공·실패는 전부 원장을 남긴다 ──
+        #    ⚠ 원장의 단위는 **잡 한 건**이다(조사 루프 한 회전이 아니다). 도구 호출은
+        #    같은 `execution_id` 아래 `AGENT_STEP`으로 남는다.
+        context = ExecutionContext(
+            execution_id=job.execution_id,
+            tenant_id=job.tenant_id,
+            capability=Capability.IMPORT_MAPPING,
+            input_snapshot_hash=job.payload_hash,
+            #: 🔴 **응답이 읽는 것과 같은 함수**다(99 #20) — 여기서 재선언하면
+            #: `meta.versions`와 `AI_RUN`이 갈린다.
+            versions=import_versions(),
+        )
+
         # ③ 그래프 실행 — 도구 호출마다 체크포인트(§2.3).
         graph = build_probe_graph(
             tools=FakeProbeTools(profile),
@@ -152,17 +183,30 @@ class MappingProbeRunner:
             source_profile_id=profile_rec.id,
             sheets_meta={"columns": columns},
         )
-        # ainvoke — async 체크포인터(AsyncPostgresSaver)를 구동한다. InMemorySaver도 호환.
-        # 🔴 **호출마다 상한을 명시한다**(불변식 6 · 99 #08 ⓑ) — 안 주면 langgraph 기본값
-        #    `getenv("LANGGRAPH_DEFAULT_RECURSION_LIMIT", "10007")`이 쓰이는데 그건
-        #    **사실상 무한**이고 **BE 운영이 만질 수 있는 저장소 밖 값**이다.
-        final = await graph.ainvoke(
-            init,
-            config={
-                "configurable": {"thread_id": thread_id},
-                "recursion_limit": graph_recursion_limit(loop_max=self._loop_max),
-            },
-        )
+        #: 🔴 `finally`가 **모든 수렴 경로**를 지나게 하는 플래그다 — counsel과 같은 형태.
+        #:   실패 경로에서만 적재 오류를 삼킨다(원인 예외를 덮지 않으려는 것).
+        failed = True
+        try:
+            # ainvoke — async 체크포인터(AsyncPostgresSaver)를 구동한다. InMemorySaver도 호환.
+            # 🔴 **호출마다 상한을 명시한다**(불변식 6 · 99 #08 ⓑ) — 안 주면 langgraph 기본값
+            #    `getenv("LANGGRAPH_DEFAULT_RECURSION_LIMIT", "10007")`이 쓰이는데 그건
+            #    **사실상 무한**이고 **BE 운영이 만질 수 있는 저장소 밖 값**이다.
+            final = await graph.ainvoke(
+                init,
+                config={
+                    "configurable": {"thread_id": thread_id},
+                    "recursion_limit": graph_recursion_limit(loop_max=self._loop_max),
+                },
+            )
+            failed = False
+        finally:
+            # ③′ 실행 원장 — AI_RUN(+LLM_CALL). 🔴 **`agent_step`보다 먼저**다:
+            #    `AGENT_STEP.llm_call_id`가 채워지는 날 그 참조 대상이 먼저 서 있어야 한다
+            #    (지금은 항상 `None`이라 눈에 안 보인다 · counsel이 같은 순서다).
+            #    ⚠ 호출 0건이어도 남긴다 — 불변식 8은 "모든 실행"이고, 현재
+            #      `FakeProbePlanner`는 게이트웨이를 안 타 호출이 실제로 0건이다.
+            await self._record_execution(context, swallow_errors=failed)
+
         draft: MappingSpecDraft = final["spec_draft"]
 
         # ④ agent_step 영속 — 도구 호출 로그(AGENT_STEP 컬럼과 1:1, 마스킹 통과분만).
@@ -203,3 +247,39 @@ class MappingProbeRunner:
             lease_generation=job.lease_generation,
             result_ref=result_ref,
         )
+
+    async def _record_execution(
+        self, context: ExecutionContext, *, swallow_errors: bool
+    ) -> None:
+        """실행 원장 1건 — 성공·그래프 실패·상한 실패 **전부**가 부른다 (99 ㉾).
+
+        ⚠ `take(execution_id)`는 **어느 경로에서도** 불려야 한다. 안 부르면 버킷이 남아
+        수집기가 LRU로 밀어낼 때까지 방치되고, 그 축출은 경고 로그로만 나간다 —
+        counsel에서 **그 경고를 읽는 사람이 0명**이었다(8/7 전수).
+
+        🔴 **사용 축 셋은 실측값을 옮긴다.** 현재 planner는 `FakeProbePlanner`라 호출이
+        0건이고, 그러면 `model_provider`·`model_name`·`generation_params`는 **`None`이
+        정답**이다 — 조립부 설정을 여기서 재선언하면 *"그 값으로 돌렸다"* 가 **거짓**이
+        된다(99 ㊧ 계열). ⚠ **counsel처럼 `GEN_PARAMS` 상수를 두지 않았다** — probe에는
+        게이트웨이가 아직 없어 **적을 실측값 자체가 없다**. 실 planner가 붙는 회차에
+        그 자리를 채운다(없는 값을 미리 지어 두면 #22 부류다).
+
+        🔴 `swallow_errors`는 실패 경로 전용이고 **필수**다. `finally` 안에서 적재가
+        실패하면 원인 예외가 **교체**되고, `_run_guarded`가 그것을 `worker_internal_error`로
+        떨군다 — *"그래프가 상한에 걸렸다"* 가 *"워커가 알 수 없이 죽었다"* 가 된다.
+        """
+        calls = self._call_log.take(context.execution_id)
+        last = calls[-1].record if calls else None
+        try:
+            await self._runs.record_run(
+                context.to_run_metadata(
+                    created_at=self._now(),
+                    model_provider=last.provider if last is not None else None,
+                    model_name=last.model if last is not None else None,
+                ),
+                calls,
+            )
+        except Exception:  # noqa: BLE001 — 원인 예외를 덮지 않는다(위 docstring)
+            if not swallow_errors:
+                raise
+            logger.exception("실패 경로의 실행 원장 적재 실패 — 원인 예외를 유지한다")

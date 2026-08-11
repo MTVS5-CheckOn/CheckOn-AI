@@ -22,6 +22,7 @@ from ai.contracts.agents import (
     WorkerJob,
     WorkerKind,
 )
+from ai.db.repositories.run_store import InMemoryRunStore, LlmCallCollector
 from ai.import_mapping.probe.stores import (
     InMemoryAgentStepSink,
     InMemoryProfileStore,
@@ -92,6 +93,11 @@ def _harness(loop_max: int = 6) -> _Harness:
         loop_max=loop_max,
         lease_owner="worker-1",
         new_id=_counter(),
+        #: 🔴 **원장도 명시로 넣는다**(99 ㉾) — 생성자에 기본값을 두면 조립부가 안
+        #: 넘겨도 이 파일이 초록이라 **배선 결손이 검사에서 안 보인다**(#37의 형태).
+        #: ⚠ 원장 자체의 값 검증은 `test_probe_ledger.py`가 든다 — 여기는 기존 축이다.
+        run_store=InMemoryRunStore(),
+        call_log=LlmCallCollector(),
     )
     return supervisor, runner, profiles, specs, sink
 
