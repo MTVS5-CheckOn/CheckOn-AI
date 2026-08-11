@@ -47,7 +47,7 @@
 - 구조는 프로덕션 대칭(`tests/ai/unit·contract·integration·gates·golden·failure·fakes`).
 - LLM 낀 기능은 정답 비교가 아니라 **불변식 검증**(게이트·구조·근거 실존). FakeProvider 시나리오로 결정론화.
 - 골든셋(`evaluation/golden/`)의 기대값 임의 수정 금지 — threshold 시트·어휘집 버전과 연동(`docs/part_a/08_evaluation_plan.md`).
-- redaction 코퍼스 **미탐 0건 = CI 게이트.** refine 공격 케이스 A1~A7 차단 미탐 0건.
+- redaction 코퍼스 **미탐 0건 = PR 전 로컬 검증 게이트.** refine 공격 케이스 A1~A7 차단 미탐 0건.
 - 새 기능 PR에는 대응 failure 케이스(장애·소진·차단) 테스트 포함.
 
 ## 6. 코딩 컨벤션 — 상세는 `docs/03_coding_rules.md` (리뷰 반려 기준)

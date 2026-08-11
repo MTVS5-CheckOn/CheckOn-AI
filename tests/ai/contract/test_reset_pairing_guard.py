@@ -35,6 +35,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from typing import Final
 
@@ -54,11 +55,37 @@ _SHARED_RESET: Final = "reset_shared_agent_runtime"
 _SELF: Final = "test_reset_pairing_guard.py"
 
 
+def _calls_counsel_reset(source: str) -> bool:
+    """🔴 **부르는 자리만** 센다 — 산문의 언급은 호출이 아니다.
+
+    ⚠ 종전엔 파일 전체 문자열을 봤고, **docstring에서 이름을 언급만 한 파일**을
+    「짝이 없다」로 잡았다(실측 8/12 · `test_counsel_agent_step_factory.py`).
+    **오탐은 red로 보이므로** 다음 사람이 **가드를 만족시키려고 안 쓰는 함수를 부르게**
+    된다 — 그러면 가드가 규율을 지키는 게 아니라 **의식을 만든다.**
+    ⇒ `ast`로 **실제 호출·import만** 본다.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:  # pragma: no cover — 문법 오류는 다른 검사가 잡는다
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == _COUNSEL_RESET:
+                return True
+            if isinstance(func, ast.Attribute) and func.attr == _COUNSEL_RESET:
+                return True
+        if isinstance(node, ast.ImportFrom):
+            if any(alias.name == _COUNSEL_RESET for alias in node.names):
+                return True
+    return False
+
+
 def _files_referencing_counsel_reset() -> list[Path]:
     return sorted(
         path
         for path in _TESTS_ROOT.rglob("test_*.py")
-        if path.name != _SELF and _COUNSEL_RESET in path.read_text(encoding="utf-8")
+        if path.name != _SELF and _calls_counsel_reset(path.read_text(encoding="utf-8"))
     )
 
 

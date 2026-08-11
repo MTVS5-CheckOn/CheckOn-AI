@@ -5,7 +5,8 @@ infra에 무의존이고, 구체 저장소(db)와 체크포인터(agents)를 여
 worker.py·enqueue.py가 이미 ai.agents를 소비하는 것과 같은 seam이다(캐패빌리티 코어는
 여전히 db 무의존 — 이 모듈만 db.store_factory를 소비).
 
-- `store_backend=memory`(기본·CI·데모): InMemory 저장소 3종 + InMemorySaver — DB 없이 동작.
+- `store_backend=memory`(기본·오프라인 검증·데모): InMemory 저장소 3종 +
+  InMemorySaver — DB 없이 동작.
 - `store_backend=pg`: PG 저장소 3종 + AsyncPostgresSaver(agents/checkpointer).
 
 PostgresSaver가 커넥션 컨텍스트 매니저라 이 조립도 async 컨텍스트 매니저다 — 체크포인터

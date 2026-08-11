@@ -39,23 +39,30 @@ uv run ruff check . && uv run mypy .
 uv run python -m ai.evaluation.backend_sim   # 기본 3일치, 신호·lifecycle 표 출력
 ```
 
-**실 PostgreSQL 로컬 검증** (선택 — PostgreSQL 서버를 별도로 준비하고 `.env`에 `POSTGRES_*`·`DATABASE_URL`·`STORE_BACKEND=pg` 설정):
+**PR 전 로컬 검증** (필수 — GitHub Actions 대신 아래 한 명령이 전체 게이트다):
 
-> **고정 접속값(로컬 `docker-compose.yml`·CI `integration-pg` 잡 공통):** `postgres:16` · `checkon`/`checkon`/`checkon_ai` · `5432`.
-> `docker-compose.yml`은 로컬 전용(`.gitignore`)이며, **레포 안 정본은 CI 워크플로(`.github/workflows/ci.yml`)의 `services` 값**이다 — 로컬 compose가 이 값을 따라간다. 어긋나면 여기서 눈에 띄게 한다.
+> **고정 접속값:** `postgres:16` · `checkon`/`checkon`/`checkon_ai` · `5432`.
+> `docker-compose.yml`은 로컬 전용(`.gitignore`)이고 접속값 정본은 이 절이다.
 > `DATABASE_URL` 예: `postgresql+asyncpg://checkon:checkon@localhost:5432/checkon_ai`
+> 🔴 integration에는 스키마 재생성·마이그레이션 왕복이 포함된다. 검증기는 원격 호스트나
+> `checkon_ai`가 아닌 DB를 거부하지만, 이 로컬 DB도 반드시 **폐기 가능한 테스트 전용**으로 둔다.
 
 ```bash
 docker compose up -d                         # 로컬 postgres:16 (docker-compose.yml)
-uv run pytest -m integration                 # PG 왕복·재시작 생존 통합 테스트(스키마는 create_all)
+uv run --frozen python -m ai.evaluation.pre_pr_verify
 ```
+
+검증기는 ruff(`--no-cache`)·mypy(`--no-incremental`)·기본 pytest·실 PostgreSQL
+integration을 순서대로 실행합니다. `CHECKON_ALLOW_REAL_LLM`이 켜져 있으면 즉시 실패하고,
+실 LLM 보호 테스트 3건 외의 integration skip도 실패합니다. PR 본문에는 실행 OS와 두 pytest의
+pass/skip 수를 적습니다. OS 민감 변경은 macOS와 Windows에서 각각 실행합니다.
 
 **`.env` 키 (노션 공유 · 커밋 안 함):**
 
 | 키 | 용도 | 기본/비고 |
 | --- | --- | --- |
 | `DATABASE_URL` | AI PG 접속(asyncpg) | `STORE_BACKEND=pg`일 때만 실접속 |
-| `STORE_BACKEND` | 저장소 선택 | `memory`(기본·CI) \| `pg` |
+| `STORE_BACKEND` | 저장소 선택 | `memory`(기본·오프라인 테스트) \| `pg` |
 | `OPENAI_BASE_URL` | **코드가 읽는다** — OpenAI 호환 엔드포인트 | 예: `<...>/v1` |
 | `OPENAI_API_KEY` | **코드가 읽는다** — API 키 | 키를 안 받는 서버면 임의값 |
 | `OPENAI_MODEL` | **코드가 읽는다** — 모델명 | 서버·벤더 등록명 |
@@ -77,7 +84,7 @@ uv run pytest -m integration                 # PG 왕복·재시작 생존 통�
 > 옵션입니다 — 99 ⓢ.)
 
 의존성: FastAPI · SQLAlchemy(+asyncpg) · Alembic · pandas/numpy/openpyxl · LangGraph(+postgres checkpointer) · **openai(OpenAI 호환 백엔드용 — `llm/providers/`에서만 사용)**.
-**LLM 벤더 확정(7/23):** OpenAI **호환 규격**. `openai` SDK는 `llm/providers/` 안에서만 import하며, capability·contracts는 벤더 독립을 유지합니다(개발·CI 기본은 Fake/Stub). ⚠ `LLM_PROVIDER=openai_compat`은 **규격 이름**이지 벤더 고정이 아닙니다 — 접속 대상은 `OPENAI_BASE_URL`이 정합니다(8/6).
+**LLM 벤더 확정(7/23):** OpenAI **호환 규격**. `openai` SDK는 `llm/providers/` 안에서만 import하며, capability·contracts는 벤더 독립을 유지합니다(개발·PR 전 검증 기본은 Fake/Stub). ⚠ `LLM_PROVIDER=openai_compat`은 **규격 이름**이지 벤더 고정이 아닙니다 — 접속 대상은 `OPENAI_BASE_URL`이 정합니다(8/6).
 
 ## 폴더 구조 (AI 아키텍처 지시서 기준 — 소유권은 `docs/02_ownership.md`)
 

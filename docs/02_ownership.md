@@ -40,7 +40,7 @@
 | `registry/` | **박진희** | 감지 엔진(규칙→GRU) 교체 지점의 메타. A의 Phase 3 준비물 |
 | `runtime/` (metrics·redaction·errors) | 박진희 | redaction은 A의 개인정보 방어선. **(v2) `redaction_patterns.yaml`(마스킹 정의서 P1~P8)·`errors.py`(에러·상태 코드 사전 §4 구현) 포함.** 비용 지표 스키마 변경은 B 승인(§4) |
 | `agents/` (슈퍼바이저·스케줄러·공통 유틸) | **박진희** | 슈퍼바이저 구현(`supervisor.py` 스케줄링 facade·`job_store.py`)과 체크포인터·기록기는 A 단독 소유. 워커 그래프는 capability 오너(A: counsel_pack·mapping_probe, B: problem_generation)가 소유하며, 공통 Job 상태·operation·라우팅 계약은 `contracts/agents.py`에서 양자 승인 |
-| **(신설) `.github/workflows/`** (CI) | **박진희** | 전 코드 ruff·mypy·pytest(fake) 게이트를 A가 신설·주도. `ai/` 폴더 밖이라 소유 명시가 없어 여기서 닫는다(단독 오너·공동 최소화 원칙). **B capability 전용 잡 추가 시 B 리뷰.** 실 PG 통합 잡은 signal-brief 머지 후(99 ⑫) |
+| `evaluation/pre_pr_verify.py` · `.github/PULL_REQUEST_TEMPLATE.md` | **박진희** | GitHub Actions를 쓰지 않는 대신 PR 전 로컬 검증을 A가 관리한다(2026-08-12 결정). ruff·mypy·기본 pytest·실 PG integration과 허용 skip 집합이 한 명령에서 갈리지 않게 한다. **B capability 검증 축 변경 시 B 리뷰.** |
 
 ## 3. `contracts/` — 파일 단위 소유
 
