@@ -39,13 +39,17 @@ def preflight_blocks(findings: Sequence[LedgerFinding]) -> bool:
     문면은 「차단 사유 없음」이었다.
 
     **막는 것:** `violation` · `unknown` · **관측 0건**(측정 없이 관문을 열면 관문이 아니다).
-    **안 막는 것:** `separate_gap`(㉾는 별도 결손 — 섞으면 관문이 영영 안 열린다).
+    ⚠ **종전에는 「`separate_gap`은 안 막는다」가 여기 있었다** — 그 판정은 8/12에
+    없어졌다(99 ㉾ 해소). **예외 통로가 하나도 없다.**
     """
     return not findings or blocks_flip(summarize(findings))
 
 
 def render_report(findings: Sequence[LedgerFinding], *, tenant_id: str) -> str:
-    """🔴 **네 축을 각각 따로 낸다** — 합치면 어느 것이 결함인지 알 수 없다."""
+    """🔴 **네 축을 각각 따로 낸다** — 합치면 어느 것이 결함인지 알 수 없다.
+
+    ⚠ 종전엔 다섯이었다 — `separate_gap`은 8/12에 없어졌다(99 ㉾ 해소).
+    """
     counts = summarize(findings)
     lines = [
         f"# PG 원장 완전성 점검 — tenant={tenant_id}",
@@ -65,13 +69,8 @@ def render_report(findings: Sequence[LedgerFinding], *, tenant_id: str) -> str:
         f"- allowed_absence  : {counts[LedgerVerdict.ALLOWED_ABSENCE]}건 (정상 부재)",
         f"- 🔴 violation     : {counts[LedgerVerdict.VIOLATION]}건",
         f"- ⚠ unknown        : {counts[LedgerVerdict.UNKNOWN]}건 (증명 불가 — 초록이 아니다)",
-        f"- ⚠ separate_gap   : {counts[LedgerVerdict.SEPARATE_GAP]}건 (mapping_probe · 99 ㉾)",
     ]
-    for verdict in (
-        LedgerVerdict.VIOLATION,
-        LedgerVerdict.UNKNOWN,
-        LedgerVerdict.SEPARATE_GAP,
-    ):
+    for verdict in (LedgerVerdict.VIOLATION, LedgerVerdict.UNKNOWN):
         rows = [f for f in findings if f.verdict is verdict]
         if not rows:
             continue
@@ -96,7 +95,7 @@ def render_report(findings: Sequence[LedgerFinding], *, tenant_id: str) -> str:
         "---",
         "",
         judgement,
-        "⚠ separate_gap은 이 관문을 막지 않는다 — ㉾는 별도 결손이다.",
+        "⚠ 예외 통로는 없다 — `mapping_probe`도 같은 규칙으로 판정한다(99 ㉾ 해소).",
     ]
     return "\n".join(lines)
 

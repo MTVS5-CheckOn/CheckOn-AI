@@ -24,7 +24,6 @@ from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
 from ai.api.version_scope import RouterScope
-from ai.contracts.execution import VersionSet
 from ai.contracts.imports import (
     ConfirmRequest,
     ImportCreateRequest,
@@ -58,19 +57,16 @@ from ai.import_mapping.signature import (
     form_signature,
 )
 from ai.import_mapping.state import assert_transition
+
+#: 🔴 **정본은 capability 쪽이다**(99 ㉾) — 조사 워커가 같은 함수를 읽는다.
+#: 여기서 재선언하면 응답 `meta.versions`와 `AI_RUN.versions`가 갈린다(99 #20).
+from ai.import_mapping.versions import import_versions
 from ai.runtime.errors import IdempotencyConflict, NotFound, SnapshotInvalid
 from ai.runtime.redaction import redact
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_PIPELINE_VERSION = "0.1.0"
-_ENGINE_VERSION = "import-mapping-0.1"
-_SCHEMA_VERSION = "0.1"
-_CONTRACT_VERSION = "0.1"
-_PROMPT_VERSION = "mapping-0.1"
-_TAXONOMY_VERSION = "taxonomy-0.1"
 
 _POST_ENDPOINT = "POST /v1/imports"
 _CONFIRM_ENDPOINT = "POST /v1/imports/confirm"
@@ -133,18 +129,6 @@ def reset_import_stores() -> None:
     _probe_enqueuer = None
 
 
-def import_versions() -> VersionSet:
-    """Import 엔드포인트 버전 세트 — engine/threshold/graph 등 미해당 키는 None(§2.2)."""
-    return VersionSet(
-        pipeline_version=_PIPELINE_VERSION,
-        engine_version=_ENGINE_VERSION,
-        schema_version=_SCHEMA_VERSION,
-        contract_version=_CONTRACT_VERSION,
-        prompt_version=_PROMPT_VERSION,
-        taxonomy_version=_TAXONOMY_VERSION,
-    )
-
-
 def _require_headers(request: Request, names: tuple[str, ...]) -> None:
     missing = [name for name in names if not request.headers.get(name)]
     if missing:
@@ -157,6 +141,22 @@ def _body_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _envelope_execution_id(job: ImportJob) -> str:
+    """🔴 **응답이 싣는 ID를 고르는 자리는 여기 하나다** (99 ㉾ · ㊯).
+
+    | 상태 | 싣는 값 | 부류 |
+    | --- | --- | --- |
+    | 조사 잡을 띄웠다 | `WorkerJob.execution_id` | **실행 원장 키**(AI_RUN PK와 일치) |
+    | 안 띄웠다 | `ImportJob.job_id` | **상관 ID**(가리킬 실행이 없다) |
+
+    ⚠ **POST·GET·멱등 재응답이 전부 이 함수를 지난다** — 한 곳만 고치면 같은 잡이
+    조회 방식에 따라 다른 ID를 말한다(99 #02가 다섯 번 잡은 형태).
+    ⚠ **없는 실행을 지어내지 않는다** — `preview_ready`·`file_unreadable`은 워커도 LLM도
+    안 타므로 원장에 행이 **없는 것이 정상**이다.
+    """
+    return job.execution_id or job.job_id
+
+
 def _view_body(job: ImportJob) -> dict[str, Any]:
     view = ImportJobView(
         job_id=job.job_id,
@@ -166,17 +166,10 @@ def _view_body(job: ImportJob) -> dict[str, Any]:
     )
     return success_envelope(
         view.model_dump(mode="json"),
-        # 🔴 **의도적으로 `job_id`다 — 이 축은 원장을 쓰지 않는다**(99 ㊯ · 04 §2.2
-        #    「상관 ID」 부류). 라우터·조사 워커 어디에도 `AI_RUN`·`ExecutionContext`
-        #    참조가 없고(99 ㉾), `ImportJob`에는 `execution_id` 필드 자체가 없다.
-        #    ⇒ *"가리킬 실행이 없다"* 가 정상 상태이고, `job_id`는 **안정적**이라
-        #    (반복 조회가 같은 값) 상관 ID로 기능한다 — counsel의 `correlation_id`와
-        #    같은 역할이다.
-        # ⚠ **`str()`이 없는 것도 의도다** — `ImportJob.job_id`는 이미 `str`이라
-        #    변환이 무의미하다(다른 라우터는 `UUID`를 들고 있어 `str(...)`이 필요하다).
-        #    형태가 갈려 보이지만 **타입이 다른 것**이지 표기 실수가 아니다.
-        # 🔴 ㉾가 해소돼 이 축이 원장을 남기게 되면 **여기를 그 `execution_id`로 바꾼다.**
-        execution_id=job.job_id,
+        # 🔴 **부류가 둘이다 — 고르는 자리는 `_envelope_execution_id` 하나다**(99 ㉾ 해소 8/12).
+        #    종전에는 여기가 무조건 `job.job_id`였고 그 주석은 *"이 축은 원장을 쓰지
+        #    않는다"* 였다 — **그건 조사 워커가 `record_run()`을 안 부르던 동안 사실**이었다.
+        execution_id=_envelope_execution_id(job),
         versions=import_versions(),
     )
 
@@ -247,6 +240,9 @@ async def post_import(request: Request) -> dict[str, Any]:
                 tenant_id=tenant_id, profile=profile, file_hash=body_hash
             )
             job.status = ImportStatus.PROBING
+            #: 🔴 **조사 잡의 실행 신원을 보존한다**(99 ㉾) — 이 값이 없으면 응답이
+            #: 가리킬 원장 키가 사라지고, 워커가 AI_RUN을 남겨도 **아무도 그 행을 못 찾는다.**
+            job.execution_id = str(probe_job.execution_id)
             logger.info("import probing enqueue job=%s probe=%s", job.job_id, probe_job.job_id)
         elif outcome.needs_probing:
             logger.info("import probing 대상(enqueuer 미배선 — preview 유지) job=%s", job.job_id)

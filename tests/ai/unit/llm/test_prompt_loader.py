@@ -20,7 +20,7 @@ REGISTRY_PATH = PROMPTS_ROOT / "registry.yaml"
 TEMPLATES_ROOT = PROMPTS_ROOT / "templates"
 
 
-def test_problem_generation_registry_has_three_versioned_prompts() -> None:
+def test_problem_generation_registry_has_four_versioned_prompts() -> None:
     registry = load_prompt_registry(REGISTRY_PATH)
 
     # ⚠ registry에는 pg 외 프롬프트도 산다(classify 등) — **pg.* 만** 본다.
@@ -30,6 +30,7 @@ def test_problem_generation_registry_has_three_versioned_prompts() -> None:
         if entry.prompt_id.startswith("pg.")
     } == {
         "pg.passage.v1",
+        "pg.source_material.v1",
         "pg.items.v1",
         "pg.cross_solve.v1",
     }
@@ -57,6 +58,15 @@ def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
         (
             "pg.passage.v1",
             {"context_pack_json", "passage_request_json", "banned_topics_json"},
+        ),
+        (
+            "pg.source_material.v1",
+            {
+                "area_spec_block",
+                "context_pack_json",
+                "source_request_json",
+                "banned_topics_json",
+            },
         ),
         (
             "pg.items.v1",

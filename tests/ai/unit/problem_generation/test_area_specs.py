@@ -19,7 +19,7 @@ from pydantic import ValidationError
 
 from ai.contracts.taxonomy import AreaTag
 from ai.problem_generation.application.generator import render_area_spec
-from ai.problem_generation.domain.policy import AreaSpecs
+from ai.problem_generation.domain.policy import SUPPORTED_AREAS, AreaSpecs
 from ai.problem_generation.infrastructure.config import (
     VerificationConfigError,
     load_area_specs,
@@ -41,6 +41,12 @@ def test_every_area_has_a_spec() -> None:
     assert set(specs.areas) == set(AreaTag), (
         "출제 규격과 AreaTag가 다르다 — area_specs.yaml을 같이 고쳐야 한다"
     )
+
+
+def test_problem_generation_supports_every_area() -> None:
+    """자료 조달 구현과 AreaTag가 갈리면 약점 진단 뒤 출제가 다시 끊긴다."""
+
+    assert SUPPORTED_AREAS == set(AreaTag)
 
 
 def test_a_missing_area_fails_closed() -> None:

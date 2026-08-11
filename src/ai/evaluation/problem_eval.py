@@ -15,6 +15,7 @@ _EXPECTED_CASE_IDS: dict[str, tuple[str, ...]] = {
     "graphrag": tuple(f"GR{index}" for index in range(1, 12)),
     "suneung_format": tuple(f"SF{index}" for index in range(1, 7)),
     "passage_generation": ("PG1", "PG2"),
+    "source_material_generation": ("SM1", "SM2", "SM3", "SM4"),
     "literature_selection": ("LS1", "LS2"),
 }
 
@@ -77,7 +78,7 @@ class ProblemGoldenCase(BaseModel):
 
     case_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
-    track: Literal["T1", "T2", "T3"]
+    track: Literal["T1", "T2", "T3", "T4", "T5"]
     item_format: Literal["mcq"] = "mcq"
     review_status: Literal["expert_review_pending"]
     format_features: tuple[SuneungFormatFeature, ...] = ()
@@ -125,7 +126,7 @@ class PromptSnapshotEntry(BaseModel):
 
 
 class PromptSnapshotManifest(BaseModel):
-    """문제출제 프롬프트 3종 스냅숏 목록."""
+    """문제출제 프롬프트 스냅숏 목록."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -204,11 +205,12 @@ def _load_prompt_snapshots(root: Path) -> PromptSnapshotManifest:
 
     expected_prompt_ids = {
         "pg.passage.v1",
+        "pg.source_material.v1",
         "pg.items.v1",
         "pg.cross_solve.v1",
     }
     actual_prompt_ids = {snapshot.prompt_id for snapshot in manifest.snapshots}
-    if actual_prompt_ids != expected_prompt_ids or len(manifest.snapshots) != 3:
+    if actual_prompt_ids != expected_prompt_ids or len(manifest.snapshots) != 4:
         raise ProblemGoldenError(
             f"프롬프트 스냅숏 ID 불일치: {sorted(actual_prompt_ids)}"
         )

@@ -86,8 +86,10 @@ def test_profile_store_roundtrip() -> None:
         rec = _profile_record(pid, tenant)
         ref = await store.put(rec)  # type: ignore[arg-type]
         assert ref == f"profile://{pid}"
-        assert await store.get(ref) == rec
-        assert await store.get(f"profile://{uuid.uuid4()}") is None
+        assert await store.get(ref, tenant_id=tenant) == rec
+        assert await store.get(f"profile://{uuid.uuid4()}", tenant_id=tenant) is None
+        #: 🔴 **술어가 SQL에 걸린다**(99 #40) — 남의 테넌트로는 같은 ref가 안 풀린다.
+        assert await store.get(ref, tenant_id=f"{tenant}-stranger") is None
 
     _run(scenario)
 
@@ -109,7 +111,8 @@ def test_spec_store_roundtrip() -> None:
         )
         ref = await store.put(rec)
         assert ref == f"spec://{sid}"
-        assert await store.get(ref) == rec
+        assert await store.get(ref, tenant_id=rec.tenant_id) == rec
+        assert await store.get(ref, tenant_id=f"{rec.tenant_id}-stranger") is None
 
     _run(scenario)
 

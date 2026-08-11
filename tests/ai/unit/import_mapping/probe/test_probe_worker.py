@@ -22,6 +22,7 @@ from ai.contracts.agents import (
     WorkerJob,
     WorkerKind,
 )
+from ai.db.repositories.run_store import InMemoryRunStore, LlmCallCollector
 from ai.import_mapping.probe.stores import (
     InMemoryAgentStepSink,
     InMemoryProfileStore,
@@ -92,6 +93,11 @@ def _harness(loop_max: int = 6) -> _Harness:
         loop_max=loop_max,
         lease_owner="worker-1",
         new_id=_counter(),
+        #: 🔴 **원장도 명시로 넣는다**(99 ㉾) — 생성자에 기본값을 두면 조립부가 안
+        #: 넘겨도 이 파일이 초록이라 **배선 결손이 검사에서 안 보인다**(#37의 형태).
+        #: ⚠ 원장 자체의 값 검증은 `test_probe_ledger.py`가 든다 — 여기는 기존 축이다.
+        run_store=InMemoryRunStore(),
+        call_log=LlmCallCollector(),
     )
     return supervisor, runner, profiles, specs, sink
 
@@ -131,7 +137,7 @@ def test_run_next_succeeds_with_result_ref() -> None:
     done = _run(scenario())
     assert done is not None and done.phase is JobPhase.SUCCEEDED
     assert done.result_ref is not None and done.result_ref.startswith("spec://")
-    spec = _run(specs.get(done.result_ref))
+    spec = _run(specs.get(done.result_ref, tenant_id="t1"))
     assert spec is not None and spec.status == "succeeded"
     assert spec.probe_agent_run == UUID(int=5)  # AGENT_RUN.id(=job_id) 링크
     assert len(spec.spec["resolved"]) == 5 and spec.spec["unresolved"] == []
@@ -166,7 +172,7 @@ def test_partial_unresolved_still_succeeds() -> None:
 
     done = _run(scenario())
     assert done is not None and done.phase is JobPhase.SUCCEEDED
-    spec = _run(specs.get(done.result_ref or ""))
+    spec = _run(specs.get(done.result_ref or "", tenant_id="t1"))
     assert spec is not None and len(spec.spec["unresolved"]) == 3
 
 

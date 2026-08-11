@@ -56,7 +56,10 @@ from ai.problem_generation.application import workflow as workflow_module
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import ProblemGenerator
 from ai.problem_generation.application.literature_selector import LiteratureSelector
-from ai.problem_generation.application.passage_generator import PassageGenerator
+from ai.problem_generation.application.passage_generator import (
+    PassageGenerator,
+    SourceMaterialGenerator,
+)
 from ai.problem_generation.application.workflow import (
     SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
     ProblemExecutionContextMismatch,
@@ -145,10 +148,16 @@ class _WorkflowHarness:
         )
         self.verify_config = config
         self.banned_topics = load_banned_topics()
-        self.generator = ProblemGenerator(gateway, area_specs=load_area_specs())
+        area_specs = load_area_specs()
+        self.generator = ProblemGenerator(gateway, area_specs=area_specs)
         self.passage_generator = PassageGenerator(
             gateway,
             banned_topics=self.banned_topics,
+        )
+        self.source_material_generator = SourceMaterialGenerator(
+            gateway,
+            banned_topics=self.banned_topics,
+            area_specs=area_specs,
         )
         self.literature_selector = LiteratureSelector(load_literature_pool())
         self.cross_solver = BlindCrossSolver(gateway)
@@ -157,6 +166,7 @@ class _WorkflowHarness:
             graph_context=self.graph,
             generator=self.generator,
             passage_generator=self.passage_generator,
+            source_material_generator=self.source_material_generator,
             literature_selector=self.literature_selector,
             cross_solver=self.cross_solver,
             candidate_store=self.candidates,
@@ -827,6 +837,7 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
         graph_context=harness.graph,
         generator=harness.generator,
         passage_generator=harness.passage_generator,
+        source_material_generator=harness.source_material_generator,
         literature_selector=harness.literature_selector,
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,
@@ -876,6 +887,7 @@ def test_unmapped_reference_node_converges_to_rejected_insufficient() -> None:
         graph_context=GrammarNormGraphContextService(),
         generator=harness.generator,
         passage_generator=harness.passage_generator,
+        source_material_generator=harness.source_material_generator,
         literature_selector=harness.literature_selector,
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,

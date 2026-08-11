@@ -39,7 +39,7 @@ PostgreSQL 통합 검사 결과를 본다. ⚠ **과거 CI 실행을 인용한 �
 | --- | --- | --- | --- |
 | **G1** ✅ **(#201)** | `agent_run`의 **`fk_agent_run_run_id_ai_run` 제약만 제거** — `run_id`는 **NOT NULL 유지**, 값도 **`job.execution_id` 유지**, **나머지 `AI_RUN` FK 다섯은 유지** | 🔴 **B(준영님)** | ✅ **완료** — ORM FK 0건 · 실 PG `pg_constraint` 0건 · **나머지 다섯 유지**(양쪽 확인) |
 | **G2** ✅ | **생애주기 기반 원장 완전성 점검**(FK 흉내가 아니다 — 아래) | 🔴 **A** | ✅ **완료** — 실 PG **8 passed · xfail 0** · 고아 감시가 **실제 pass로 전환** |
-| **G3** ✅ | counsel · probe · problem_generation **실제 enqueue 재검증**(실 PG) | **A** | ✅ **완료** — 실제 Enqueuer→`PgJobStore`→runner→원장. counsel·PG `ok` · probe `separate_gap` · **violation 0 · unknown 0** |
+| **G3** ✅ | counsel · probe · problem_generation **실제 enqueue 재검증**(실 PG) | **A** | ✅ **완료** — 실제 Enqueuer→`PgJobStore`→runner→원장. **현재: 셋 다 `ok` · violation 0 · unknown 0** (8/12 · ㉾ 해소 뒤). ⚠ **8/11 최초 실측은 `counsel`·`PG` `ok` · `probe` `separate_gap`이었다** — 그때는 조사 워커가 원장을 안 썼다. `separate_gap` 판정값 자체가 없어졌다 |
 
 🔴 **G1 없이는 첫 요청부터 죽는다** — 실측(8/10 · Fake provider · 실 LLM 0):
 `POST /v1/counsel/drafts` → **HTTP 500** · `SQLSTATE 23503` · `fk_agent_run_run_id_ai_run`.
@@ -56,7 +56,7 @@ PostgreSQL 통합 검사 결과를 본다. ⚠ **과거 CI 실행을 인용한 �
 | **실제 LLM 호출을 소비했는데 없음** | 🔴 **red** |
 | **`succeeded`인 counsel / problem_generation인데 없음** | 🔴 **red** |
 | `failed` | ⚠ **호출 여부와 함께** 판정 — 실패 경로는 `swallow_errors=True`라 **적재 실패를 삼켜** 상태만으로는 안 갈린다 |
-| `mapping_probe` | ⚠ **㉾로 명시 보고** · 별도 구현 전까지 **이 관문과 안 섞는다** |
+| **`succeeded`인 `mapping_probe`인데 없음** | 🔴 **red** — ✅ **(8/12 · ㉾ 해소)** 종전엔 *"㉾로 명시 보고 · 이 관문과 안 섞는다"* 였고, 그건 그 워커가 원장을 안 쓰던 동안 옳았다 |
 
 **소유 A** · 위치는 **매 쓰기 저장소가 아니라 별도 PG 원장 점검** ·
 **첫 리더는 이 preflight** · 운영 리더는 배포 후 **점검 명령/리포트**.
@@ -74,13 +74,17 @@ PostgreSQL 통합 검사 결과를 본다. ⚠ **과거 CI 실행을 인용한 �
 ⚠ **G3를 「관측」으로 대체하지 마라** — 지금까지 PG 왕복 테스트가 **손으로 `AI_RUN` 부모를
 선삽입**해서 이 결함을 못 봤다. **실제 enqueue 경로**로 다시 확인해야 한다.
 
-### ⚠ `mapping_probe`의 `AI_RUN`은 **이 관문이 아니다** (99 ㉾)
+### ✅ `mapping_probe`의 `AI_RUN` — **8/12에 닫혔다** (99 ㉾)
 
-`mapping_probe`는 `record_run()` 호출이 **0건**이라 `AI_RUN`이 영영 안 생긴다.
-🔴 **G1이 서면 enqueue 차단은 풀리지만 그 사실은 그대로 남는다** ⇒ **별도 A 작업**이다.
+⚠ **아래는 8/8~8/11의 사실이고 지금은 과거다** — *"`record_run()` 호출이 0건이라 `AI_RUN`이
+영영 안 생긴다. G1이 서면 enqueue 차단은 풀리지만 그 사실은 그대로 남는다 ⇒ 별도 A 작업이다.
+그러므로 전면 플립 성공을 「모든 실행 원장이 완성됐다」로 부르면 안 된다."*
 
-⚠ **그러므로 전면 플립 성공을 「모든 실행 원장이 완성됐다」로 부르면 안 된다.**
-플립이 여는 것은 **잡이 PG에 앉는 것**이고, **㉾와 불변식 8은 그때도 안 닫힌다.**
+**지금은 조사 잡 한 건이 `AI_RUN` 한 행을 남긴다**(`capability=import_mapping` ·
+`execution_id = WorkerJob.execution_id` · `input_snapshot_hash = payload_hash`).
+`separate_gap` 판정값은 **생산자가 0이 되어 없앴다** — 예외 통로가 하나도 없다.
+⚠ 여전히 **planner는 Fake**라 그 실행의 LLM 호출은 0건이고 사용 축 셋은 `None`이다
+(실 planner는 별건). ⚠ **⑱**(공통 `AgentStepRecord` 승격)도 그대로 미해소다.
 
 ---
 
@@ -192,17 +196,84 @@ pack_miss_absent · pack_miss_foreign →  None  →  수      (PG 저장소가 
 | **G3** counsel·probe·problem_generation **실제 enqueue** | ✅ **#202** |
 | **#36** | ✅ **해소** |
 | **#37** counsel `AGENT_STEP` PG 배선 | ✅ **해소** — 공용 저수준 + capability별 adapter · 라우터 초기값·reset 둘 다 빌더 |
-| **㉾** `mapping_probe` 원장 | ☐ **별건** |
-| ㉿ · ㉬ · ㉻ | ☐ **기본 PG 플립 뒤 실측** |
+| **㉾** `mapping_probe` 원장 | ✅ **8/12 해소** — 잡 1건 = `AI_RUN` 1행 · 감사 `ok` · `separate_gap` 제거 |
+| **기본값 플립** `STORE_BACKEND=pg` | ✅ **8/12 · 99 #39** — 선언 기본값 `pg` · 명시 `memory` 계속 지원 |
+| **㉿** (ⓐⓑⓒ 8/10 · **ⓓ 8/12**) | ✅ **해소** — 멱등 202 뒤 다른 인스턴스 GET **200 · 값 동일** |
+| **㉬** 정정 루프 교차 인스턴스 | ✅ **해소** — A `/v1/classify` → B `/v1/confirmations` **200 accepted** |
+| **㉻** 늦은 성공 본문 | ☐ **미해소 — 원인 확정(8/12)**: `ContextStore`·`DraftResultStore`가 **팩토리를 안 탄다** + 대응 스키마 부재 |
 
 ⚠ **㉬·㉻·㉿는 플립을 막지 않는다** — 인메모리에서도 이미 그 상태이고 플립이 나쁘게
 만들지 않는다(㉬는 오히려 좋아진다).
 ⚠ **G1이 막던 관문이었다**(과거) — `8ec3bd0`(#201)로 열렸다.
 ✅ **#37도 해소됐다**(8/12) — 🔴 **플립 전 코드 관문은 전부 닫혔다.**
-⏭ **다음은 `STORE_BACKEND` 기본값 플립과 ㉿ⓓ·㉬·㉻ 실측**이다.
+
+## 🔴 플립했다 (2026-08-12 · 99 #39)
+
+**선언 기본값이 `pg`다.** 실 PG · 환경 변수를 지운 기본 설정 · **서로 다른 앱 인스턴스**로 쟀다.
+
+| 잰 것 | 결과 |
+| --- | --- |
+| 팩토리 **11종** 기본 조립 | **전부 PG** · 명시 `memory`에서 **전부 종전 구현** |
+| `store_backend` 분기 **15곳** | 팩토리 11 + 안 부르는 4곳(**사유 명시** — `_open_saver` 셋은 커넥션을 여는 async 컨텍스트) |
+| **㉿ ⓓ** 멱등 재요청 | **202** · `job_id`·`execution_id` 최초와 동일 · **다른 인스턴스 GET 200**, 본문·인용 **값 동일** |
+| **㉬** 정정 루프 | A `/v1/classify` → B `/v1/confirmations` **200 · accepted** (종전 404) |
+| counsel 교차 인스턴스 | A POST → B GET·**refine 200** → C GET · 다른 테넌트 **404** |
+| **㉻** 늦은 성공 | 🔴 **미해소** — 아래 |
+| 접속 실패 | **memory로 강등되지 않는다**(PG 저장소 그대로 · 예외가 올라온다) |
+| 부모 없는 `AGENT_STEP` | **FK가 거부한다**(G1이 지운 것은 `agent_run.run_id → ai_run` **하나**다) |
+
+🔴 **「pg로 켰다」와 「전부 PG다」는 다른 사실이다.** `api/routers/counsel.py`의
+**`_context_store`·`_draft_store`는 초기값도 reset도 인메모리 리터럴**이라 `store_backend`
+분기를 **아예 안 탄다**(위 §0의 「바뀌지 않는 것」에 **두 줄이 더 있었다**). 그래서
+**다른 프로세스의 워커는 잡을 실행조차 못 한다** — 실측 `error_code=context_bundle_missing`.
+인메모리 저장소를 손으로 인계해 완주시켜도 GET은 **`result=None`**이다.
+⚠ **PG 구현을 만들 수 없다** — `ContextBundleRecord`는 대응 테이블이 없고
+`DraftRecord.content`는 갈 컬럼이 없다(㉿가 8/9에 실측한 그 결손) ⇒ **양자 승인 + 마이그레이션**.
+
+### 🔴 배포 선행 단계 하나가 새로 필수가 됐다 — 명령이 생겼다
+
+```bash
+uv run --frozen python -m ai.agents.checkpointer
+```
+
+| | |
+| --- | --- |
+| **언제** | **새 DB에서 앱·워커를 시작하기 전에** 한 번 |
+| **Alembic과** | **별도 단계다** — LangGraph가 자기 테이블을 소유한다(`Base.metadata`에 없다) |
+| **재실행** | **가능하다**(멱등 · 실측 2회 exit 0) |
+| **실패하면** | **종료 코드 1 · 배포를 중단한다**(성공 문면을 같이 내지 않는다) |
+| **앱 startup** | **자동 DDL이 아니다** — 붙이지 않았다(`api/app.py`는 양자 승인) |
+| **`STORE_BACKEND`** | **안 본다** — `memory`로 도는 배포에서도 다음 플립을 위해 미리 준비할 수 있다 |
+
+⚠ **접속정보를 콘솔에 안 찍는다** — 실패 문면은 **예외 타입만** 낸다.
+
+`STORE_BACKEND=pg`에서는 세 capability의 체크포인터가 **`AsyncPostgresSaver`** 다.
+안 돌리면 실측한 그대로다:
+
+```
+psycopg.errors.UndefinedTable: relation "checkpoints" does not exist
+→ counsel_pack 워커 미분류 실패 → error_code=worker_internal_error
+```
+
+**실측(8/12)** — 체크포인터 테이블만 지운 상태(애플리케이션 38테이블 유지):
+**CLI 생략 → 상담 잡 `failed`** · **CLI 1회 → 네 테이블 생성 · 잡 `succeeded`** · **CLI 2회 → exit 0**.
+⚠ **테이블 이름 하나로 판정하지 않았다** — `setup()`이 만드는 **집합 전체**를 보고,
+**마지막에 상담 잡을 실제로 돌려** 그 집합이 충분한지 확인했다.
+
+⚠ **조용하다** — 기동은 정상이고 POST도 **202**다. 응답이 500이 아니라 **「실패한 잡」**이다.
+
+🔴 **종전 가드는 거짓 green이었다** — *"호출처가 하나 이상"* 을 저장소 전체 문자열로 셌더니
+**자기 docstring**과 **통합 테스트**가 운영 호출처로 계산됐다(실측: 실제 호출 **0건**인데 통과).
+⇒ 이제 **「배포 명령이 정해진 초기화 함수를 실행하는가」**를 AST로 묻는다.
+
+⚠ **오프라인 회귀는 `memory`로 돈다** — `tests/conftest.py`가 **명시로** 건다(플립 직후
+**151건 red** 실측 · 기존 검사들이 memory 전제로 쓰였다). 플립 전용 검사는 그 핀을 **지우고** 돈다.
+
+⏭ **다음은 ㉻의 스키마 결정**(`docs/handoff/2026-08-09_read_model_persistence_schema_ask.md`)
+**이다**(㉾는 8/12에 닫혔다).
 
 🔴 **플립 전에 선택기를 fail-closed로 고정했다**(8/12 · #38) — 종전엔 `pgg`·`PG`·`postgres`·
 `"memory "`·`""` 가 **전부 조용히 memory로 강등**됐다. 기본값이 `pg`가 된 뒤에는 그 강등이
 **설정 오타 하나로 영속성을 통째로 끄는** 사고가 된다. 이제 **기동 설정 오류로 거부**한다.
 ⚠ **이 회차에 기본값은 안 바꿨다** — 검증과 플립을 한 커밋에 묶으면 실패 원인이 갈린다.
-⚠ **㉾는 미해소지만 플립 차단 항목이 아니다**(별도 결손 · 판정 ③ 그대로).
+⚠ **㉾는 8/12에 해소됐다** — 종전 이 자리는 *"미해소지만 플립 차단 항목이 아니다"* 였다.

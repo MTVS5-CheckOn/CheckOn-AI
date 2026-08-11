@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -13,9 +14,12 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.contracts.diagnosis import (
     CellVerdict,
+    DiagnosisEvent,
+    DiagnosisInput,
     DiagnosisResult,
     DiagnosisStatus,
     NodeVerdict,
+    Period,
     WeaknessCell,
     WeaknessMap,
     WeaknessNode,
@@ -28,6 +32,8 @@ from ai.contracts.problem_generation import (
     EvidenceAnchor,
     EvidenceKind,
     GeneratedItem,
+    MediaSourceKind,
+    MediaSourceRequest,
     PassageDomain,
     PassageDraft,
     PassageRequest,
@@ -37,10 +43,16 @@ from ai.contracts.problem_generation import (
     ProblemSetStatus,
     SentenceComplexity,
     SolveResult,
+    SourceMaterialDraft,
+    SourceMaterialRequest,
+    SpeechWritingSourceKind,
+    SpeechWritingSourceRequest,
     TargetKind,
     TargetSource,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
+from ai.diagnosis.diagnoser import DiagnosisConfig, diagnose
+from ai.diagnosis.skill_graph import load_skill_graph
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.bootstrap import build_problem_workflow
 from ai.problem_generation.infrastructure.config import load_verify_config
@@ -56,10 +68,18 @@ sys.path.insert(0, str(_FAKES_DIR))
 from fake_graph_context import FakeGraphContextService  # noqa: E402
 from fake_provider import FakeProvider  # noqa: E402
 
-_GRAPH_VERSION = "curriculum-graph.v1"
+_GRAPH_VERSION = "curriculum-five-area-v1"
 _SKILL_NODE_ID = "grammar.sentence-structure"
 _SNAPSHOT_HASH = "snapshot-pg-bootstrap-smoke"
-_TAXONOMY_VERSION = "taxonomy-v1"
+_TAXONOMY_VERSION = "v1"
+_GRAPH_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "ai"
+    / "diagnosis"
+    / "data"
+    / "curriculum_graph.yaml"
+)
 
 
 async def _diagnose(_: ProblemRequest) -> DiagnosisResult:
@@ -229,6 +249,197 @@ def _solve_result_json() -> str:
     ).model_dump_json()
 
 
+def _source_material_request(area_tag: AreaTag, skill_node_id: str) -> ProblemRequest:
+    source_request: SourceMaterialRequest
+    if area_tag is AreaTag.SPEECH_WRITING:
+        source_request = SpeechWritingSourceRequest(
+            source_kind=SpeechWritingSourceKind.PRESENTATION,
+            topic_hint="교내 자원 절약",
+            banned_topics_version="pg-banned-v1",
+        )
+    elif area_tag is AreaTag.MEDIA:
+        source_request = MediaSourceRequest(
+            source_kind=MediaSourceKind.PAIRED,
+            topic_hint="온라인 정보 검증",
+            banned_topics_version="pg-banned-v1",
+        )
+    else:
+        raise AssertionError(f"생성 자료를 지원하지 않는 테스트 영역: {area_tag.value}")
+    return ProblemRequest(
+        request_id=f"req-pg-{area_tag.value}-smoke",
+        idempotency_key=f"idem-pg-{area_tag.value}-smoke",
+        tenant_id="tenant-pg-smoke",
+        target_kind=TargetKind.STUDENT,
+        target_ref="student-pg-smoke",
+        target_source=TargetSource.WEAKNESS_AUTO,
+        snapshot_hash=_SNAPSHOT_HASH,
+        taxonomy_version=_TAXONOMY_VERSION,
+        area_tag=area_tag,
+        type_tags=(TypeTag.CRITIC,),
+        item_format=ItemFormat.MCQ,
+        count=1,
+        passage=source_request,
+    )
+
+
+def _source_material_item_json(area_tag: AreaTag, skill_node_id: str) -> str:
+    return GeneratedItem(
+        area_tag=area_tag,
+        type_tag=TypeTag.CRITIC,
+        item_format=ItemFormat.MCQ,
+        skill_node_id=skill_node_id,
+        stem="제시된 자료의 정보 활용 방식으로 적절한 것을 고르시오.",
+        choices=tuple(
+            Choice(
+                no=no,
+                text=f"자료 활용 방식에 대한 선택지 {no}",
+                why_wrong=None if no == 1 else f"{no}번은 승인 근거와 다르다.",
+            )
+            for no in range(1, 6)
+        ),
+        answer=Answer(correct_no=1),
+        rationale="승인된 자료 근거에 따르면 1번이 옳다.",
+        evidence=(
+            EvidenceAnchor(
+                kind=EvidenceKind.PASSAGE_SPAN,
+                ref="grammar:rule-1",
+                quote="승인된 자료 근거",
+            ),
+        ),
+    ).model_dump_json()
+
+
+def _source_material_solve_json(skill_node_id: str) -> str:
+    return SolveResult(
+        chosen=1,
+        reasoning="자료와 선택지를 독립적으로 대조했다.",
+        confidence=0.95,
+        target_skill_node_id=skill_node_id,
+        measured_skill_node_id=skill_node_id,
+        aligned=True,
+        alignment_confidence=0.95,
+        alignment_reason="진단에서 산출한 비언어 영역 노드와 일치한다.",
+    ).model_dump_json()
+
+
+def _actual_diagnosis(
+    area_tag: AreaTag,
+    skill_node_id: str,
+    comparison_node_id: str,
+) -> DiagnosisResult:
+    now = datetime(2026, 8, 12, tzinfo=UTC)
+    events = tuple(
+        DiagnosisEvent(
+            event_id=f"weak-{index}",
+            area_tag=area_tag,
+            type_tag=TypeTag.CRITIC,
+            skill_node_id=skill_node_id,
+            correct=False,
+            occurred_at=now,
+            tag_confirmed=True,
+        )
+        for index in range(10)
+    ) + tuple(
+        DiagnosisEvent(
+            event_id=f"ok-{index}",
+            area_tag=area_tag,
+            type_tag=TypeTag.FACT,
+            skill_node_id=comparison_node_id,
+            correct=True,
+            occurred_at=now,
+            tag_confirmed=True,
+        )
+        for index in range(10)
+    )
+    verify_config = load_verify_config()
+    result = diagnose(
+        DiagnosisInput(
+            tenant_id="tenant-pg-smoke",
+            student_ref="student-pg-smoke",
+            period=Period(from_date=date(2026, 8, 1), to_date=date(2026, 8, 12)),
+            as_of=now,
+            snapshot_hash=_SNAPSHOT_HASH,
+            events=events,
+        ),
+        load_skill_graph(_GRAPH_PATH, expected_taxonomy_version=_TAXONOMY_VERSION),
+        DiagnosisConfig(
+            cell_min_items=10,
+            relative_cut_pp=verify_config.diag_relative_cut_pp,
+            severity_saturation=verify_config.diag_severity_saturation,
+            decay=verify_config.diag_decay,
+            propagate_threshold=verify_config.diag_propagate_threshold,
+            suspect_damping=verify_config.diag_suspect_damping,
+            node_min_items=verify_config.node_min_items,
+        ),
+        graph_version=_GRAPH_VERSION,
+        taxonomy_version=_TAXONOMY_VERSION,
+        config_version=verify_config.version,
+    )
+    assert result.weakness_map is not None
+    assert result.weakness_map.nodes[skill_node_id].verdict is NodeVerdict.WEAK_CONFIRMED
+    return result
+
+
+async def _run_source_material_smoke(
+    area_tag: AreaTag,
+    skill_node_id: str,
+    comparison_node_id: str,
+) -> None:
+    diagnosis_result = _actual_diagnosis(
+        area_tag,
+        skill_node_id,
+        comparison_node_id,
+    )
+
+    async def diagnose_request(_: ProblemRequest) -> DiagnosisResult:
+        return diagnosis_result
+
+    material = SourceMaterialDraft(
+        material_text="학생 A가 승인 근거를 활용해 자료를 구성했다.",
+        evidence_anchor_ids=("grammar:rule-1",),
+    )
+    generator_provider = FakeProvider(
+        (material.model_dump_json(), _source_material_item_json(area_tag, skill_node_id)),
+        name=f"fake-{area_tag.value}-generator",
+    )
+    verifier_provider = FakeProvider(
+        (_source_material_solve_json(skill_node_id),),
+        name=f"fake-{area_tag.value}-verifier",
+    )
+    gateway = LlmGateway(
+        {
+            ModelRole.GENERATOR: generator_provider,
+            ModelRole.VERIFIER: verifier_provider,
+        },
+        transport_retry={
+            ModelRole.GENERATOR: 0,
+            ModelRole.VERIFIER: 0,
+        },
+    )
+    workflow = build_problem_workflow(
+        gateway=gateway,
+        graph_context=FakeGraphContextService(),
+        diagnosis=diagnose_request,
+        candidate_store=InMemoryCandidateStore(),
+        item_store=InMemoryProblemItemStore(),
+        checkpointer=InMemorySaver(),
+        verify_config=load_verify_config(),
+    )
+
+    result = await workflow.run(
+        _source_material_request(area_tag, skill_node_id),
+        _execution_context(),
+    )
+
+    assert isinstance(result, ProblemSetResult)
+    assert result.status is ProblemSetStatus.GENERATED
+    assert [request.prompt_id for request in generator_provider.requests] == [
+        "pg.source_material.v1",
+        "pg.items.v1",
+    ]
+    assert len(verifier_provider.requests) == 1
+
+
 async def _run_smoke() -> None:
     generator_provider = FakeProvider(
         (_generated_item_json(),),
@@ -354,3 +565,32 @@ def test_reading_generates_passage_before_item_and_is_idempotent(
         monkeypatch.delenv(name, raising=False)
 
     asyncio.run(_run_reading_smoke())
+
+
+@pytest.mark.parametrize(
+    ("area_tag", "skill_node_id", "comparison_node_id"),
+    [
+        (
+            AreaTag.SPEECH_WRITING,
+            "speech_writing.writing.material",
+            "speech_writing.speech.strategy",
+        ),
+        (
+            AreaTag.MEDIA,
+            "media.reception.credibility",
+            "media.reception.information",
+        ),
+    ],
+)
+def test_non_language_weakness_node_reaches_source_generation_and_gates(
+    monkeypatch: pytest.MonkeyPatch,
+    area_tag: AreaTag,
+    skill_node_id: str,
+    comparison_node_id: str,
+) -> None:
+    for name in TRACING_ENV_SYNONYMS:
+        monkeypatch.delenv(name, raising=False)
+
+    asyncio.run(
+        _run_source_material_smoke(area_tag, skill_node_id, comparison_node_id)
+    )

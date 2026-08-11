@@ -26,8 +26,8 @@ def test_problem_golden_evaluator_passes_offline() -> None:
     report = ProblemGoldenEvaluator(GOLDEN_ROOT).evaluate()
 
     assert report.passed
-    assert report.total_cases == 71
-    assert report.prompt_snapshot_count == 3
+    assert report.total_cases == 75
+    assert report.prompt_snapshot_count == 4
     assert report.educational_review_status == "expert_review_pending"
     assert report.real_model_evaluated is False
     assert {summary.suite: summary.case_count for summary in report.suites} == {
@@ -38,6 +38,7 @@ def test_problem_golden_evaluator_passes_offline() -> None:
         "graphrag": 11,
         "suneung_format": 6,
         "passage_generation": 2,
+        "source_material_generation": 4,
         "literature_selection": 2,
     }
 
@@ -85,6 +86,18 @@ def test_literature_selection_suite_covers_determinism_and_fail_closed() -> None
         "rejected_insufficient",
     )
     assert tuple(case.expected.llm_calls for case in suite.cases) == (2, 0)
+
+
+def test_source_material_suite_covers_both_areas_and_evidence_fail_closed() -> None:
+    suite = _load_suite(GOLDEN_ROOT, "source_material_generation")
+
+    assert tuple(case.track for case in suite.cases) == ("T4", "T4", "T5", "T5")
+    assert tuple(case.expected.decision for case in suite.cases) == (
+        "verified",
+        "rejected_insufficient",
+        "verified",
+        "rejected_insufficient",
+    )
 
 
 def test_suneung_format_requires_explicit_contract_support(tmp_path: Path) -> None:

@@ -83,8 +83,8 @@ def test_profile_store_put_get() -> None:
         sheets=serialize_profile(_profile()), created_at=_NOW,
     )
     ref = _run(store.put(rec))
-    assert _run(store.get(ref)) == rec
-    assert _run(store.get(make_ref("profile", UUID(int=2)))) is None
+    assert _run(store.get(ref, tenant_id="t1")) == rec
+    assert _run(store.get(make_ref("profile", UUID(int=2)), tenant_id="t1")) is None
 
 
 def test_spec_store_put_get() -> None:
@@ -94,7 +94,7 @@ def test_spec_store_put_get() -> None:
         spec={"resolved": []}, status="succeeded", probe_agent_run=UUID(int=3),
     )
     ref = _run(store.put(rec))
-    assert ref == f"spec://{_ID}" and _run(store.get(ref)) == rec
+    assert ref == f"spec://{_ID}" and _run(store.get(ref, tenant_id="t1")) == rec
 
 
 def test_agent_step_sink_records_in_order() -> None:
@@ -113,3 +113,36 @@ def test_agent_step_sink_records_in_order() -> None:
     steps = _run(sink.steps(run))
     assert [s.seq for s in steps] == [0, 1, 2]
     assert _run(sink.steps(UUID(int=999))) == ()
+
+
+# ── (지시서 68-R) 참조는 테넌트를 담지 않는다 (99 #40) ──
+
+
+def test_a_profile_of_another_tenant_is_not_resolvable() -> None:
+    """🔴 **`profile://{uuid}`는 테넌트를 담지 않는다** — 저장소가 그것을 물어야 한다.
+
+    ⚠ 종전 계약은 `get(ref)`였고, 그래서 **워커가 남의 프로파일을 그대로 실행**했다
+    (실측: `AI_RUN`·`AGENT_STEP`·`MAPPING_SPEC`이 **내 테넌트 산출물로 재포장**됐다).
+    ⚠ **`ref`가 UUID라 추측 불가한 것은 격리가 아니다.**
+    """
+    store = InMemoryProfileStore()
+    rec = ProfileRecord(
+        id=_ID, tenant_id="t_owner", file_hash="h", filename="r.xlsx",
+        sheets=serialize_profile(_profile()), created_at=_NOW,
+    )
+    ref = _run(store.put(rec))
+    assert _run(store.get(ref, tenant_id="t_owner")) == rec
+    assert _run(store.get(ref, tenant_id="t_stranger")) is None, "남의 프로파일이 해소된다"
+
+
+def test_a_spec_of_another_tenant_is_not_resolvable() -> None:
+    """🔴 산출 쪽도 **같은 계약**이다 — 소비자가 적다는 이유로 남기면 다음 사람이 쓴다."""
+    store = InMemorySpecResultStore()
+    rec = SpecRecord(
+        id=_ID, tenant_id="t_owner", source_profile_id=UUID(int=9), version=1,
+        spec={"resolved": []}, status="succeeded", probe_agent_run=UUID(int=3),
+    )
+    ref = _run(store.put(rec))
+    assert _run(store.get(ref, tenant_id="t_owner")) == rec
+    assert _run(store.get(ref, tenant_id="t_stranger")) is None, "남의 spec이 해소된다"
+    assert _run(store.get(make_ref("spec", UUID(int=2)), tenant_id="t_owner")) is None

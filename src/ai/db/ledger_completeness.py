@@ -26,6 +26,14 @@
 | `AGENT_RUN.status`·`agent_kind` | ⚠ 생애주기 축이지 호출 축이 아니다 |
 | `LlmCallCollector` · Fake 기록 | ❌ **프로세스 안**에만 있다 — 사후 점검이 못 본다 |
 
+🔴 **(8/12) `separate_gap`을 없앴다 — 판정이 넷이다.** 그 값은 *"`mapping_probe`는
+`record_run()`을 한 번도 안 부른다"* 는 **당시의 사실** 때문에 있었고(99 ㉾), 그 워커만
+관문을 비켜 가게 했다. ㉾가 해소돼 **생산자가 0**이 됐고, 소비처는 리포트 두 줄과
+*"이건 안 막는다"* 한 문장뿐이었다. ⇒ **남기면 다음 사람이 「관문을 안 막는 판정」이
+필요할 때 그리로 밀어 넣는다** — 규율이 아니라 **우회 통로**가 된다. 세 워커는 이제
+`WORKER_CAPABILITY` 하나로 같은 규칙을 받는다.
+⚠ **과거 기록은 과거형으로 남는다**(99 ㉾·#36의 8/10~8/11 실측 문면은 그대로다).
+
 🔴 **결정적 한계 — 「DB에 증거가 없다」를 「LLM 0콜」로 판정하지 않는다.**
 `record_run()`은 `LlmCallCollector.take()` **뒤에** DB에 쓴다. 실패 경로는
 `swallow_errors=True`라 **쓰기가 터져도 삼킨다** ⇒ 그 순간 **수집기에서도 호출이 빠지고
@@ -57,18 +65,16 @@ class LedgerVerdict(StrEnum):
     """🔴 **확정 결함** — 있어야 하는데 없다."""
     UNKNOWN = "unknown"
     """⚠ **증명 불가** — 호출 여부를 가릴 증거가 없다. **초록이 아니다.**"""
-    SEPARATE_GAP = "separate_gap"
-    """⚠ **㉾의 별도 결손**(`mapping_probe`) — 이 관문에 섞지 않는다."""
 
 
-#: 🔴 **워커 → capability는 프로덕션이 실제로 쓰는 값에서 온다**(문자열 재기입 금지).
-#: `composition/counsel/worker.py`가 `Capability.COMPOSITION`을,
-#: `problem_generation/assembly.py`가 `Capability.PROBLEM_GENERATION`을 쓴다.
-#: ⚠ **`mapping_probe`는 일부러 비웠다** — 그 워커는 `record_run()`을 **한 번도 안 부르므로**
-#: 기대 capability를 **관측한 적이 없다.** 임의로 정하지 않는다 — **㉾ 구현이 정한다.**
+#: ✅ **`mapping_probe`가 8/12에 채워졌다**(99 ㉾) — 종전 주석은 *"그 워커는 `record_run()`을
+#: 한 번도 안 부르므로 기대 capability를 관측한 적이 없다"* 였고, **그 시점엔 옳았다.**
+#: 이제 `probe/worker.py`가 `Capability.IMPORT_MAPPING`으로 원장을 쓴다 — **관측했으므로**
+#: 적는다(여전히 문자열 재기입이 아니라 **프로덕션이 쓰는 값**에서 온다).
 WORKER_CAPABILITY: Final[dict[WorkerKind, Capability]] = {
     WorkerKind.COUNSEL_PACK: Capability.COMPOSITION,
     WorkerKind.PROBLEM_GENERATION: Capability.PROBLEM_GENERATION,
+    WorkerKind.MAPPING_PROBE: Capability.IMPORT_MAPPING,
 }
 
 #: 실행이 **아직 안 끝난** 상태 — 원장이 없는 것이 정상이다.
@@ -146,12 +152,9 @@ def _verdict_for(o: LedgerObservation) -> tuple[LedgerVerdict, str]:
         )
     if o.has_ledger:
         return _logical_binding(o)
-    if o.agent_kind is WorkerKind.MAPPING_PROBE:
-        return (
-            LedgerVerdict.SEPARATE_GAP,
-            "mapping_probe는 record_run()을 한 번도 안 부른다 — ㉾의 별도 결손이다"
-            "(이 관문에 섞지 않는다)",
-        )
+    #: 🔴 **`mapping_probe` 비켜 가기를 걷어냈다**(99 ㉾ 해소 · 8/12) — 그 분기가 있으면
+    #: **원장을 안 쓴 조사 잡이 계속 초록으로 보인다.** 이제 위의 `WORKER_CAPABILITY`가
+    #: 세 워커를 같은 규칙으로 판정한다: 종단 성공인데 원장이 없으면 **violation**이다.
     #: ⚠ **`running`은 증거가 있어도 허용한다** — `finally`의 원장 적재 **직전**일 수 있다.
     #:   「아직 안 썼다」와 「안 쓸 것이다」를 이 시점엔 못 가른다.
     if o.status is JobPhase.RUNNING:
@@ -229,6 +232,7 @@ def blocks_flip(counts: dict[LedgerVerdict, int]) -> bool:
     """🔴 **플립을 막는 것** — `violation`뿐 아니라 `unknown`도 막는다.
 
     ⚠ `unknown`을 통과시키면 **증명 못 한 것이 초록으로 세어진다.**
-    ⚠ `separate_gap`은 **안 막는다** — ㉾는 별도 결손이고 이 관문의 조건이 아니다.
+    ⚠ **종전에는 `separate_gap`을 명시적으로 안 막는다고 적었다** — 그 값은 8/12에
+    없어졌다(㉾ 해소 · 아래 모듈 주석). 지금은 **네 판정뿐**이고 예외 통로가 없다.
     """
     return counts[LedgerVerdict.VIOLATION] > 0 or counts[LedgerVerdict.UNKNOWN] > 0

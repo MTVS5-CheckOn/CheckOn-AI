@@ -13,15 +13,23 @@ from ai.contracts.taxonomy import V1_TYPE_TAGS, AreaTag, TypeTag
 #: `V1_TYPE_TAGS`처럼 전체에서 예약값을 빼지 않는다 — 자료 조달 노드가 준비된 영역을 이
 #: 집합에 더해야만 열리는 fail-closed 정책이다.
 SUPPORTED_AREAS: Final[frozenset[AreaTag]] = frozenset(
-    {AreaTag.LANGUAGE, AreaTag.READING, AreaTag.LITERATURE}
+    {
+        AreaTag.LANGUAGE,
+        AreaTag.READING,
+        AreaTag.LITERATURE,
+        AreaTag.SPEECH_WRITING,
+        AreaTag.MEDIA,
+    }
 )
 
-# 영역이 셋이면 독서 여부와 passage 존재의 동치식으로는 문학 선택 조건을 표현할 수 없다.
+# 영역별 자료 요청 형태가 달라 단일 조건식으로는 허용 조합을 안전하게 표현할 수 없다.
 # 허용 조합을 표로 닫아 새 영역이 추가돼도 명시적 행 없이는 열리지 않게 한다.
 _SOURCE_REQUEST_SHAPES: Final[dict[AreaTag, tuple[bool, bool]]] = {
     AreaTag.LANGUAGE: (False, False),
     AreaTag.READING: (True, False),
     AreaTag.LITERATURE: (False, True),
+    AreaTag.SPEECH_WRITING: (True, False),
+    AreaTag.MEDIA: (True, False),
 }
 
 

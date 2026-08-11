@@ -82,7 +82,7 @@ def reject_unsupported_source_procurement(request: ProblemRequest) -> None:
     ):
         raise ProblemSourceProcurementUnsupported(
             "지원되는 자료 조달 조합은 language+자료 없음, reading+PassageRequest, "
-            "literature+WorkSelection이다(05 §1.2)",
+            "literature+WorkSelection, speech_writing·media+생성 자료 요청이다",
             {
                 "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
                 "area_tag": request.area_tag.value,

@@ -159,41 +159,78 @@ def test_a_zero_call_run_with_a_ledger_and_null_model_fields_is_ok() -> None:
 # ── ㉾ 분리 ──────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "status", [JobPhase.SUCCEEDED, JobPhase.FAILED, JobPhase.QUEUED]
-)
-def test_mapping_probe_is_a_separate_gap_not_a_silent_pass(status: JobPhase) -> None:
-    """⚠ **`allowed_absence`로 숨기지 않는다** — ㉾가 있다는 사실을 계속 드러낸다."""
-    assert _verdict(agent_kind=WorkerKind.MAPPING_PROBE, status=status) is (
-        LedgerVerdict.SEPARATE_GAP
-    )
-    #: 🔴 **집계에서도 따로 세어져야 한다** — 판정값만 다르고 합계에서 섞이면 소용없다.
-    counts = summarize(
-        [judge_ledger_row(_obs(agent_kind=WorkerKind.MAPPING_PROBE, status=status))]
-    )
-    assert counts[LedgerVerdict.ALLOWED_ABSENCE] == 0, "㉾가 정상 부재로 숨었다"
-    assert counts[LedgerVerdict.OK] == 0
+def test_a_finished_probe_without_a_ledger_is_a_violation() -> None:
+    """🔴 **㉾ 해소 뒤에는 비켜 가지 않는다**(8/12) — 종단 성공인데 원장이 없으면 결함이다.
 
-
-def test_a_separate_gap_does_not_block_the_flip() -> None:
-    """㉾는 **별도 결손**이라 이 관문의 조건이 아니다 — 섞으면 관문이 영영 안 열린다."""
-    counts = summarize(
-        [judge_ledger_row(_obs(agent_kind=WorkerKind.MAPPING_PROBE))]
-    )
-    assert counts[LedgerVerdict.SEPARATE_GAP] == 1
-    assert not blocks_flip(counts)
-
-
-def test_mapping_probe_capability_is_deliberately_unmapped() -> None:
-    """🔴 **기대 capability를 임의로 확정하지 않았다** — ㉾ 구현이 정한다.
-
-    ⚠ 지금 넣으면 **관측한 적 없는 값**이 정본처럼 굳는다.
+    ⚠ 종전에는 이 자리가 `separate_gap`이었다. 그건 *"그 워커는 `record_run()`을 한 번도
+    안 부른다"* 는 **당시의 사실** 때문이었고, 그 사실이 바뀌었다.
     """
-    assert WorkerKind.MAPPING_PROBE not in WORKER_CAPABILITY
-    assert set(WORKER_CAPABILITY) == {
-        WorkerKind.COUNSEL_PACK,
-        WorkerKind.PROBLEM_GENERATION,
+    counts = summarize(
+        [
+            judge_ledger_row(
+                _obs(agent_kind=WorkerKind.MAPPING_PROBE, status=JobPhase.SUCCEEDED)
+            )
+        ]
+    )
+    assert counts[LedgerVerdict.VIOLATION] == 1, "원장 없는 조사 완주가 안 잡힌다"
+    assert blocks_flip(counts), "㉾가 이제 관문을 막아야 한다"
+
+
+def test_a_probe_with_a_matching_ledger_is_ok() -> None:
+    """조사 잡도 **다른 둘과 같은 규칙**으로 초록이 된다."""
+    assert (
+        _verdict(
+            agent_kind=WorkerKind.MAPPING_PROBE,
+            status=JobPhase.SUCCEEDED,
+            ai_run_execution_id=_RUN,
+            ai_run_tenant_id=_TENANT,
+            ai_run_capability=Capability.IMPORT_MAPPING,
+        )
+        is LedgerVerdict.OK
+    )
+
+
+def test_a_probe_recorded_under_another_capability_is_a_violation() -> None:
+    """🔴 capability를 잘못 적으면 초록이 되면 안 된다."""
+    assert (
+        _verdict(
+            agent_kind=WorkerKind.MAPPING_PROBE,
+            status=JobPhase.SUCCEEDED,
+            ai_run_execution_id=_RUN,
+            ai_run_tenant_id=_TENANT,
+            ai_run_capability=Capability.COMPOSITION,
+        )
+        is LedgerVerdict.VIOLATION
+    )
+
+
+def test_the_bypass_verdict_is_gone() -> None:
+    """🔴 **판정에 예외 통로가 없다**(99 ㉾ 해소 · 8/12).
+
+    ⚠ `separate_gap`을 남겨 두면 다음 사람이 *"관문을 안 막는 판정이 필요하다"* 고 느낄 때
+    거기로 밀어 넣는다 — 규율이 아니라 우회 통로가 된다. **값을 없앴다.**
+    """
+    assert {v.value for v in LedgerVerdict} == {
+        "ok",
+        "allowed_absence",
+        "violation",
+        "unknown",
     }
+
+
+def test_every_worker_kind_has_an_expected_capability() -> None:
+    """🔴 **세 워커가 전부 표에 있다**(99 ㉾ 해소 · 8/12).
+
+    ⚠ 종전에는 `mapping_probe`가 **일부러 비어** 있었고, 그 이유는 *"그 워커는
+    `record_run()`을 한 번도 안 부르므로 기대 capability를 **관측한 적이 없다**"* 였다.
+    지금은 관측했으므로 적는다 — 값은 여전히 **프로덕션이 실제로 쓰는 것**에서 온다.
+
+    🔴 **목록을 손으로 들지 않는다** — `WorkerKind` 전량이 표에 있는지 본다.
+    새 워커가 생기면 **원장 기대값을 정하지 않고 지나갈 수 없다.**
+    """
+    missing = sorted(k.value for k in WorkerKind if k not in WORKER_CAPABILITY)
+    assert not missing, f"기대 capability가 없는 워커가 있다: {missing}"
+    assert WORKER_CAPABILITY[WorkerKind.MAPPING_PROBE] is Capability.IMPORT_MAPPING
 
 
 # ── 절단 가드 ────────────────────────────────────────────────────
@@ -212,7 +249,10 @@ def test_zero_rows_is_not_reported_as_a_pass() -> None:
 
 
 def test_every_verdict_is_reachable() -> None:
-    """🔴 다섯 값이 **전부 실제로 나오는지** — 하나라도 죽어 있으면 그 축을 안 보는 것이다."""
+    """🔴 **네** 값이 전부 실제로 나오는지 — 하나라도 죽어 있으면 그 축을 안 보는 것이다.
+
+    ⚠ 종전엔 다섯이었다 — `separate_gap`은 생산자가 0이 돼 없앴다(99 ㉾ 해소 · 8/12).
+    """
     reached = {
         judge_ledger_row(_obs(**case)).verdict
         for case in (
@@ -224,7 +264,6 @@ def test_every_verdict_is_reachable() -> None:
             {"status": JobPhase.QUEUED},
             {"status": JobPhase.SUCCEEDED},
             {"status": JobPhase.FAILED},
-            {"agent_kind": WorkerKind.MAPPING_PROBE},
         )
     }
     assert reached == set(LedgerVerdict), f"도달 못 한 판정이 있다: {set(LedgerVerdict) - reached}"
