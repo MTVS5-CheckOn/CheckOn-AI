@@ -142,9 +142,20 @@ class MappingProbeRunner:
         #    실행할 **입력 자체가 없으면** 실행이 없었던 것이고, 없는 실행의 기록을
         #    지어내는 것은 불변식 8이 요구하는 바가 아니다. counsel이 같은 판단이다
         #    (`bundle_missing`·`tenant_mismatch`는 `_execution_context` 앞에서 죽는다).
-        profile_rec = await self._profiles.get(job.payload_ref)
+        profile_rec = await self._profiles.get(
+            job.payload_ref, tenant_id=job.tenant_id
+        )
         if profile_rec is None:
+            #: ⚠ **부재와 교차 테넌트가 같은 번역을 받는다** — 존재 은닉이다.
+            #:   둘 다 *"실행할 입력이 없다"* 이고, 어느 쪽인지 말하면 남의 테넌트에
+            #:   그 ref가 있다는 사실이 새어 나간다(counsel의 GET 404와 같은 판단).
             raise ValueError(f"source_profile 참조 해소 실패: {job.payload_ref}")
+        if profile_rec.tenant_id != job.tenant_id:
+            #: 🔴 **이중 방어**(99 #40) — 저장소가 이미 걸렀지만 여기서 다시 본다.
+            #:   저장소 대역이 계약을 어겨 **잘못된 행을 돌려줄 수 있고**(테스트 대역·
+            #:   미래 구현·캐시 층) 그때도 **실행하면 안 된다.** 격리를 한 층에만 두지 않는다.
+            #: ⚠ 문면에 **남의 테넌트 값을 싣지 않는다.**
+            raise ValueError(f"source_profile 테넌트 불일치: {job.payload_ref}")
         profile = deserialize_profile(profile_rec.sheets)
         thread_id = str(job.job_id)
 
@@ -170,23 +181,26 @@ class MappingProbeRunner:
             versions=import_versions(),
         )
 
-        # ③ 그래프 실행 — 도구 호출마다 체크포인트(§2.3).
-        graph = build_probe_graph(
-            tools=FakeProbeTools(profile),
-            planner=self._planner,
-            loop_max=self._loop_max,
-            checkpointer=self._checkpointer,
-        )
-        columns = [c.name for sheet in profile.sheets for c in sheet.columns]
-        init = MappingProbeState(
-            tenant_id=job.tenant_id,
-            source_profile_id=profile_rec.id,
-            sheets_meta={"columns": columns},
-        )
         #: 🔴 `finally`가 **모든 수렴 경로**를 지나게 하는 플래그다 — counsel과 같은 형태.
         #:   실패 경로에서만 적재 오류를 삼킨다(원인 예외를 덮지 않으려는 것).
+        #: 🔴 **실행 경계 직후부터 감싼다**(8/12 보완) — 종전에는 그래프 **조립**과 state
+        #:   조립이 `try` **밖**이라, 거기서 죽으면 원장이 0건이고 그건 *"실행이 없었다"* 로
+        #:   읽혔다. **`start()`를 이미 지났으므로 실행은 있었다.**
         failed = True
         try:
+            # ③ 그래프 실행 — 도구 호출마다 체크포인트(§2.3).
+            graph = build_probe_graph(
+                tools=FakeProbeTools(profile),
+                planner=self._planner,
+                loop_max=self._loop_max,
+                checkpointer=self._checkpointer,
+            )
+            columns = [c.name for sheet in profile.sheets for c in sheet.columns]
+            init = MappingProbeState(
+                tenant_id=job.tenant_id,
+                source_profile_id=profile_rec.id,
+                sheets_meta={"columns": columns},
+            )
             # ainvoke — async 체크포인터(AsyncPostgresSaver)를 구동한다. InMemorySaver도 호환.
             # 🔴 **호출마다 상한을 명시한다**(불변식 6 · 99 #08 ⓑ) — 안 주면 langgraph 기본값
             #    `getenv("LANGGRAPH_DEFAULT_RECURSION_LIMIT", "10007")`이 쓰이는데 그건

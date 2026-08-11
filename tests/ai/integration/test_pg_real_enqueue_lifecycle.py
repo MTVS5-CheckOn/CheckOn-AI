@@ -37,7 +37,13 @@ from ai.composition.counsel.stores import (
     InMemoryDraftResultStore,
 )
 from ai.composition.counsel.worker import CounselPackRunner
-from ai.contracts.agents import JobPhase
+from ai.contracts.agents import (
+    JobPhase,
+    OperationKind,
+    PriorityClass,
+    WorkerJob,
+    WorkerKind,
+)
 from ai.contracts.composition import (
     CommStyle,
     DraftContext,
@@ -53,10 +59,17 @@ from ai.db.repositories.agent_job import PgJobStore
 from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from ai.db.repositories.ledger_audit import PgLedgerAudit
 from ai.db.repositories.pack_store import PgPackResultStore
-from ai.db.repositories.probe_stores import PgAgentStepSink
+from ai.db.repositories.probe_stores import (
+    PgAgentStepSink,
+    PgProfileStore,
+    PgSpecResultStore,
+)
 from ai.db.repositories.run_store import LlmCallCollector, PgRunStore
 from ai.db.settings import get_db_settings
 from ai.evaluation.pg_ledger_preflight import preflight_blocks
+from ai.import_mapping.probe.stores import ProfileRecord, serialize_profile
+from ai.import_mapping.probe.worker import MappingProbeRunner
+from ai.import_mapping.profiling import ColumnProfile, SheetProfile, SourceProfile
 
 pytestmark = pytest.mark.integration
 
@@ -184,6 +197,22 @@ async def _scalars(
 ) -> list[Any]:
     async with sessions() as session:
         return list((await session.execute(text(sql), params)).scalars().all())
+
+
+async def _steps_of_tenant(
+    sessions: async_sessionmaker[AsyncSession], tenant: str
+) -> list[Any]:
+    """이 테넌트의 `AGENT_STEP` — 🔴 **부모 `AGENT_RUN`을 조인**해서만 격리된다.
+
+    ⚠ `agent_step`에는 `tenant_id` 컬럼이 **없다**(실측). ⑱(공통 `AgentStepRecord` 승격)을
+    우회해 계약을 바꾸지 않고, 조회 쪽에서 부모를 탄다.
+    """
+    return await _scalars(
+        sessions,
+        "SELECT s.id FROM agent_step s JOIN agent_run r ON r.id = s.agent_run_id"
+        " WHERE r.tenant_id = :t",
+        t=tenant,
+    )
 
 
 async def _ai_runs(sessions: async_sessionmaker[AsyncSession], tenant: str) -> list[Any]:
@@ -486,7 +515,9 @@ async def _run_mapping_probe(
     assert await _llm_call_count(sessions, job.execution_id) == 0, (
         "Fake planner인데 LLM_CALL이 남았다"
     )
-    return job
+    #: ⚠ **완주한 잡을 돌려준다** — enqueue 시점 잡에는 `result_ref`가 없다(실측: `None`).
+    #:   `job_id`·`execution_id`는 같은 값이라 기존 호출부는 그대로다.
+    return done
 
 
 # ── G3-A · counsel ──────────────────────────────────────────────
@@ -576,14 +607,120 @@ def test_the_probe_links_agent_run_step_and_spec_to_one_execution() -> None:
 
 
 def test_another_tenant_sees_none_of_the_probe_rows() -> None:
-    """🔴 조사 원장·스텝·spec이 **다른 테넌트에 보이면 안 된다.**"""
+    """🔴 조사 **원장·스텝·spec 셋 다** 다른 테넌트에 보이면 안 된다.
+
+    ⚠ **종전 판은 이름이 보는 것보다 넓었다** — docstring은 셋을 말하는데 실제로는
+    감사와 `AI_RUN`만 봤다(로그 85 계열). 여기서 셋을 각각 센다.
+    ⚠ **`AGENT_STEP`에는 테넌트 컬럼이 없다** — 부모 `AGENT_RUN`과 조인해서만 격리된다
+    (⑱을 우회해 공통 계약을 바꾸지 않는다).
+    """
     tenant = _tenant("probeiso")
 
     async def scenario(sessions: async_sessionmaker[AsyncSession]) -> None:
-        await _run_mapping_probe(sessions, tenant)
+        job = await _run_mapping_probe(sessions, tenant)
         stranger = f"{tenant}-stranger"
+        specs = PgSpecResultStore(sessionmaker=sessions)
+        result_ref = job.result_ref
+        assert result_ref is not None
+
+        #: ── 같은 테넌트에서는 셋 다 실존한다(절단 가드 — 없으면 아래가 공짜다) ──
+        assert await _audit(sessions, tenant), "내 테넌트에서도 감사가 비었다"
+        assert await _ai_runs(sessions, tenant), "내 테넌트에서도 AI_RUN이 없다"
+        assert await specs.get(result_ref, tenant_id=tenant) is not None
+        assert await _steps_of_tenant(sessions, tenant), "내 테넌트에서도 STEP이 없다"
+
+        #: ── 남의 테넌트에서는 셋 다 0 ──
         assert await _audit(sessions, stranger) == [], "남의 조사 실행이 보인다"
         assert await _ai_runs(sessions, stranger) == [], "남의 AI_RUN이 보인다"
+        assert await specs.get(result_ref, tenant_id=stranger) is None, (
+            "남의 MAPPING_SPEC이 해소된다"
+        )
+        assert await _steps_of_tenant(sessions, stranger) == [], (
+            "남의 AGENT_STEP이 보인다"
+        )
+
+    _run(scenario, tenant=tenant)
+
+
+def test_a_profile_of_another_tenant_is_never_executed_in_real_pg() -> None:
+    """🔴 **남의 프로파일로는 실행 자체가 안 된다** (99 #40 · 실 PG).
+
+    ⚠ **최종 조회에서 남의 행이 안 보이는지만 보면 이 결함이 통과한다** — 산출물이
+    **내 테넌트로 재포장**되기 때문이다. 여기서는 **실행이 없었다**를 센다.
+    """
+    tenant = _tenant("xtenant")
+
+    async def scenario(sessions: async_sessionmaker[AsyncSession]) -> None:
+        owner = f"{tenant}-owner"
+        profiles = PgProfileStore(sessionmaker=sessions)
+        foreign_ref = await profiles.put(
+            ProfileRecord(
+                id=uuid.uuid4(),
+                tenant_id=owner,  # ← 남의 테넌트 소유
+                file_hash=f"hash-{uuid.uuid4().hex[:8]}",
+                filename="secret.xlsx",
+                sheets=serialize_profile(
+                    SourceProfile(
+                        filename="secret.xlsx",
+                        sheets=(
+                            SheetProfile(
+                                "s",
+                                1,
+                                (
+                                    ColumnProfile(
+                                        name="반",
+                                        n_total=1,
+                                        n_null=0,
+                                        n_unique=1,
+                                        dtype_guess="string",
+                                        suspect_pii=False,
+                                    ),
+                                ),
+                                (),
+                            ),
+                        ),
+                    )
+                ),
+                created_at=_NOW,
+            )
+        )
+        supervisor = _supervisor(sessions)
+        runner = MappingProbeRunner(
+            supervisor=supervisor,
+            profile_store=profiles,
+            spec_store=PgSpecResultStore(sessionmaker=sessions),
+            step_sink=PgAgentStepSink(sessionmaker=sessions),
+            checkpointer=InMemorySaver(),
+            loop_max=3,
+            lease_owner="worker-xtenant",
+            run_store=PgRunStore(sessionmaker=sessions),
+            call_log=LlmCallCollector(),
+        )
+        job = await supervisor.enqueue(
+            WorkerJob(
+                job_id=uuid.uuid4(),
+                execution_id=uuid.uuid4(),
+                tenant_id=tenant,  # ← 내 테넌트 잡인데 payload는 남의 것
+                worker_kind=WorkerKind.MAPPING_PROBE,
+                operation=OperationKind.MAPPING_PROBE_RESOLVE,
+                payload_ref=foreign_ref,
+                payload_hash=f"sha256:{'c' * 64}",
+                priority_class=PriorityClass.STANDARD,
+                queued_at=_NOW,
+            )
+        )
+        with pytest.raises(ValueError, match="참조 해소 실패"):
+            await runner.run_next(tenant_id=tenant)
+
+        #: 🔴 **실행이 없었다** — 셋 다 0이어야 한다.
+        assert await _ai_runs(sessions, tenant) == [], "남의 입력으로 원장이 생겼다"
+        assert await _steps_of_tenant(sessions, tenant) == [], "AGENT_STEP이 생겼다"
+        assert await _scalars(
+            sessions, "SELECT id FROM mapping_spec WHERE tenant_id = :t", t=tenant
+        ) == [], "남의 입력이 내 테넌트 산출물로 재포장됐다"
+        #: 잡은 종단으로 수렴한다(running 방치 금지 · 99 #18).
+        landed = await supervisor.get(tenant_id=tenant, job_id=job.job_id)
+        assert landed is not None and landed.phase is JobPhase.FAILED
 
     _run(scenario, tenant=tenant)
 

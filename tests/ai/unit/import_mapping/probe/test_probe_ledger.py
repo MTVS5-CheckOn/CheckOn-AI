@@ -311,3 +311,119 @@ def test_the_collector_bucket_is_drained() -> None:
     assert harness.calls.take(_EXEC) == (), (
         "실행 뒤에도 수집기 버킷이 남아 있다 — take()를 안 불렀다"
     )
+
+
+# ── (지시서 68-R) 남의 입력은 **실행되지 않는다** ──
+
+
+_OTHER: Final = "t_other"
+
+
+def _put_foreign_profile(harness: _Harness) -> str:
+    """**다른 테넌트**의 프로파일을 넣고 그 ref를 돌려준다."""
+    return _run(
+        harness.profiles.put(
+            ProfileRecord(
+                id=UUID(int=9001),
+                tenant_id=_OTHER,
+                file_hash="h",
+                filename="secret.xlsx",
+                sheets=serialize_profile(_profile(_ROSTER)),
+                created_at=_NOW,
+            )
+        )
+    )
+
+
+def test_a_profile_of_another_tenant_is_never_executed() -> None:
+    """🔴 **남의 입력을 내 테넌트 산출물로 재포장할 수 있었다** (99 #40).
+
+    실측(수정 전): `ProfileRecord.tenant_id = t_other` · `WorkerJob.tenant_id = t_target`인데
+    역참조가 **성공**하고 그래프가 돌아 `AI_RUN(t_target)` 1건 · `AGENT_STEP` 2건 ·
+    `MAPPING_SPEC(t_target)`(`source_profile_id`는 **남의 프로파일**)이 남았다.
+    **최종 조회에서 남의 행이 안 보이는지**만 보면 이 상태가 통과한다 — 산출물이
+    **내 테넌트로 다시 포장**됐기 때문이다.
+
+    ⚠ `ref`가 UUID라 추측 불가한 것은 **격리가 아니다** — enqueue 경로가 아닌 곳에서
+    잘못된 `payload_ref`가 들어오는 순간(재개·수동 재큐·다음 소비자) 그대로 실행된다.
+    ⇒ **실행 자체가 없어야** 한다.
+    """
+    harness = _Harness()
+    foreign = _put_foreign_profile(harness)
+
+    async def scenario() -> None:
+        await harness.enqueue(foreign)
+        #: ⚠ **부재와 같은 문면이다** — 존재 은닉이다. *"남의 것이라 못 읽었다"* 라고
+        #:   말하면 **다른 테넌트에 그 ref가 있다는 사실**이 새어 나간다.
+        with pytest.raises(ValueError, match="참조 해소 실패"):
+            await harness.runner.run_next(tenant_id=_TENANT)
+
+    _run(scenario())
+    assert not harness.runs.runs, "남의 입력으로 실행 원장이 생겼다"
+    assert _run(harness.sink.steps(_JOB)) == (), "남의 입력으로 AGENT_STEP이 생겼다"
+    assert harness.specs._rows == {}, "남의 입력으로 MAPPING_SPEC이 생겼다"
+
+
+def test_the_worker_double_checks_the_row_it_got_back() -> None:
+    """🔴 **저장소 필터 뒤에도 워커가 다시 본다** — 이중 방어.
+
+    ⚠ 저장소 대역이 계약을 어겨 **잘못된 행을 돌려줄 수 있다**(테스트 대역·미래 구현·
+    캐시 층). 그때도 **실행하면 안 된다** — 저장소 하나에 격리를 몰아두지 않는다.
+    """
+    harness = _Harness()
+    ref = harness.put_profile()
+
+    class _LeakyStore:
+        """`tenant_id`를 **무시하는** 저장소 — 계약 위반 대역."""
+
+        async def get(self, ref: str, *, tenant_id: str) -> ProfileRecord:
+            del ref, tenant_id
+            return ProfileRecord(
+                id=UUID(int=9002),
+                tenant_id=_OTHER,  # ← 요청 테넌트가 아니다
+                file_hash="h",
+                filename="secret.xlsx",
+                sheets=serialize_profile(_profile(_ROSTER)),
+                created_at=_NOW,
+            )
+
+    harness.runner._profiles = _LeakyStore()  # type: ignore[assignment]
+
+    async def scenario() -> None:
+        await harness.enqueue(ref)
+        with pytest.raises(ValueError, match="테넌트"):
+            await harness.runner.run_next(tenant_id=_TENANT)
+
+    _run(scenario())
+    assert not harness.runs.runs, "저장소가 흘린 행으로 실행이 일어났다"
+
+
+def test_a_graph_builder_failure_still_records(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🔴 **그래프 조립 실패도 실행 경계 뒤다** — 종전엔 `try` **밖**이었다.
+
+    ⚠ `build_probe_graph()`·`MappingProbeState(...)`가 `try` 밖에 있으면 거기서 죽을 때
+    **원장이 0건**이고, 그건 *"실행이 없었다"* 로 읽힌다 — 실행 경계(`start()`)는 이미 지났다.
+    """
+    harness = _Harness()
+    ref = harness.put_profile()
+
+    def explode(**kwargs: object) -> None:
+        raise RuntimeError("그래프 조립 실패(대역)")
+
+    #: ⚠ 문자열 경로로 갈아 끼운다 — 모듈이 재수출하지 않는 이름이라 속성 접근은
+    #:   정적 검사가 막는다(counsel 쪽 `refine_draft` 대역과 같은 사정).
+    monkeypatch.setattr(
+        "ai.import_mapping.probe.worker.build_probe_graph", explode
+    )
+
+    async def scenario() -> None:
+        await harness.enqueue(ref)
+        with pytest.raises(RuntimeError, match="그래프 조립 실패"):
+            await harness.runner.run_next(tenant_id=_TENANT)
+
+    _run(scenario())
+
+    assert list(harness.runs.runs) == [_EXEC], (
+        "그래프 조립에서 죽었는데 원장이 없다 — 실행 경계 뒤가 finally 밖이다"
+    )
+    assert harness.runs.calls == [], "Fake planner인데 LLM_CALL이 남았다"
