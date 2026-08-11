@@ -10,6 +10,15 @@ from __future__ import annotations
 from functools import lru_cache
 
 from ai.agents.job_store import InMemoryJobStore, JobStore
+
+#: 🔴 **두 축의 동명 클래스를 alias로 갈라 받는다**(99 #37) — 이름이 같아서 한 파일에서
+#: 그냥 import하면 **뒤에 온 것이 앞을 덮는다.** 의미가 드러나는 별칭을 쓴다.
+from ai.composition.counsel.stores import (
+    AgentStepSink as CounselAgentStepSink,
+)
+from ai.composition.counsel.stores import (
+    InMemoryAgentStepSink as InMemoryCounselAgentStepSink,
+)
 from ai.composition.counsel.stores import (
     InMemoryPackResultStore,
     PackResultStore,
@@ -20,6 +29,7 @@ from ai.db.counsel_read_model import (
     PgCounselDraftViewStore,
 )
 from ai.db.repositories.agent_job import PgJobStore
+from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from ai.db.repositories.detection_store import (
     DetectionStore,
     InMemoryDetectionStore,
@@ -229,8 +239,31 @@ def build_counsel_draft_view_store(
     return NullCounselDraftViewStore()
 
 
+def build_counsel_agent_step_sink(
+    settings: DbSettings | None = None,
+) -> CounselAgentStepSink:
+    """counsel 스텝(agent_step) 싱크 — 🔴 **counsel 계약 타입**을 돌려준다 (99 #37).
+
+    ⚠ **`build_agent_step_sink()`와 별개다.** 그쪽은 `mapping_probe` 전용이고 **probe의
+    `AgentStepRecord`**를 받는다 — 필드가 같아도 **별개 타입**이라 서로 못 쓴다.
+    종전에는 counsel 조립부가 **어떤 빌더도 안 타서** `STORE_BACKEND=pg`를 켜도
+    스텝이 **PG에 안 앉았다**(실측 8/11 · #37).
+
+    ⚠ **생성만으로 접속하지 않는다** — DB 없는 환경에서 import·조립이 깨지면 안 된다.
+    """
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgCounselAgentStepSink(sessionmaker=get_sessionmaker())
+    #: 미등록 값은 **memory fail-safe** — 모르는 설정에서 PG를 열지 않는다.
+    return InMemoryCounselAgentStepSink()
+
+
 def build_agent_step_sink(settings: DbSettings | None = None) -> AgentStepSink:
-    """mapping_probe 스텝(agent_step) 싱크 — 도구 호출 이력(마스킹 통과분)."""
+    """`mapping_probe` 스텝(agent_step) 싱크 — 도구 호출 이력(마스킹 통과분).
+
+    ⚠ **probe 전용이다** — counsel은 `build_counsel_agent_step_sink()`를 쓴다(99 #37).
+    이번 회차에 개명해 호출부를 넓히지 않았다.
+    """
     settings = settings or get_db_settings()
     if settings.store_backend == _PG:
         return PgAgentStepSink(sessionmaker=get_sessionmaker())

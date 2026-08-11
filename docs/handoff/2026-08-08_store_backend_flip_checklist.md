@@ -186,11 +186,13 @@ pack_miss_absent · pack_miss_foreign →  None  →  수      (PG 저장소가 
 | **G2** 생애주기 기반 원장 완전성 점검 | ✅ **실 PG 8 passed · xfail 0** |
 | **G3** counsel·probe·problem_generation **실제 enqueue** | ✅ **#202** |
 | **#36** | ✅ **해소** |
-| **#37** counsel `AGENT_STEP`이 pg에서도 인메모리 | ☐ 🔴 **전면 플립 전 해소 관문** |
+| **#37** counsel `AGENT_STEP` PG 배선 | ✅ **해소** — 공용 저수준 + capability별 adapter · 라우터 초기값·reset 둘 다 빌더 |
 | **㉾** `mapping_probe` 원장 | ☐ **별건** |
 | ㉿ · ㉬ · ㉻ | ☐ **기본 PG 플립 뒤 실측** |
 
 ⚠ **㉬·㉻·㉿는 플립을 막지 않는다** — 인메모리에서도 이미 그 상태이고 플립이 나쁘게
 만들지 않는다(㉬는 오히려 좋아진다).
 ⚠ **G1이 막던 관문이었다**(과거) — `8ec3bd0`(#201)로 열렸다.
-🔴 **지금 막는 것은 #37이다** — `STORE_BACKEND=pg`를 켜도 counsel `AGENT_STEP`이 PG에 안 앉는다.
+✅ **#37도 해소됐다**(8/12) — 🔴 **플립 전 코드 관문은 전부 닫혔다.**
+⏭ **다음은 `STORE_BACKEND` 기본값 플립과 ㉿ⓓ·㉬·㉻ 실측**이다.
+⚠ **㉾는 미해소지만 플립 차단 항목이 아니다**(별도 결손 · 판정 ③ 그대로).

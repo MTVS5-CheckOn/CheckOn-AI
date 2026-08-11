@@ -14,12 +14,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ai.db.models import AgentStep as AgentStepRow
 from ai.db.models import MappingSpec as MappingSpecRow
 from ai.db.models import SourceProfile as SourceProfileRow
+from ai.db.repositories.agent_step_store import (
+    AgentStepSnapshot,
+    PgAgentStepStore,
+)
 from ai.import_mapping.probe.stores import (
     PROFILE_SCHEME,
     SPEC_SCHEME,
@@ -110,48 +112,33 @@ class PgSpecResultStore:
 
 
 class PgAgentStepSink:
-    """agent_step 영속. record=insert, steps=agent_run_id별 seq 오름차순 조회.
+    """`mapping_probe`의 `AgentStepSink` PG 구현 — **probe 타입으로 받고 돌려준다**.
 
-    tool_args_masked는 마스킹 통과분만(§5.2) — 이 저장소는 받은 레코드를 그대로 쓸 뿐
-    마스킹을 다시 하지 않는다(도구·워커에서 이미 통과). agent_run_id는 AGENT_RUN.id(=job_id).
+    ⚠ **SQL은 여기 없다**(99 #37) — `agent_step_store.PgAgentStepStore`가 든다.
+    counsel adapter와 **같은 저수준**을 써서 적재 규칙이 갈리지 않게 한다(99 #02).
+    tool_args_masked는 마스킹 통과분만(§5.2) — 받은 값을 그대로 쓴다.
+    `agent_run_id`는 `AGENT_RUN.id`(=`job_id`)다.
     """
 
     def __init__(self, *, sessionmaker: async_sessionmaker[AsyncSession]) -> None:
-        self._sessionmaker = sessionmaker
+        self._store = PgAgentStepStore(sessionmaker=sessionmaker)
 
     async def record(self, step: AgentStepRecord) -> None:
-        async with self._sessionmaker() as session, session.begin():
-            session.add(
-                AgentStepRow(
-                    id=step.id,
-                    agent_run_id=step.agent_run_id,
-                    seq=step.seq,
-                    node_name=step.node_name,
-                    tool_called=step.tool_called,
-                    tool_args_masked=step.tool_args_masked,
-                    llm_call_id=step.llm_call_id,
-                    outcome=step.outcome,
-                )
+        await self._store.insert(
+            AgentStepSnapshot(
+                id=step.id,
+                agent_run_id=step.agent_run_id,
+                seq=step.seq,
+                node_name=step.node_name,
+                tool_called=step.tool_called,
+                tool_args_masked=step.tool_args_masked,
+                llm_call_id=step.llm_call_id,
+                outcome=step.outcome,
             )
+        )
 
     async def steps(self, agent_run_id: UUID) -> tuple[AgentStepRecord, ...]:
-        stmt = (
-            select(AgentStepRow)
-            .where(AgentStepRow.agent_run_id == agent_run_id)
-            .order_by(AgentStepRow.seq)
-        )
-        async with self._sessionmaker() as session:
-            rows = (await session.execute(stmt)).scalars().all()
         return tuple(
-            AgentStepRecord(
-                id=row.id,
-                agent_run_id=row.agent_run_id,
-                seq=row.seq,
-                node_name=row.node_name,
-                tool_called=row.tool_called,
-                tool_args_masked=row.tool_args_masked,
-                llm_call_id=row.llm_call_id,
-                outcome=row.outcome,
-            )
-            for row in rows
+            AgentStepRecord(**snapshot)
+            for snapshot in await self._store.select_by_run(agent_run_id)
         )

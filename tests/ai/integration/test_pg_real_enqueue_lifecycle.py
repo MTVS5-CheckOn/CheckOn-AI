@@ -30,7 +30,9 @@ from ai.composition.counsel.assembly import DEFAULT_REGEN_MAX
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.provider import FakeCounselProvider
 from ai.composition.counsel.stores import (
-    InMemoryAgentStepSink,
+    AgentStepRecord as CounselAgentStepRecord,
+)
+from ai.composition.counsel.stores import (
     InMemoryContextStore,
     InMemoryDraftResultStore,
 )
@@ -48,6 +50,7 @@ from ai.contracts.composition import (
 from ai.contracts.execution import Capability
 from ai.db.ledger_completeness import LedgerVerdict, judge_ledger_row, summarize
 from ai.db.repositories.agent_job import PgJobStore
+from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from ai.db.repositories.ledger_audit import PgLedgerAudit
 from ai.db.repositories.pack_store import PgPackResultStore
 from ai.db.repositories.probe_stores import PgAgentStepSink
@@ -269,10 +272,9 @@ async def _run_counsel(
         context_store=contexts,
         draft_store=InMemoryDraftResultStore(),
         pack_store=PgPackResultStore(sessionmaker=sessions),
-        #: 🔴 **counsel에는 타입이 맞는 PG step sink가 없다**(99 #37) — `PgAgentStepSink`는
-        #:   **probe의 `AgentStepRecord`**를 받는다. 이 파일의 축은 `AGENT_RUN`↔`AI_RUN`
-        #:   결합이므로 스텝만 인메모리로 두고 **#37로 등재**했다.
-        step_sink=InMemoryAgentStepSink(),
+        #: 🔴 **실제 counsel PG sink다**(99 #37 해소) — 종전엔 타입이 맞는 PG 구현이 없어
+        #:   스텝만 인메모리였다. 이제 counsel 계약 타입으로 PG에 앉는다.
+        step_sink=PgCounselAgentStepSink(sessionmaker=sessions),
         run_store=PgRunStore(sessionmaker=sessions, clock=lambda: _NOW),
         call_log=LlmCallCollector(),
         planner=provider,
@@ -298,6 +300,27 @@ async def _run_counsel(
     await _assert_ledger_bound(
         sessions, tenant, job, capability=Capability.COMPOSITION
     )
+
+    #: 🔴 **counsel `AGENT_STEP`이 실제 PG에 앉았는가**(99 #37).
+    #:   ⚠ 「저장소 왕복이 된다」로는 부족하다 — **워커가 실제로 소비**했는지를 본다.
+    steps = await PgCounselAgentStepSink(sessionmaker=sessions).steps(job.job_id)
+    assert steps, "counsel worker 완주 뒤에도 AGENT_STEP이 PG에 없다"
+    assert all(step.agent_run_id == job.job_id for step in steps)
+    #: `seq`가 중복 없이 정렬돼 있는가.
+    seqs = [step.seq for step in steps]
+    assert seqs == sorted(set(seqs)), f"seq가 중복이거나 정렬이 아니다: {seqs}"
+    #: 반환 타입이 **counsel 레코드**인가 — probe 레코드면 계약이 갈린다.
+    assert type(steps[0]) is CounselAgentStepRecord, type(steps[0]).__name__
+    #: ⚠ **스텝 인자에 원문 컨텍스트가 안 실린다**(§5.2 — 마스킹 통과분만).
+    #:   🔴 첫 판은 `student-g3`가 있으면 위반이라 적었는데 **그건 alias다** — 이 시스템의
+    #:   경계는 전부 alias로 넘어오므로 그 존재는 **정상**이다(실측으로 잡았다).
+    #:   ⇒ 실제로 물을 것은 **① 마스킹 토큰 잔존 0** ② **원문 컨텍스트를 통째로 안 담는다**다.
+    dumped = repr([step.tool_args_masked for step in steps])
+    assert "⟪" not in dumped, f"마스킹 토큰이 스텝 인자에 남았다: {dumped[:200]}"
+    for leaked in ("확인 가능한 기록을 안내합니다", "꾸준함", "guardian-"):
+        assert leaked not in dumped, (
+            f"원문 컨텍스트가 스텝 인자에 실렸다({leaked!r}): {dumped[:200]}"
+        )
     return job
 
 

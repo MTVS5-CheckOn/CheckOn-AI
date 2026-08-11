@@ -69,7 +69,8 @@ def test_the_checklist_remaining_table_is_current() -> None:
     for gate in ("G1", "G2", "G3", "#36"):
         row = next((r for r in rows if gate in r), None)
         assert row is not None and "✅" in row, f"§4의 {gate}가 완료로 안 적혔다: {row}"
-    assert "#37" in joined, "§4에 #37이 없다 — 지금 막는 것이 안 적혔다"
+    row37 = next((r for r in rows if "#37" in r), None)
+    assert row37 is not None and "✅" in row37, f"§4의 #37이 완료로 안 적혔다: {row37}"
     assert "㉾" in joined, "§4에 ㉾가 없다"
 
 
@@ -82,13 +83,36 @@ def test_the_verdict_followup_table_is_post_completion() -> None:
     assert "㉾" in joined, "§5에 ㉾가 없다"
 
 
-def test_item_36_is_resolved_and_37_is_open() -> None:
-    """🔴 **#36은 해소, #37은 미해소** — 한 줄에 둘을 뭉치지 않는다."""
-    row36 = _item_row("#36")
-    assert row36.rstrip().endswith("|")
-    assert "✅" in row36.rsplit("|", 2)[1], f"#36 상태 칸이 해소가 아니다: {row36[-160:]}"
-    row37 = _item_row("#37")
-    assert "☐" in row37.rsplit("|", 2)[1], f"#37 상태 칸이 미해소가 아니다: {row37[-160:]}"
+def test_the_closed_flip_gate_items_are_marked_resolved() -> None:
+    """🔴 **플립 전 코드 관문 둘이 해소로 적혀 있어야 한다.**
+
+    ⚠ **8/12 갱신** — 종전 이 검사는 *"#37은 미해소"* 를 단정했다. **그때는 참**이었고
+    #37이 닫히면서 **검사 자신이 낡았다.** 상태를 박은 단정은 그 상태가 바뀌면 red가 된다 —
+    ⇒ **지금 사실**로 옮긴다(가드를 지우지 않는다).
+    """
+    for marker in ("#36", "#37"):
+        row = _item_row(marker)
+        assert row.rstrip().endswith("|")
+        assert "✅" in row.rsplit("|", 2)[1], (
+            f"{marker} 상태 칸이 해소가 아니다: {row[-160:]}"
+        )
+
+
+def test_the_contract_promotion_item_stays_open() -> None:
+    """🔴 **⑱은 안 닫는다** — #37 해소가 그것을 덮으면 안 된다.
+
+    ⑱은 **두 `AgentStepRecord`를 공통 계약으로 승격할지**의 판정이고,
+    #37은 **실제 PG 소비·배선**이었다. **다른 축이다.**
+    """
+    rows = [
+        line
+        for line in _OPEN_ITEMS.read_text(encoding="utf-8").splitlines()
+        if line.startswith("| **⑱**") or line.startswith("| ⑱ ")
+    ]
+    assert len(rows) == 1, f"99에서 ⑱ 행이 {len(rows)}개다"
+    assert "☐" in rows[0].rsplit("|", 2)[1] or "◐" in rows[0].rsplit("|", 2)[1], (
+        f"⑱이 닫혔다: {rows[0][-160:]}"
+    )
 
 
 def test_the_probe_ledger_gap_stays_open() -> None:
