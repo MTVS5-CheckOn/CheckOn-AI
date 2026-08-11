@@ -92,7 +92,13 @@
 - 커밋 메시지: `[모듈] 요약` (한국어 OK) — 예: `[detection] R4 어절 정규화 시간 비율 계산 추가`.
 - 미확정 안건에 걸린 코드는 `# TODO(Open-11):` 형식 — 안건 번호 없는 TODO 금지(추적 불가).
 - `docs/02_ownership.md` §4의 양자 승인 12곳·상대 capability 파일을 건드리는 PR은 본문 첫 줄에 `⚠ 승인 필요: [파일명]` 명시.
-- CI(ruff·mypy·pytest·redaction 코퍼스) 빨간 상태로 리뷰 요청 금지.
+- **PR을 올리기 전에** `uv run --frozen python -m ai.evaluation.pre_pr_verify`를 실행한다.
+  이 명령은 ruff(`--no-cache`)·mypy(`--no-incremental`)·기본 pytest·실 PostgreSQL
+  integration을 전부 실행하며, 실 LLM 보호 3건 외의 skip은 실패로 본다. 하나라도
+  빨간 상태이거나 실 PG를 준비하지 않은 상태로 리뷰 요청하지 않는다.
+- GitHub Actions는 사용하지 않는다(2026-08-12 결정). PR 본문 「확인 방법」에 실행 OS와
+  기본 pytest·integration의 pass/skip 결과를 적어, 자동 체크 대신 사람이 같은 증거를 본다.
+  OS 민감 변경은 A(macOS)·B(Windows)가 각자 위 명령을 실행한 뒤 올린다.
 
 ## 9. 에이전트(Claude/Codex) 추가 수칙
 

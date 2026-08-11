@@ -17,7 +17,8 @@
 붙는다. ⚠ 그래서 `pydantic-settings`를 쓰지 않는다(그쪽은 `.env`를 읽는다) —
 선례는 `runtime/tracing.py`가 `os.environ`을 직접 보는 것이다.
 
-⚠ **CI는 이 변수를 넣지 않는다** — 넣으면 그 순간 열린다(`ci.yml` 주석에 적어 뒀다).
+⚠ **PR 전 로컬 검증은 이 변수가 켜져 있으면 시작 전에 실패한다.** 실 LLM 스모크는
+사람이 비용과 범위를 승인한 별도 명령에서만 연다.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from __future__ import annotations
 import os
 from typing import Final
 
-#: 🔴 **실 LLM 호출의 유일한 허용 스위치.** 이 이름을 바꾸면 문서·CI 주석이 같이 낡는다.
+#: 🔴 **실 LLM 호출의 유일한 허용 스위치.** 이 이름을 바꾸면 문서·로컬 검증이 같이 낡는다.
 REAL_LLM_OPTIN_ENV: Final = "CHECKON_ALLOW_REAL_LLM"
 
 #: ⚠ **켜는 값을 좁게 둔다** — 오타(`"0"`·`"false"`·빈 값)로 열리면 fail-closed가 아니다.

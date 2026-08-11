@@ -295,7 +295,8 @@ def test_the_orm_and_the_database_agree_about_the_fk() -> None:
     *"G2 판정이 틀렸다"* 로 읽힌다. 실제로는 **스키마가 낡은 것**이다.
     ⇒ 두 층이 갈리면 **그 사실을 말하는 실패**를 낸다.
 
-    ⚠ CI(`integration-pg`)는 `create_all`이라 항상 일치한다 — 이 검사는 **로컬 오진**을 막는다.
+    ⚠ 깨끗한 로컬 검증 DB는 `create_all`이라 항상 일치한다 — 이 검사는
+    **낡은 로컬 DB 오진**을 막는다.
     """
 
     async def scenario(sessions: async_sessionmaker[AsyncSession]) -> None:

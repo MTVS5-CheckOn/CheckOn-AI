@@ -40,7 +40,7 @@ class DbSettings(BaseSettings):
     """저장소 선택 — "memory"(기본·테스트/데모, DB 없이 동작) | "pg"(실 DB 적재).
 
     database_url에 기본값이 있어 URL 유무로는 백엔드를 못 고른다 — 명시 플래그로 고른다.
-    실 DB 연동(99 ⑫) 전까지 기본 memory라 CI는 DB 없이 통과한다.
+    기본 회귀는 memory로 돌고, PR 전 로컬 검증의 integration 단계만 실 PG를 주입한다.
     """
 
 

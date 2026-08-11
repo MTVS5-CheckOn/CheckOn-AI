@@ -37,7 +37,7 @@
 <br>
 
 ## 📋 체크리스트
-- [ ] CI 초록 — `uv run ruff check . && uv run mypy && uv run pytest` (§8: 빨간 상태로 리뷰 요청 금지)
+- [ ] **PR 올리기 전 로컬 검증 통과** — `uv run --frozen python -m ai.evaluation.pre_pr_verify` (§8). 실행 OS와 결과(기본 pytest · integration pass/skip)를 위 확인 방법에 적었다
 - [ ] PR은 한 가지 일만 · 목표 ≤400줄 (생성 파일 제외) — §8
 - [ ] 테스트 포함 — 최소 정상 1 + 경계 1 + 실패 1 (§7)
 - [ ] 하드코딩 없음 — 임계값=DB · 규칙=yaml · 프롬프트=템플릿 · 설정=Settings (§1)
