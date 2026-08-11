@@ -226,22 +226,41 @@ pack_miss_absent · pack_miss_foreign →  None  →  수      (PG 저장소가 
 ⚠ **PG 구현을 만들 수 없다** — `ContextBundleRecord`는 대응 테이블이 없고
 `DraftRecord.content`는 갈 컬럼이 없다(㉿가 8/9에 실측한 그 결손) ⇒ **양자 승인 + 마이그레이션**.
 
-### 🔴 배포 선행 단계 하나가 새로 필수가 됐다
+### 🔴 배포 선행 단계 하나가 새로 필수가 됐다 — 명령이 생겼다
+
+```bash
+uv run --frozen python -m ai.agents.checkpointer
+```
+
+| | |
+| --- | --- |
+| **언제** | **새 DB에서 앱·워커를 시작하기 전에** 한 번 |
+| **Alembic과** | **별도 단계다** — LangGraph가 자기 테이블을 소유한다(`Base.metadata`에 없다) |
+| **재실행** | **가능하다**(멱등 · 실측 2회 exit 0) |
+| **실패하면** | **종료 코드 1 · 배포를 중단한다**(성공 문면을 같이 내지 않는다) |
+| **앱 startup** | **자동 DDL이 아니다** — 붙이지 않았다(`api/app.py`는 양자 승인) |
+| **`STORE_BACKEND`** | **안 본다** — `memory`로 도는 배포에서도 다음 플립을 위해 미리 준비할 수 있다 |
+
+⚠ **접속정보를 콘솔에 안 찍는다** — 실패 문면은 **예외 타입만** 낸다.
 
 `STORE_BACKEND=pg`에서는 세 capability의 체크포인터가 **`AsyncPostgresSaver`** 다.
-**LangGraph 체크포인트 테이블(`checkpoints`·`checkpoint_blobs`·`checkpoint_writes`…)은
-Alembic이 안 만든다** — `agents/checkpointer.py`의 `setup_checkpointer_schema()`가 만든다.
-🔴 **그 함수의 호출처가 저장소 전체에서 0건이었다**(src·tests·docs 전수).
-
-⇒ **새 DB에 붙이기 전에 한 번 실행해야 한다.** 안 하면 실측한 그대로다:
+안 돌리면 실측한 그대로다:
 
 ```
 psycopg.errors.UndefinedTable: relation "checkpoints" does not exist
 → counsel_pack 워커 미분류 실패 → error_code=worker_internal_error
 ```
 
-⚠ **조용하다** — 기동은 정상이고 응답도 500이 아니라 **「실패한 잡」**이다.
-⚠ 앱 기동에 DDL을 넣지 않았다 — 배포 판정이고 `api/app.py`는 양자 승인이다.
+**실측(8/12)** — 체크포인터 테이블만 지운 상태(애플리케이션 38테이블 유지):
+**CLI 생략 → 상담 잡 `failed`** · **CLI 1회 → 네 테이블 생성 · 잡 `succeeded`** · **CLI 2회 → exit 0**.
+⚠ **테이블 이름 하나로 판정하지 않았다** — `setup()`이 만드는 **집합 전체**를 보고,
+**마지막에 상담 잡을 실제로 돌려** 그 집합이 충분한지 확인했다.
+
+⚠ **조용하다** — 기동은 정상이고 POST도 **202**다. 응답이 500이 아니라 **「실패한 잡」**이다.
+
+🔴 **종전 가드는 거짓 green이었다** — *"호출처가 하나 이상"* 을 저장소 전체 문자열로 셌더니
+**자기 docstring**과 **통합 테스트**가 운영 호출처로 계산됐다(실측: 실제 호출 **0건**인데 통과).
+⇒ 이제 **「배포 명령이 정해진 초기화 함수를 실행하는가」**를 AST로 묻는다.
 
 ⚠ **오프라인 회귀는 `memory`로 돈다** — `tests/conftest.py`가 **명시로** 건다(플립 직후
 **151건 red** 실측 · 기존 검사들이 memory 전제로 쓰였다). 플립 전용 검사는 그 핀을 **지우고** 돈다.

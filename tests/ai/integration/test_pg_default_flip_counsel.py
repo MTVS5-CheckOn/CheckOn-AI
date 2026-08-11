@@ -32,6 +32,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
+from ai.agents.checkpointer import main as checkpointer_main
 from ai.agents.checkpointer import setup_checkpointer_schema
 from ai.api.app import create_app
 from ai.api.routers import classify as classify_router
@@ -618,3 +619,129 @@ def test_an_orphan_agent_step_is_refused_by_the_database() -> None:
 
         with pytest.raises(Exception, match=r"(?i)foreign key|violates"):
             asyncio.run(attempt())
+
+
+# ───────────── 배포 명령 — 체크포인터 스키마 (99 #39) ─────────────
+
+#: `AsyncPostgresSaver.setup()`이 만드는 집합 — 🔴 **한 이름만 보지 않는다.**
+#: `checkpoints` 하나만 확인하면 *"필요한 게 다 섰다"* 를 못 말한다.
+_CHECKPOINT_TABLES: Final = (
+    "checkpoint_blobs",
+    "checkpoint_migrations",
+    "checkpoint_writes",
+    "checkpoints",
+)
+
+
+async def _checkpoint_tables() -> set[str]:
+    engine = create_async_engine(get_db_settings().database_url, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+                        "AND tablename LIKE 'checkpoint%'"
+                    )
+                )
+            ).scalars()
+            return set(rows)
+    finally:
+        await engine.dispose()
+
+
+async def _drop_checkpoint_tables() -> None:
+    """🔴 **체크포인터 테이블만** 지운다 — 애플리케이션 테이블은 그대로 둔다.
+
+    ⚠ 두 축을 같이 지우면 *"무엇이 없어서 실패했는가"* 를 못 가른다.
+    """
+    engine = create_async_engine(get_db_settings().database_url, poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            for table in reversed(_CHECKPOINT_TABLES):
+                await conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
+    finally:
+        await engine.dispose()
+
+
+def _counsel_job_phase(tenant: str) -> str:
+    """기본 pg 설정으로 상담 잡 하나를 돌리고 **잡 phase**를 돌려준다."""
+    with instance() as app:
+        posted = _post(app, tenant, suffix="cp")
+        assert posted.status_code == 202, posted.text
+        return str(posted.json()["data"]["status"])
+
+
+def test_the_deployment_command_prepares_and_is_rerunnable() -> None:
+    """🔴 **빈 체크포인터 스키마 → CLI → 재실행 → 상담 잡**을 한 줄기로 잰다 (99 #39).
+
+    실측한 인과다: 체크포인터 테이블이 없으면 잡이 **`failed`**로 떨어진다
+    (`relation "checkpoints" does not exist` → `worker_internal_error`).
+    ⚠ **기동은 정상이고 POST도 202**다 — 그래서 조용하다.
+
+    ⚠ **테이블 이름 하나로 판정하지 않는다** — `setup()`이 만드는 집합 전체를 보고,
+    **마지막에 상담 잡을 실제로 돌려** 그 집합이 충분한지 확인한다.
+    """
+    asyncio.run(_drop_checkpoint_tables())
+    assert asyncio.run(_checkpoint_tables()) == set(), "체크포인터 테이블이 안 지워졌다"
+
+    #: ① CLI를 안 돌린 상태 — 잡이 실패한다(이 검사의 존재 이유).
+    assert _counsel_job_phase("t_flip_guard") == "failed", (
+        "체크포인터 스키마 없이 상담 잡이 성공했다 — 이 배포 단계가 필요 없다는 뜻이거나 "
+        "이 검사가 그 상태를 못 만들고 있다"
+    )
+
+    #: ② 배포 명령 1회.
+    assert checkpointer_main() == 0, "배포 명령이 실패했다"
+    assert set(_CHECKPOINT_TABLES) <= asyncio.run(_checkpoint_tables()), (
+        f"필요한 테이블이 다 안 섰다: {asyncio.run(_checkpoint_tables())}"
+    )
+
+    #: ③ 재실행 — 배포는 두 번 돌 수 있어야 한다.
+    assert checkpointer_main() == 0, "재실행이 실패했다 — 멱등이 아니다"
+
+    #: ④ 같은 잡이 이제 완주한다 — **집합이 충분했는지는 이것이 말한다.**
+    assert _counsel_job_phase("t_flip_multi") == "succeeded", (
+        "배포 명령을 돌렸는데도 상담 잡이 안 끝난다 — 스키마 집합이 부족하다"
+    )
+
+
+def test_the_command_does_not_depend_on_the_backend_flag() -> None:
+    """🔴 **`STORE_BACKEND=memory`에서도 준비한다** — *"이 DB를 준비하라"* 는 명령이다.
+
+    ⚠ 플래그를 보면 **다음 플립을 위해 미리 준비하는 실행이 조용히 아무것도 안 하고
+    성공**한다 — 배포자는 준비된 줄 안다.
+    """
+    import os  # noqa: PLC0415
+
+    asyncio.run(_drop_checkpoint_tables())
+    os.environ["STORE_BACKEND"] = "memory"
+    get_db_settings.cache_clear()
+    try:
+        assert checkpointer_main() == 0
+        assert set(_CHECKPOINT_TABLES) <= asyncio.run(_checkpoint_tables())
+    finally:
+        os.environ.pop("STORE_BACKEND", None)
+        get_db_settings.cache_clear()
+
+
+def test_an_unreachable_database_fails_the_command_loudly() -> None:
+    """🔴 **접속 실패는 종료 코드 0이 아니다** — 배포가 그걸 보고 중단한다.
+
+    ⚠ 성공 문면이 같이 나오면 안 된다(로그만 보고 넘어간다).
+    """
+    import os  # noqa: PLC0415
+
+    original = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = "postgresql+asyncpg://checkon@localhost:1/checkon_ai"
+    get_db_settings.cache_clear()
+    try:
+        assert checkpointer_main() == 1, "접속 못 하는데 성공으로 끝났다"
+    finally:
+        if original is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = original
+        get_db_settings.cache_clear()
+        #: 다음 검사가 쓸 수 있게 되돌린다 — 이 파일이 스키마를 내렸다.
+        assert checkpointer_main() == 0

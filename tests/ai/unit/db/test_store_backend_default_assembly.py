@@ -300,25 +300,113 @@ def test_the_pin_is_back(request: Any) -> None:  # noqa: ANN401
 # ────────────── 플립이 새로 요구하는 배포 선행 단계 ──────────────
 
 
-def test_the_checkpointer_schema_step_has_a_caller() -> None:
-    """🔴 **`setup_checkpointer_schema()`의 호출처가 0건이었다** (99 #39 · #22 형태).
+_CHECKPOINTER: Final = _SRC / "agents" / "checkpointer.py"
+_SETUP: Final = "setup_checkpointer_schema"
+_ENTRY: Final = "main"
 
-    기본값이 `pg`가 되면서 counsel·probe·problem_generation의 체크포인터가
-    `AsyncPostgresSaver`가 된다. **그 테이블을 만드는 함수는 있는데 아무도 안 불렀다** —
-    실측으로 밟았다: 앞선 통합 검사가 스키마를 내린 뒤 상담 잡이
-    `relation "checkpoints" does not exist` → `worker_internal_error`로 **전부 실패**했다.
-    ⚠ **응답은 500이 아니라 「실패한 잡」**이라 조용하다.
 
-    ⚠ **앱 기동에 DDL을 넣지 않았다** — 그건 배포 판정이고 `api/app.py`는 양자 승인이다.
-    여기서는 **호출처가 다시 0이 되는 것**만 막는다(그러면 이 검사가 red다).
+def _checkpointer_tree() -> ast.Module:
+    return ast.parse(_CHECKPOINTER.read_text(encoding="utf-8"))
+
+
+def _called_name(call: ast.Call) -> str:
+    """`f(...)`는 `f` · `mod.f(...)`는 `f` — 호출 대상의 **마지막 이름**."""
+    func = call.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _calls_inside(function_name: str, *, called: str) -> int:
+    """`function_name` 본문에서 `called`를 **호출하는** 횟수 — 이름 언급이 아니라 호출이다.
+
+    🔴 **docstring·주석·import는 안 센다** — `ast.Call`의 `func`만 본다.
+    ⚠ `asyncio.run`처럼 **점 있는 호출**도 센다(처음엔 `ast.Name`만 봐서 놓쳤다).
     """
-    callers = [
-        path
-        for path in sorted((_SRC.parent.parent).rglob("*.py"))
-        if "setup_checkpointer_schema" in path.read_text(encoding="utf-8")
-        and path.name != "checkpointer.py"
-    ]
-    assert callers, (
-        "`setup_checkpointer_schema()`를 부르는 곳이 없다 — 새 DB에서 상담 잡이 "
-        "전부 실패한다(99 #39)"
+    for node in ast.walk(_checkpointer_tree()):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == function_name:
+            return sum(
+                1
+                for inner in ast.walk(node)
+                if isinstance(inner, ast.Call) and _called_name(inner) == called
+            )
+    return 0
+
+
+def test_the_deployment_entry_point_runs_the_setup_function() -> None:
+    """🔴 **배포 명령이 정해진 초기화 함수를 실제로 실행하는가** (99 #39).
+
+    ⚠ **종전 가드는 저장소 전체 문자열 검색이었고 거짓 green이었다.** 통합 테스트의
+    실제 호출을 **지워도 통과**했다 — **자기 파일의 docstring**에 함수 이름이 있었기
+    때문이다(실측: 실제 호출 **0건**인데 **1 passed**). *"호출처가 하나 이상"* 은
+    **테스트와 문서까지 운영 호출처로 계산**한다.
+
+    ⇒ 묻는 것을 바꾼다: **`python -m ai.agents.checkpointer`가 그 함수를 실행하는가.**
+    ⚠ **정확히 한 번**이다 — 두 번 부르면 배포 로그가 무엇을 말하는지 흐려진다.
+    """
+    assert _calls_inside(_ENTRY, called=_SETUP) == 1, (
+        f"`{_ENTRY}()`가 `{_SETUP}()`를 정확히 한 번 부르지 않는다 — "
+        f"배포 명령이 스키마를 준비하지 않는다(99 #39)"
     )
+
+
+def test_the_entry_point_actually_runs_it_rather_than_building_a_coroutine() -> None:
+    """🔴 `asyncio.run(...)`으로 **실행**해야 한다 — 코루틴만 만들면 아무 일도 안 난다.
+
+    ⚠ 그 실수는 **경고 하나 없이 exit 0**이다(`RuntimeWarning: never awaited`는 stderr에만).
+    """
+    assert _calls_inside(_ENTRY, called="run") >= 1, (
+        f"`{_ENTRY}()`가 `asyncio.run(...)`을 안 쓴다 — 코루틴을 만들고 버릴 수 있다"
+    )
+
+
+def test_module_execution_reaches_the_entry_point() -> None:
+    """`if __name__ == "__main__":`가 **`main()`을 실행**하는가.
+
+    ⚠ 없으면 `python -m ai.agents.checkpointer`가 **아무 일도 안 하고 exit 0**이다.
+    """
+    guarded = [
+        node
+        for node in _checkpointer_tree().body
+        if isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and any(
+            isinstance(cmp_, ast.Constant) and cmp_.value == "__main__"
+            for cmp_ in node.test.comparators
+        )
+    ]
+    assert guarded, "`if __name__ == \"__main__\":` 블록이 없다"
+    called = {
+        _called_name(inner)
+        for node in guarded
+        for inner in ast.walk(node)
+        if isinstance(inner, ast.Call)
+    }
+    assert _ENTRY in called, f"모듈 실행 경로가 `{_ENTRY}()`를 안 부른다"
+
+
+def test_a_test_calling_the_setup_is_not_a_deployment_entry_point() -> None:
+    """🔴 **이 가드가 무엇을 안 세는지** 못 박는다 — 통합 테스트도, 이 파일도 아니다.
+
+    ⚠ 종전 가드를 만족시키려면 **함수 이름을 아무 데나 적으면** 됐다. 그러면 규율이
+    아니라 **의식**이 된다(로그 계열). 여기서는 **`checkpointer.py`의 `main()` 안**만 본다.
+    """
+    tests_root = _SRC.parent.parent / "tests"
+    mentioning = [
+        path
+        for path in sorted(tests_root.rglob("*.py"))
+        if _SETUP in path.read_text(encoding="utf-8")
+    ]
+    assert mentioning, "이 파일이 그 이름을 적고 있으므로 최소 1건이어야 한다(스캐너 절단 가드)"
+    #: 🔴 **그 수는 판정에 안 쓰인다** — 위 세 검사 중 어디에도 `mentioning`이 안 들어간다.
+    assert _calls_inside(_ENTRY, called=_SETUP) == 1
+
+
+def test_the_entry_point_does_not_print_connection_settings() -> None:
+    """🔴 실패 문면에 **DSN·비밀번호**를 싣지 않는다 — 예외 타입만 내보낸다."""
+    source = _CHECKPOINTER.read_text(encoding="utf-8")
+    entry = source[source.index(f"def {_ENTRY}(") :]
+    for leak in ("database_url", "connection_string", "checkpoint_connection_string"):
+        assert leak not in entry, f"배포 명령이 접속정보를 문면에 싣는다: {leak}"
