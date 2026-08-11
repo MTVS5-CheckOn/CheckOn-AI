@@ -32,9 +32,9 @@
 
 | # | 관문 | 소유 | 상태 |
 | --- | --- | --- | --- |
-| **G1** | `agent_run`의 **`fk_agent_run_run_id_ai_run` 제약만 제거** — `run_id`는 **NOT NULL 유지**, 값도 **`job.execution_id` 유지**, **나머지 `AI_RUN` FK 다섯은 유지** | 🔴 **B(준영님)** | ☐ 대기 |
-| **G2** | **생애주기 기반 원장 완전성 점검**(FK 흉내가 아니다 — 아래) | 🔴 **A** | ☐ 대기 |
-| **G3** | counsel · probe · problem_generation **실제 enqueue 재검증**(실 PG) | **A** | ☐ G1 뒤 |
+| **G1** ✅ **(#201)** | `agent_run`의 **`fk_agent_run_run_id_ai_run` 제약만 제거** — `run_id`는 **NOT NULL 유지**, 값도 **`job.execution_id` 유지**, **나머지 `AI_RUN` FK 다섯은 유지** | 🔴 **B(준영님)** | ✅ **완료** — ORM FK 0건 · 실 PG `pg_constraint` 0건 · **나머지 다섯 유지**(양쪽 확인) |
+| **G2** ✅ | **생애주기 기반 원장 완전성 점검**(FK 흉내가 아니다 — 아래) | 🔴 **A** | ✅ **완료** — 실 PG **8 passed · xfail 0** · 고아 감시가 **실제 pass로 전환** |
+| **G3** ✅ | counsel · probe · problem_generation **실제 enqueue 재검증**(실 PG) | **A** | ✅ **완료** — 실제 Enqueuer→`PgJobStore`→runner→원장. counsel·PG `ok` · probe `separate_gap` · **violation 0 · unknown 0** |
 
 🔴 **G1 없이는 첫 요청부터 죽는다** — 실측(8/10 · Fake provider · 실 LLM 0):
 `POST /v1/counsel/drafts` → **HTTP 500** · `SQLSTATE 23503` · `fk_agent_run_run_id_ai_run`.
@@ -180,12 +180,17 @@ pack_miss_absent · pack_miss_foreign →  None  →  수      (PG 저장소가 
 
 | 축 | 상태 |
 | --- | --- |
-| 읽기 모델 **스키마** | ✅ **#182 완료** |
-| 읽기 모델 **배선·원자성** | ✅ **#186 · #188 완료** |
-| **G1** `fk_agent_run_run_id_ai_run` 제거 | 🔴 **B 대기** |
-| **G2** 생애주기 기반 원장 완전성 점검 | 🔴 **A 코드 작업** — G1과 **독립으로 진행 가능**, 다만 **완료 판정은 G1 뒤** |
-| **G3** counsel·probe·problem_generation **실제 enqueue 재검증** | ⚠ **G1 뒤 · A** |
-| ㉿ · ㉬ · ㉻ | ⚠ **플립 뒤 실측 대상** — 코드가 있다는 이유로 미리 닫지 않는다 |
+| 읽기 모델 **스키마** | ✅ **#182** |
+| 읽기 모델 **배선·원자성** | ✅ **#186 · #188** |
+| **G1** `fk_agent_run_run_id_ai_run` 제거 | ✅ **#201** |
+| **G2** 생애주기 기반 원장 완전성 점검 | ✅ **실 PG 8 passed · xfail 0** |
+| **G3** counsel·probe·problem_generation **실제 enqueue** | ✅ **#202** |
+| **#36** | ✅ **해소** |
+| **#37** counsel `AGENT_STEP`이 pg에서도 인메모리 | ☐ 🔴 **전면 플립 전 해소 관문** |
+| **㉾** `mapping_probe` 원장 | ☐ **별건** |
+| ㉿ · ㉬ · ㉻ | ☐ **기본 PG 플립 뒤 실측** |
 
 ⚠ **㉬·㉻·㉿는 플립을 막지 않는다** — 인메모리에서도 이미 그 상태이고 플립이 나쁘게
-만들지 않는다(㉬는 오히려 좋아진다). **막는 것은 G1이다.**
+만들지 않는다(㉬는 오히려 좋아진다).
+⚠ **G1이 막던 관문이었다**(과거) — `8ec3bd0`(#201)로 열렸다.
+🔴 **지금 막는 것은 #37이다** — `STORE_BACKEND=pg`를 켜도 counsel `AGENT_STEP`이 PG에 안 앉는다.

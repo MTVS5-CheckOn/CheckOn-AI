@@ -341,33 +341,56 @@ except Exception:
 
 ---
 
-## 5. 다음 단계 — 소유가 갈린다
+## 4-1. ✅ 최종 결과 — 관문 셋 통과 (2026-08-11 실측)
 
-| 일 | 소유 | 상태 |
-| --- | --- | --- |
-| `fk_agent_run_run_id_ai_run` **제거 마이그레이션** + ORM·ERD 주석 | 🔴 **B(준영님)** | 대기 |
-| **생애주기 기반 원장 완전성 점검**(§1-4-1) | 🔴 **A** | 플립 전 조건 |
-| `PROBLEM_SET`의 `AI_RUN` FK | **A+B** | ⏸ 별도 등재 |
-| `mapping_probe`의 `AI_RUN` 생성 | **A** | 99 ㉾ · 별건 |
-| 실행 식별자 분리 | **A+B** | 99 ㊮ 계열 · 별건 |
-| 플립 점검표 관문 갱신 | **A** | ✅ 이 PR |
-
-🔴 **A가 안 건드리는 것과 지금 할 수 있는 것을 가른다** — 뭉뚱그리면 G2가 G1을 기다리는
-것처럼 읽힌다.
-
-| | |
+| 관문 | 결과 |
 | --- | --- |
-| **A 무접촉** | `db/models.py` · 마이그레이션 · `06_erd.md` |
-| ✅ **A가 지금 진행 가능** | **G2 분류기·점검기 구현**(순수 판정 + 조회 구조 + 단위·렌더 검사) — **G1과 독립이다** |
-| ⚠ **G1 전에는 못 하는 것** | 실 PG에서 **고아 상태를 만들 수 없다** ⇒ **G2 PR을 완료 판정하지 않는다**(Draft) |
-| 🔴 **반드시 G1 뒤** | **G3 실제 enqueue 재검증** |
+| **G1** 물리 FK 제거 | ✅ ORM `run_id`: `nullable=False` · **FK 0건** · 타입 `Uuid` 유지 · 실 PG `pg_constraint`에 `fk_agent_run_run_id_ai_run` **0건** · `alembic_version = 0009_drop_agent_run_ai_fk` · **나머지 다섯 FK 유지**(ORM·실 PG 양쪽에서 각각 확인) |
+| **G2** 고아 감시 실제 pass 전환 | ✅ 실 PG **8 passed · xfailed 0 · skipped 0**. `test_an_orphan_agent_run_is_flagged`가 **마커 없이 본문을 완주**했다(이름으로 확인) — **부모 `AI_RUN` 선삽입 0 · 테스트 중 FK DROP 0** |
+| **G3** 세 capability 실제 enqueue | ✅ 아래 |
 
-⚠ **G1 전에 우회하지 않는다** — 제약을 로컬에서 임의로 지우거나 **테스트가 부모 `AI_RUN`을
-선삽입**해서 고아를 흉내 내지 않는다. 그건 이 결함을 두 달 못 보게 만든 바로 그 형태다(§1-5).
+**G3 실측** — 실제 Enqueuer → 실제 `PgJobStore` → 실제 runner → 실제 원장 recorder.
 
-`STORE_BACKEND` 기본값은 **memory 그대로**이고, 읽기 모델 검증은 **저장소 한 축만 주입**해서
-계속한다 — 전면 플립에 안 기댄다.
+| capability | enqueue 직후 | 종단 후 | 감사 판정 |
+| --- | --- | --- | --- |
+| `counsel_pack` | `AGENT_RUN` 1건 · `run_id == execution_id` · **`AI_RUN` 없음(정상)** · PG 복원 성공 | `succeeded` · `result_ref` 있음 · `AI_RUN` 1건 · 결합·테넌트 일치 · capability `composition` | **`ok`** |
+| `problem_generation` | 동일(부모 선삽입 없음) | `succeeded` · `result_ref` 있음 · `AI_RUN` 1건 · capability `problem_generation` | **`ok`** |
+| `mapping_probe` | `AGENT_RUN` 1건 · 복원 성공 | 계약 종단 도달 · 🔴 **`AI_RUN` 없음** | ⚠ **`separate_gap`** — ㉾ |
+
+**세 경로를 한 테넌트에서 합친 판정**: `ok 2 · separate_gap 1 · violation 0 · unknown 0` ·
+`preflight_blocks = False`. 🔴 **행 순서에 기대지 않고 `execution_id`로 정확 대조**했다.
+
+⚠ **`mapping_probe`는 ㉾로 분리 유지** — G1이 연 것은 **잡이 PG에 앉는 것**이고
+`record_run()` 0건은 그대로다. **`ok`로도 `violation`으로도 판정하지 않았다.**
+
+🔴 **G3에서 발견한 것 — counsel에는 타입이 맞는 PG step sink가 없다.**
+`PgAgentStepSink`는 **probe 축의 `AgentStepRecord`**로 타입돼 있고, counsel의 동명 클래스와
+**필드는 완전히 같지만 별개 클래스**다(실측) ⇒ `CounselPackRunner(step_sink=...)`에 넣으면
+mypy가 거부한다. **런타임은 되고 타입만 안 맞는다** ⇒ **별건**이고 이 회차에서 안 고쳤다.
+⚠ 그래서 G3의 counsel 검사는 **스텝만 인메모리**로 뒀다 — 이 파일의 축은
+**`AGENT_RUN`↔`AI_RUN` 결합**이고 그 축은 전부 실 PG다.
+
+---
+
+## 5. 완료 뒤 남은 후속 (2026-08-11)
+
+| 일 | 상태 |
+| --- | --- |
+| FK 제거 | ✅ **#201** |
+| 생애주기 원장 점검 | ✅ **#202** |
+| G3 실제 enqueue 3종 | ✅ **#202** |
+| **counsel `AGENT_STEP` PG 배선** | ☐ **#37** — 🔴 **전면 플립 전 해소 관문** |
+| `mapping_probe` 원장 | ☐ **㉾** |
+| 실행 식별자 분리(④) | ☐ 별도(99 ㊮ 계열) |
+| `PROBLEM_SET` 쓰기 0건 | ☐ 별도 |
+| 기본 PG 플립 · ㉿ⓓ·㉬·㉻ | ⏭ **다음 단계** |
+
+### ⚠ 아래는 **G1 전의 실행 순서 기록**이다 — 현재 지침이 아니다
+
+당시 A는 `db/models.py`·마이그레이션·`06_erd.md`를 안 건드리고, **G2 분류기·점검기는
+G1과 독립으로** 진행했으며, **G3는 G1 뒤**로 묶어 뒀다. 실 PG에서 고아를 못 만들던
+동안에는 **제약을 임의로 지우거나 부모 `AI_RUN`을 선삽입하지 않는다**가 규율이었다 —
+그 규율은 #202의 검사에도 그대로 남아 있다.
 
 ⚠ **이 문서의 §6(「준영님께 여쭙는 것」)은 판정으로 대체돼 삭제했다** — 열린 질문 셋 중
-①은 **③(FK 제거) 채택**으로, ②는 **㉾ 분리**로,
-③은 **A 소유의 생애주기 기반 운영 점검 채택**으로 각각 닫혔다.
+①은 **③ 채택**으로, ②는 **㉾ 분리**로, ③은 **A 소유 생애주기 점검 채택**으로 닫혔다.
