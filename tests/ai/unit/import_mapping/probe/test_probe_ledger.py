@@ -247,7 +247,22 @@ def test_the_ledger_is_written_before_the_agent_steps() -> None:
     assert order[0] == "ai_run", f"원장이 AGENT_STEP보다 늦다: {order[:3]}"
 
 
-def test_a_failure_after_the_execution_boundary_still_records() -> None:
+class _ExplodingPlanner:
+    """🔴 **그래프 실행 「안에서」 터진다** — 원장 적재보다 **앞**이어야 의미가 있다.
+
+    ⚠ 첫 판은 `_steps.record`를 터뜨렸는데 그건 **원장을 쓴 뒤**라, `finally`를 `else`로
+    바꿔도 검사가 **그대로 통과**했다(실측: 9 passed). **실패 지점이 관측 지점 뒤면
+    그 검사는 순서를 안 보고 있다.**
+    """
+
+    def next_action(self, state: object) -> object:
+        raise RuntimeError("planner 실패(대역)")
+
+    def classify(self, column: str, step: object) -> object:  # pragma: no cover
+        raise RuntimeError("planner 실패(대역)")
+
+
+def test_a_failure_inside_the_graph_still_records() -> None:
     """🔴 **실행 경계를 지난 실패도 원장을 남긴다** — 성공 경로에만 두면 안 된다.
 
     ⚠ 실행 경계는 **그래프 실행 직전**이다. 그 뒤의 실패는 *"실행이 있었고 실패했다"* 이고
@@ -255,15 +270,11 @@ def test_a_failure_after_the_execution_boundary_still_records() -> None:
     """
     harness = _Harness()
     ref = harness.put_profile()
-
-    async def explode(*args: object, **kwargs: object) -> None:
-        raise RuntimeError("그래프 실행 실패(대역)")
-
-    harness.runner._steps.record = explode  # type: ignore[method-assign]
+    harness.runner._planner = _ExplodingPlanner()  # type: ignore[assignment]
 
     async def scenario() -> None:
         await harness.enqueue(ref)
-        with pytest.raises(RuntimeError):
+        with pytest.raises(Exception, match="planner 실패"):
             await harness.runner.run_next(tenant_id=_TENANT)
 
     _run(scenario())
