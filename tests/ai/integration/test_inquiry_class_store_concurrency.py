@@ -347,3 +347,47 @@ def test_the_barrier_actually_parks_every_writer() -> None:
         if "connect" in str(exc).lower() or "refused" in str(exc).lower():
             pytest.skip("실 PG 미가용 — docker compose up -d")
         raise
+
+
+def test_a_row_of_another_tenant_is_not_updated_in_place() -> None:
+    """🔴 **조회 술어에서 테넌트가 빠지면 남의 행을 덮는다** — 순차 경로다.
+
+    ⚠ **동시 검사만으로는 이 축이 안 보인다**(실측: 술어를 지워도 **6 passed**): 두 테넌트가
+    **동시에** 최초 저장하면 둘 다 *"행이 없다"* 를 보고 각자 INSERT하므로 통과한다.
+    결함은 **한쪽이 이미 있을 때** 드러난다 — 그때 SELECT가 남의 행을 물어와 **UPDATE**한다.
+    """
+
+    async def scenario() -> tuple[list[InquiryClassRow], list[InquiryClassRow]]:
+        engine = create_async_engine(_dsn(), poolclass=NullPool)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        try:
+            await _clean(sessions)
+            store = PgInquiryClassStore(sessionmaker=sessions)
+            #: ① 남의 테넌트가 먼저 자리를 잡는다.
+            await store.insert_prediction(
+                tenant_id=_OTHER_TENANT, inquiry_ref=_REF, record=_DISTINCT[1]
+            )
+            #: ② 내 테넌트가 **같은 `inquiry_ref`** 로 최초 저장한다.
+            await store.insert_prediction(
+                tenant_id=_TENANT, inquiry_ref=_REF, record=_DISTINCT[0]
+            )
+            return (
+                await _rows_of(sessions, _TENANT),
+                await _rows_of(sessions, _OTHER_TENANT),
+            )
+        finally:
+            await engine.dispose()
+
+    try:
+        mine, theirs = asyncio.run(scenario())
+    except Exception as exc:  # noqa: BLE001
+        if "connect" in str(exc).lower() or "refused" in str(exc).lower():
+            pytest.skip("실 PG 미가용 — docker compose up -d")
+        raise
+
+    assert len(mine) == 1, f"내 테넌트 행이 {len(mine)}개다 — 남의 행을 갱신했을 수 있다"
+    assert len(theirs) == 1, "남의 테넌트 행이 사라졌다"
+    assert _as_tuple(mine[0]) == _as_tuple(_DISTINCT[0])
+    assert _as_tuple(theirs[0]) == _as_tuple(_DISTINCT[1]), (
+        "남의 행이 내 값으로 덮였다 — 조회 술어에 테넌트가 빠졌다"
+    )
