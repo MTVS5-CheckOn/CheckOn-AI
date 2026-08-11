@@ -44,12 +44,16 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
+#: 🔴 **세 번째 정의를 만들지 않는다**(99 #02) — `ledger_audit.py`가 이미 같은 자리에서
+#: 이 alias를 가져다 쓴다. ⚠ 이름의 거처가 counsel 모듈인 것은 어색하지만, 그걸 옮기는
+#: 것은 이 PR의 축이 아니다(옮기면 소비자 셋을 같이 건드린다).
+from ai.db.counsel_read_model import SessionFactory
 from ai.db.models import InquiryClass
 
 logger = logging.getLogger(__name__)
@@ -59,6 +63,23 @@ _Scope = tuple[str, str]
 
 #: 3축 이름 — 예측·정정 컬럼 접두를 만드는 단일 출처(축을 코드에 흩뿌리지 않는다).
 AXES = ("topic", "sentiment", "urgency")
+
+#: 🔴 자문 잠금 키의 **구분자** — `\x00`이 아니다. PG는 문자열에 NUL 바이트를 못 넣는다
+#: (counsel 실측: `invalid byte sequence for encoding "UTF8": 0x00`).
+_KEY_SEP: Final = "\x1f"
+#: 🔴 **테이블 네임스페이스를 앞에 붙인다** — 안 붙이면 다른 테이블이 같은 자연키를 쓸 때
+#: 서로를 막는다(정확성 문제가 아니라 **조용히 느려지는** 형태라 원인을 못 찾는다).
+_LOCK_NAMESPACE: Final = "inquiry_class"
+
+
+def lock_key(tenant_id: str, inquiry_ref: str) -> str:
+    """자연키 전체를 담은 자문 잠금 키 (99 #41).
+
+    🔴 **자연키의 두 축이 다 들어간다** — 하나라도 빠지면 무관한 요청이 같은 줄에 선다.
+    ⚠ **공개 함수인 이유는 검사가 이 규칙을 값으로 볼 수 있게 하려는 것**이다 —
+    잠금이 실제로 서는지는 실 PG 경합 검사가 따로 든다.
+    """
+    return _KEY_SEP.join((_LOCK_NAMESPACE, tenant_id, inquiry_ref))
 
 
 def system_utc_now() -> datetime:
@@ -244,10 +265,21 @@ class InMemoryInquiryClassStore:
 class PgInquiryClassStore:
     """PG 영속 — 자연키 upsert. 적재 실패는 **fail-closed**(모듈 docstring 참조)."""
 
+    #: 🔴 **행이 없어도 같은 키에 줄을 세운다** (99 #41) — `SELECT … FOR UPDATE`로는
+    #: 최초 저장을 직렬화할 수 없다(잠글 행이 아직 없다).
+    #: ⚠ **`IntegrityError`를 삼켜 성공으로 치는 것이 아니다** — 충돌 **자체가 안 난다.**
+    #:   `ON CONFLICT DO NOTHING`도 아니다: 그러면 규약 ①(검토된 예측 보호)과
+    #:   「미검토 행은 갱신한다」가 둘 다 저장소 밖으로 나가 버린다.
+    #: ⚠ 잠금은 트랜잭션과 함께 풀린다(`_xact_`) — 세션에 남지 않는다.
+    #: ⚠ 해시 충돌이면 **무관한 키가 잠깐 줄을 설 뿐** 정확성은 그대로다.
+    #: ⚠ **이 SQL 문면이 저장소 셋에 있다**(`counsel_read_model`·`problem_store`·여기).
+    #:   공용으로 올릴지는 별건이다 — 그러려면 B 소유 파일을 같이 건드려야 한다.
+    _LOCK_SQL = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
+
     def __init__(
         self,
         *,
-        sessionmaker: async_sessionmaker[AsyncSession],
+        sessionmaker: SessionFactory,
         clock: Callable[[], datetime] = system_utc_now,
         new_id: Callable[[], uuid.UUID] = uuid.uuid4,
     ) -> None:
@@ -269,7 +301,12 @@ class PgInquiryClassStore:
         inquiry_ref: str,
         record: InquiryClassRecord,
     ) -> None:
-        async with self._sessionmaker() as session:
+        async with self._sessionmaker() as session, session.begin():
+            #: 🔴 **읽기 전에 잠근다** — 행이 없어도 키에 줄을 세우려면 이 순서여야 한다.
+            #:   순서가 계약이다: 트랜잭션 → 잠금 → SELECT → 판정 → INSERT/UPDATE → COMMIT.
+            await session.execute(
+                self._LOCK_SQL, {"key": lock_key(tenant_id, inquiry_ref)}
+            )
             existing = await self._select(session, tenant_id, inquiry_ref)
             if existing is not None:
                 if existing.reviewed_at is not None:
@@ -292,7 +329,8 @@ class PgInquiryClassStore:
                         **record.model_dump(),
                     )
                 )
-            await session.commit()
+            #: ⚠ **명시 `commit()`을 뺐다** — `session.begin()`이 블록 끝에서 커밋한다.
+            #:   둘을 같이 두면 *"이미 트랜잭션이 있다"* 로 죽는다.
 
     async def apply_confirmation(
         self,

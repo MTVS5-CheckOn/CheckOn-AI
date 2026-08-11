@@ -20,7 +20,7 @@ INSERT**한다. `uq_inquiry_class_scope`가 하나를 죽이고, 그 `UniqueViol
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from decimal import Decimal
 from typing import Any, Final
 
@@ -152,7 +152,7 @@ async def _race(records: tuple[InquiryClassRecord, ...], *, tenant: str) -> _Out
         await engine.dispose()
 
 
-def _run(coro: Callable[[], Awaitable[_Outcome]]) -> _Outcome:
+def _run(coro: Callable[[], Coroutine[Any, Any, _Outcome]]) -> _Outcome:
     try:
         return asyncio.run(coro())
     except Exception as exc:  # noqa: BLE001 — 접속 실패만 skip으로 가른다
@@ -302,29 +302,42 @@ def test_the_barrier_actually_parks_every_writer() -> None:
         try:
             await _clean(sessions)
             barrier = asyncio.Barrier(_WRITERS)
-            tasks = [
-                asyncio.ensure_future(
-                    PgInquiryClassStore(
-                        sessionmaker=barrier_sessionmaker(sessions, barrier)
-                    ).insert_prediction(
+
+            def writer(record: InquiryClassRecord) -> asyncio.Task[None]:
+                store = PgInquiryClassStore(
+                    sessionmaker=barrier_sessionmaker(sessions, barrier)
+                )
+                return asyncio.ensure_future(
+                    store.insert_prediction(
                         tenant_id=_TENANT, inquiry_ref=_REF, record=record
                     )
                 )
-                for record in _DISTINCT
-            ]
-            #: 앞의 셋이 배리어 앞에 설 때까지 — 넷째가 오기 전에는 아무도 못 지난다.
+
+            #: 🔴 **셋만 먼저 띄운다.** 넷을 한 번에 띄우면 넷째가 도착하는 순간 전원이
+            #:   풀려 `n_waiting`이 **0으로 돌아간 뒤**에 관측된다(실측: 0) — 그러면
+            #:   *"아무도 안 섰다"* 와 구분이 안 된다. 창을 **손으로 연다.**
+            parked = [writer(record) for record in _DISTINCT[:-1]]
             async with asyncio.timeout(_TIMEOUT_S):
                 while barrier.n_waiting < _WRITERS - 1:
-                    if any(task.done() for task in tasks):
+                    if any(task.done() for task in parked):
                         break
                     await asyncio.sleep(0)
-                assert barrier.n_waiting == _WRITERS - 1, (
-                    f"배리어 앞에 {barrier.n_waiting}명만 섰다 — 프록시가 안 물렸다"
-                )
-                assert not any(task.done() for task in tasks), (
-                    "party가 다 오기 전에 끝난 writer가 있다"
-                )
-                await asyncio.gather(*tasks)
+
+            assert barrier.n_waiting == _WRITERS - 1, (
+                f"배리어 앞에 {barrier.n_waiting}명만 섰다 — 프록시가 안 물렸다"
+            )
+            assert not any(task.done() for task in parked), (
+                "party가 다 오기 전에 끝난 writer가 있다 — 첫 SQL이 안 걸렸다"
+            )
+            #: 🔴 **아직 아무 행도 없다** — 잠금이 아니라 **배리어**가 잡고 있는 상태다.
+            assert await _rows_of(sessions, _TENANT) == [], (
+                "party가 다 오기 전에 행이 생겼다"
+            )
+
+            last = writer(_DISTINCT[-1])
+            async with asyncio.timeout(_TIMEOUT_S):
+                await asyncio.gather(*parked, last)
+            assert len(await _rows_of(sessions, _TENANT)) == 1
         finally:
             await engine.dispose()
 
