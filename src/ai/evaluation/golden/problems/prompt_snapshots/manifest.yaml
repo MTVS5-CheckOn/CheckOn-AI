@@ -4,6 +4,10 @@ snapshots:
     version: v1
     file: passage.snapshot.txt
     review_status: expert_review_pending
+  - prompt_id: pg.source_material.v1
+    version: v1
+    file: source_material.snapshot.txt
+    review_status: expert_review_pending
   - prompt_id: pg.items.v1
     version: v1
     file: items.snapshot.txt

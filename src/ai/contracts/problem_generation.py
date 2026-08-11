@@ -64,6 +64,52 @@ class PassageRequest(BaseModel):
     banned_topics_version: str = Field(min_length=1)
 
 
+class SpeechWritingSourceKind(StrEnum):
+    """화법과작문 발문 정형에 필요한 생성 자료 형태."""
+
+    PRESENTATION = "presentation"
+    WRITING_DRAFT = "writing_draft"
+    WRITING_SOURCES = "writing_sources"
+
+
+class SpeechWritingSourceRequest(BaseModel):
+    """화법과작문 담화·초고·수집 자료 생성 요청."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    area_tag: Literal[AreaTag.SPEECH_WRITING] = AreaTag.SPEECH_WRITING
+    source_kind: SpeechWritingSourceKind
+    topic_hint: str | None = Field(default=None, min_length=1)
+    banned_topics_version: str = Field(min_length=1)
+
+
+class MediaSourceKind(StrEnum):
+    """매체 발문 정형에 필요한 생성 자료 형태."""
+
+    SINGLE = "single"
+    PAIRED = "paired"
+
+
+class MediaSourceRequest(BaseModel):
+    """단일 또는 (가)·(나) 매체 자료 생성 요청."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    area_tag: Literal[AreaTag.MEDIA] = AreaTag.MEDIA
+    source_kind: MediaSourceKind
+    topic_hint: str | None = Field(default=None, min_length=1)
+    banned_topics_version: str = Field(min_length=1)
+
+
+type SourceMaterialRequest = SpeechWritingSourceRequest | MediaSourceRequest
+
+
+type SourceRequest = Annotated[
+    PassageRequest | SpeechWritingSourceRequest | MediaSourceRequest,
+    Field(discriminator="area_tag"),
+]
+
+
 class WorkSelection(BaseModel):
     """T3 문학 작품 선택 조건 — 작품 생성 파라미터가 아니다."""
 
@@ -125,6 +171,17 @@ class PassageDraft(BaseModel):
     ] = Field(min_length=1)
 
 
+class SourceMaterialDraft(BaseModel):
+    """화법과작문·매체의 생성 자료 초안."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    material_text: str = Field(min_length=1)
+    evidence_anchor_ids: tuple[
+        Annotated[str, Field(min_length=1)], ...
+    ] = Field(min_length=1)
+
+
 class TargetKind(StrEnum):
     STUDENT = "student"
     CLASS = "class"
@@ -170,7 +227,7 @@ class ProblemRequest(BaseModel):
     count: int = Field(ge=1, le=20)
     requested_difficulty: DifficultyBand | None = None
     target: TargetSelection = TargetSelection.AUTO
-    passage: PassageRequest | None = None
+    passage: SourceRequest | None = None
     work_selection: WorkSelection | None = None
     topic_hint: str | None = Field(default=None, min_length=1)
 
@@ -198,8 +255,13 @@ class ProblemRequest(BaseModel):
 
         if self.passage is not None and self.work_selection is not None:
             raise ValueError("passage와 work_selection은 함께 사용할 수 없다")
-        if self.passage is not None and self.area_tag is not AreaTag.READING:
+        if (
+            isinstance(self.passage, PassageRequest)
+            and self.area_tag is not AreaTag.READING
+        ):
             raise ValueError("PassageRequest는 reading 영역에서만 사용할 수 있다")
+        if self.passage is not None and self.passage.area_tag is not self.area_tag:
+            raise ValueError("자료 생성 요청의 area_tag는 문제 요청 영역과 같아야 한다")
         if (
             self.work_selection is not None
             and self.area_tag is not AreaTag.LITERATURE
@@ -493,6 +555,7 @@ class ProblemGenerationState(BaseModel):
     fallback_ref: str | None = Field(default=None, min_length=1)
     difficulty_regen_used: bool = False
     passage_draft: PassageDraft | None = None
+    source_material_draft: SourceMaterialDraft | None = None
     work_excerpt: WorkExcerpt | None = None
 
     @model_validator(mode="after")
@@ -511,6 +574,8 @@ class ProblemGenerationState(BaseModel):
             )
         if self.difficulty_regen_used and self.fallback_ref is None:
             raise ValueError("난이도 재생성 state에는 fallback_ref가 필요하다")
+        if self.passage_draft is not None and self.source_material_draft is not None:
+            raise ValueError("독서 지문과 생성 자료 초안은 함께 기록할 수 없다")
 
         succeeded = sum(
             item.status in {ProblemItemStatus.VERIFIED, ProblemItemStatus.NEEDS_REVIEW}
@@ -608,6 +673,21 @@ def assert_problem_generation_state_transition(
         if previous.cursor or previous.item_attempt or current.cursor or current.item_attempt:
             raise InvalidProblemGenerationStateTransition(
                 "passage_draft는 문항 처리를 시작하기 전에만 설정할 수 있다"
+            )
+    if (
+        previous.source_material_draft is not None
+        and current.source_material_draft != previous.source_material_draft
+    ):
+        raise InvalidProblemGenerationStateTransition(
+            "생성된 source_material_draft는 변경하거나 제거할 수 없다"
+        )
+    if (
+        previous.source_material_draft is None
+        and current.source_material_draft is not None
+    ):
+        if previous.cursor or previous.item_attempt or current.cursor or current.item_attempt:
+            raise InvalidProblemGenerationStateTransition(
+                "source_material_draft는 문항 처리를 시작하기 전에만 설정할 수 있다"
             )
     if previous.work_excerpt is not None and current.work_excerpt != previous.work_excerpt:
         raise InvalidProblemGenerationStateTransition(

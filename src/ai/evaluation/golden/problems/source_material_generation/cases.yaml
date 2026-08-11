@@ -1,0 +1,67 @@
+schema_version: problem-golden.v1
+suite: source_material_generation
+cases:
+  - case_id: SM1
+    title: 화법과작문 승인 근거 기반 발표 자료 생성
+    track: T4
+    review_status: expert_review_pending
+    educational_draft: &speech_draft
+      stem: 위 발표에 나타난 말하기 방식으로 적절하지 않은 것은?
+      choices: [첫 번째 초안, 두 번째 초안, 세 번째 초안, 네 번째 초안, 다섯 번째 초안]
+      answer_draft: 1
+      rationale_draft: 생성 자료의 승인 근거를 따르는 해설 초안 — 전문가 검수 대기
+      evidence_draft: [speech_writing.source.approved.001]
+      difficulty_draft: null
+    mutation:
+      code: speech_material_generation_then_item
+      detail: 발표 자료를 먼저 생성하고 같은 약점 노드로 문항과 blind 검증을 수행한다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 3
+      notes: 자료·문항 생성과 blind 검증을 각 1회 수행한다.
+  - case_id: SM2
+    title: 화법과작문 생성 자료의 evidence 누락
+    track: T4
+    review_status: expert_review_pending
+    educational_draft: *speech_draft
+    mutation:
+      code: speech_material_missing_evidence
+      detail: SourceMaterialDraft의 evidence_anchor_ids를 빈 배열로 만든다.
+    expected:
+      decision: rejected_insufficient
+      rule_ids: [R-1]
+      llm_calls: 1
+      notes: 근거 없는 자료를 ContextPack에 결합하거나 문항 생성으로 넘기지 않는다.
+  - case_id: SM3
+    title: 매체 승인 근거 기반 쌍 자료 생성
+    track: T5
+    review_status: expert_review_pending
+    educational_draft: &media_draft
+      stem: (가)를 바탕으로 (나)를 작성했다고 할 때 적절하지 않은 것은?
+      choices: [첫 번째 초안, 두 번째 초안, 세 번째 초안, 네 번째 초안, 다섯 번째 초안]
+      answer_draft: 1
+      rationale_draft: 생성 매체 자료의 승인 근거를 따르는 해설 초안 — 전문가 검수 대기
+      evidence_draft: [media.source.approved.001]
+      difficulty_draft: null
+    mutation:
+      code: media_material_generation_then_item
+      detail: 쌍 매체 자료를 먼저 생성하고 같은 약점 노드로 문항과 blind 검증을 수행한다.
+    expected:
+      decision: verified
+      rule_ids: []
+      llm_calls: 3
+      notes: 자료·문항 생성과 blind 검증을 각 1회 수행한다.
+  - case_id: SM4
+    title: 매체 생성 자료의 evidence 누락
+    track: T5
+    review_status: expert_review_pending
+    educational_draft: *media_draft
+    mutation:
+      code: media_material_missing_evidence
+      detail: SourceMaterialDraft의 evidence_anchor_ids를 빈 배열로 만든다.
+    expected:
+      decision: rejected_insufficient
+      rule_ids: [R-1]
+      llm_calls: 1
+      notes: evidence 없는 매체 자료는 문항 생성 전에 실패 닫힘한다.

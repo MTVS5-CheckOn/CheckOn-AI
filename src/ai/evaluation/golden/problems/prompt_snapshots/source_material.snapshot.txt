@@ -1,0 +1,10 @@
+PROMPT_ID=pg.source_material.v1
+PROMPT_VERSION=v1
+REVIEW_STATUS=expert_review_pending
+
+area_spec=화법과작문 또는 매체의 area_specs.yaml 규격 블록
+context_pack={"context_pack_id":"00000000-0000-4000-8000-000000000401","operation":"generate","target_skill_node_ids":["media.reception.credibility"],"evidence_pack_id":"00000000-0000-4000-8000-000000000402"}
+source_request={"area_tag":"media","source_kind":"paired","topic_hint":"온라인 정보 검증","banned_topics_version":"pg-banned-v1"}
+banned_topics={"version":"pg-banned-v1"}
+
+기대: SourceMaterialDraft 구조화 출력. 교육 내용은 전문가 검수 대기.

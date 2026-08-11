@@ -21,6 +21,8 @@ from ai.contracts.problem_generation import (
     ItemRevision,
     ItemRevisionRequest,
     LiteratureGenre,
+    MediaSourceKind,
+    MediaSourceRequest,
     PassageDomain,
     PassageDraft,
     PassageRequest,
@@ -37,6 +39,9 @@ from ai.contracts.problem_generation import (
     SentenceComplexity,
     SetStopReason,
     SolveResult,
+    SourceMaterialDraft,
+    SpeechWritingSourceKind,
+    SpeechWritingSourceRequest,
     TargetKind,
     TargetSelection,
     TargetSource,
@@ -201,6 +206,54 @@ def test_passage_is_reading_only() -> None:
     )
     with pytest.raises(ValueError, match="reading"):
         _request(passage=passage)
+
+
+@pytest.mark.parametrize(
+    ("area_tag", "source_request"),
+    [
+        (
+            AreaTag.SPEECH_WRITING,
+            SpeechWritingSourceRequest(
+                source_kind=SpeechWritingSourceKind.WRITING_DRAFT,
+                banned_topics_version="v1",
+            ),
+        ),
+        (
+            AreaTag.MEDIA,
+            MediaSourceRequest(
+                source_kind=MediaSourceKind.PAIRED,
+                banned_topics_version="v1",
+            ),
+        ),
+    ],
+)
+def test_generated_source_request_roundtrip(
+    area_tag: AreaTag,
+    source_request: SpeechWritingSourceRequest | MediaSourceRequest,
+) -> None:
+    request = _request(area_tag=area_tag, passage=source_request)
+
+    assert request.passage == source_request
+    assert request.model_dump(mode="json")["passage"]["area_tag"] == area_tag.value
+
+
+def test_generated_source_request_must_match_problem_area() -> None:
+    with pytest.raises(ValueError, match="같아야"):
+        _request(
+            area_tag=AreaTag.MEDIA,
+            passage=SpeechWritingSourceRequest(
+                source_kind=SpeechWritingSourceKind.PRESENTATION,
+                banned_topics_version="v1",
+            ),
+        )
+
+
+def test_source_material_draft_requires_evidence() -> None:
+    with pytest.raises(ValueError, match="evidence_anchor_ids"):
+        SourceMaterialDraft(
+            material_text="학생 A의 발표 자료",
+            evidence_anchor_ids=(),
+        )
 
 
 def test_work_selection_roundtrip_and_literature_scope() -> None:
