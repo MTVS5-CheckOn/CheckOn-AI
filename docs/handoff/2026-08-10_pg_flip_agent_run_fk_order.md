@@ -341,6 +341,37 @@ except Exception:
 
 ---
 
+## 4-1. ✅ 최종 결과 — 관문 셋 통과 (2026-08-11 실측)
+
+| 관문 | 결과 |
+| --- | --- |
+| **G1** 물리 FK 제거 | ✅ ORM `run_id`: `nullable=False` · **FK 0건** · 타입 `Uuid` 유지 · 실 PG `pg_constraint`에 `fk_agent_run_run_id_ai_run` **0건** · `alembic_version = 0009_drop_agent_run_ai_fk` · **나머지 다섯 FK 유지**(ORM·실 PG 양쪽에서 각각 확인) |
+| **G2** 고아 감시 실제 pass 전환 | ✅ 실 PG **8 passed · xfailed 0 · skipped 0**. `test_an_orphan_agent_run_is_flagged`가 **마커 없이 본문을 완주**했다(이름으로 확인) — **부모 `AI_RUN` 선삽입 0 · 테스트 중 FK DROP 0** |
+| **G3** 세 capability 실제 enqueue | ✅ 아래 |
+
+**G3 실측** — 실제 Enqueuer → 실제 `PgJobStore` → 실제 runner → 실제 원장 recorder.
+
+| capability | enqueue 직후 | 종단 후 | 감사 판정 |
+| --- | --- | --- | --- |
+| `counsel_pack` | `AGENT_RUN` 1건 · `run_id == execution_id` · **`AI_RUN` 없음(정상)** · PG 복원 성공 | `succeeded` · `result_ref` 있음 · `AI_RUN` 1건 · 결합·테넌트 일치 · capability `composition` | **`ok`** |
+| `problem_generation` | 동일(부모 선삽입 없음) | `succeeded` · `result_ref` 있음 · `AI_RUN` 1건 · capability `problem_generation` | **`ok`** |
+| `mapping_probe` | `AGENT_RUN` 1건 · 복원 성공 | 계약 종단 도달 · 🔴 **`AI_RUN` 없음** | ⚠ **`separate_gap`** — ㉾ |
+
+**세 경로를 한 테넌트에서 합친 판정**: `ok 2 · separate_gap 1 · violation 0 · unknown 0` ·
+`preflight_blocks = False`. 🔴 **행 순서에 기대지 않고 `execution_id`로 정확 대조**했다.
+
+⚠ **`mapping_probe`는 ㉾로 분리 유지** — G1이 연 것은 **잡이 PG에 앉는 것**이고
+`record_run()` 0건은 그대로다. **`ok`로도 `violation`으로도 판정하지 않았다.**
+
+🔴 **G3에서 발견한 것 — counsel에는 타입이 맞는 PG step sink가 없다.**
+`PgAgentStepSink`는 **probe 축의 `AgentStepRecord`**로 타입돼 있고, counsel의 동명 클래스와
+**필드는 완전히 같지만 별개 클래스**다(실측) ⇒ `CounselPackRunner(step_sink=...)`에 넣으면
+mypy가 거부한다. **런타임은 되고 타입만 안 맞는다** ⇒ **별건**이고 이 회차에서 안 고쳤다.
+⚠ 그래서 G3의 counsel 검사는 **스텝만 인메모리**로 뒀다 — 이 파일의 축은
+**`AGENT_RUN`↔`AI_RUN` 결합**이고 그 축은 전부 실 PG다.
+
+---
+
 ## 5. 다음 단계 — 소유가 갈린다
 
 | 일 | 소유 | 상태 |

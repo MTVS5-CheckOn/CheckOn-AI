@@ -32,9 +32,9 @@
 
 | # | 관문 | 소유 | 상태 |
 | --- | --- | --- | --- |
-| **G1** | `agent_run`의 **`fk_agent_run_run_id_ai_run` 제약만 제거** — `run_id`는 **NOT NULL 유지**, 값도 **`job.execution_id` 유지**, **나머지 `AI_RUN` FK 다섯은 유지** | 🔴 **B(준영님)** | ☐ 대기 |
-| **G2** | **생애주기 기반 원장 완전성 점검**(FK 흉내가 아니다 — 아래) | 🔴 **A** | ☐ 대기 |
-| **G3** | counsel · probe · problem_generation **실제 enqueue 재검증**(실 PG) | **A** | ☐ G1 뒤 |
+| **G1** ✅ **(#201)** | `agent_run`의 **`fk_agent_run_run_id_ai_run` 제약만 제거** — `run_id`는 **NOT NULL 유지**, 값도 **`job.execution_id` 유지**, **나머지 `AI_RUN` FK 다섯은 유지** | 🔴 **B(준영님)** | ✅ **완료** — ORM FK 0건 · 실 PG `pg_constraint` 0건 · **나머지 다섯 유지**(양쪽 확인) |
+| **G2** ✅ | **생애주기 기반 원장 완전성 점검**(FK 흉내가 아니다 — 아래) | 🔴 **A** | ✅ **완료** — 실 PG **8 passed · xfail 0** · 고아 감시가 **실제 pass로 전환** |
+| **G3** ✅ | counsel · probe · problem_generation **실제 enqueue 재검증**(실 PG) | **A** | ✅ **완료** — 실제 Enqueuer→`PgJobStore`→runner→원장. counsel·PG `ok` · probe `separate_gap` · **violation 0 · unknown 0** |
 
 🔴 **G1 없이는 첫 요청부터 죽는다** — 실측(8/10 · Fake provider · 실 LLM 0):
 `POST /v1/counsel/drafts` → **HTTP 500** · `SQLSTATE 23503` · `fk_agent_run_run_id_ai_run`.
