@@ -39,7 +39,7 @@ PostgreSQL 통합 검사 결과를 본다. ⚠ **과거 CI 실행을 인용한 �
 | --- | --- | --- | --- |
 | **G1** ✅ **(#201)** | `agent_run`의 **`fk_agent_run_run_id_ai_run` 제약만 제거** — `run_id`는 **NOT NULL 유지**, 값도 **`job.execution_id` 유지**, **나머지 `AI_RUN` FK 다섯은 유지** | 🔴 **B(준영님)** | ✅ **완료** — ORM FK 0건 · 실 PG `pg_constraint` 0건 · **나머지 다섯 유지**(양쪽 확인) |
 | **G2** ✅ | **생애주기 기반 원장 완전성 점검**(FK 흉내가 아니다 — 아래) | 🔴 **A** | ✅ **완료** — 실 PG **8 passed · xfail 0** · 고아 감시가 **실제 pass로 전환** |
-| **G3** ✅ | counsel · probe · problem_generation **실제 enqueue 재검증**(실 PG) | **A** | ✅ **완료** — 실제 Enqueuer→`PgJobStore`→runner→원장. counsel·PG `ok` · probe `separate_gap` · **violation 0 · unknown 0** |
+| **G3** ✅ | counsel · probe · problem_generation **실제 enqueue 재검증**(실 PG) | **A** | ✅ **완료** — 실제 Enqueuer→`PgJobStore`→runner→원장. **현재: 셋 다 `ok` · violation 0 · unknown 0** (8/12 · ㉾ 해소 뒤). ⚠ **8/11 최초 실측은 `counsel`·`PG` `ok` · `probe` `separate_gap`이었다** — 그때는 조사 워커가 원장을 안 썼다. `separate_gap` 판정값 자체가 없어졌다 |
 
 🔴 **G1 없이는 첫 요청부터 죽는다** — 실측(8/10 · Fake provider · 실 LLM 0):
 `POST /v1/counsel/drafts` → **HTTP 500** · `SQLSTATE 23503` · `fk_agent_run_run_id_ai_run`.
