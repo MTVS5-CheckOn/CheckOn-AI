@@ -92,7 +92,7 @@ erDiagram
   }
   AGENT_RUN {
     uuid id PK "WorkerJob.job_id"
-    uuid run_id FK "WorkerJob.execution_id"
+    uuid run_id "WorkerJob.execution_id — 잡 실행 신원, AI_RUN이 존재하면 같은 ID로 논리 결합"
     varchar tenant_id "격리 키·lease 조회 범위"
     varchar agent_kind "counsel_pack|mapping_probe|problem_generation"
     varchar operation "고정 라우팅 5종"

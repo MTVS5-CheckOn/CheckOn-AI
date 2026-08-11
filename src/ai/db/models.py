@@ -827,7 +827,9 @@ class AgentRun(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    run_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("ai_run.execution_id"))
+    # 잡 생성 시 확정되는 실행 신원이며 AI_RUN 포인터가 아니다. AI_RUN이 생기면 같은 ID로
+    # 논리 결합한다(판정 ③ · docs/handoff/2026-08-10_pg_flip_agent_run_fk_order.md §0-1).
+    run_id: Mapped[uuid.UUID] = mapped_column(Uuid)
     tenant_id: Mapped[str] = mapped_column(String)
     agent_kind: Mapped[str] = mapped_column(String)  # counsel_pack|mapping_probe|problem_generation
     operation: Mapped[str] = mapped_column(String)

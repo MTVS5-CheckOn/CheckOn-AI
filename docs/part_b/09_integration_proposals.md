@@ -1756,6 +1756,23 @@ A의 축이며, 그 전까지 `㉿`·`㉻`·`㉬`의 나머지 절반은 **닫�
 
 ---
 
+### AGENT_RUN 실행 신원과 AI_RUN 물리 FK 분리 `[판정 ③ 구현 · 2026-08-10]`
+
+`AGENT_RUN`은 모델 실행 전 `queued` 단계에서 먼저 생기며, 모델 호출 없이 끝나는 경로도
+있다. 따라서 `run_id`는 `WorkerJob.execution_id`인 **잡 실행 신원**으로 NOT NULL 유지하되,
+`AI_RUN` 선행 존재를 강제하던 `fk_agent_run_run_id_ai_run` 물리 FK만 제거한다. `AI_RUN`이
+존재하는 경우에는 같은 ID로 논리 결합한다.
+
+`SIGNAL`·`DRAFT`·`WEAKNESS_MAP`·`LLM_CALL`·`PROBLEM_SET`의 AI_RUN FK 다섯은 유지한다.
+이 행들은 실행 뒤에 생기는 산출물·관측 축이므로 실제 AI_RUN을 부모로 요구하는 제약이
+생애주기와 충돌하지 않는다.
+
+생애주기별 원장 완전성 판정과 PG 점검은 A 소유이며 이 PR 범위 밖이다. G1 뒤에는
+`test_pg_ledger_audit.py::test_an_orphan_agent_run_is_flagged`의 ORM 메타데이터 기반 조건이
+풀려, 기존 strict xfail이 실제 실 PG 검증으로 전환된다.
+
+---
+
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
 | 번호 | 항목 | B 권고안 | 담당 | 관련 part_b |
