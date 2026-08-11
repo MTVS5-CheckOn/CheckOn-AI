@@ -391,3 +391,135 @@ def test_a_row_of_another_tenant_is_not_updated_in_place() -> None:
     assert _as_tuple(theirs[0]) == _as_tuple(_DISTINCT[1]), (
         "남의 행이 내 값으로 덮였다 — 조회 술어에 테넌트가 빠졌다"
     )
+
+
+# ── (지시서 69-R) 예측 갱신과 확정 회신이 겹칠 때 (99 #42) ──
+
+#: 초기 행 — `topic=schedule` · 정정 없음 · 미검토.
+_SEED: Final = _record("schedule", "neutral", "normal", "0.50")
+#: 늦게 도착하는 새 예측 — **topic과 confidence가 둘 다 다르다**(전문 대조를 위해).
+_LATE: Final = _record("payment", "neutral", "normal", "0.80")
+
+
+def _full_state(row: InquiryClassRow) -> tuple[Any, ...]:
+    """예측 3축 · confidence 3축 · **정정 3축** · 검토 여부 — 조합 전체를 본다.
+
+    🔴 **`reviewed_at is not None`만 보면 안 된다** — 그 단정은 **두 순차 실행 어디에도
+    없는 혼합 상태**를 통과시킨다(예: `topic=payment` + `corrected_topic=None` + 검토됨).
+    """
+    return (
+        row.topic,
+        row.sentiment,
+        row.urgency,
+        Decimal(row.confidence_topic),
+        Decimal(row.confidence_sentiment),
+        Decimal(row.confidence_urgency),
+        row.corrected_topic,
+        row.corrected_sentiment,
+        row.corrected_urgency,
+        row.reviewed_at is not None,
+    )
+
+
+#: 🔴 **가능한 정상 결과는 순차 실행 둘뿐이다.**
+#: ⚠ 타입을 명시한다 — 안 하면 mypy가 두 리터럴을 **서로 다른 구체 타입**으로 좁혀
+#:   `_PREDICTION_FIRST != _CONFIRMATION_FIRST` 를 *"겹치지 않는 비교"* 로 막는다
+#:   (그 단정은 **두 갈래가 같으면 검사가 헛돈다**를 지키는 자리라 지울 수 없다).
+type _Corrected = str | None
+type _State = tuple[
+    str, str, str, Decimal, Decimal, Decimal, _Corrected, _Corrected, _Corrected, bool
+]
+#:
+#:   ⓐ 예측이 먼저 — `payment` 저장 → 확정이 `schedule`을 보고 **예측과 다르므로 정정**
+#:   ⓑ 확정이 먼저 — 기존 `schedule`을 검토, **같은 값이라 정정 아님**(규약 ②) →
+#:      늦은 예측은 **검토된 행을 보고 skip**(규약 ①)
+_PREDICTION_FIRST: Final[_State] = (
+    "payment", "neutral", "normal",
+    Decimal("0.80"), Decimal("0.80"), Decimal("0.80"),
+    "schedule", None, None,
+    True,
+)
+_CONFIRMATION_FIRST: Final[_State] = (
+    "schedule", "neutral", "normal",
+    Decimal("0.50"), Decimal("0.50"), Decimal("0.50"),
+    None, None, None,
+    True,
+)
+
+
+async def _race_prediction_against_confirmation() -> tuple[list[BaseException], tuple[Any, ...]]:
+    engine = create_async_engine(_dsn(), poolclass=NullPool)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        await _clean(sessions)
+        #: 초기 행은 **경합 밖에서** 만든다 — 재는 것은 「기존 행 갱신 경합」이다.
+        await PgInquiryClassStore(sessionmaker=sessions).insert_prediction(
+            tenant_id=_TENANT, inquiry_ref=_REF, record=_SEED
+        )
+        barrier = asyncio.Barrier(2)
+
+        def store() -> PgInquiryClassStore:
+            return PgInquiryClassStore(
+                sessionmaker=barrier_sessionmaker(sessions, barrier)
+            )
+
+        async with asyncio.timeout(_TIMEOUT_S):
+            results = await asyncio.gather(
+                store().insert_prediction(
+                    tenant_id=_TENANT, inquiry_ref=_REF, record=_LATE
+                ),
+                store().apply_confirmation(
+                    tenant_id=_TENANT, inquiry_ref=_REF, corrections={"topic": "schedule"}
+                ),
+                return_exceptions=True,
+            )
+        failures = [r for r in results if isinstance(r, BaseException)]
+        rows = await _rows_of(sessions, _TENANT)
+        assert len(rows) == 1, f"행이 {len(rows)}개다"
+        return failures, _full_state(rows[0])
+    finally:
+        await engine.dispose()
+
+
+def test_a_prediction_and_a_confirmation_converge_to_one_sequential_result() -> None:
+    """🔴 **최종 상태가 가능한 순차 실행 둘 중 하나와 정확히 일치해야 한다** (99 #42).
+
+    ⚠ **「누가 먼저 잠금을 얻는가」는 고정하지 않는다** — 둘 다 정상이다. 고정하는 것은
+    *"두 순차 실행 어디에도 없는 상태는 나오면 안 된다"* 이다.
+
+    실측한 위반 상태(수정 전): `topic=payment` · `corrected_topic=schedule` · 검토됨 —
+    **확정이 커밋된 뒤에 늦은 예측이 검토된 행을 덮었다**(규약 ① 위반). 그 상태는
+    ⓐ와 값이 같아 보이지만 **경로가 다르다** ⇒ 아래는 `reviewed_at`만 보지 않고
+    **조합 전체**를 본다(⇒ ⓐ·ⓑ 어느 쪽인지 값으로 갈린다).
+    """
+    for round_index in range(_ROUNDS):
+        try:
+            failures, state = asyncio.run(_race_prediction_against_confirmation())
+        except Exception as exc:  # noqa: BLE001
+            if "connect" in str(exc).lower() or "refused" in str(exc).lower():
+                pytest.skip("실 PG 미가용 — docker compose up -d")
+            raise
+        assert not failures, f"{round_index}회차 오류 — {_describe(failures)}"
+        assert state in (_PREDICTION_FIRST, _CONFIRMATION_FIRST), (
+            f"{round_index}회차 최종 상태가 두 순차 실행 어느 쪽도 아니다: {state}\n"
+            f"  예측 먼저 = {_PREDICTION_FIRST}\n  확정 먼저 = {_CONFIRMATION_FIRST}"
+        )
+
+
+def test_the_row_count_alone_cannot_tell_the_two_apart() -> None:
+    """🔴 **행 수로 줄이면 이 축을 놓친다** — 위반 상태도 행은 하나다.
+
+    ⚠ 판정을 `len(rows) == 1`로 축소하면 **혼합 상태 전부**가 통과한다. 그 사실을
+    여기서 못 박는다 — 두 정상 결과가 **행 수로는 구분되지 않는다.**
+    """
+    assert _PREDICTION_FIRST != _CONFIRMATION_FIRST, "두 갈래가 같으면 이 검사가 헛돈다"
+    #: 🔴 위반 상태 예 — 확정이 커밋됐는데 예측이 정정을 지운 조합.
+    violating: _State = (
+        "payment", "neutral", "normal",
+        Decimal("0.80"), Decimal("0.80"), Decimal("0.80"),
+        None, None, None,
+        True,
+    )
+    assert violating not in (_PREDICTION_FIRST, _CONFIRMATION_FIRST), (
+        "위반 상태가 정상 갈래에 들어 있다 — 기대값이 너무 넓다"
+    )

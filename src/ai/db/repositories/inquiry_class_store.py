@@ -73,11 +73,15 @@ _LOCK_NAMESPACE: Final = "inquiry_class"
 
 
 def lock_key(tenant_id: str, inquiry_ref: str) -> str:
-    """자연키 전체를 담은 자문 잠금 키 (99 #41).
+    """자연키 전체를 담은 자문 잠금 키 — 🔴 **정본은 이 함수 하나다** (99 #41 · #42).
 
     🔴 **자연키의 두 축이 다 들어간다** — 하나라도 빠지면 무관한 요청이 같은 줄에 선다.
+    🔴 **쓰기 경로 둘이 같은 함수를 부른다**(`insert_prediction`·`apply_confirmation`).
+    키를 각자 조립하면 **두 경로가 서로 다른 줄에 서고**, 그때 나는 사고는 오류가 아니라
+    **조용한 의미 갈림**이다(99 #42 — 규약 ①이 동시성에서 깨졌다).
+    ⚠ `get()`은 **읽기 전용이라 참여하지 않는다** — 잠금은 쓰기 직렬화용이다.
     ⚠ **공개 함수인 이유는 검사가 이 규칙을 값으로 볼 수 있게 하려는 것**이다 —
-    잠금이 실제로 서는지는 실 PG 경합 검사가 따로 든다.
+    두 경로가 실제로 같은 줄에 서는지는 **실 PG 동시 실행 검사**가 든다(구조가 아니라 행동).
     """
     return _KEY_SEP.join((_LOCK_NAMESPACE, tenant_id, inquiry_ref))
 
@@ -339,7 +343,15 @@ class PgInquiryClassStore:
         inquiry_ref: str,
         corrections: dict[str, str],
     ) -> ConfirmationOutcome:
-        async with self._sessionmaker() as session:
+        async with self._sessionmaker() as session, session.begin():
+            #: 🔴 **예측 갱신과 같은 줄에 선다**(99 #42) — 같은 자연키, 같은 `lock_key()`.
+            #:   빠지면 `_plan_corrections()`가 **낡은 예측**과 비교하고, 늦은 예측이
+            #:   **검토된 행을 덮는다**(규약 ① 위반). 자문 잠금은 **협력형**이라
+            #:   **참여하지 않는 경로는 막히지 않는다** — 한쪽만 잠그는 것은 안 잠근 것이다.
+            #: ⚠ **행을 새로 만들지 않는다** — 없으면 아래에서 `found=False`다.
+            await session.execute(
+                self._LOCK_SQL, {"key": lock_key(tenant_id, inquiry_ref)}
+            )
             row = await self._select(session, tenant_id, inquiry_ref)
             if row is None:
                 return ConfirmationOutcome(found=False)
@@ -349,7 +361,7 @@ class PgInquiryClassStore:
             for axis in outcome.cleared:  # 되돌리기 — NULL 복원
                 setattr(row, f"corrected_{axis}", None)
             row.reviewed_at = self._clock()
-            await session.commit()
+            #: ⚠ 명시 `commit()`은 없다 — `session.begin()`이 블록 끝에서 커밋한다.
             return outcome
 
     @staticmethod
