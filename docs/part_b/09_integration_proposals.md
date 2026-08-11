@@ -1822,3 +1822,44 @@ A의 축이며, 그 전까지 `㉿`·`㉻`·`㉬`의 나머지 절반은 **닫�
 | 7/22 감지 리뷰 | 기존 크로스체크 A 판정·구현 완료 · ongoing 상한 제외 후 요약 동기화·병합 lifecycle·회귀/데모 잔여 | 원본의 신규 `[PART_B 크로스체킹 요청]` 검토 후 A·BE 회신 | A+BE(+B 리뷰) | §1-6·§1-7·§1-8 |
 | 7/22 API 리뷰 | `api/` 소유 ✅ · 실패 meta/검증/tracing 일부 반영 · VersionSet 양자 협의·LLM adapter·민감 detail·D-② 멱등·ongoing 응답 의미 잔여 | 원본의 `[PART_B 크로스체킹 요청]` 검토 후 공통 wire 확정 | A+B+BE | §1-7·§1-8·§2-11 |
 | 7/22 B HTTP 경계 | 공통 헤더와 내부 command의 중복 | ✅ 외부 HTTP DTO와 내부 command 분리 확정 | B(+A·BE 편입 리뷰) | 05 §4.1 · 07 · §2-1·§2-11 |
+
+---
+
+## Windows 로컬 PR 검증의 Proactor 영구 실패 `[A 처리 요청 · 2026-08-12]`
+
+### 소유권과 실측
+
+`docs/02_ownership.md` §2는 `src/ai/evaluation/pre_pr_verify.py`를 박진희(A) 단독
+소유로 지정한다. 실패 테스트는 A 소유 `import_mapping/`의 프로덕션 대칭 테스트이므로
+같은 문서 §1·§4의 규칙에 따라 A 소유다. B는 두 파일을 수정하지 않았다.
+
+Windows에서 `docker start checkon-ai-db-1` 후 정본 명령
+`uv run python -m ai.evaluation.pre_pr_verify`를 실행했다. Ruff·mypy·offline pytest는
+통과했지만 PostgreSQL integration 79건 중
+`test_postgres_saver_checkpoint_survives_reopen` 한 건이 `psycopg.InterfaceError`로
+실패했다. Windows 기본 `ProactorEventLoop`에서는 psycopg async 연결을 사용할 수 없다는
+오류이며, 실제 uv 인터프리터는 `C:\verith\.venv\Scripts\python.exe`다.
+
+### 판정과 최소 처방
+
+선택지는 **ⓐ SelectorEventLoop에서 해당 테스트를 실행**하는 것이 맞다. 같은
+`_checkpoint_scenario()`를 Python 3.12의
+`asyncio.run(..., loop_factory=asyncio.SelectorEventLoop)`로 실행한 실측 결과는
+`selector_checkpoint_outcome=ok`였다. 실제 PostgreSQL 저장·재개 검증을 그대로 수행하므로
+검증 범위를 줄이지 않는다.
+
+A에게 요청하는 최소 변경은
+`tests/ai/integration/test_probe_pg_roundtrip.py`의 해당 테스트에서 Windows일 때만
+`loop_factory=asyncio.SelectorEventLoop`를 넘기는 것이다. Linux에서는 지금과 같은 기본
+이벤트 루프로 실제 테스트를 계속 실행한다. `pre_pr_verify.py`에 플랫폼별 skip을 넣거나
+허용 skip 집합을 넓히지 않는다. 테스트가 자기 실행 전제만 명시하면 게이트는 플랫폼 중립인
+채로 유지된다.
+
+### A 변경 후 합격 기준
+
+1. `docker start checkon-ai-db-1`
+2. `uv run python -m ai.evaluation.pre_pr_verify`를 Windows에서 **3회 연속 exit 0**
+3. integration skip은 기존 실 LLM 보호 3건만 유지
+4. Linux에서도 동일 PostgreSQL 체크포인트 테스트가 skip 없이 계속 통과
+
+현재는 소유권 규칙에 따라 처방만 기록한 상태이므로 3회 초록은 아직 달성되지 않았다.
