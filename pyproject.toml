@@ -71,4 +71,7 @@ pythonpath = ["src", "tests/ai/fakes"]
 markers = [
     "integration: 실 LLM·실 DB 호출 (기본 실행에서 제외)",
 ]
-addopts = "-m 'not integration'"
+#: 🔴 `store_backend_pin`을 **플러그인으로** 싣는다(99 #39) — 기본값이 `pg`로 뒤집혀서
+#: 오프라인 회귀는 `STORE_BACKEND=memory`를 **명시로** 골라야 한다(안 걸면 151건 red · 실측).
+#: ⚠ conftest로 두면 mypy가 `conftest` 모듈 중복으로 막는다(위 주석과 같은 함정).
+addopts = "-m 'not integration' -p store_backend_pin"
