@@ -113,7 +113,10 @@ def test_reset_rebuilds_for_the_current_backend(
             f"pg인데 reset이 {type(counsel_router._step_sink).__name__}를 꽂았다"
         )
     finally:
-        monkeypatch.delenv("STORE_BACKEND", raising=False)
+        #: 🔴 **지우지 말고 memory로 되돌린다**(99 #39) — 플립 뒤에는 「변수 없음」이
+        #: `pg`다. 종전 `delenv`는 플립 전에 무해했지만 지금은 **이 파일의 나머지와
+        #: 뒤에 오는 검사 전부**를 pg로 바꾼다(실측: 전량 실행에서만 red).
+        monkeypatch.setenv("STORE_BACKEND", "memory")
         get_db_settings.cache_clear()
         _reset_all()
 

@@ -193,13 +193,61 @@ pack_miss_absent · pack_miss_foreign →  None  →  수      (PG 저장소가 
 | **#36** | ✅ **해소** |
 | **#37** counsel `AGENT_STEP` PG 배선 | ✅ **해소** — 공용 저수준 + capability별 adapter · 라우터 초기값·reset 둘 다 빌더 |
 | **㉾** `mapping_probe` 원장 | ☐ **별건** |
-| ㉿ · ㉬ · ㉻ | ☐ **기본 PG 플립 뒤 실측** |
+| **기본값 플립** `STORE_BACKEND=pg` | ✅ **8/12 · 99 #39** — 선언 기본값 `pg` · 명시 `memory` 계속 지원 |
+| **㉿** (ⓐⓑⓒ 8/10 · **ⓓ 8/12**) | ✅ **해소** — 멱등 202 뒤 다른 인스턴스 GET **200 · 값 동일** |
+| **㉬** 정정 루프 교차 인스턴스 | ✅ **해소** — A `/v1/classify` → B `/v1/confirmations` **200 accepted** |
+| **㉻** 늦은 성공 본문 | ☐ **미해소 — 원인 확정(8/12)**: `ContextStore`·`DraftResultStore`가 **팩토리를 안 탄다** + 대응 스키마 부재 |
 
 ⚠ **㉬·㉻·㉿는 플립을 막지 않는다** — 인메모리에서도 이미 그 상태이고 플립이 나쁘게
 만들지 않는다(㉬는 오히려 좋아진다).
 ⚠ **G1이 막던 관문이었다**(과거) — `8ec3bd0`(#201)로 열렸다.
 ✅ **#37도 해소됐다**(8/12) — 🔴 **플립 전 코드 관문은 전부 닫혔다.**
-⏭ **다음은 `STORE_BACKEND` 기본값 플립과 ㉿ⓓ·㉬·㉻ 실측**이다.
+
+## 🔴 플립했다 (2026-08-12 · 99 #39)
+
+**선언 기본값이 `pg`다.** 실 PG · 환경 변수를 지운 기본 설정 · **서로 다른 앱 인스턴스**로 쟀다.
+
+| 잰 것 | 결과 |
+| --- | --- |
+| 팩토리 **11종** 기본 조립 | **전부 PG** · 명시 `memory`에서 **전부 종전 구현** |
+| `store_backend` 분기 **15곳** | 팩토리 11 + 안 부르는 4곳(**사유 명시** — `_open_saver` 셋은 커넥션을 여는 async 컨텍스트) |
+| **㉿ ⓓ** 멱등 재요청 | **202** · `job_id`·`execution_id` 최초와 동일 · **다른 인스턴스 GET 200**, 본문·인용 **값 동일** |
+| **㉬** 정정 루프 | A `/v1/classify` → B `/v1/confirmations` **200 · accepted** (종전 404) |
+| counsel 교차 인스턴스 | A POST → B GET·**refine 200** → C GET · 다른 테넌트 **404** |
+| **㉻** 늦은 성공 | 🔴 **미해소** — 아래 |
+| 접속 실패 | **memory로 강등되지 않는다**(PG 저장소 그대로 · 예외가 올라온다) |
+| 부모 없는 `AGENT_STEP` | **FK가 거부한다**(G1이 지운 것은 `agent_run.run_id → ai_run` **하나**다) |
+
+🔴 **「pg로 켰다」와 「전부 PG다」는 다른 사실이다.** `api/routers/counsel.py`의
+**`_context_store`·`_draft_store`는 초기값도 reset도 인메모리 리터럴**이라 `store_backend`
+분기를 **아예 안 탄다**(위 §0의 「바뀌지 않는 것」에 **두 줄이 더 있었다**). 그래서
+**다른 프로세스의 워커는 잡을 실행조차 못 한다** — 실측 `error_code=context_bundle_missing`.
+인메모리 저장소를 손으로 인계해 완주시켜도 GET은 **`result=None`**이다.
+⚠ **PG 구현을 만들 수 없다** — `ContextBundleRecord`는 대응 테이블이 없고
+`DraftRecord.content`는 갈 컬럼이 없다(㉿가 8/9에 실측한 그 결손) ⇒ **양자 승인 + 마이그레이션**.
+
+### 🔴 배포 선행 단계 하나가 새로 필수가 됐다
+
+`STORE_BACKEND=pg`에서는 세 capability의 체크포인터가 **`AsyncPostgresSaver`** 다.
+**LangGraph 체크포인트 테이블(`checkpoints`·`checkpoint_blobs`·`checkpoint_writes`…)은
+Alembic이 안 만든다** — `agents/checkpointer.py`의 `setup_checkpointer_schema()`가 만든다.
+🔴 **그 함수의 호출처가 저장소 전체에서 0건이었다**(src·tests·docs 전수).
+
+⇒ **새 DB에 붙이기 전에 한 번 실행해야 한다.** 안 하면 실측한 그대로다:
+
+```
+psycopg.errors.UndefinedTable: relation "checkpoints" does not exist
+→ counsel_pack 워커 미분류 실패 → error_code=worker_internal_error
+```
+
+⚠ **조용하다** — 기동은 정상이고 응답도 500이 아니라 **「실패한 잡」**이다.
+⚠ 앱 기동에 DDL을 넣지 않았다 — 배포 판정이고 `api/app.py`는 양자 승인이다.
+
+⚠ **오프라인 회귀는 `memory`로 돈다** — `tests/conftest.py`가 **명시로** 건다(플립 직후
+**151건 red** 실측 · 기존 검사들이 memory 전제로 쓰였다). 플립 전용 검사는 그 핀을 **지우고** 돈다.
+
+⏭ **다음은 ㉻의 스키마 결정**(`docs/handoff/2026-08-09_read_model_persistence_schema_ask.md`)
+**과 ㉾**다.
 
 🔴 **플립 전에 선택기를 fail-closed로 고정했다**(8/12 · #38) — 종전엔 `pgg`·`PG`·`postgres`·
 `"memory "`·`""` 가 **전부 조용히 memory로 강등**됐다. 기본값이 `pg`가 된 뒤에는 그 강등이

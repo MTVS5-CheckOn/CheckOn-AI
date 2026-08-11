@@ -84,18 +84,30 @@ def test_the_environment_path_accepts_the_two(
         get_db_settings.cache_clear()
 
 
-def test_the_declared_default_is_still_memory() -> None:
-    """⚠ **이 PR은 기본값을 플립하지 않는다** — 검증과 플립을 한 커밋에 묶지 않는다.
+def test_the_declared_default_is_pg() -> None:
+    """🔴 **기본값은 `pg`다**(8/12 플립 · 99 #39) — 영속이 기본이고 휘발이 명시 선택이다.
 
     🔴 **`DbSettings()`를 만들어 보면 안 된다.** 그건 `.env`·환경 변수를 **읽고** 오므로
-    `STORE_BACKEND=memory`가 걸려 있으면 **코드에 적힌 기본값을 한 번도 안 본다.**
-    ⇒ 다음 회차에 선언 기본값을 `pg`로 바꿔도 **검사가 memory로 green**이 되어
-    **플립 검사가 자기 목적을 놓친다.** 실측으로 확인했다(§뒤집기).
+    `STORE_BACKEND=memory`가 걸려 있으면 **코드에 적힌 기본값을 한 번도 안 본다** —
+    그러면 기본값이 무엇이든 검사가 green이다. **이 검사는 그 미탐 때문에 8/12에
+    이 형태로 바뀌었고, 바로 다음 회차인 플립에서 실제로 red를 냈다**(의도대로 물었다).
 
     ⇒ **모델에 선언된 기본값**을 직접 본다. 환경 변수 파싱은 **위의 별도 검사**가 든다 —
     두 축을 한 검사에 합치면 **어느 쪽이 깨졌는지** 모른다.
+    ⚠ 오프라인 회귀가 `memory`로 도는 것은 `tests/conftest.py`의 **명시 선택**이지
+    기본값이 아니다 — 그 둘을 같은 검사로 재지 않는다.
     """
-    assert DbSettings.model_fields["store_backend"].default == "memory"
+    assert DbSettings.model_fields["store_backend"].default == "pg"
+
+
+def test_choosing_memory_explicitly_still_works() -> None:
+    """🔴 **플립이 memory를 없앤 것이 아니다** — 명시 선택은 계속 지원한다.
+
+    ⚠ 위 `test_the_environment_path_accepts_the_two`가 파싱을 보고, 여기서는
+    **플립 뒤에도 그 선택이 살아 있다**는 사실 자체를 못 박는다(값 목록이 줄면 red).
+    """
+    assert set(_ALLOWED) == {"memory", "pg"}
+    assert DbSettings(store_backend="memory").store_backend == "memory"
 
 
 def test_the_error_does_not_leak_the_connection_settings() -> None:
