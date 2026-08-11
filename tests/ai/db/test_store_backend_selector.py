@@ -84,9 +84,18 @@ def test_the_environment_path_accepts_the_two(
         get_db_settings.cache_clear()
 
 
-def test_the_default_is_still_memory() -> None:
-    """⚠ **이 PR은 기본값을 플립하지 않는다** — 검증과 플립을 한 커밋에 묶지 않는다."""
-    assert DbSettings().store_backend == "memory"
+def test_the_declared_default_is_still_memory() -> None:
+    """⚠ **이 PR은 기본값을 플립하지 않는다** — 검증과 플립을 한 커밋에 묶지 않는다.
+
+    🔴 **`DbSettings()`를 만들어 보면 안 된다.** 그건 `.env`·환경 변수를 **읽고** 오므로
+    `STORE_BACKEND=memory`가 걸려 있으면 **코드에 적힌 기본값을 한 번도 안 본다.**
+    ⇒ 다음 회차에 선언 기본값을 `pg`로 바꿔도 **검사가 memory로 green**이 되어
+    **플립 검사가 자기 목적을 놓친다.** 실측으로 확인했다(§뒤집기).
+
+    ⇒ **모델에 선언된 기본값**을 직접 본다. 환경 변수 파싱은 **위의 별도 검사**가 든다 —
+    두 축을 한 검사에 합치면 **어느 쪽이 깨졌는지** 모른다.
+    """
+    assert DbSettings.model_fields["store_backend"].default == "memory"
 
 
 def test_the_error_does_not_leak_the_connection_settings() -> None:
