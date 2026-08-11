@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
+
 from ai.composition.counsel.stores import (
     AgentStepSink as CounselAgentStepSink,
 )
@@ -34,10 +37,15 @@ def test_pg_backend_gives_the_counsel_pg_sink() -> None:
     assert isinstance(sink, PgCounselAgentStepSink), type(sink).__name__
 
 
-def test_an_unknown_backend_falls_back_to_memory() -> None:
-    """미등록 값은 **fail-safe** — 알 수 없는 설정에서 PG를 열지 않는다."""
-    sink = build_counsel_agent_step_sink(DbSettings(store_backend="unknown-backend"))
-    assert isinstance(sink, InMemoryCounselAgentStepSink)
+def test_an_unknown_backend_never_reaches_this_factory() -> None:
+    """🔴 **미등록 값은 여기 오기 전에 거부된다**(99 #38) — memory로 강등되지 않는다.
+
+    ⚠ **이 검사는 뒤집힌 것이다.** 종전엔 *"미등록 값 → memory fail-safe"* 를 **정답으로
+    고정**했는데, 그건 **오타 하나로 영속성이 조용히 꺼지는 결함**을 계약으로 굳힌 것이었다.
+    ⇒ 이제 **설정 경계**가 막고, 팩토리는 **막힌 뒤의 두 값만** 본다.
+    """
+    with pytest.raises(ValidationError):
+        DbSettings(store_backend="unknown-backend")
 
 
 def test_creating_the_pg_sink_does_not_touch_the_database() -> None:
