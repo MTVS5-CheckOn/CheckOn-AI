@@ -4,7 +4,7 @@ PG 왕복(test_pg_store_roundtrip)과 같은 패턴: `integration` 마커라 기
 (pyproject addopts `-m 'not integration'`). env에 `OPENAI_*`가 잡혀 있고 서버가
 살아 있을 때만 한국어 한 문장을 실제로 받아 본다 — 없으면 skip(거짓 실패 방지).
 
-CI 기본은 이 테스트를 돌리지 않는다(Fake/mock으로 결정론 검증은 단위 테스트가 담당).
+PR 전 로컬 검증에서는 명시적 opt-in이 없어 skip한다(Fake/mock 결정론 검증은 단위 테스트가 담당).
 """
 
 from __future__ import annotations

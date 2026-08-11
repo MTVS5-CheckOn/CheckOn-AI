@@ -4,7 +4,7 @@
 🔴 **그 해소는 스키마 diff가 아니라 실 PG 왕복이 증명한다** — 모델만 고치고 왕복을 안 재면
 "되겠지"가 그대로 남고, §2-20이 결손 12건을 낳은 이유가 정확히 「되겠지」였다.
 
-`integration` 마커라 기본 실행에서 빠지고 CI `integration-pg`(postgres:16) 잡이 본다
+`integration` 마커라 기본 실행에서 빠지고 PR 전 로컬 검증의 실 PG 단계가 본다
 (99 ⑫). PG 미가용이면 skip — 관례는 `test_probe_pg_roundtrip.py`와 같다.
 
 여기서 재는 것 넷:

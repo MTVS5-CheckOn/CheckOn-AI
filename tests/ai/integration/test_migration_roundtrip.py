@@ -1,7 +1,7 @@
 """마이그레이션이 **실제로 돈다** — upgrade/downgrade 왕복 (99 #26).
 
 🔴 **이 저장소에서 alembic을 실행하는 유일한 테스트다.** 종전에는 마이그레이션 6개가 전부
-`downgrade()`를 갖고도 **실행 검증이 0건**이었다 — CI `integration-pg`는 `create_all`로
+`downgrade()`를 갖고도 **실행 검증이 0건**이었다 — 종전 CI는 `create_all`로
 스키마를 만들고, `test_migration_parity.py`는 이름과 달리 **소스 텍스트**만 읽는다
 (`def upgrade(` 위치 비교). ⇒ PG 이관 시 **첫 실배포가 첫 실행**이 되는 상태였다.
 
@@ -18,7 +18,7 @@
   · **데이터 보존을 안 본다.** downgrade가 컬럼을 지우면 값이 사라지는데 그건 정상이다.
   · **동시성·잠금을 안 본다.**
 
-⚠ `integration` 마커라 기본 실행에서 빠지고 CI `integration-pg`(postgres:16)가 본다.
+⚠ `integration` 마커라 기본 실행에서 빠지고 PR 전 로컬 검증의 실 PG 단계가 본다.
 """
 
 from __future__ import annotations
