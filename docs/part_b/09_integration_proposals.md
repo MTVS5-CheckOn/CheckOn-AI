@@ -1815,10 +1815,56 @@ A의 축이며, 그 전까지 `㉿`·`㉻`·`㉬`의 나머지 절반은 **닫�
 | — | 리비전 보존 기간(개수 무제한 `[잠정]`) | BE 보존 정책과 함께 | BE+B | 07 §6 |
 | — | 지문 수정 허용·공유 문항 연쇄 재검증 | v1 비허용 `[잠정]` | B+기획 | 07 §7 |
 | — | refine 쿼터 차감 단위(백엔드 집행 설계) | 정적 차단 턴 미차감 권장 | BE | 07 §5 |
-| — | T4·T5 생성 요청 계약 | `PassageRequest.area_tag` 다영역화와 영역별 생성 입력을 확정한 뒤 조달 노드를 재사용 | A+B+기획 | 05 §1.2 |
+| — | ✅ T4·T5 생성 요청 계약 | `PassageRequest`는 reading 전용으로 유지하고 화법과작문·매체 형제 요청 모델과 생성 자료 게이트를 구현 | B | 05 §1.2 · 아래 「5영역 약점→출제 연결」 |
 | — | T3 생존 작품 라이선스·코퍼스 확충 | 만료 작품 5편은 개방 완료. 생존 작품은 BE의 `license_ref`·버전 계약 뒤 추가하며 LLM 원문 생성은 금지 | BE+기획 | 05 §3 |
 | — | 프론트 라벨 문구·대화 UI 형태 | §2-2 라벨 사전 기준 | FE+기획 | 06 §0 |
 | Open-9 잔여 | 전국 백분위 출처(A 소관 — 참고) | — | BE+A | — |
 | 7/22 감지 리뷰 | 기존 크로스체크 A 판정·구현 완료 · ongoing 상한 제외 후 요약 동기화·병합 lifecycle·회귀/데모 잔여 | 원본의 신규 `[PART_B 크로스체킹 요청]` 검토 후 A·BE 회신 | A+BE(+B 리뷰) | §1-6·§1-7·§1-8 |
 | 7/22 API 리뷰 | `api/` 소유 ✅ · 실패 meta/검증/tracing 일부 반영 · VersionSet 양자 협의·LLM adapter·민감 detail·D-② 멱등·ongoing 응답 의미 잔여 | 원본의 `[PART_B 크로스체킹 요청]` 검토 후 공통 wire 확정 | A+B+BE | §1-7·§1-8·§2-11 |
 | 7/22 B HTTP 경계 | 공통 헤더와 내부 command의 중복 | ✅ 외부 HTTP DTO와 내부 command 분리 확정 | B(+A·BE 편입 리뷰) | 05 §4.1 · 07 · §2-1·§2-11 |
+
+---
+
+## 5영역 약점 분류 → 출제 연결 `[B 구현 · 2026-08-11]`
+
+### 착수 전 실측과 원인
+
+`src/ai/diagnosis/data/curriculum_graph.yaml`은 `curriculum-grammar-v1`·33노드였고 전부
+`area_tag=language`였다. `diagnoser.py`는 그래프에 없는 `skill_node_id`를 명시적으로
+거절하므로, `SUPPORTED_AREAS`와 무관하게 자동 약점 목표가 language 밖으로 나갈 수 없었다.
+reading·literature의 기존 출제 경로도 수동 목표로만 도달 가능했다.
+
+### 그래프 확장 결과
+
+- 그래프 버전: `curriculum-five-area-v1`
+- 노드 수: language 기존 33개 유지 + reading 6 + literature 6 + speech_writing 6 +
+  media 6 = 총 57개
+- 출처 단계: 신규 24개 전부 ① `area_specs.yaml`의 영역별 `measures`를
+  `taxonomy.md` §3 행동영역과 교차한 최소 축이다. 각 노드의 `source_stage=area_specs`와
+  `source_refs`에 위치를 기록했다.
+- ② 공개 고시·평가원 자료는 이번 최소 범위에 추가로 필요하지 않아 가져오지 않았다.
+  ③ 근거 부족으로 지어낸 노드도 없다.
+- 지위: 신규 4영역은 **교과 정본이 아닌 v1 초안이며 전문가 검수 대기**다. 그래프 meta의
+  `review_status`·`scope_note`와 각 노드 `desc`에 같은 지위를 기록했다.
+- 신규 간선: 0개. `area_specs.yaml`은 측정 대상과 발문 규격의 근거이지 선수 관계의 근거가
+  아니므로, 근거 없는 `requires`·`builds_on`을 만들지 않았다. 전문가 검수 전에는 셀·직접
+  근거로 `suspect`·`weak_confirmed`를 산출하고 역전파 후보는 만들지 않는다.
+
+### 문학 풀 대조
+
+**literature 노드 6개 중 현재 풀로 출제 가능한 것 6개다.** 고전시가 2편·현대시 1편·
+현대소설 2편으로 표현·구성·화자·서술자·정서와 주제·외적 준거 축을 감당한다. 극·수필은
+현재 풀에 갈래가 없어 노드로 만들지 않았다. 후속으로 해당 노드를 열려면 저작권 만료 또는
+사용 승인된 극·수필 원문과 고정 리비전·해시가 먼저 필요하다.
+
+### 출제 경로 개방과 검증
+
+`speech_writing`은 발표·초고·수집 자료, `media`는 단일·쌍 자료의 형제 요청 모델을 쓴다.
+독서 전용 `PassageRequest`의 `Literal[reading]`과 산문 파라미터는 바꾸지 않았다.
+`_SOURCE_REQUEST_SHAPES` allow-list에 두 영역의 명시적 행을 추가했으며 조건식으로 바꾸지
+않았다. 자료 생성은 `area_specs.yaml` 규격 블록을 프롬프트에 싣고 승인 evidence가 없거나
+미승인 ref를 쓰면 문항 생성 전에 실패 닫힘한다.
+
+실제 57노드 그래프와 결정론 진단기로 `speech_writing.writing.material` 및
+`media.reception.credibility`를 `weak_confirmed`로 산출한 뒤, 그 노드가 자료 생성 → 문항
+생성 → 규칙 게이트 → blind 교차 풀이 → 저장을 완주하는 FakeProvider E2E를 고정했다.

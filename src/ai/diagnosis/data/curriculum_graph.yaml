@@ -1,9 +1,11 @@
-# 수능 대비 고등 국어 문법 단일 DAG 초안.
-# 교육과정 용어·선수 관계·가중치는 전부 전문가 검수 대기이며 확정 교과 정본이 아니다.
+# 수능 대비 고등 국어 5영역 커리큘럼 그래프 v1 초안.
+# 교육 내용·선수 관계·가중치는 전부 전문가 검수 대기이며 확정 교과 정본이 아니다.
 meta:
-  graph_version: curriculum-grammar-v1
+  graph_version: curriculum-five-area-v1
   taxonomy_version: v1
-  updated: 2026-07-27
+  updated: 2026-08-11
+  review_status: expert_review_pending
+  scope_note: 기존 언어 33노드에 4영역 최소 분류축만 추가한 v1 초안 — 전문가 검수 대기
 nodes:
   - id: language.grammar.phoneme.system
     label: 음운 체계
@@ -203,6 +205,216 @@ nodes:
     type_affinity: [concept, infer, critic]
     level: 3
     desc: 종결 어미와 상대 높임 등급 분석 초안 — 전문가 검수 대기
+
+  # 아래 24노드는 출처 단계 ①(area_specs)의 측정 대상을 행동영역과 교차한 최소 초안이다.
+  # 영역 내부 선수 관계는 area_specs만으로 확정할 수 없어 신규 간선을 두지 않았다.
+  - id: reading.information.explicit
+    label: 명시 정보 확인
+    area_tag: reading
+    type_affinity: [fact]
+    level: 1
+    desc: 지문에 명시된 정보의 일치 여부를 확인하는 독서 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+  - id: reading.information.relation
+    label: 정보 관계 파악
+    area_tag: reading
+    type_affinity: [fact, infer]
+    level: 1
+    desc: 문장·단락 사이의 인과·조건·대조 관계를 파악하는 독서 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+  - id: reading.reasoning.inference
+    label: 내용 추론
+    area_tag: reading
+    type_affinity: [infer]
+    level: 2
+    desc: 지문 정보를 결합해 생략된 전제와 결론을 추론하는 독서 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+  - id: reading.reasoning.application
+    label: 보기 적용
+    area_tag: reading
+    type_affinity: [infer, critic]
+    level: 2
+    desc: 지문의 원리와 관점을 보기 상황에 적용해 판단하는 독서 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+  - id: reading.evaluation.argument
+    label: 논지 비판
+    area_tag: reading
+    type_affinity: [critic]
+    level: 2
+    desc: 주장과 근거의 타당성·범위를 비판적으로 판단하는 독서 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+  - id: reading.structure.organization
+    label: 글의 구조 파악
+    area_tag: reading
+    type_affinity: [concept, infer]
+    level: 1
+    desc: 글의 전개 방식과 단락 기능을 파악하는 독서 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+
+  - id: literature.expression.technique
+    label: 표현 방식
+    area_tag: literature
+    type_affinity: [fact, concept]
+    level: 1
+    desc: 시·소설 원문의 표현상 특징을 근거로 판별하는 문학 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
+      - src/ai/problem_generation/data/literature_pool/index.json
+  - id: literature.structure.composition
+    label: 작품 구성
+    area_tag: literature
+    type_affinity: [fact, infer]
+    level: 1
+    desc: 시상 전개와 소설 장면 구성의 기능을 파악하는 문학 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
+      - src/ai/problem_generation/data/literature_pool/index.json
+  - id: literature.speaker.attitude
+    label: 화자의 태도
+    area_tag: literature
+    type_affinity: [infer, critic]
+    level: 2
+    desc: 고전시가·현대시 원문에서 화자의 정서와 태도를 추론하는 문학 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
+      - src/ai/problem_generation/data/literature_pool/index.json
+  - id: literature.narrator.perspective
+    label: 서술자의 관점
+    area_tag: literature
+    type_affinity: [concept, infer]
+    level: 2
+    desc: 현대소설 원문에서 서술자와 시점의 효과를 파악하는 문학 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
+      - src/ai/problem_generation/data/literature_pool/index.json
+  - id: literature.emotion.theme
+    label: 정서와 주제
+    area_tag: literature
+    type_affinity: [infer, critic]
+    level: 2
+    desc: 시·소설 원문의 정서 흐름과 중심 의미를 근거로 감상하는 문학 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
+      - src/ai/problem_generation/data/literature_pool/index.json
+  - id: literature.context.external_reference
+    label: 외적 준거 감상
+    area_tag: literature
+    type_affinity: [infer, critic]
+    level: 2
+    desc: 보기에 제시된 외적 준거를 시·소설 원문에 적용하는 문학 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
+      - src/ai/problem_generation/data/literature_pool/index.json
+
+  - id: speech_writing.speech.strategy
+    label: 말하기 전략
+    area_tag: speech_writing
+    type_affinity: [fact, concept]
+    level: 1
+    desc: 발표·대화에 나타난 말하기 전략을 판별하는 화법 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+  - id: speech_writing.speech.audience
+    label: 청중 고려
+    area_tag: speech_writing
+    type_affinity: [infer, critic]
+    level: 2
+    desc: 청중의 요구와 반응을 고려한 말하기 방식을 판단하는 화법 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+  - id: speech_writing.speech.interaction
+    label: 담화 상호작용
+    area_tag: speech_writing
+    type_affinity: [fact, infer]
+    level: 2
+    desc: 담화 참여자의 역할과 상호작용 전략을 파악하는 화법 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+  - id: speech_writing.writing.plan
+    label: 글쓰기 계획
+    area_tag: speech_writing
+    type_affinity: [concept, infer]
+    level: 1
+    desc: 목적·독자·매체를 고려한 글쓰기 계획을 판단하는 작문 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+  - id: speech_writing.writing.material
+    label: 자료 활용
+    area_tag: speech_writing
+    type_affinity: [infer, critic]
+    level: 2
+    desc: 수집 자료의 성격과 글쓰기 목적에 맞는 활용 방안을 판단하는 작문 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+  - id: speech_writing.writing.revision
+    label: 고쳐쓰기
+    area_tag: speech_writing
+    type_affinity: [concept, critic]
+    level: 2
+    desc: 초고의 구성·표현을 목적에 맞게 고쳐 쓰는 방안을 판단하는 작문 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+
+  - id: media.reception.information
+    label: 매체 정보 파악
+    area_tag: media
+    type_affinity: [fact]
+    level: 1
+    desc: 매체 자료에 제시된 정보와 표현 수단을 확인하는 매체 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+  - id: media.reception.intent
+    label: 생산 의도 추론
+    area_tag: media
+    type_affinity: [infer]
+    level: 2
+    desc: 매체 생산자의 구성·표현 선택에서 의도를 추론하는 매체 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+  - id: media.reception.credibility
+    label: 정보 신뢰성 판단
+    area_tag: media
+    type_affinity: [critic]
+    level: 2
+    desc: 매체 정보의 출처·근거·편향을 비판적으로 판단하는 매체 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+  - id: media.production.structure
+    label: 매체 자료 구성
+    area_tag: media
+    type_affinity: [concept, infer]
+    level: 1
+    desc: 매체 목적에 맞는 정보 배열과 화면 구성을 판단하는 매체 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+  - id: media.production.expression
+    label: 표현 수단 선택
+    area_tag: media
+    type_affinity: [concept, critic]
+    level: 2
+    desc: 댓글·하이퍼링크·실시간 채팅 등 매체 표현 수단의 효과를 판단하는 매체 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+  - id: media.production.audience
+    label: 수용자 고려
+    area_tag: media
+    type_affinity: [infer, critic]
+    level: 2
+    desc: 예상 수용자의 반응과 이용 맥락에 맞는 생산 방식을 판단하는 매체 축 초안 — 전문가 검수 대기
+    source_stage: area_specs
+    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
 edges:
   - from: language.grammar.phoneme.system
     to: language.grammar.syllable.structure

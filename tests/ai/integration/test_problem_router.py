@@ -36,6 +36,7 @@ from ai.contracts.problem_generation import (
     ItemResult,
     ProblemRequest,
     SolveResult,
+    SourceMaterialDraft,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.db.repositories.run_store import (
@@ -120,14 +121,17 @@ def _problem_request(*, request_id: str, target_ref: str) -> ProblemRequest:
     )
 
 
-def _generated_item_json(type_tag: TypeTag = TypeTag.INFER) -> str:
+def _generated_item_json(
+    type_tag: TypeTag = TypeTag.INFER,
+    area_tag: AreaTag = AreaTag.LANGUAGE,
+) -> str:
     stem = (
         "밑줄 친 절이 문장에서 담당하는 기능을 추론한 것으로 옳은 것을 고르시오."
         if type_tag is TypeTag.INFER
         else "문장 성분의 개념과 종류를 설명한 것으로 옳은 것을 고르시오."
     )
     return GeneratedItem(
-        area_tag=AreaTag.LANGUAGE,
+        area_tag=area_tag,
         type_tag=type_tag,
         item_format=ItemFormat.MCQ,
         skill_node_id=_SKILL_NODE_ID,
@@ -163,10 +167,12 @@ def _providers(
     *,
     calls: int = 1,
     item_types: tuple[TypeTag, ...] | None = None,
+    generator_steps: tuple[str, ...] | None = None,
 ) -> tuple[ProblemProviders, FakeProvider, FakeProvider]:
     resolved_types = item_types or tuple(TypeTag.INFER for _ in range(calls))
     generator = FakeProvider(
-        tuple(_generated_item_json(type_tag) for type_tag in resolved_types),
+        generator_steps
+        or tuple(_generated_item_json(type_tag) for type_tag in resolved_types),
         name="explicit-test-generator",
     )
     verifier = FakeProvider(
@@ -188,10 +194,14 @@ def _prepare(
     *,
     calls: int = 1,
     stores: ProblemRuntimeStores | None = None,
+    generator_steps: tuple[str, ...] | None = None,
 ) -> tuple[InMemoryRunStore, ProblemRuntimeStores, FakeProvider, FakeProvider]:
     reset_shared_agent_runtime()
     problem_router.reset_problem_router()
-    providers, generator, verifier = _providers(calls=calls)
+    providers, generator, verifier = _providers(
+        calls=calls,
+        generator_steps=generator_steps,
+    )
     resolved_stores = stores or problem_runtime_stores()
     run_store = InMemoryRunStore()
     problem_router.set_problem_providers(providers)
@@ -393,6 +403,44 @@ def test_problem_literature_without_work_selection_is_400_before_job() -> None:
     assert len(job_store) == 0
     assert job_store.added == 0
     assert run_store.runs == {}
+
+
+@pytest.mark.parametrize(
+    ("area_tag", "source_kind"),
+    [
+        ("speech_writing", "presentation"),
+        ("media", "paired"),
+    ],
+)
+def test_generated_source_areas_are_accepted_at_the_front_door(
+    area_tag: str,
+    source_kind: str,
+) -> None:
+    material = SourceMaterialDraft(
+        material_text="학생 A가 승인 근거를 활용해 자료를 구성했다.",
+        evidence_anchor_ids=("grammar:rule-1",),
+    )
+    _run_store, _stores, _generator, _verifier = _prepare(
+        generator_steps=(
+            material.model_dump_json(),
+            _generated_item_json(area_tag=AreaTag(area_tag)),
+        )
+    )
+    job_store = build_agent_job_store()
+    assert isinstance(job_store, InMemoryJobStore)
+    body = _body(area_tag=area_tag)
+    body["passage"] = {
+        "area_tag": area_tag,
+        "source_kind": source_kind,
+        "banned_topics_version": "pg-banned-v1",
+    }
+
+    with TestClient(create_app()) as client:
+        response = client.post("/v1/problems", headers=_HEADERS, json=body)
+
+    assert response.status_code == 202
+    assert response.json()["data"]["status"] == "succeeded"
+    assert len(job_store) == 1
 
 
 def test_type_tag_reason_precedes_source_reason_for_a_request_violating_both() -> None:

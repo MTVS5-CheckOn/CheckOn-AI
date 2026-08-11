@@ -34,6 +34,7 @@ from ai.contracts.problem_generation import (
     GeneratedItem,
     ItemResult,
     PassageDraft,
+    PassageRequest,
     ProblemFailureReason,
     ProblemGenerationOutcome,
     ProblemGenerationState,
@@ -42,6 +43,7 @@ from ai.contracts.problem_generation import (
     RejectedInsufficientOutcome,
     ReviewReason,
     SetStopReason,
+    SourceMaterialDraft,
     TargetSource,
     WorkExcerpt,
     assert_problem_generation_state_transition,
@@ -60,7 +62,10 @@ from ai.problem_generation.application.literature_selector import (
 from ai.problem_generation.application.passage_generator import (
     PassageGenerationUnavailable,
     PassageGenerator,
+    SourceMaterialGenerationUnavailable,
+    SourceMaterialGenerator,
     attach_passage_draft,
+    attach_source_material_draft,
 )
 from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
 from ai.problem_generation.domain.cross_solve import validate_cross_solve
@@ -188,6 +193,7 @@ class ProblemGenerationWorkflow:
         graph_context: GraphContextService,
         generator: ProblemGenerator,
         passage_generator: PassageGenerator,
+        source_material_generator: SourceMaterialGenerator,
         literature_selector: LiteratureSelector,
         cross_solver: BlindCrossSolver,
         candidate_store: CandidateStore,
@@ -200,6 +206,7 @@ class ProblemGenerationWorkflow:
         self._graph_context = graph_context
         self._generator = generator
         self._passage_generator = passage_generator
+        self._source_material_generator = source_material_generator
         self._literature_selector = literature_selector
         self._cross_solver = cross_solver
         self._candidate_store = candidate_store
@@ -228,6 +235,13 @@ class ProblemGenerationWorkflow:
         ):
             raise ProblemWorkflowConfigurationError(
                 "지문 생성기와 규칙 검증기의 금칙 설정 버전이 다르다"
+            )
+        if (
+            self._source_material_generator.banned_topics_version
+            != self._rule_validator.banned_topics_version
+        ):
+            raise ProblemWorkflowConfigurationError(
+                "생성 자료기와 규칙 검증기의 금칙 설정 버전이 다르다"
             )
 
     async def run(
@@ -276,6 +290,10 @@ class ProblemGenerationWorkflow:
             return RejectedInsufficientOutcome(
                 status_reason="승인된 기준 자료로 T2 지문을 생성할 수 없다"
             )
+        except SourceMaterialGenerationUnavailable:
+            return RejectedInsufficientOutcome(
+                status_reason="승인된 기준 자료로 화법과작문·매체 자료를 생성할 수 없다"
+            )
         except LiteratureSelectionUnavailable:
             return RejectedInsufficientOutcome(
                 status_reason="요청 조건에 맞는 저작권 만료 문학 원문을 선택할 수 없다"
@@ -300,7 +318,10 @@ class ProblemGenerationWorkflow:
         ) -> dict[str, object]:
             passage_request = request.passage
             if passage_request is not None:
-                if state.passage_draft is not None:
+                if isinstance(passage_request, PassageRequest):
+                    if state.passage_draft is not None:
+                        return {}
+                elif state.source_material_draft is not None:
                     return {}
                 target = targets[0]
                 type_tag = request.type_tags[0]
@@ -311,12 +332,19 @@ class ProblemGenerationWorkflow:
                 )
                 if not has_reference_data(context_pack):
                     raise GraphContextReferenceInsufficient
-                draft = await self._passage_generator.generate(
-                    passage_request=passage_request,
+                if isinstance(passage_request, PassageRequest):
+                    draft = await self._passage_generator.generate(
+                        passage_request=passage_request,
+                        context_pack=context_pack,
+                        execution_context=execution_context,
+                    )
+                    return _checked_update(state, passage_draft=draft)
+                material = await self._source_material_generator.generate_source_material(
+                    source_request=passage_request,
                     context_pack=context_pack,
                     execution_context=execution_context,
                 )
-                return _checked_update(state, passage_draft=draft)
+                return _checked_update(state, source_material_draft=material)
 
             work_selection = request.work_selection
             if work_selection is not None and state.work_excerpt is None:
@@ -359,8 +387,16 @@ class ProblemGenerationWorkflow:
                 return self._complete_slot(state, existing)
             target = targets[state.cursor % len(targets)]
             type_tag = request.type_tags[state.cursor % len(request.type_tags)]
-            if request.passage is not None and state.passage_draft is None:
+            if isinstance(request.passage, PassageRequest) and state.passage_draft is None:
                 raise RuntimeError("T2 문항 생성 전에 passage_draft가 준비되지 않았다")
+            if (
+                request.passage is not None
+                and not isinstance(request.passage, PassageRequest)
+                and state.source_material_draft is None
+            ):
+                raise RuntimeError(
+                    "화법과작문·매체 문항 생성 전에 source_material_draft가 준비되지 않았다"
+                )
             if request.work_selection is not None and state.work_excerpt is None:
                 raise RuntimeError("T3 문항 생성 전에 work_excerpt가 준비되지 않았다")
 
@@ -370,6 +406,7 @@ class ProblemGenerationWorkflow:
                     type_tag=type_tag,
                     target=target,
                     passage_draft=state.passage_draft,
+                    source_material_draft=state.source_material_draft,
                     work_excerpt=state.work_excerpt,
                 )
             except (GraphContextUnavailable, TimeoutError) as error:
@@ -636,7 +673,7 @@ class ProblemGenerationWorkflow:
         ):
             raise ProblemSourceUnsupported(
                 "지원되는 자료 조달 조합은 language+자료 없음, reading+PassageRequest, "
-                "literature+WorkSelection이다(05 §1.2)",
+                "literature+WorkSelection, speech_writing·media+생성 자료 요청이다",
                 {
                     "reason": SOURCE_PROCUREMENT_NOT_IMPLEMENTED,
                     "area_tag": request.area_tag.value,
@@ -678,6 +715,7 @@ class ProblemGenerationWorkflow:
         type_tag: TypeTag,
         target: TargetPlan,
         passage_draft: PassageDraft | None = None,
+        source_material_draft: SourceMaterialDraft | None = None,
         work_excerpt: WorkExcerpt | None = None,
     ) -> ContextPack:
         graph_request = GraphContextRequest(
@@ -712,6 +750,8 @@ class ProblemGenerationWorkflow:
             raise GraphContextError("GraphContextService가 요청과 다른 ContextPack을 반환했다")
         if passage_draft is not None:
             return attach_passage_draft(context_pack, passage_draft)
+        if source_material_draft is not None:
+            return attach_source_material_draft(context_pack, source_material_draft)
         if work_excerpt is not None:
             return attach_work_excerpt(context_pack, work_excerpt)
         return context_pack

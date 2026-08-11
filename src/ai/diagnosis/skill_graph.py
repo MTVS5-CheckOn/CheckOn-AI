@@ -5,6 +5,7 @@ from datetime import date
 from enum import StrEnum
 from heapq import heapify, heappop, heappush
 from pathlib import Path
+from typing import Literal
 
 import yaml  # type: ignore[import-untyped]  # PyYAML은 공식 타입 정보를 제공하지 않는다.
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -52,6 +53,15 @@ class GraphMeta(BaseModel):
     graph_version: str = Field(min_length=1)
     taxonomy_version: str = Field(min_length=1)
     updated: date
+    review_status: Literal["expert_review_pending"] | None = None
+    scope_note: str | None = Field(default=None, min_length=1)
+
+
+class GraphSourceStage(StrEnum):
+    """교육 내용 초안이 어떤 정본 단계에서 파생됐는지 표시한다."""
+
+    AREA_SPECS = "area_specs"
+    OFFICIAL_PUBLIC = "official_public"
 
 
 class GraphNode(BaseModel):
@@ -65,6 +75,8 @@ class GraphNode(BaseModel):
     type_affinity: tuple[TypeTag, ...] = Field(min_length=1)
     level: int | None = Field(default=None, ge=1)
     desc: str = Field(min_length=1)
+    source_stage: GraphSourceStage | None = None
+    source_refs: tuple[str, ...] = ()
 
     @field_validator("type_affinity")
     @classmethod
@@ -72,6 +84,15 @@ class GraphNode(BaseModel):
         if len(set(value)) != len(value):
             raise ValueError("type_affinity는 중복될 수 없다")
         return tuple(sorted(value, key=lambda item: item.value))
+
+    @field_validator("source_refs")
+    @classmethod
+    def validate_source_refs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not ref for ref in value):
+            raise ValueError("source_refs의 출처 참조는 비어 있을 수 없다")
+        if len(set(value)) != len(value):
+            raise ValueError("source_refs는 중복될 수 없다")
+        return value
 
 
 class GraphEdge(BaseModel):

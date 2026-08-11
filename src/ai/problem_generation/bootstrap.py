@@ -11,7 +11,10 @@ from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import ProblemGenerator
 from ai.problem_generation.application.literature_selector import LiteratureSelector
-from ai.problem_generation.application.passage_generator import PassageGenerator
+from ai.problem_generation.application.passage_generator import (
+    PassageGenerator,
+    SourceMaterialGenerator,
+)
 from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
 from ai.problem_generation.application.workflow import (
     DiagnosisCallable,
@@ -41,13 +44,19 @@ def build_problem_workflow(
 
     resolved_verify_config = verify_config or load_verify_config()
     resolved_banned_topics = banned_topics or load_banned_topics()
+    area_specs = load_area_specs()
     return ProblemGenerationWorkflow(
         diagnosis=diagnosis,
         graph_context=graph_context,
-        generator=ProblemGenerator(gateway, area_specs=load_area_specs()),
+        generator=ProblemGenerator(gateway, area_specs=area_specs),
         passage_generator=PassageGenerator(
             gateway,
             banned_topics=resolved_banned_topics,
+        ),
+        source_material_generator=SourceMaterialGenerator(
+            gateway,
+            banned_topics=resolved_banned_topics,
+            area_specs=area_specs,
         ),
         literature_selector=LiteratureSelector(load_literature_pool()),
         cross_solver=BlindCrossSolver(gateway),

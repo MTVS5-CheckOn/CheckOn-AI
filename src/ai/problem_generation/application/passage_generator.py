@@ -7,17 +7,23 @@ from uuid import uuid5
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.graphrag import ContextPack
 from ai.contracts.llm import LLMRequest, ModelRole, ParseFailed, RedactionBlocked
-from ai.contracts.problem_generation import PassageDraft, PassageRequest
+from ai.contracts.problem_generation import (
+    PassageDraft,
+    PassageRequest,
+    SourceMaterialDraft,
+    SourceMaterialRequest,
+)
 from ai.llm.determinism import deterministic_params
 from ai.llm.gateway import LlmGateway
 from ai.llm.prompts.loader import LoadedPromptTemplate, load_prompt_template
 from ai.llm.structured import parse
-from ai.problem_generation.application.generator import require_successful_text
+from ai.problem_generation.application.generator import render_area_spec, require_successful_text
 from ai.problem_generation.domain.identity import canonical_json, sha256_hex
-from ai.problem_generation.domain.policy import BannedTopicsConfig
+from ai.problem_generation.domain.policy import AreaSpecs, BannedTopicsConfig
 from ai.runtime.redaction import redact
 
 _PASSAGE_PROMPT_ID = "pg.passage.v1"
+_SOURCE_MATERIAL_PROMPT_ID = "pg.source_material.v1"
 _GENERATION_UNAVAILABLE_OUTPUTS = frozenset(
     {"generation_unavailable", '"generation_unavailable"'}
 )
@@ -33,6 +39,14 @@ class PassageDraftRejected(ParseFailed):
 
 class PassageGenerationUnavailable(PassageDraftRejected):
     """모델이 승인 근거로 지문을 만들 수 없다고 명시한 경우."""
+
+
+class SourceMaterialDraftRejected(ParseFailed):
+    """구조는 맞지만 요청·승인 근거 계약을 위반한 생성 자료 초안."""
+
+
+class SourceMaterialGenerationUnavailable(SourceMaterialDraftRejected):
+    """모델이 승인 근거로 화법과작문·매체 자료를 만들 수 없다고 명시한 경우."""
 
 
 class PassageGenerator:
@@ -127,6 +141,99 @@ class PassageGenerator:
             raise PassageDraftRejected("PassageDraft 본문에 금칙 소재가 포함됐다")
 
 
+class SourceMaterialGenerator:
+    """영역 규격·승인 근거로 화법과작문·매체 자료를 생성한다."""
+
+    def __init__(
+        self,
+        gateway: LlmGateway,
+        prompt: LoadedPromptTemplate | None = None,
+        *,
+        banned_topics: BannedTopicsConfig,
+        area_specs: AreaSpecs,
+    ) -> None:
+        self._gateway = gateway
+        self._prompt = prompt or load_prompt_template(_SOURCE_MATERIAL_PROMPT_ID)
+        self._banned_topics = banned_topics
+        self._area_specs = area_specs
+        if self._prompt.role is not ModelRole.GENERATOR:
+            raise ValueError("생성 자료 프롬프트 role은 generator여야 한다")
+        if self._prompt.response_schema_name != SourceMaterialDraft.__name__:
+            raise ValueError("생성 자료 프롬프트 응답 스키마가 SourceMaterialDraft가 아니다")
+
+    @property
+    def prompt_version(self) -> str:
+        return self._prompt.version
+
+    @property
+    def banned_topics_version(self) -> str:
+        return self._banned_topics.version
+
+    async def generate_source_material(
+        self,
+        *,
+        source_request: SourceMaterialRequest,
+        context_pack: ContextPack,
+        execution_context: ExecutionContext,
+    ) -> SourceMaterialDraft:
+        if source_request.banned_topics_version != self._banned_topics.version:
+            raise PassageConfigurationMismatch(
+                "생성 자료 요청의 banned_topics_version이 로드 설정과 다르다"
+            )
+
+        prompt_text = self._prompt.render(
+            {
+                "area_spec_block": render_area_spec(
+                    self._area_specs.spec_for(source_request.area_tag)
+                ),
+                "context_pack_json": canonical_json(
+                    context_pack.model_dump(mode="json")
+                ),
+                "source_request_json": canonical_json(
+                    source_request.model_dump(mode="json")
+                ),
+                "banned_topics_json": canonical_json(
+                    _banned_topics_prompt_payload(self._banned_topics)
+                ),
+            }
+        )
+        redacted = redact(prompt_text)
+        if redacted.uncertain:
+            raise RedactionBlocked("생성 자료 프롬프트의 개인정보 마스킹이 불확실하다")
+
+        result = await self._gateway.complete(
+            LLMRequest(
+                role=ModelRole.GENERATOR,
+                prompt=redacted.masked_text,
+                prompt_id=self._prompt.prompt_id,
+                prompt_version=self._prompt.version,
+                response_schema_name=self._prompt.response_schema_name,
+                generation_params=deterministic_params(),
+            ),
+            execution_context,
+        )
+        response_text = require_successful_text(result).strip()
+        if response_text in _GENERATION_UNAVAILABLE_OUTPUTS:
+            raise SourceMaterialGenerationUnavailable(
+                "승인 근거만으로 화법과작문·매체 자료를 생성할 수 없다"
+            )
+
+        draft = parse(response_text, SourceMaterialDraft)
+        _require_approved_evidence(
+            draft,
+            context_pack,
+            error_type=SourceMaterialDraftRejected,
+            draft_label="SourceMaterialDraft",
+        )
+        normalized_text = draft.material_text.casefold()
+        if any(
+            term.casefold() in normalized_text
+            for term in self._banned_topics.all_terms
+        ):
+            raise SourceMaterialDraftRejected("생성 자료 본문에 금칙 소재가 포함됐다")
+        return draft
+
+
 def attach_passage_draft(
     context_pack: ContextPack,
     draft: PassageDraft,
@@ -162,19 +269,64 @@ def attach_passage_draft(
     return ContextPack.model_validate(payload)
 
 
-def _require_approved_evidence(
-    draft: PassageDraft,
+def attach_source_material_draft(
     context_pack: ContextPack,
+    draft: SourceMaterialDraft,
+) -> ContextPack:
+    """원 ContextPack 해시와 생성 자료를 묶어 새 결정론 ContextPack을 만든다."""
+
+    existing_raw = context_pack.retrieval_trace.get("source_material_draft")
+    if existing_raw is not None:
+        try:
+            existing = SourceMaterialDraft.model_validate(existing_raw)
+        except ValueError as error:
+            raise SourceMaterialDraftRejected(
+                "ContextPack의 기존 source_material_draft가 유효하지 않다"
+            ) from error
+        if existing == draft:
+            return context_pack
+        raise SourceMaterialDraftRejected(
+            "ContextPack의 source_material_draft를 바꿀 수 없다"
+        )
+    _require_approved_evidence(
+        draft,
+        context_pack,
+        error_type=SourceMaterialDraftRejected,
+        draft_label="SourceMaterialDraft",
+    )
+    draft_payload = draft.model_dump(mode="json")
+    draft_hash = sha256_hex(canonical_json(draft_payload))
+    derived_id = uuid5(
+        context_pack.context_pack_id,
+        f"source-material-draft:{context_pack.context_pack_hash}:{draft_hash}",
+    )
+    payload = context_pack.model_dump(mode="json")
+    payload["retrieval_trace"] = {
+        **context_pack.retrieval_trace,
+        "source_material_draft": draft_payload,
+    }
+    payload["context_pack_id"] = str(derived_id)
+    payload.pop("context_pack_hash")
+    payload["context_pack_hash"] = sha256_hex(canonical_json(payload))
+    return ContextPack.model_validate(payload)
+
+
+def _require_approved_evidence(
+    draft: PassageDraft | SourceMaterialDraft,
+    context_pack: ContextPack,
+    *,
+    error_type: type[ParseFailed] = PassageDraftRejected,
+    draft_label: str = "PassageDraft",
 ) -> None:
     raw_refs = context_pack.retrieval_trace.get("allowed_evidence_refs")
     if not isinstance(raw_refs, list) or any(
         not isinstance(ref, str) or not ref for ref in raw_refs
     ):
-        raise PassageDraftRejected("ContextPack의 승인 근거 참조가 유효하지 않다")
+        raise error_type("ContextPack의 승인 근거 참조가 유효하지 않다")
     unknown_refs = set(draft.evidence_anchor_ids) - set(raw_refs)
     if unknown_refs:
-        raise PassageDraftRejected(
-            "PassageDraft가 승인되지 않은 근거를 참조한다: "
+        raise error_type(
+            f"{draft_label}가 승인되지 않은 근거를 참조한다: "
             + ", ".join(sorted(unknown_refs))
         )
 
@@ -202,5 +354,9 @@ __all__ = [
     "PassageDraftRejected",
     "PassageGenerationUnavailable",
     "PassageGenerator",
+    "SourceMaterialDraftRejected",
+    "SourceMaterialGenerationUnavailable",
+    "SourceMaterialGenerator",
     "attach_passage_draft",
+    "attach_source_material_draft",
 ]

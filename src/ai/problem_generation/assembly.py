@@ -60,7 +60,7 @@ _PIPELINE_VERSION = "0.1.0"
 _ENGINE_VERSION = "problem-generation-0.1"
 _SCHEMA_VERSION = "0.1"
 _CONTRACT_VERSION = "0.1"
-_GRAPH_VERSION = "curriculum-grammar-v1"
+_GRAPH_VERSION = "curriculum-five-area-v1"
 _ERROR_REQUEST_MISSING = "problem_request_missing"
 _ERROR_WORKER_INTERNAL = "problem_worker_internal"
 
