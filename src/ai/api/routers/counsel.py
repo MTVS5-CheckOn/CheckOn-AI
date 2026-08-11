@@ -62,7 +62,6 @@ from ai.composition.counsel.stores import (
     AgentStepSink,
     ContextStore,
     DraftResultStore,
-    InMemoryAgentStepSink,
     InMemoryContextStore,
     InMemoryDraftResultStore,
     PackResultStore,
@@ -95,6 +94,7 @@ from ai.db.repositories.run_store import (
 )
 from ai.db.store_factory import (
     build_agent_job_store,
+    build_counsel_agent_step_sink,
     build_counsel_draft_view_store,
     build_idempotency_store,
     build_pack_result_store,
@@ -154,7 +154,10 @@ _run_store: RunStore = build_run_store()
 _context_store: ContextStore = InMemoryContextStore()
 _draft_store: DraftResultStore = InMemoryDraftResultStore()
 _pack_store: PackResultStore = build_pack_result_store()
-_step_sink: AgentStepSink = InMemoryAgentStepSink()
+#: 🔴 **빌더를 탄다**(99 #37) — 종전엔 초기값과 reset 둘 다 인메모리 리터럴이라
+#: `STORE_BACKEND=pg`를 켜도 counsel 스텝이 **PG에 안 앉았다.**
+#: ⚠ 생성만으로 DB에 접속하지 않는다 — import 시 DB가 없어도 깨지지 않는다.
+_step_sink: AgentStepSink = build_counsel_agent_step_sink()
 
 #: 인메모리 캐시 1개의 항목 상한 — `LlmCallCollector.MAX_PENDING_RUNS`와 **같은 계열**로
 #: 둔다(불변식 6 "모든 루프에 상한"). ⚠ **추측값이다** — 실사용 부하 데이터가 없다. 근거는
@@ -550,7 +553,8 @@ def reset_counsel_stores() -> None:
     _context_store = InMemoryContextStore()
     _draft_store = InMemoryDraftResultStore()
     _pack_store = build_pack_result_store()
-    _step_sink = InMemoryAgentStepSink()
+    #: 🔴 **reset도 현재 설정을 다시 읽는다** — 굳은 값을 되돌리면 기동 시와 엇갈린다.
+    _step_sink = build_counsel_agent_step_sink()
     _view_cache.clear()
     _drafts.clear()
     #: 🔴 읽기 모델 저장소도 되돌린다 — 안 되돌리면 PG를 주입한 테스트가 **다음 테스트로 샌다**.

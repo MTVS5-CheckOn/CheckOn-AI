@@ -15,7 +15,6 @@ from typing import Any, Final
 from uuid import UUID
 
 import pytest
-from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -24,6 +23,7 @@ from ai.agents.supervisor import Supervisor
 from ai.composition.counsel.stores import AgentStepRecord as CounselAgentStepRecord
 from ai.contracts.agents import OperationKind, PriorityClass, WorkerJob, WorkerKind
 from ai.db.repositories.agent_job import PgJobStore
+from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from ai.db.settings import get_db_settings
 
 pytestmark = pytest.mark.integration

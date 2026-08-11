@@ -12,14 +12,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
-
 from ai.composition.counsel.stores import (
     AgentStepSink as CounselAgentStepSink,
 )
 from ai.composition.counsel.stores import (
     InMemoryAgentStepSink as InMemoryCounselAgentStepSink,
 )
+from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from ai.db.settings import DbSettings
 from ai.db.store_factory import build_agent_step_sink, build_counsel_agent_step_sink
 
@@ -68,8 +67,12 @@ def test_the_counsel_sink_satisfies_the_counsel_protocol() -> None:
 
 
 def test_the_two_sinks_are_different_types() -> None:
-    """probe와 counsel은 **각자의 레코드 타입**을 돌려준다 — 한쪽으로 강제하지 않는다."""
+    """probe와 counsel은 **각자의 레코드 타입**을 돌려준다 — 한쪽으로 강제하지 않는다.
+
+    ⚠ 타입 이름으로 비교한다 — `is not`은 mypy가 **정적으로 참**임을 알아 검사가 죽는다.
+    """
     from ai.db.repositories.probe_stores import PgAgentStepSink
 
     pg_settings: Any = DbSettings(store_backend="pg")
-    assert type(build_counsel_agent_step_sink(pg_settings)) is not PgAgentStepSink
+    counsel = type(build_counsel_agent_step_sink(pg_settings)).__name__
+    assert counsel != PgAgentStepSink.__name__, counsel
