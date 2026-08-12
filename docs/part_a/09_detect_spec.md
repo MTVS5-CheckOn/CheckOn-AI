@@ -169,8 +169,15 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 naive `occurred_at` · `submitted > expected` · 복귀 전환과 `students[].status` 불일치.
 ⚠ **상태와 이력이 갈리면 조용히 한쪽을 고르지 않는다** — 어느 쪽이 사실인지 AI가 정할 수 없다.
 
-⚠ **R2·R3는 baseline 창의 집계도 필요하다** — 분자와 분모를 **같은 자로** 재야 한다.
-증분 전송에서 이번 주 집계만 오면 **R3는 skip**된다(실측). 섞느니 판정하지 않는다.
+🔴 **부재형 셋의 시간축은 `learning_events`가 아니다**(8/12 · 99 #44). `StudentFeatures.weeks`는
+**학습 이벤트가 있는 주만** 만들어서, 그 목록을 순회하면 **완전 공백 주가 통째로 빠진다** —
+*"가장 심한 공백"* 이 판정 창에서 사라진다. ⇒ R2·R3의 기준 주는 `snapshot_meta.week_start`,
+주차 열은 `detection_evidence[].week_start`, R5는 `enrollment_transition.occurred_at`이다.
+**학습 이벤트가 0건이어도 세 규칙이 선다.** ⚠ `StudentFeatures`에 빈 주를 억지로 넣지 않았다 —
+그러면 R1·R4·R6의 평가 창까지 바뀐다.
+
+⚠ **전송 계약: 원시 기록은 증분, 주간 집계는 rolling 10주 동봉**(05 참조). 자르면 R2·R3가
+skip된다 — 분자와 분모를 **같은 자로** 재야 하고, 섞느니 판정하지 않는다.
 ⚠ **R2의 「제출률 하락」 경로는 아직 안 열었다**(04 §1 R2 · BE-10).
 
 `snapshot_hash` 대상이다 — 04 부록 A. 안 보낸 요청의 canonical payload는 **종전과 같다**.

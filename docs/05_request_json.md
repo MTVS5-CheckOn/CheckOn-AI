@@ -304,9 +304,25 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
 가장 최근 아무 `learning_event`** 를 인용해서, R2가 과거 `solve`를, R5가 복귀 전 `solve`를
 근거로 실었다.
 
-⚠ **R2·R3는 baseline 창의 집계도 필요하다** — 분자(이번 주)와 분모(평소)를 **같은 자로**
-재야 한다. 증분 전송에서 이번 주 집계만 오면 **R3는 skip**된다(실측). 두 측정을 섞느니
-판정하지 않는다.
+### 🔴 전송 계약 — 원시 기록은 증분, 주간 집계는 **rolling 10주 동봉** (8/12 확정)
+
+| 배열 | 전송 범위 |
+| --- | --- |
+| `learning_events` | **기존 계약대로 증분** |
+| `detection_evidence.assignment_window` | **학생별 최근 10주 전량** |
+| `detection_evidence.weekly_activity` | **학생별 최근 10주 전량** |
+| `detection_evidence.enrollment_transition` | 분석 주에 해당하는 전환 이력 |
+
+⚠ **집계는 작다** — 실측(데모 학생 10명): `detection_evidence` **201행 · 38.9KB**로
+전체 요청의 **9.7%**다(학생당 **20.1행 ≈ 3.9KB**). 학생 수에 **선형**이다.
+
+🔴 **자르면 판정이 달라진다**(실측): 이번 주 집계만 보내면 R2·R3가
+`authoritative_evidence_missing`으로 **skip**된다 — 분자(이번 주)와 분모(평소)를 **같은 자로**
+재야 하고, 두 측정을 섞느니 판정하지 않기 때문이다. **빠진 주는 0이 아니라 「측정 부재」**다.
+
+⚠ **AI PG에 집계 전문을 복제 저장하지 않는다** — 그래서 이 축을 저장이 아니라 **요청 계약**으로
+닫는다(`db/models.py`·마이그레이션 무접촉). 전량 스냅숏과 증분 요청이 **같은 판정**을 내는지
+회귀 검사가 값으로 지킨다(발화·score·evidence·`signal_id`·`rules_skipped` 전부).
 
 ⚠ **AI는 이 레코드를 복제 저장하지 않는다** — 응답 evidence의 `source_table` + `record_id`로
 **백엔드가 자기 원본을 조회**한다. `source_table`은 논리명이며 AI가 SQL 식별자로 쓰지 않는다.
