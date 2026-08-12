@@ -9,13 +9,15 @@
 
 | 경계 | 정수 이벤트로 도달 | 근거 |
 | --- | --- | --- |
-| R1 15.0pp | ✅ | `18/20 → 15/20` 이 정확히 15.0pp다 |
-| R3 40% | ✅ | `8/20 == 0.4` |
-| R4 시간 1.5배 | ✅ | 이분수 `200/800 → 300/800` |
-| R4 정답률 5.0pp | ❌ | `0.05`가 이진수로 표현 불가 — bracket으로 좁힌다 |
-| R6 0.5·10문항 | ✅ | `10/20 == 0.5` |
+| R1 15.0pp | ✅ | 정답 18건→15건(각 20문항)이 정확히 15.0pp다 |
+| R3 40% | ✅ | 활동 8건 ÷ 기준선 20건 == 0.4 |
+| R4 시간 1.5배 | ✅ | 200초→300초(각 1000어절) · 🔴 **float 오차 방어 뒤** |
+| R4 정답률 5.0pp | ✅ | 정답 80건→75건(각 100문항) · 🔴 **float 오차 방어 뒤** |
+| R6 0.5·10문항 | ✅ | 오답 10건 ÷ 전체 20건 == 0.5 |
 
-⚠ **못 만드는 경계를 「만들었다」고 적지 않는다** — 좁힌 bracket을 그대로 밝힌다.
+🔴 **계약상 포함 경계가 float 오차로 배제되면 그건 구현 결함이다** — bracket으로 우회하지
+않고 `rules.py`의 비교에 명시 허용오차를 뒀다(79-R §2). 도메인 입력은 정수에서 파생되지만
+**계산 표면은 float**라는 사실이 사라지지 않는다.
 """
 
 from __future__ import annotations
@@ -307,14 +309,47 @@ def test_s16_r3_boundary_and_absent_aggregate() -> None:
     assert SKIP_AUTHORITATIVE_EVIDENCE_MISSING in _skips(absent, RuleId.R3)
 
 
-def test_s17_r4_time_boundary_is_exact_and_accuracy_band_is_bracketed() -> None:
-    """S17 — 시간 1.5배는 **정확히** 잴 수 있고, 정답률 5.0pp는 **못 만든다**.
+def _r4(name: str, *, seconds: int, week_correct: int, n: int = 100) -> ScenarioBuilder:
+    """R4 픽스처 — 🔴 **정수 카운트에서 파생**하고 비율을 직접 주입하지 않는다.
 
-    🔴 `0.05`는 이진수로 표현되지 않는다 — `0.80 - 0.75`가 `5.000000000000004`라
-    「정확히 5.0pp」가 **초과로 판정**된다(실측). ⇒ 이분수로 4.6875pp(허용) ·
-    6.25pp(초과) bracket을 쓴다. **못 만드는 경계를 만들었다고 적지 않는다.**
+    도메인 입력은 정수(`correct/n` · `seconds/words`)지만 **계산 표면은 float**다.
+    계약상 **포함 경계**(정답률 차이 = 5.0pp · 시간 배율 = 1.5)가 이진 부동소수점
+    오차로 **배제되면 안 된다** — 그것이 이 픽스처가 재는 것이다.
+    """
+    built = builder(name).student("st_a")
+    built.steady_history("st_a", n=n, correct=80, seconds=200, words=1000, skip_recent=2)
+    for back in (0, 1):
+        built.solves(
+            "st_a", back=back, n=n, correct=week_correct, seconds=seconds, words=1000
+        )
+    return built
+
+
+def test_s17_r4_includes_the_exact_contract_boundaries() -> None:
+    """S17 — 🔴 **계약상 포함 경계가 float 오차로 배제되지 않는다.**
+
+    실측 반례 둘(2026-08-12):
+
+        정답률  base 80/100 · week 75/100 → diff_pp = 5.000000000000004  > 5.0 → 초과 오판
+        시간    base 200/1000 · week 300/1000 → ratio = 1.4999999999999998 < 1.5 → 미달 오판
+
+    ⚠ **bracket으로 대체하지 않는다** — 4.6875pp/6.25pp는 «경계 근처»를 재는 보조 검사이고
+    **계약이 말하는 포함 경계 자체**를 재지 않는다. 계약은 «정확히 5.0pp는 허용»이다.
     """
     assert _CONFIG.r4.time_ratio == 1.5 and _CONFIG.r4.acc_stable_band_pp == 5.0
+
+    #: ① 정답률 차이 정확히 5.0pp + 시간 정확히 1.5배 → 발화.
+    assert _rules(_run(_r4("s17exact", seconds=300, week_correct=75))) == ["R4"]
+    #: ② 정답률 차이가 5.0pp보다 실제로 큼(6.0pp) → 미발화.
+    assert _rules(_run(_r4("s17accover", seconds=300, week_correct=74))) == []
+    #: ③ 시간 정확히 1.5배 + 정답률 동일 → 발화.
+    assert _rules(_run(_r4("s17timeeq", seconds=300, week_correct=80))) == ["R4"]
+    #: ④ 시간 배율이 1.5보다 실제로 작음(1.45) → 미발화.
+    assert _rules(_run(_r4("s17timelo", seconds=290, week_correct=80))) == []
+
+
+def test_s17_r4_bracket_around_the_band_still_holds() -> None:
+    """S17 보조 — 경계 **근처**도 계약대로다(포함 경계 검사를 대체하지 않는다)."""
 
     def scenario(name: str, seconds: int, week_correct: int) -> ScenarioBuilder:
         built = builder(name).student("st_a")
@@ -327,10 +362,6 @@ def test_s17_r4_time_boundary_is_exact_and_accuracy_band_is_bracketed() -> None:
             )
         return built
 
-    #: 시간 정확히 1.5배(200→300) · 정답률 동일 → 발화.
-    assert _rules(_run(scenario("s17eq", 300, 52))) == ["R4"]
-    #: 1.45배 → 미발화.
-    assert _rules(_run(scenario("s17lo", 290, 52))) == []
     #: 1.6배 · 정답률 4.6875pp 하락(허용 안) → 발화.
     assert _rules(_run(scenario("s17band", 320, 49))) == ["R4"]
     #: 1.6배 · 정답률 6.25pp 하락(허용 초과) → 미발화.
