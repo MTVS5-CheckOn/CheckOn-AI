@@ -50,7 +50,7 @@ def _settings() -> OpenAiSettings:
         {
             "openai_base_url": "http://local/v1",
             "openai_api_key": "k",
-            "openai_model": "gemma-test",
+            "openai_model": "test-model",
         }
     )
 
@@ -123,7 +123,7 @@ def test_happy_path_returns_ok_result() -> None:
     assert result.outcome is CallOutcome.OK
     assert result.text == "안녕하세요, 한 문장입니다."
     assert result.provider == PROVIDER_NAME
-    assert result.model == "gemma-test"
+    assert result.model == "test-model"
     assert result.usage.tokens_in == 12
     assert result.usage.tokens_out == 7
     assert result.usage.cost_usd == 0.0  # 미측정 — 원가 없음이 아니다(99 ⓠ)
@@ -249,7 +249,7 @@ def test_generation_params_passed_through_interface_path() -> None:
     _run(provider.complete(_request(params), _context()))
     kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
     assert kwargs is not None
-    assert kwargs["model"] == "gemma-test"
+    assert kwargs["model"] == "test-model"
     assert kwargs["temperature"] == 0.2
     assert kwargs["top_p"] == 0.9
     assert kwargs["seed"] == 7
@@ -313,6 +313,19 @@ def test_default_timeout_is_total_15s() -> None:
     assert OpenAiSettings().openai_timeout_s == 15.0
 
 
+def test_settings_surface_is_openai_only() -> None:
+    """폐기된 로컬 서버 설정을 다시 실행 선택지로 열지 않는다."""
+    assert set(OpenAiSettings.model_fields) == {
+        "openai_api_key",
+        "openai_model",
+        "openai_base_url",
+        "openai_timeout_s",
+    }
+    assert OpenAICompatProvider(settings=_settings(), client=_FakeClient()).name == (
+        "openai-compat"
+    )
+
+
 def test_real_client_disables_sdk_retries() -> None:
     """실 클라이언트는 SDK 내장 재시도를 끈다(무재시도 확정) — 네트워크 없이 생성만."""
     provider = OpenAICompatProvider(settings=_settings())
@@ -333,7 +346,7 @@ def test_total_timeout_maps_to_llm_timeout() -> None:
         {
             "openai_base_url": "http://local/v1",
             "openai_api_key": "k",
-            "openai_model": "gemma-test",
+            "openai_model": "test-model",
             "openai_timeout_s": 0.05,
         }
     )

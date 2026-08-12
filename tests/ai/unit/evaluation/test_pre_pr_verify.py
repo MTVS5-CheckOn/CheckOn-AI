@@ -15,7 +15,7 @@ from ai.evaluation.pre_pr_verify import (
 
 _EXPECTED_SKIPS = (
     ("tests.ai.integration.test_briefing_smoke", "test_real_provider_single_brief"),
-    ("tests.ai.integration.test_llm_smoke", "test_local_server_single_roundtrip"),
+    ("tests.ai.integration.test_llm_smoke", "test_openai_single_roundtrip"),
     (
         "tests.ai.integration.test_pg_real_llm_smoke",
         "test_t1_problem_generation_real_llm_roundtrip",

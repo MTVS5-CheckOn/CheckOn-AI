@@ -80,7 +80,7 @@ def test_real_provider_single_brief() -> None:
             )
         )
     except LlmError as exc:
-        pytest.skip(f"로컬 LLM 미가용 — {type(exc).__name__}")
+        pytest.skip(f"OpenAI 미가용 — {type(exc).__name__}")
 
     assert brief.text  # 비어있지 않은 한 줄
     assert "⟪" not in brief.text and "⟫" not in brief.text

@@ -33,7 +33,7 @@ _REAL_LLM_SKIPS: Final = frozenset(
         ),
         (
             "tests.ai.integration.test_llm_smoke",
-            "test_local_server_single_roundtrip",
+            "test_openai_single_roundtrip",
         ),
         (
             "tests.ai.integration.test_pg_real_llm_smoke",

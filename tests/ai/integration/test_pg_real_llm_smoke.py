@@ -330,7 +330,7 @@ def test_t1_problem_generation_real_llm_roundtrip() -> None:
     except RealLlmSmokeUnavailable as exc:
         pytest.skip(str(exc))
     except LlmError as exc:
-        pytest.skip(f"로컬 LLM 미가용 — {type(exc).__name__}")
+        pytest.skip(f"OpenAI 미가용 — {type(exc).__name__}")
 
     assert observation.generator_provider_name != observation.verifier_provider_name
     assert len(observation.result.items) == 1

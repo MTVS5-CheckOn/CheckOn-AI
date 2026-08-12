@@ -334,21 +334,14 @@ answered_at
 
 ```dotenv
 LLM_PROVIDER=openai_compat
-LOCAL_LLM_BASE_URL=
-LOCAL_LLM_API_KEY=
-LOCAL_LLM_MODEL=
-LOCAL_LLM_TIMEOUT_S=
-LOCAL_LLM_DISABLE_THINKING=
-```
-
-M2 역할 분리 시 추가할 후보 이름. 아직 코드는 읽지 않으며 공통 LLM 오너 합의가 필요하다.
-
-```dotenv
 OPENAI_BASE_URL=
 OPENAI_API_KEY=
 OPENAI_MODEL=
 OPENAI_TIMEOUT_S=
 ```
+
+실서비스 LLM은 OpenAI 단일이다. M2 역할별 모델 분리가 필요해지면 별도 설정 이름을
+추가하기 전에 공통 LLM 오너 합의를 거친다.
 
 채택한 외부 자료·고도화 기능에만 추가할 후보 이름:
 
