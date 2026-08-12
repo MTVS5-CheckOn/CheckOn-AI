@@ -26,6 +26,7 @@ from ai.detection.evidence import (
     MAX_ABSENCE_LOOKBACK_WEEKS,
     SKIP_AUTHORITATIVE_EVIDENCE_MISSING,
     StudentEvidence,
+    resolve_weekly_activity_window,
 )
 from ai.detection.features import StudentFeatures, WeekFeatures
 from ai.detection.segments import Segment, is_rule_active, threshold_multiplier
@@ -255,33 +256,24 @@ def _r3(
     p = config.r3
     if not is_rule_active(RuleId.R3, segment):
         return None, None
-    analysis_week = evidence.analysis_week
-    if analysis_week is None:
-        return None, RuleSkip(
-            rule_id=RuleId.R3, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
-        )
-    activity = evidence.weekly_activity.get(analysis_week)
     #: 🔴 **기준창은 설정이 정본이다**(`config.baseline_window_weeks`) — 종전에는 이 모듈에
     #: `R3_BASELINE_WEEKS = 8` 상수를 따로 뒀다. 그러면 **값이 두 곳에 살고**, 설정을 2주로
     #: 낮춘 테넌트·테스트에서 **여전히 8주를 요구해** 영영 skip된다(값이 바뀌면 코드 diff가
     #: 생기면 위치가 틀린 것 · 03 §1).
-    baseline_weeks = config.baseline_window_weeks
-    prior = [
-        evidence.weekly_activity.get(analysis_week - timedelta(weeks=back))
-        for back in range(1, baseline_weeks + 1)
-    ]
-    if activity is None or any(row is None for row in prior):
+    #: 🔴 **해소는 `resolve_weekly_activity_window()` 하나가 한다** — 브리핑 facts도 같은
+    #:   함수를 쓴다. 판정과 문면이 각자 계산하면 갈린다(2026-08-13 실측 · 이 안건의 원인).
+    window = resolve_weekly_activity_window(
+        evidence, baseline_window_weeks=config.baseline_window_weeks
+    )
+    if window is None:
         return None, RuleSkip(
             rule_id=RuleId.R3, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
         )
-    baseline_volume = sum(row.activity_count for row in prior if row is not None) / len(
-        prior
-    )
-    if baseline_volume < p.min_baseline_events:
+    if window.baseline_volume < p.min_baseline_events:
         return None, None
     mult = threshold_multiplier(RuleId.R3, segment, config.segments)
     ratio_threshold = p.volume_ratio * mult
-    actual_ratio = activity.activity_count / baseline_volume
+    actual_ratio = window.current.activity_count / window.baseline_volume
     if actual_ratio >= ratio_threshold:
         return None, None
     # deficit 방향: threshold에서 0, 완전 공백(0)에서 1
@@ -291,7 +283,8 @@ def _r3(
             rule_id=RuleId.R3,
             signal_type=RULE_SIGNAL_MAP[RuleId.R3],
             score=score,
-            evidence_weeks=(analysis_week,),
+            #: ⚠ 판정에 쓴 그 레코드의 주다 — `analysis_week`과 같고, 인용도 여기서 나온다.
+            evidence_weeks=(window.current.week_start,),
         ),
         None,
     )

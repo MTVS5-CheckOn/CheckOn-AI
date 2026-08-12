@@ -216,3 +216,103 @@ def test_the_provider_seam_is_restored_between_tests() -> None:
     assert brief["gate_passed"] is True, f"대본 provider가 남았다: {brief}"
     assert brief["fallback_used"] is False, brief
     assert "99.9" not in brief["text"], brief["text"]
+
+
+# ─────────────── R3 정본 정합 — HTTP 종단 (지시서 81 §14) ───────────────
+#
+# 🔴 **두 입력을 같은 지표라고 판정한 것이 아니다.** `learning_events`는 R1·R4·R6의 원시
+# 피처 정본이고 주간 활동량은 `weekly_activity`가 정본이다. 여기서 보는 것은
+# **서로 다를 수 있는 입력에서 R3가 자기 정본을 프롬프트까지 들고 가는가**다.
+# ⚠ 충돌을 정규화하지 않는다 — 400으로 거부하지도, 픽스처를 맞추지도 않는다(지시서 81 §1).
+
+#: 반례 값 — 분석 주 `learning_events` 20건 vs 정본 집계 0건.
+_R3_EVENTS: Final = 20
+_R3_ACTIVITY: Final = 0
+_R3_BASELINE: Final = 20
+
+
+def _r3_conflicting_request(*, with_r2: bool) -> dict[str, Any]:
+    """분석 주 solve 20건 · 주간 활동량 집계 0건 — 두 축이 **의도적으로** 어긋난다."""
+    scenario = builder("r3http").student("st_a")
+    scenario.steady_history("st_a", n=_R3_EVENTS, correct=17)
+    scenario.activity_series("st_a", counts={0: _R3_ACTIVITY}, baseline=_R3_BASELINE)
+    if with_r2:
+        from ai.detection.thresholds import default_threshold_config  # noqa: PLC0415
+
+        for back in range(default_threshold_config().r2.consecutive_missing):
+            scenario.assignment("st_a", back=back, expected=3, submitted=0)
+    body: dict[str, Any] = scenario.build().model_dump(mode="json")
+    return body
+
+
+def _run_r3(script: list[str], *, key: str, with_r2: bool) -> tuple[Any, _ScriptedNarrator]:  # noqa: ANN401
+    provider = _ScriptedNarrator(script)
+    detect_router.set_brief_provider(provider)
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        response = _post(client, _r3_conflicting_request(with_r2=with_r2), key=key)
+    return response, provider
+
+
+def test_r3_prompt_carries_the_authoritative_activity_not_the_learning_events(
+    narrator: list[str],
+) -> None:
+    """B05 종단 — 프롬프트에 `0건·0%`가 실리고 `20건·100%`는 없어야 한다.
+
+    🔴 **이 반례가 게이트를 통과했던 자리다** — 20건·100%는 facts 안의 숫자라
+    `ungrounded_number`가 안 걸린다. 조립을 고쳐야 막힌다(§15).
+    """
+    narrator.append(_CLEAN)
+    response, provider = _run_r3(narrator, key="r3-auth", with_r2=False)
+
+    assert response.status_code == 200, response.text
+    signals = response.json()["data"]["signals"]
+    assert [s["rule_id"] for s in signals] == ["R3"], signals
+    assert any(f"{_R3_ACTIVITY}건" in e["summary"] for e in signals[0]["evidence"])
+
+    prompt = provider.prompts[0]
+    assert f"{_R3_ACTIVITY}건" in prompt, prompt
+    assert "0%" in prompt, prompt
+    assert f"{_R3_EVENTS}건" not in prompt, prompt
+    assert "100%" not in prompt, prompt
+
+    brief = signals[0]["brief"]
+    assert brief["gate_passed"] is True
+    assert brief["fallback_used"] is False
+
+
+def test_r3_merged_with_r2_still_prompts_with_the_authoritative_activity(
+    narrator: list[str],
+) -> None:
+    """B10 종단 — 병합돼도 대표 R3의 facts는 정본을 쓴다."""
+    narrator.append(_CLEAN)
+    response, provider = _run_r3(narrator, key="r3-merge", with_r2=True)
+
+    assert response.status_code == 200, response.text
+    signals = response.json()["data"]["signals"]
+    assert len(signals) == 1, signals
+    assert signals[0]["rule_id"] == "R3", signals
+    assert len(signals[0]["evidence"]) <= 3
+
+    prompt = provider.prompts[0]
+    assert f"{_R3_ACTIVITY}건" in prompt and "0%" in prompt, prompt
+    assert f"{_R3_EVENTS}건" not in prompt and "100%" not in prompt, prompt
+
+
+def test_a_conflicting_request_is_not_rejected_and_r1_keeps_learning_events(
+    narrator: list[str],
+) -> None:
+    """⚠ 충돌은 거부 사유가 아니고, **R1의 정본은 그대로 `learning_events`** 다.
+
+    🔴 이 검사가 없으면 *"R3를 고치면서 다른 규칙의 축도 갈아 끼웠다"* 를 못 본다.
+    """
+    narrator.append(_CLEAN)
+    response, provider = _run_r3(narrator, key="r3-nonreject", with_r2=False)
+    assert response.status_code == 200, response.text
+
+    r1_response, r1_provider = _run(narrator, key="r3-r1-axis")
+    assert r1_response.status_code == 200, r1_response.text
+    r1_signals = r1_response.json()["data"]["signals"]
+    assert [s["rule_id"] for s in r1_signals] == ["R1"], r1_signals
+    assert all(e["source_table"] == "learning_event" for e in r1_signals[0]["evidence"])
+    assert "정답률" in r1_provider.prompts[0]
+    del provider
