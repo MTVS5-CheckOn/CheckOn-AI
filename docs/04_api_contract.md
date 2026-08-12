@@ -50,7 +50,7 @@
 | --- | --- |
 | Base URL | `http://checkon-ai.internal/v1` — 내부 전용, 외부 미노출 `[Open-5]` |
 | 포맷 | JSON (UTF-8) · 네이밍 `snake_case` `[Open-6]` |
-| 필수 헤더 | `X-Tenant-Id`(강사 alias) · `X-Request-Id`(상호 추적) · 쓰기 요청은 `Idempotency-Key` |
+| 필수 헤더 | 도메인 API는 `X-Tenant-Id`(강사 alias) · `X-Request-Id`(상호 추적), 쓰기 요청은 `Idempotency-Key`. 운영 프로브는 §3.10의 예외 규약을 따른다 |
 | 시간 | ISO-8601 + 오프셋 (`2026-07-14T02:00:00+09:00`) |
 
 ### 2.2 응답 envelope `[제안]`
@@ -262,7 +262,7 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 | `POST /imports` → `GET` → `/confirm` | 202 | 타사 엑셀 업로드 | 매핑 미리보기 → 확정 후 표준 스키마 산출 |
 | `POST /counsel/drafts` → `GET` → `/refine` | 202 | **문의 도착 즉시** | 초안 1건 자동 생성 · 근거 인용 ≥1 · 다듬기(동기) — §3.9 |
 | `POST /problems` → `GET /problems/{job_id}` | 202 | 강사가 출제를 요청할 때 | 세트 생성 잡 → 문항 **요약** 목록(본문·evidence 아님) — §3.11. 🔴 **v1은 `area_tag=language` + `passage` 없음만** · `type_tags`에 `apply` 금지 |
-| `GET /health` · `GET /meta/versions` | 동기 | 상시 | 헬스 · 버전 |
+| `GET /health` · `GET /ready` · `GET /meta/versions` | 동기 | 상시 | 프로세스 liveness · DB readiness · capability별 선언 버전 — §3.10 |
 
 ---
 
@@ -892,9 +892,88 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 ⚠ **`_TYPE_KO`의 짧은 형은 유지한다** — `f"{area}·{type_}"` 조립에서 `"적용·창의"` 를 그대로 쓰면 `"문학·적용·창의"` 가 되어 **구분자가 모호**해진다(기존 넷이 전부 2글자인 것도 같은 이유로 보인다).
 ⚠ **짧은 형이 프롬프트에 실제로 더 나은지는 미실측**이다 — 골든셋(`part_a/08`) 축으로 등재만 해 둔다.
 
-### 3.10 운영
+### 3.10 운영 `[확정 · 구현 대기]`
 
-`GET /v1/health` — liveness/readiness · `GET /v1/meta/versions` — 엔진·임계값·프롬프트·계약 버전(백엔드가 브리핑 메타에 표시 가능).
+> **현재 구현 상태(2026-08-12):** 아래 세 라우트는 아직 등록되지 않아 Starlette 기본
+> `404 {"detail":"Not Found"}`를 반환한다. `/openapi.json`은 네트워크 접근 확인에는 쓸 수
+> 있지만 liveness·readiness 판정이 아니다. 구현 전까지 이 절의 응답을 실제 동작으로 보고
+> 연동하면 안 된다.
+
+운영 API는 도메인 실행이 아니므로 `X-Tenant-Id`와 `Idempotency-Key`를 요구하지 않는다.
+`X-Request-Id`가 있으면 응답에 돌려주되, 없다는 이유로 운영 프로브를 거부하지 않는다.
+세 경로 모두 공통 envelope를 사용하고 `meta.execution_id=null`이다.
+
+#### 3.10.1 `GET /v1/health` — liveness
+
+프로세스와 ASGI 라우터가 응답 가능한지만 확인한다. DB·체크포인터·LLM·외부 API를 호출하지
+않으며, 핸들러에 도달하면 `200`이다. DB 장애를 liveness 실패로 올려 살아 있는 프로세스를
+반복 재시작하게 만들지 않는다.
+
+```json
+{
+  "data": { "status": "alive" },
+  "error": null,
+  "meta": { "execution_id": null, "versions": { "...": "ops_versions" } }
+}
+```
+
+#### 3.10.2 `GET /v1/ready` — DB readiness
+
+주 DB에 제한시간이 있는 경량 질의를 수행한다. 체크포인터가 별도 DB URL을 쓰면 그 연결도
+확인한다. migration·테이블 생성·실 LLM·외부 API 호출은 하지 않는다.
+
+- 전부 준비됨: `200` + `data.status="ready"`.
+- 하나라도 미준비·제한시간 초과: `503 SERVICE_NOT_READY`.
+- 실패 `detail`에는 `unavailable_components`의 논리 이름만 싣는다. DB URL·계정·SQL·드라이버
+  예외 원문은 응답하지 않는다.
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "SERVICE_NOT_READY",
+    "message": "서비스 준비가 완료되지 않았습니다",
+    "detail": { "unavailable_components": ["database"] }
+  },
+  "meta": { "execution_id": null, "versions": { "...": "ops_versions" } }
+}
+```
+
+`503 LLM_UPSTREAM_DOWN`은 LLM 벤더 장애 전용이므로 readiness에 재사용하지 않는다.
+`SERVICE_NOT_READY`의 공용 오류 사전 편입과 표시 문구는 운영 라우터 구현 PR에서 함께
+동기화한다.
+
+#### 3.10.3 `GET /v1/meta/versions` — capability별 선언 버전
+
+버전은 단일 전역값으로 합치지 않는다. 각 capability의 기존 버전 팩토리가 내는
+`VersionSet`을 `data.capabilities` 아래에 따로 싣는다. 서로 다른 engine·prompt·threshold를
+한 객체로 합치면 실제로 존재하지 않는 실행 조합이 되기 때문이다.
+
+```json
+{
+  "data": {
+    "app_version": "0.1.0",
+    "capabilities": {
+      "detection": { "...": "detection_versions()" },
+      "classification": { "...": "classify_versions()" },
+      "counsel": { "...": "counsel_versions()" },
+      "imports": { "...": "import_versions()" },
+      "problem_generation": { "...": "problem_failure_versions()" }
+    }
+  },
+  "error": null,
+  "meta": { "execution_id": null, "versions": { "...": "ops_versions" } }
+}
+```
+
+- ops 라우터에 기존 버전 문자열을 복제하지 않고 각 팩토리 결과를 사용한다.
+- 구현돼 버전 팩토리가 등록된 capability만 싣는다. 없는 축을 임의 값으로 채우지 않는다.
+- `data.capabilities.*`는 조회 대상의 버전이고, 최상위 `meta.versions`는 이 운영 API 자체의
+  버전이다.
+- DB·LLM·외부 API를 호출하지 않는 정적 선언 조회다.
+
+운영 라우터는 `/v1/health`·`/v1/ready`·`/v1/meta`의 좁은 version scope를 각각 등록한다.
+`/v1` 전체를 운영 scope로 잡아 다른 capability의 실패 응답을 가로채면 안 된다.
 
 ---
 
