@@ -17,9 +17,10 @@ from __future__ import annotations
 
 from typing import Any, Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from ai.contracts.detection import DetectRequest, DetectResponse
+from ai.contracts.execution import VersionSet
 
 #: 🔴 **Java generator의 메서드명이 된다** — 자동 생성(`post_detect_v1_detect_post`)이면
 #: 함수 이름을 바꾸는 순간 BE 클라이언트의 메서드명이 따라 바뀐다.
@@ -99,31 +100,54 @@ DETECT_HEADERS: Final[tuple[dict[str, Any], ...]] = (
 # ───────────────────────── 응답 envelope (문서 전용) ─────────────────────────
 
 
-class DetectEnvelopeVersions(BaseModel):
-    """`meta.versions` — `VersionSet` 필드에서 `_version` 접미사를 뗀 이름이다(04 §2.2)."""
+def _versions_model() -> type[BaseModel]:
+    """`meta.versions` 모델을 **`VersionSet`에서 파생**한다(04 §2.2).
 
-    model_config = ConfigDict(extra="forbid")
+    🔴 **손으로 적었더니 틀렸다**(2026-08-12 실측): 없는 키 셋(`threshold_config`·
+    `lexicon`·`tone_map`)을 적고 있는 키 둘(`verify_config`·`difficulty_calib`)을 빠뜨렸다.
+    문서가 **wire와 다른 계약**을 말하고 있었던 셈이다.
 
-    pipeline: str | None = None
-    engine: str | None = None
-    schema_: str | None = Field(default=None, alias="schema")
-    contract: str | None = None
-    prompt: str | None = None
-    threshold_config: str | None = None
-    taxonomy: str | None = None
-    graph: str | None = None
-    lexicon: str | None = None
-    tone_map: str | None = None
+    ⇒ 이름·필수 여부를 정본에서 유도한다. ⚠ **응답은 nullable이어도 키를 생략하지 않는다**
+    (`envelope.versions_dict()`가 전 필드를 채운다) — 그래서 전부 `required`이고 값만
+    nullable이다.
+    """
+    fields: dict[str, Any] = {}
+    for name, info in VersionSet.model_fields.items():
+        key = name.removesuffix("_version")
+        #: ⚠ `schema`는 `BaseModel`의 deprecated 메서드와 이름이 겹친다 — 필드명은
+        #:   피하고 **alias로 wire 키를 낸다**(응답 키는 `schema`가 정본이다).
+        field_name = f"{key}_" if hasattr(BaseModel, key) else key
+        annotation = str if info.is_required() else str | None
+        fields[field_name] = (
+            annotation,
+            Field(alias=key, description=f"`VersionSet.{name}`"),
+        )
+    return create_model("DetectEnvelopeVersions", __config__=_STRICT, **fields)
+
+
+def documented_version_keys() -> frozenset[str]:
+    """문서 모델이 말하는 **wire 키 집합** — 내부 필드명이 아니라 alias다."""
+    return frozenset(
+        info.alias or name
+        for name, info in DetectEnvelopeVersions.model_fields.items()
+    )
+
+
+#: 🔴 `extra="forbid"` — 문서에 없는 키가 응답에 있으면 **문서가 낡은 것**이다.
+#: ⚠ `populate_by_name=False` — 응답은 **alias(wire 키)로만** 검증한다.
+_STRICT: Final = ConfigDict(extra="forbid")
+
+DetectEnvelopeVersions = _versions_model()
 
 
 class DetectEnvelopeMeta(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _STRICT
 
     execution_id: str | None = Field(
         default=None,
         description="AI_RUN 실행 키. 실행 전 오류(헤더 누락 등)면 null이다.",
     )
-    versions: DetectEnvelopeVersions
+    versions: DetectEnvelopeVersions  # type: ignore[valid-type]  # 동적 생성 모델
 
 
 class DetectErrorBody(BaseModel):
@@ -149,13 +173,18 @@ class DetectSuccessEnvelope(BaseModel):
 
 
 class DetectErrorEnvelope(BaseModel):
-    """4xx·5xx — 🔴 **실패에도 `meta.versions`가 실린다**(04 §2.2 A판정 7/22)."""
+    """4xx·5xx — 🔴 **실패에도 `meta.versions`가 실린다**(04 §2.2 A판정 7/22).
 
-    model_config = ConfigDict(extra="forbid")
+    ⚠ **`meta`에 `None`을 허용하지 않는다.** `error_envelope()`는 호출자가 `versions`를
+    안 넘기면 `meta=None`을 내지만, **`/v1/detect`는 400·409·500 전부 버전을 넘긴다**
+    (실측). 문서가 `None`을 열어 두면 BE가 **없어도 되는 값**으로 읽는다.
+    """
+
+    model_config = _STRICT
 
     data: None = None
     error: DetectErrorBody
-    meta: DetectEnvelopeMeta | None = None
+    meta: DetectEnvelopeMeta
 
 
 #: 상태별 문면 — `error_codes` §2.1 매핑에서 온다.
@@ -190,13 +219,58 @@ DETECT_RESPONSES: Final[dict[int | str, dict[str, Any]]] = {
 # ───────────────────────── 요청 body (문서 전용) ─────────────────────────
 
 
-def _request_schema() -> dict[str, Any]:
-    """`DetectRequest`의 **자기 완결** JSON Schema.
+class RecursiveSchemaError(RuntimeError):
+    """인라인할 수 없는 **재귀 모델**을 만났다 — 조용히 진행하지 않는다.
 
-    ⚠ `openapi_extra`는 FastAPI의 components 수집을 안 거치므로 `$defs`를 동봉한다 —
-    OpenAPI 3.1(JSON Schema 2020-12)에서 유효하다.
+    🔴 재귀가 생기면 인라인은 무한히 펼쳐진다. 그때는 `components.schemas` 등록이
+    필요하고 그건 `api/app.py`(양자 승인) 축이라 **여기서 판정하지 않고 실패시킨다.**
     """
-    return DetectRequest.model_json_schema()
+
+
+def _inline_defs(node: Any, defs: dict[str, Any], seen: tuple[str, ...] = ()) -> Any:  # noqa: ANN401
+    """`#/$defs/X` 참조를 **정의 본문으로 치환**한다(순수 · 재귀는 예외).
+
+    🔴 **문자열 치환으로 `$ref`를 지우지 않는다** — 그건 참조가 가리키던 제약을 통째로
+    잃는 것이다. 여기서는 정의를 **그 자리에 펼친다.**
+    """
+    if isinstance(node, list):
+        return [_inline_defs(item, defs, seen) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    ref = node.get("$ref")
+    if isinstance(ref, str):
+        if not ref.startswith("#/$defs/"):
+            raise RecursiveSchemaError(f"예상 못 한 참조 형태다: {ref}")
+        name = ref.removeprefix("#/$defs/")
+        if name in seen:
+            raise RecursiveSchemaError(
+                f"재귀 모델이라 인라인할 수 없다: {' → '.join([*seen, name])}"
+            )
+        if name not in defs:
+            raise RecursiveSchemaError(f"정의가 없는 참조다: {ref}")
+        expanded = _inline_defs(defs[name], defs, (*seen, name))
+        #: ⚠ `$ref` 옆에 있던 형제 키(`description` 등)를 잃지 않는다.
+        siblings = {key: value for key, value in node.items() if key != "$ref"}
+        return {**expanded, **_inline_defs(siblings, defs, seen)} if siblings else expanded
+
+    return {key: _inline_defs(value, defs, seen) for key, value in node.items()}
+
+
+def _request_schema() -> dict[str, Any]:
+    """`DetectRequest`의 **완전 인라인** JSON Schema — 남은 `$ref` 0건.
+
+    🔴 **`$defs`를 동봉하는 것으로는 부족하다**(2026-08-12 실측). `#/$defs/X`는 그 스키마가
+    아니라 **OpenAPI 문서 루트**를 기준으로 해석되는데, 문서 루트에는 `$defs`가 없다
+    ⇒ **끊긴 참조 19건**이었다. Swagger·generator 양쪽에서 터진다.
+
+    ⚠ 루트에 `$defs`를 심거나 `components.schemas`에 등록하려면 `api/app.py`를 열어야
+    하고 그건 **양자 승인** 축이다 — 이 회차는 **인라인**으로 닫는다.
+    """
+    schema = DetectRequest.model_json_schema()
+    defs = schema.pop("$defs", {})
+    inlined: dict[str, Any] = _inline_defs(schema, defs)
+    return inlined
 
 
 #: 🔴 **축약 예시** — 10명 전체 fixture를 여기 복제하지 않는다(정본은 위 두 파일).
@@ -266,6 +340,8 @@ __all__ = [
     "DETECT_RESPONSES",
     "DETECT_SUMMARY",
     "DETECT_TAG",
+    "DetectEnvelopeVersions",
+    "documented_version_keys",
     "DetectErrorBody",
     "DetectErrorEnvelope",
     "DetectSuccessEnvelope",

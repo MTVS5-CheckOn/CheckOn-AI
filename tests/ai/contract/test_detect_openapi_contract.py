@@ -31,9 +31,16 @@ from typing import Any, Final
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from ai.api.app import create_app
-from ai.api.routers.detect_openapi import DETECT_OPERATION_ID
+from ai.api.routers.detect_openapi import (
+    DETECT_OPERATION_ID,
+    DetectErrorEnvelope,
+    DetectSuccessEnvelope,
+    documented_version_keys,
+)
+from ai.contracts.execution import VersionSet
 
 _PATH: Final = "/v1/detect"
 _EXAMPLES: Final = (
@@ -101,36 +108,129 @@ def test_the_request_body_is_documented(operation: dict[str, Any]) -> None:
     assert {"snapshot_meta", "students", "learning_events"} <= properties, properties
 
 
-def test_the_request_schema_resolves_every_internal_reference(
+def _refs_in(node: object) -> list[str]:
+    """그 서브트리의 `$ref` 전수."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str):
+            found.append(ref)
+        for value in node.values():
+            found.extend(_refs_in(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_refs_in(item))
+    return found
+
+
+def _resolve(document: dict[str, Any], ref: str) -> object | None:
+    """🔴 **JSON Pointer를 문서 루트에서 실제로 따라간다** — 있다고 «믿지» 않는다."""
+    if not ref.startswith("#/"):
+        return None
+    node: object = document
+    for raw in ref.removeprefix("#/").split("/"):
+        token = raw.replace("~1", "/").replace("~0", "~")
+        if not isinstance(node, dict) or token not in node:
+            return None
+        node = node[token]
+    return node
+
+
+def _broken_refs(document: dict[str, Any]) -> list[str]:
+    """🔴 **문서 루트 기준으로** 해석 안 되는 참조 전수.
+
+    ⚠ **아래 두 검사가 이 함수 하나를 공유한다** — 판정을 약하게 고치면 «실제 문서»
+    쪽만이 아니라 **합성 문서 검사가 red**가 된다(한쪽만 고쳐서 빠져나갈 수 없다).
+    """
+    return sorted({ref for ref in _refs_in(document) if _resolve(document, ref) is None})
+
+
+def test_the_reference_check_itself_reads_from_the_document_root() -> None:
+    """🔴 **절단 가드 — 검사 방식을 지킨다.**
+
+    ⚠ 판정을 다시 «중첩 `$defs`만 보기»로 축소하면 실제 문서 쪽은 여전히 green이다
+    (지금 코드가 인라인이라서). 그래서 **종전 결함을 그대로 재현한 합성 문서**를 넣어
+    *"이것을 끊긴 것으로 보는가"* 를 묻는다 — 축소하면 여기서 red다.
+    """
+    #: `$defs`가 **요청 스키마 안에만** 있는 문서 — 종전 상태 그대로다.
+    document: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/x": {
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$defs": {"Nested": {"type": "string"}},
+                                    "properties": {"a": {"$ref": "#/$defs/Nested"}},
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    }
+    assert _broken_refs(document) == ["#/$defs/Nested"], (
+        "중첩 $defs 참조를 «해소된다»고 판정한다 — 검사가 문서 루트를 안 보고 있다"
+    )
+
+
+def test_every_ref_in_the_whole_document_resolves_from_the_root(
+    spec: dict[str, Any],
+) -> None:
+    """🔴 **문서 루트 기준으로** 모든 `$ref`가 실제로 해석된다.
+
+    ⚠ **종전 검사는 부족했다**(2026-08-12 실측). `requestBody.schema` 안의 `$defs`만 보고
+    *"참조가 있다"* 고 판정했는데, `#/$defs/X`는 **그 스키마가 아니라 OpenAPI 문서 루트**를
+    기준으로 해석된다. 문서 루트에 `$defs`가 없어서 **끊긴 참조가 19건**이었다 —
+    검사는 green이고 Swagger·generator는 터지는 상태였다.
+    """
+    broken = _broken_refs(spec)
+    assert not broken, f"문서 루트에서 해석 안 되는 참조 {len(broken)}건: {broken[:5]}"
+
+
+def test_the_request_schema_has_no_local_defs_left(
     operation: dict[str, Any],
 ) -> None:
-    """🔴 **참조가 자기 안에서 닫힌다** — 깨진 `$ref`는 generator에서 터진다.
+    """🔴 **절단 가드** — 요청 스키마에 `$ref`·`$defs`가 **하나도 남으면 안 된다.**
 
-    ⚠ `openapi_extra`로 넣은 스키마는 FastAPI가 `components`에 등록하지 않는다 —
-    그래서 **자기 완결(`$defs` 동봉)** 이어야 하고, 여기서 그걸 확인한다.
+    ⚠ 위 검사만 두면 *"루트에 `$defs`를 심었다"* 로도 통과한다. 그건 `api/app.py`를 여는
+    길이고 이 회차의 무접촉이다 — 여기서는 **완전 인라인**임을 못 박는다.
+    ⚠ 문자열 치환으로 `$ref`만 지우면 참조가 가리키던 제약을 통째로 잃는다 ⇒ 아래
+    「펼쳐졌는가」 검사가 짝이다.
     """
     schema = operation["requestBody"]["content"]["application/json"]["schema"]
-    defs = set(schema.get("$defs", {}))
-    assert defs, "$defs가 비었다 — 중첩 타입이 사라졌다"
+    assert "$defs" not in schema, "요청 스키마에 $defs가 남았다"
+    assert not _refs_in(schema), f"요청 스키마에 $ref가 남았다: {_refs_in(schema)[:3]}"
 
-    dangling: list[str] = []
 
-    def walk(node: object) -> None:
-        if isinstance(node, dict):
-            ref = node.get("$ref")
-            if isinstance(ref, str):
-                if not ref.startswith("#/$defs/"):
-                    dangling.append(ref)
-                elif ref.removeprefix("#/$defs/") not in defs:
-                    dangling.append(ref)
-            for value in node.values():
-                walk(value)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
+def test_the_inlined_schema_kept_the_nested_constraints(
+    operation: dict[str, Any],
+) -> None:
+    """🔴 **참조를 지운 게 아니라 펼친 것**이다 — 중첩 타입의 제약이 살아 있다.
 
-    walk(schema)
-    assert not dangling, f"해소되지 않는 참조: {sorted(set(dangling))}"
+    ⚠ `$ref`만 삭제해도 위 두 검사는 통과한다. 그래서 **펼쳐진 내용**을 본다.
+    """
+    schema = operation["requestBody"]["content"]["application/json"]["schema"]
+    snapshot = schema["properties"]["snapshot_meta"]
+    assert "properties" in snapshot, f"중첩 타입이 비었다: {snapshot}"
+    assert "week_start" in snapshot["properties"], sorted(snapshot["properties"])
+    students = schema["properties"]["students"]["items"]
+    assert "student_ref" in students.get("properties", {}), students
+
+
+def test_a_recursive_model_fails_loudly_instead_of_expanding_forever() -> None:
+    """🔴 재귀는 **조용히 진행하지 않는다** — 인라인이 무한히 펼쳐지기 때문이다."""
+    from ai.api.routers.detect_openapi import (  # noqa: PLC0415
+        RecursiveSchemaError,
+        _inline_defs,
+    )
+
+    defs = {"Node": {"properties": {"child": {"$ref": "#/$defs/Node"}}}}
+    with pytest.raises(RecursiveSchemaError, match="재귀"):
+        _inline_defs({"$ref": "#/$defs/Node"}, defs)
 
 
 def test_the_optional_evidence_and_hash_ownership_are_explained(
@@ -378,3 +478,91 @@ def test_the_error_paths_still_return_400_and_409_not_422(
     response = client.post("/v1/detect", json=body, headers=sent)
     assert response.status_code == expected_status, f"{label}: {response.text[:200]}"
     assert response.json()["error"]["code"] == expected_code, label
+
+
+# ───────────────── versions는 **실제 wire 값**과 같다 (76-R 작업 2) ─────────────────
+#
+# 🔴 **손으로 적었더니 틀렸다**(2026-08-12 실측). 문서 모델이 없는 키 셋
+#    (`threshold_config`·`lexicon`·`tone_map`)을 적고 있는 키 둘(`verify_config`·
+#    `difficulty_calib`)을 빠뜨렸다 — **문서가 wire와 다른 계약을 말하고 있었다.**
+#    ⇒ 손으로 만든 샘플만 보면 같은 오류를 반복한다. **실제 응답으로** 검증한다.
+
+
+def test_the_documented_version_keys_are_derived_from_the_contract() -> None:
+    """🔴 문서 키 집합 == `VersionSet`에서 `_version`을 뗀 이름."""
+    expected = {
+        name.removesuffix("_version") for name in VersionSet.model_fields
+    }
+    assert documented_version_keys() == expected, sorted(
+        documented_version_keys() ^ expected
+    )
+
+
+def test_the_live_success_response_validates_against_the_documented_model(
+    client: TestClient,
+) -> None:
+    """🔴 **실제 200 응답**을 문서용 성공 모델로 검증한다.
+
+    ⚠ 이게 이번 결함을 잡는 검사다 — 손으로 만든 샘플은 내 오해를 그대로 통과시켰다.
+    `extra="forbid"`라 **응답에만 있는 키**도, **문서에만 있는 키**도 여기서 걸린다.
+    """
+    response = client.post(
+        "/v1/detect", json=_canonical_request(), headers=_headers("k-model")
+    )
+    assert response.status_code == 200, response.text
+    DetectSuccessEnvelope.model_validate(response.json())
+
+
+@pytest.mark.parametrize(
+    ("label", "headers", "body_kind", "status"),
+    [
+        ("헤더 누락", {"X-Tenant-Id": "t_openapi"}, "canonical", 400),
+        ("스키마 위반", None, "broken", 400),
+        ("멱등 충돌", None, "other_hash", 409),
+    ],
+)
+def test_the_live_error_responses_validate_and_always_carry_versions(
+    client: TestClient,
+    label: str,
+    headers: dict[str, str] | None,
+    body_kind: str,
+    status: int,
+) -> None:
+    """🔴 **오류 응답에 `meta`가 항상 있다** — 문서에서 `None` 허용을 지운 근거다.
+
+    ⚠ `error_envelope()`는 호출자가 `versions`를 안 넘기면 `meta=None`을 낼 수 있지만
+    **`/v1/detect`는 셋 다 넘긴다.** 문서가 `None`을 열어 두면 BE가 «없어도 되는 값»으로
+    읽는다 — 그래서 실제 응답으로 확인한다.
+    """
+    canonical = _canonical_request()
+    if body_kind == "canonical":
+        body, sent = canonical, headers or _headers("k-err-miss")
+    elif body_kind == "broken":
+        body, sent = {"nope": 1}, _headers("k-err-broken")
+    else:
+        client.post("/v1/detect", json=canonical, headers=_headers("k-err-conflict"))
+        body = {
+            **canonical,
+            "snapshot_meta": {
+                **canonical["snapshot_meta"],
+                "snapshot_hash": "sha256:different-2",
+            },
+        }
+        sent = _headers("k-err-conflict")
+
+    response = client.post("/v1/detect", json=body, headers=sent)
+    assert response.status_code == status, f"{label}: {response.text[:200]}"
+    payload = response.json()
+    assert payload["meta"] is not None, f"{label}: 오류에 meta가 없다"
+    assert set(payload["meta"]["versions"]) == documented_version_keys(), label
+    #: 🔴 문서 모델로 **실제 오류 본문**을 검증한다.
+    DetectErrorEnvelope.model_validate(payload)
+
+
+def test_the_documented_error_envelope_requires_meta() -> None:
+    """🔴 `meta=None`을 **거절**한다 — 허용을 되돌리면 여기서 red."""
+    with pytest.raises(ValidationError):
+        DetectErrorEnvelope.model_validate(
+            {"data": None, "error": {"code": "X", "message": "y", "detail": None},
+             "meta": None}
+        )
