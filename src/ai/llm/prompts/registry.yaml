@@ -27,6 +27,11 @@ prompts:
     role: verifier
     template: problem_generation/cross_solve.txt
     response_schema_name: SolveResult
+  - prompt_id: pg.refine.v1
+    version: v4
+    role: generator
+    template: problem_generation/refine.txt
+    response_schema_name: GeneratedItem
   # 문의 분류(ⓑ) — 04 §3.5 · part_a/01 §4-ⓑ.
   # role=classifier는 `contracts/llm.py`의 `ModelRole.CLASSIFIER`("문의 분류·태깅 제안")다 —
   # 초기 커밋부터 있던 값이다. 종전 generator였고 "CLASSIFIER가 없어서"라는 주석이 붙어
