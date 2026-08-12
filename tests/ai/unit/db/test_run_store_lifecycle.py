@@ -35,7 +35,8 @@ from ai.contracts.execution import (
     RunMetadata,
     VersionSet,
 )
-from ai.contracts.llm import CallOutcome, CallRole, LlmCallRecord
+from ai.contracts.llm import CallOutcome, ModelRole
+from ai.llm.gateway import LlmCallRecord
 from ai.db.repositories.run_store import (
     CONFIRMED_AXES,
     CREATED_AXIS,
@@ -92,11 +93,12 @@ def _call(
     return CollectedCall(
         id=uuid.uuid4(),
         record=LlmCallRecord(
-            role=CallRole.COUNSEL_DRAFT,
+            role=ModelRole.GENERATOR,
             provider=provider,
             model=model,
             prompt_id="p",
             prompt_version="0.1",
+            usage=None,
             latency_ms=10,
             outcome=outcome,
         ),
@@ -196,7 +198,7 @@ def test_finalize_never_clears_a_filled_usage_axis() -> None:
     """🔴 **값 → None은 갱신이 아니다** — 2차 실패 구간이 1차 성공을 지우면 안 된다."""
     store = _started()
     _run(store.finalize_run(_meta(provider="A", model="A1"), [_call()]))
-    _run(store.finalize_run(_meta(), [_call(outcome=CallOutcome.ERROR)]))
+    _run(store.finalize_run(_meta(), [_call(outcome=CallOutcome.PROVIDER_ERROR)]))
     row = store.runs[_EXEC]
     assert (row.model_provider, row.model_name) == ("A", "A1"), "실패 구간이 사용 축을 지웠다"
 
@@ -355,7 +357,7 @@ def test_the_usage_axis_comes_from_the_last_successful_call() -> None:
     )
 
     ok = _call(provider="A", model="A1")
-    failed = _call(outcome=CallOutcome.ERROR, provider="Z", model="Z9")
+    failed = _call(outcome=CallOutcome.PROVIDER_ERROR, provider="Z", model="Z9")
     calls: Sequence[CollectedCall] = [ok, failed]
     chosen = last_success_call(calls)
     assert chosen is not None
