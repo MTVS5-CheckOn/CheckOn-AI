@@ -33,6 +33,7 @@ from first_sql_barrier import (
     barrier_sessionmaker,
     wait_until_parked,
 )
+from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -129,7 +130,7 @@ def _run(first: _Save, second: _Save) -> list[dict[str, Any]]:
         return asyncio.run(_race(first, second))
     except Exception as exc:  # noqa: BLE001 — 접속 실패만 skip으로 가른다
         if "connect" in str(exc).lower() or "refused" in str(exc).lower():
-            pytest.skip("실 PG 미가용 — docker compose up -d")
+            pytest.skip(PG_UNAVAILABLE)
         raise
 
 
@@ -236,5 +237,5 @@ def test_no_row_is_left_behind_by_a_race() -> None:
         assert asyncio.run(scenario()) == 1
     except Exception as exc:  # noqa: BLE001
         if "connect" in str(exc).lower() or "refused" in str(exc).lower():
-            pytest.skip("실 PG 미가용 — docker compose up -d")
+            pytest.skip(PG_UNAVAILABLE)
         raise

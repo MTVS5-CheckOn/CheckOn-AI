@@ -130,7 +130,9 @@ def require_postgres(database_url: str) -> None:
             pass
     except OSError as exc:
         raise PrePrVerificationError(
-            f"PostgreSQL에 연결할 수 없다({host}:{port}). 먼저 docker compose up -d를 실행한다"
+            f"PostgreSQL에 연결할 수 없다({host}:{port}). "
+            "README 「PR 전 로컬 검증」의 DB 기동 절차를 따른다"
+            "(로컬 DB 정의는 저장소에 없다 · `.gitignore`)"
         ) from exc
 
 
