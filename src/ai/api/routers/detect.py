@@ -29,6 +29,14 @@ from fastapi import APIRouter, Request
 from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
+from ai.api.routers.detect_openapi import (
+    DETECT_DESCRIPTION,
+    DETECT_OPERATION_ID,
+    DETECT_RESPONSES,
+    DETECT_SUMMARY,
+    DETECT_TAG,
+    detect_openapi_extra,
+)
 from ai.api.version_scope import RouterScope
 from ai.composition.briefing import BRIEF_GEN_PARAMS, make_brief
 from ai.composition.briefing import PROMPT_VERSION as BRIEF_PROMPT_VERSION
@@ -377,9 +385,23 @@ async def _apply_briefing(
     return response.model_copy(update={"signals": tuple(briefed)})
 
 
-@router.post("/v1/detect")
+@router.post(
+    "/v1/detect",
+    summary=DETECT_SUMMARY,
+    description=DETECT_DESCRIPTION,
+    tags=[DETECT_TAG],
+    operation_id=DETECT_OPERATION_ID,
+    responses=DETECT_RESPONSES,
+    openapi_extra=detect_openapi_extra(),
+)
 async def post_detect(request: Request) -> dict[str, Any]:
-    """감지 실행. 헤더·바디 검증 → 멱등(fail-open) → dedupe → 엔진 → 원장(fail-closed)."""
+    """감지 실행. 헤더·바디 검증 → 멱등(fail-open) → dedupe → 엔진 → 원장(fail-closed).
+
+    🔴 **인자는 `Request` 그대로다**(지시서 76 §3). `detect_request: DetectRequest`로 바꾸면
+    FastAPI 자동 검증이 붙어 **계약에 없는 422**가 생기고 현행 400 `INVALID_SCHEMA`가
+    사라진다 — OpenAPI 문서는 `detect_openapi.py`가 **스키마만** 이어 준다.
+    ⚠ 바디도 여전히 **한 번만** 읽는다(`await request.json()`).
+    """
     missing = [name for name in _REQUIRED_HEADERS if not request.headers.get(name)]
     if missing:
         raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": missing})
