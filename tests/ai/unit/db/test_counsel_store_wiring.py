@@ -115,6 +115,6 @@ def test_the_factories_choose_by_backend(
     backend: str, context_type: type, draft_type: type
 ) -> None:
     """🔴 **`pg`에서 인메모리 폴백이 없다** — 조용한 강등은 휘발성으로의 강등이다."""
-    settings = DbSettings(store_backend=backend)  # type: ignore[arg-type]  # Literal
+    settings = DbSettings(store_backend=backend)
     assert isinstance(build_context_store(settings), context_type)
     assert isinstance(build_draft_result_store(settings), draft_type)

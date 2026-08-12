@@ -34,13 +34,19 @@ from ai.agents.job_store import InMemoryJobStore
 from ai.composition.counsel.stores import (
     InMemoryAgentStepSink as InMemoryCounselAgentStepSink,
 )
-from ai.composition.counsel.stores import InMemoryPackResultStore
+from ai.composition.counsel.stores import (
+    InMemoryContextStore,
+    InMemoryDraftResultStore,
+    InMemoryPackResultStore,
+)
 from ai.db import store_factory
 from ai.db.counsel_read_model import (
     NullCounselDraftViewStore,
     PgCounselDraftViewStore,
 )
 from ai.db.repositories.agent_job import PgJobStore
+from ai.db.repositories.counsel_context_store import PgContextStore
+from ai.db.repositories.counsel_draft_store import PgDraftResultStore
 from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from ai.db.repositories.detection_store import InMemoryDetectionStore, PgDetectionStore
 from ai.db.repositories.idempotency import (
@@ -82,6 +88,9 @@ _FACTORIES: Final[tuple[tuple[str, type, type], ...]] = (
     ("build_profile_store", PgProfileStore, InMemoryProfileStore),
     ("build_spec_result_store", PgSpecResultStore, InMemorySpecResultStore),
     ("build_pack_result_store", PgPackResultStore, InMemoryPackResultStore),
+    #: ㉻ — 워커 입력 묶음과 초안 본문. 이 둘이 팩토리를 안 타서 결손이 있었다.
+    ("build_context_store", PgContextStore, InMemoryContextStore),
+    ("build_draft_result_store", PgDraftResultStore, InMemoryDraftResultStore),
     (
         "build_counsel_draft_view_store",
         PgCounselDraftViewStore,

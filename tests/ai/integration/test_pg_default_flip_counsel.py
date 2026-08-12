@@ -98,6 +98,13 @@ _CLEANUP: Final[tuple[tuple[str, str], ...]] = (
     ("inquiry_class", _OF_TENANT),
     ("llm_call", _OF_RUN),
     ("agent_run", _OF_TENANT),
+    #: ⚠ **(㉻) `draft`가 `ai_run`을 참조한다** — 본문이 PG에 앉기 시작하면서 목록이
+    #:   하나 더 늘었다(실측: `update or delete on table "ai_run" violates
+    #:   fk_draft_run_id_ai_run`). 이 파일의 규율대로 **오류가 목록을 늘렸다.**
+    ("draft", _OF_TENANT),
+    #: ⚠ 입력 묶음은 참조받지 않지만 **회차마다 쌓인다** — 안 지우면 다음 회차의
+    #:   행 수 단정이 흐려진다.
+    ("counsel_context_bundle", _OF_TENANT),
     ("counsel_pack_result", _OF_TENANT),
     ("counsel_draft_view", _OF_TENANT),
     ("idempotency_record", _OF_TENANT),

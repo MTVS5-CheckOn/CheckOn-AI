@@ -48,27 +48,30 @@ from ai.composition.counsel.assembly import (
     reset_default_memory_checkpointer,
 )
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
-from ai.composition.counsel.labels import LabelVocabularyError, snapshot_from_labels
+from ai.composition.counsel.labels import (
+    LabelVocabularyError,
+    labels_applied_of,
+    snapshot_from_labels,
+)
 from ai.composition.counsel.provider import (
     COUNSEL_GEN_PARAMS,
     CounselPlanner,
     DraftWriter,
     FakeCounselProvider,
 )
+from ai.composition.counsel.reassembly import citations_of_context
 from ai.composition.counsel.refine import refine_draft
 from ai.composition.counsel.settings import get_counsel_settings
 from ai.composition.counsel.stores import (
     DRAFT_SCHEME,
     AgentStepSink,
     ContextStore,
+    CounselPackResultRecord,
     DraftResultStore,
-    InMemoryContextStore,
-    InMemoryDraftResultStore,
     PackResultStore,
     make_ref,
 )
 from ai.composition.counsel.versions import counsel_versions as _counsel_versions
-from ai.composition.counsel.worker import CounselPackRunner
 from ai.contracts.agents import JobPhase, WorkerJob
 from ai.contracts.composition import DraftContext, EvidenceFact
 from ai.contracts.counsel import (
@@ -94,8 +97,10 @@ from ai.db.repositories.run_store import (
 )
 from ai.db.store_factory import (
     build_agent_job_store,
+    build_context_store,
     build_counsel_agent_step_sink,
     build_counsel_draft_view_store,
+    build_draft_result_store,
     build_idempotency_store,
     build_pack_result_store,
     build_run_store,
@@ -151,8 +156,12 @@ _idempotency_store: IdempotencyStore = build_idempotency_store()
 #: 실행 원장(AI_RUN·LLM_CALL) — refine 턴이 직접 쓴다. POST 경로는 워커가 쓴다
 #: (LLM 호출이 `job.execution_id` 아래에서 일어나므로 그 실행의 주인이 워커다).
 _run_store: RunStore = build_run_store()
-_context_store: ContextStore = InMemoryContextStore()
-_draft_store: DraftResultStore = InMemoryDraftResultStore()
+#: 🔴 **팩토리를 탄다**(㉻ · 지시서 73 §5). 종전에는 여기와 `reset_counsel_stores()`가
+#: `InMemory…()` **리터럴**이라 `STORE_BACKEND=pg`가 아무 영향을 못 줬다 — 다른 프로세스의
+#: 워커가 입력을 못 찾고(ⓐ), 늦게 성공한 잡의 본문이 휘발했다(ⓑ).
+#: ⚠ **자리가 둘이다** — reset 쪽도 같은 팩토리여야 한다(99 #02 · AST 가드가 본다).
+_context_store: ContextStore = build_context_store()
+_draft_store: DraftResultStore = build_draft_result_store()
 _pack_store: PackResultStore = build_pack_result_store()
 #: 🔴 **빌더를 탄다**(99 #37) — 종전엔 초기값과 reset 둘 다 인메모리 리터럴이라
 #: `STORE_BACKEND=pg`를 켜도 counsel 스텝이 **PG에 안 앉았다.**
@@ -550,8 +559,8 @@ def reset_counsel_stores() -> None:
     _run_store = build_run_store()
     default_llm_call_collector().reset()
     _idempotency_store = build_idempotency_store()
-    _context_store = InMemoryContextStore()
-    _draft_store = InMemoryDraftResultStore()
+    _context_store = build_context_store()
+    _draft_store = build_draft_result_store()
     _pack_store = build_pack_result_store()
     #: 🔴 **reset도 현재 설정을 다시 읽는다** — 굳은 값을 되돌리면 기동 시와 엇갈린다.
     _step_sink = build_counsel_agent_step_sink()
@@ -597,12 +606,12 @@ def _citations_of(request: CounselDraftRequest) -> tuple[Citation, ...]:
 
     ⚠ **v1은 본문 인라인 앵커(`#L1`)를 지원하지 않는다**(99 D ㊳) — `cite_id`는 목록 안의
     순서 키다. 계약 §4-③ 예시의 `#L1` 문면은 v1.1에서 유효해진다(BE·FE 통보 완료).
+
+    🔴 **파생 자리는 `citations_of_context` 하나다**(㉻ · 99 #02) — 늦게 끝난 잡을 되살릴
+    때는 요청이 없고 **영속된 `DraftContext`만** 있다. 두 곳에 적으면 같은 잡의 최초 응답과
+    복원 응답이 **다른 인용**을 갖는다.
     """
-    return tuple(
-        Citation(cite_id=f"L{index}", record_id=fact.record_id, summary=fact.summary)
-        for index, fact in enumerate(request.context.citable_facts(), start=1)
-        if fact.record_id
-    )
+    return citations_of_context(_draft_context(request))
 
 
 def _draft_context(request: CounselDraftRequest) -> DraftContext:
@@ -790,7 +799,13 @@ async def _generate(
                 job.execution_id,
             )
         result = await _wire_result(
-            runner, mine, request, applied, job_id=view_job_id, tenant_id=tenant_id
+            await runner.result_of(mine.result_ref, tenant_id=tenant_id)
+            if mine.result_ref
+            else None,
+            mine,
+            _draft_context(request),
+            job_id=view_job_id,
+            tenant_id=tenant_id,
         )
         return (
             CounselDraftJobView(
@@ -801,10 +816,9 @@ async def _generate(
 
 
 async def _wire_result(
-    runner: CounselPackRunner,
+    pack: CounselPackResultRecord | None,
     job: WorkerJob,
-    request: CounselDraftRequest,
-    applied: tuple[str, ...],
+    context: DraftContext,
     *,
     job_id: str,
     tenant_id: str,
@@ -812,12 +826,13 @@ async def _wire_result(
     """잡 결과 → 계약 `result`. 판정 파생은 `wire_status_for` 한 곳이 한다.
 
     **잡 성공 ≠ 초안 존재**(불변식 4) — 결과 계약이 저장됐어도 학생 판정은 거부일 수 있다.
+
+    🔴 **요청이 아니라 `DraftContext`를 받는다**(㉻ · 지시서 73 §6). 늦게 끝난 잡을 되살릴
+    때는 원 요청이 없고 **영속된 입력 묶음**만 있다 — 두 경로가 같은 함수를 지나야 최초
+    응답과 복원 응답의 `citations`·`labels_applied`가 **값으로 같다**(99 #02).
+    ⚠ `pack`도 인자다 — 복원 경로에는 러너가 없다(팩 조회는 호출자가 한다).
     """
-    pack = (
-        await runner.result_of(job.result_ref, tenant_id=tenant_id)
-        if job.result_ref
-        else None
-    )
+    applied = labels_applied_of(context.label_snapshot)
     if pack is None:
         # 결과 계약 **자체가 없다** = 잡 장애(error_codes §2.5의 failed 정의).
         # ⚠ **테넌트 불일치도 여기로 떨어진다**(99 #23) — 선례 셋(`ContextStore`·
@@ -857,7 +872,7 @@ async def _wire_result(
         if student.draft_id
         else None
     )
-    citations = _citations_of(request)
+    citations = citations_of_context(context)
     if record is not None:
         # refine 대상 등록 — 키는 **응답이 싣는 job_id**다(04 §3.9). 종전에는 내부
         # `record.id`로 등록했는데 그 값은 어떤 응답에도 실리지 않아, BE가 refine 대상
@@ -865,7 +880,7 @@ async def _wire_result(
         await _remember_draft(
             (tenant_id, job_id),
             _DraftState(
-                context=_draft_context(request),
+                context=context,
                 citations=citations,
                 text=record.content,
                 # 🔴 최초 생성이 고른 강조점을 refine이 이어받는다(99 ㉮). 값이 state 밖으로
@@ -961,10 +976,17 @@ async def _refresh_view(
     만들어 돌려주므로(`_generate` ①②) 원장에 행이 없다 — 그건 장애가 아니라 **잡이 없는
     확정**이라 캐시를 그대로 쓴다.
 
-    ⚠ **아직 못 하는 것:** phase가 뒤늦게 `succeeded`가 됐는데 캐시에 `result`가 없으면
-    `status="succeeded"` + `result=None`이 나간다. 결과 본문을 다시 조립하려면 원 요청
-    (`citations`·`labels_applied`의 출처)이 필요한데 그건 영속 설계 몫이다 — 계약의
-    `result`가 옵셔널이라 형태는 정직하고, 안건은 99에 등재했다.
+    🔴 **늦은 성공의 본문을 여기서 되살린다**(㉻ 해소 · 지시서 73 §6). 종전에는
+    *"결과 본문을 다시 조립하려면 원 요청이 필요한데 그건 영속 설계 몫"* 이라 적어 두고
+    `status="succeeded"` + `result=None`을 내보냈다 — **상태는 남고 본문만 사라진** 비대칭이라
+    화면에는 *"됐다는데 아무것도 없다"* 로 보였다. 그 영속이 섰다:
+
+        job.payload_ref → COUNSEL_CONTEXT_BUNDLE  (요청에서 파생된 전부)
+        job.result_ref  → COUNSEL_PACK_RESULT     (학생별 판정 + draft_id)
+        student.draft_id → DRAFT.content          (게이트 통과 본문)
+
+    ⚠ **재조립도 `_wire_result` 한 함수를 지난다** — 최초 응답과 파생이 갈리면 같은 잡의
+    두 응답이 달라진다(99 #02).
     """
     try:
         job_uuid = uuid.UUID(cached.job_id)
@@ -979,13 +1001,48 @@ async def _refresh_view(
             job_id=cached.job_id, status=job.phase.value, result=None
         )
     if cached.result is None:
-        logger.info(
-            "counsel 잡이 뒤늦게 %s로 확정됐는데 캐시에 result가 없다 job_id=%s — "
-            "본문 재조립은 영속 설계 후속이다(99)",
-            job.phase.value,
-            cached.job_id,
+        restored = await _restore_result(job, job_id=cached.job_id, tenant_id=tenant_id)
+        if restored is None:
+            #: ⚠ **되살릴 수 없는 경우도 정직하게 남긴다** — 입력 묶음이 보존 기간을
+            #:   지나 지워졌거나(§8) memory 백엔드라 애초에 없었다.
+            logger.info(
+                "counsel 잡이 뒤늦게 %s로 확정됐는데 결과를 되살릴 입력이 없다 job_id=%s",
+                job.phase.value,
+                cached.job_id,
+            )
+            return cached.model_copy(update={"status": job.phase.value})
+        return CounselDraftJobView(
+            job_id=cached.job_id, status=job.phase.value, result=restored
         )
     return cached.model_copy(update={"status": job.phase.value})
+
+
+async def _restore_result(
+    job: WorkerJob, *, job_id: str, tenant_id: str
+) -> CounselDraftResult | None:
+    """늦게 끝난 잡의 `result`를 **PG 세 곳에서** 되살린다 (㉻).
+
+    🔴 **원 요청 없이 만든다** — 입력 묶음의 `DraftContext`가 요청에서 파생된 전부이고,
+    `citations`·`labels_applied`는 거기서 유도한다(`reassembly`·`labels` 각 한 함수).
+
+    ⚠ **하나라도 없으면 `None`이다** — 반쯤 되살린 결과를 내면 *"본문은 있는데 인용이
+    비었다"* 같은 계약 위반이 나간다(§4-③은 `citations` ≥1).
+    """
+    bundle = await _context_store.get(job.payload_ref, tenant_id=tenant_id)
+    if bundle is None:
+        return None
+    #: N=1 — 묶음의 학생이 하나다(`_generate`가 문의 1건으로 만든다).
+    context = next(iter(bundle.contexts.values()), None)
+    if context is None:
+        return None
+    pack = (
+        await _pack_store.get(job.result_ref, tenant_id=tenant_id)
+        if job.result_ref
+        else None
+    )
+    return await _wire_result(
+        pack, job, context, job_id=job_id, tenant_id=tenant_id
+    )
 
 
 @router.get("/v1/counsel/drafts/{job_id}")
