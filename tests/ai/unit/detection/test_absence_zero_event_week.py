@@ -21,6 +21,7 @@ import pytest
 from ai.contracts.detection import DetectRequest, DetectResponse, RuleId
 from ai.detection.engine import detect
 from ai.detection.evidence import SKIP_AUTHORITATIVE_EVIDENCE_MISSING
+from ai.detection.thresholds import ThresholdConfig
 
 _WEEK: Final = "2026-08-10"
 _MONDAY: Final = date.fromisoformat(_WEEK)
@@ -243,3 +244,93 @@ def test_the_event_based_rules_are_untouched(rule: RuleId) -> None:
     request = _request(evidence=[_activity(0, count=0)])
     response = detect(request)
     assert not _signals(response, rule)
+
+
+# ── (지시서 70-R2) R3 기준창은 **설정이 정본**이다 ──
+
+
+def _config_with_baseline(weeks: int) -> ThresholdConfig:
+    """`baseline_window_weeks`만 바꾼 설정 — 나머지는 기본값 그대로."""
+    from ai.detection.thresholds import default_threshold_config  # noqa: PLC0415
+
+    return default_threshold_config().model_copy(
+        update={"baseline_window_weeks": weeks}
+    )
+
+
+def test_r3_uses_exactly_the_configured_baseline_window() -> None:
+    """🔴 기본 설정 **8주** — 직전 8주를 정확히 쓴다(더도 덜도 아니다)."""
+    from ai.detection.thresholds import default_threshold_config  # noqa: PLC0415
+
+    weeks = default_threshold_config().baseline_window_weeks
+    assert weeks == 8, (
+        f"기본 기준창이 {weeks}주다 — 이 검사의 전제가 바뀌었다"
+    )
+
+    exact = [_activity(0, count=0)] + [
+        _activity(back, count=12) for back in range(1, weeks + 1)
+    ]
+    request = _request(evidence=exact)
+    _assert_no_learning_events(request)
+    assert _signals(detect(request), RuleId.R3), "직전 8주가 다 있는데 발화하지 않았다"
+
+    #: 한 주 모자라면 **fail-closed skip** — 「있는 것만으로」 판정하지 않는다.
+    short = [_activity(0, count=0)] + [
+        _activity(back, count=12) for back in range(1, weeks)
+    ]
+    response = detect(_request(evidence=short))
+    assert not _signals(response, RuleId.R3)
+    assert _skipped(response, RuleId.R3) == 1
+
+
+def test_r3_honours_a_two_week_baseline_setting() -> None:
+    """🔴 **설정을 2주로 낮추면 직전 2주만 있어도 판정한다.**
+
+    ⚠ 종전에는 `R3_BASELINE_WEEKS = 8`이 모듈 상수라 **설정과 무관하게 8주를 요구**했다 —
+    2주 설정 테넌트·테스트에서는 근거를 다 보내도 **영영 skip**된다(값이 두 곳에 살았다).
+    """
+    config = _config_with_baseline(2)
+    rows = [_activity(0, count=0)] + [_activity(back, count=12) for back in (1, 2)]
+    request = _request(evidence=rows)
+    _assert_no_learning_events(request)
+    response = detect(request, config)
+    assert _signals(response, RuleId.R3), (
+        "2주 설정인데 8주를 요구한다 — 기준창이 설정에서 안 온다"
+    )
+    assert _skipped(response, RuleId.R3) == 0
+
+
+def test_a_two_week_setting_still_needs_both_weeks() -> None:
+    """기준창이 짧아져도 **완전성**은 그대로 요구한다."""
+    config = _config_with_baseline(2)
+    rows = [_activity(0, count=0), _activity(1, count=12)]  # 직전 2주 중 하나만
+    response = detect(_request(evidence=rows), config)
+    assert not _signals(response, RuleId.R3)
+    assert _skipped(response, RuleId.R3) == 1
+
+
+def test_the_baseline_window_constant_is_not_duplicated() -> None:
+    """🔴 **모듈 상수로 다시 복제되면 red다** — 정본은 `ThresholdConfig` 하나다.
+
+    ⚠ **문자열 grep으로 안 센다** — 그러면 *"이 상수를 두지 않는다"* 라고 적은 **설명문까지**
+    잡힌다(실측: 이 가드의 첫 판이 `rules.py`의 주석을 잡았다). **대입문**만 본다.
+    """
+    import ast  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    detection = Path(__file__).resolve().parents[4] / "src" / "ai" / "detection"
+    offenders: list[str] = []
+    for path in sorted(detection.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            targets: list[ast.expr] = []
+            if isinstance(node, ast.Assign):
+                targets = list(node.targets)
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            offenders += [
+                f"{path.name}:{t.id}"
+                for t in targets
+                if isinstance(t, ast.Name) and "BASELINE_WEEKS" in t.id
+            ]
+    assert not offenders, f"기준창 상수가 다시 생겼다: {offenders}"

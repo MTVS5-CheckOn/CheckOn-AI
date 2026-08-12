@@ -82,10 +82,18 @@ router = APIRouter()
 _PIPELINE_VERSION = "0.1.0"
 #: 0.2(2026-07-30) — 근거 전무 후보를 랭킹 이전에 탈락시킨다(09 §3 ②). capped_out 집계와
 #: 상한 통과 집합이 바뀔 수 있는 관상 변화라 AI_RUN 재현성 축을 올린다(불변식 8).
-_ENGINE_VERSION = "detection-rules-0.2"
+#: 🔴 **0.3(2026-08-12 · 99 #43·#44)** — R2·R3·R5가 **정본 근거로 판정**하고 시간축이
+#: `learning_events`에서 떨어졌다. **같은 입력에 다른 신호**가 나올 수 있으므로 재현성 축을
+#: 올린다: 근거 없는 셋은 skip되고, 이벤트 0건 주가 처음으로 판정 창에 들어온다.
+_ENGINE_VERSION = "detection-rules-0.3"
+#: DB 스키마 무변경 — `db/models.py`·마이그레이션을 안 건드렸다.
 _SCHEMA_VERSION = "0.1"
-_CONTRACT_VERSION = "0.1"
+#: 🔴 **0.2(2026-08-12)** — 요청에 `detection_evidence`가 생겼다(optional · 기존 요청 무변경 ·
+#: 응답 구조 무변경). **요청 계약이 바뀐 것**이라 contract 축만 올린다.
+_CONTRACT_VERSION = "0.2"
 #: FEATURE_WEEK 적재 피처 버전 — 피처 산식이 바뀌면 올린다(재현성 키).
+#: ⚠ **8/12에 안 올렸다** — `_week_metrics`가 담는 여섯 키와 산식이 **그대로**다. 부재형 셋의
+#: 판정 입력은 요청의 `detection_evidence`이지 이 피처가 아니다(올리면 축적분이 통째로 갈린다).
 _FEATURE_VERSION = "0.1"
 
 _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id", "Idempotency-Key")

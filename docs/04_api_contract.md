@@ -63,9 +63,15 @@
   "error": null,
   "meta": {
     "execution_id": "uuid",
-    "versions": {
-      "pipeline": "1.0.0",
-      "engine": "detection-rules-0.2",
+    "versions": {                          // ⚠ **10키 형태 예시다 — 현재 실행값이 아니다.**
+                                           //    🔴 (8/12 정정) `engine`이 **detect의 값**
+                                           //    (`detection-rules-*`)이었는데 이 블록은
+                                           //    problem_generation 예시다 — 문서 오류였다.
+                                           //    실제 detect 값은 `part_a/09` §3과
+                                           //    `docs/part_a/examples/detect_demo_response.json`
+                                           //    (자동 재현)에 있다.
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
       "threshold": null,
       "prompt": "v0.1",
       "schema": "0.1",

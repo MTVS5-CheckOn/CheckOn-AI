@@ -45,8 +45,8 @@ _LEARNING_EVENT_TABLE: Final = "learning_event"
 
 #: 🔴 R2가 거슬러 올라가는 **명시 상한**(불변식 6) — 05·09의 rolling 10주 계약과 같은 값.
 MAX_ABSENCE_LOOKBACK_WEEKS: Final = 10
-#: R3 baseline 창 — 분석 주 **직전** 8주.
-R3_BASELINE_WEEKS: Final = 8
+#: ⚠ **R3 기준창 상수를 여기 두지 않는다** — 정본은 `ThresholdConfig.baseline_window_weeks`다.
+#:   여기 복제하면 설정을 낮춘 테넌트에서 **판정이 영영 안 선다**(값이 두 곳에 산다 · 03 §1).
 
 
 @dataclass(frozen=True)
