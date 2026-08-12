@@ -136,6 +136,70 @@ def build_student_evidence(request: DetectRequest) -> dict[str, StudentEvidence]
     }
 
 
+# ──────────────────── 주간 활동량 창 — 판정·문면 공용 정본 ────────────────────
+
+
+@dataclass(frozen=True)
+class WeeklyActivityWindow:
+    """R3가 보는 **주간 활동량 창** — 판정·응답 근거·브리핑 문면이 같은 레코드를 읽는다.
+
+    🔴 **이 타입이 생긴 이유**(2026-08-13 실측). 종전에는 R3 판정이
+    `detection_evidence.weekly_activity`를 읽는데 브리핑 facts는
+    `learning_event`에서 복원한 `StudentFeatures.event_count`를 읽었다. 두 축이 갈린 입력에서
+    **「학습 공백」 신호 옆에 「평소 대비 100%」** 문장이 나왔고, 그 숫자는 facts 안에 있으므로
+    **게이트가 못 잡는다**(근거 밖 숫자 검사는 facts를 기준으로 한다).
+
+    ⚠ **두 입력을 같은 지표로 선언한 것이 아니다.** `learning_events`는 R1·R4·R6의 원시
+    피처 정본이고, 주간 활동량은 `weekly_activity`가 정본이다 — capability별 정본을 섞지
+    않는다. 여기서 고치는 것은 **R3가 자기 정본을 끝까지 들고 가는가**뿐이다.
+    """
+
+    current: WeeklyActivityEvidence
+    """분석 주의 집계 — **0건도 실존 레코드**다(부재와 다르다)."""
+
+    prior: tuple[WeeklyActivityEvidence, ...]
+    """기준창의 집계 전량 — 하나라도 빠지면 이 창 자체가 만들어지지 않는다."""
+
+    baseline_volume: float
+    """`prior`의 평균. 🔴 분자와 **같은 자**로 잰 값이다(learning_event와 섞지 않는다)."""
+
+
+def resolve_weekly_activity_window(
+    evidence: StudentEvidence,
+    *,
+    baseline_window_weeks: int,
+) -> WeeklyActivityWindow | None:
+    """분석 주 + 기준창 집계를 **한 번에** 해소한다 — 없으면 `None`(fail-closed).
+
+    🔴 **`None`을 0으로 바꾸지 않는다.** 「집계가 없다」와 「집계가 0이다」는 다른 사실이고
+    앞은 증명할 수 없다. `learning_events` 개수로 대신하지도 않는다 — 그게 이 안건의 원인이다.
+
+    ⚠ **기준창 주수를 여기 하드코딩하지 않는다** — 호출부가 `ThresholdConfig`에서 읽어 준다.
+    복제하면 설정을 낮춘 테넌트에서 판정이 영영 안 선다(03 §1).
+    ⚠ 순수 함수다 — 입력을 바꾸지 않고 DB·네트워크에 닿지 않는다.
+    """
+    analysis_week = evidence.analysis_week
+    if analysis_week is None:
+        return None
+    current = evidence.weekly_activity.get(analysis_week)
+    if current is None:
+        return None
+    prior: list[WeeklyActivityEvidence] = []
+    for back in range(1, baseline_window_weeks + 1):
+        row = evidence.weekly_activity.get(analysis_week - timedelta(weeks=back))
+        if row is None:
+            return None
+        prior.append(row)
+    if not prior:
+        #: ⚠ 기준창이 0주면 평균을 낼 분모가 없다 — 판정하지 않는다(0으로 나누지 않는다).
+        return None
+    return WeeklyActivityWindow(
+        current=current,
+        prior=tuple(prior),
+        baseline_volume=sum(row.activity_count for row in prior) / len(prior),
+    )
+
+
 # ───────────────────────── 규칙별 resolver ─────────────────────────
 
 
