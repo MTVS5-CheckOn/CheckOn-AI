@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any, Final
 
 import httpx
@@ -68,6 +69,35 @@ _TENANTS: Final = (
     "t_flip_guard",
 )
 _INTRUDER: Final = "t_flip_intruder"
+
+
+#: 🔴 **손으로 옮긴 계약 기대값**(지시서 73-R §1·§2) — `_REQUEST`의 근거 두 줄에서 나온다.
+#:
+#: ⚠ **`citations_of_context()`를 불러 기대값을 만들지 않는다.** 그러면 생산 함수가
+#: 틀려도 기대값이 같이 틀려 **동어반복**이 된다 — 순서·매핑이 뒤바뀌어도 초록이다.
+#: 종전 검사는 *"비어 있지 않다"* 만 봤고, 그건 아래 넷을 전부 통과시켰다:
+#: cite_id 순서 뒤바뀜 · record_id가 남의 근거 · summary가 다른 문면 · 두 인용이 서로 바뀜.
+_EXPECTED_CITATIONS: Final = (
+    ("L1", "le_2041", "6월 지문 42개·312문항"),
+    ("L2", "le_2077", "제출률 100% (4주)"),
+)
+
+#: 🔴 **요청이 보낸 순서가 아니라 «적용 축» 순서다**(`labels.py::_AXIS_ENUMS` —
+#: comm·sensitivity·interest·frequency). `_REQUEST["labels"]`는
+#: `["narrative", "attitude", "anxious", "frequent"]`인데 응답은 `attitude`(interest)와
+#: `anxious`(sensitivity)가 **자리를 바꾼다.**
+#: ⚠ `snapshot_from_labels` docstring이 그 이유를 적는다 — *"요청이 보낸 것을 되돌려주는 게
+#: 아니라 실제 적용분을 싣는다"*(05 §7-2: 기본값이 쓰였는지 화면이 알아야 한다).
+#: 🔴 **집합으로 비교하지 않는다** — 배열 순서가 계약이자 재현성 축이다.
+_EXPECTED_LABELS: Final = ["narrative", "anxious", "attitude", "frequent"]
+
+
+def _cited(result: Mapping[str, Any]) -> tuple[tuple[str, str, str], ...]:
+    """응답 `citations` → 대조용 튜플. **순서를 보존한다.**"""
+    return tuple(
+        (item["cite_id"], item["record_id"], item["summary"])
+        for item in result["citations"]
+    )
 
 
 def _headers(tenant: str, *, suffix: str = "1") -> dict[str, str]:
@@ -433,11 +463,15 @@ def _drain(tenant: str) -> object:
         from ai.composition.counsel.assembly import (  # noqa: PLC0415
             open_counsel_pack_runner,
         )
-        from ai.composition.counsel.provider import (  # noqa: PLC0415
-            FakeCounselProvider,
-        )
 
-        provider = FakeCounselProvider()
+        #: 🔴 **이 인스턴스에 배선된 provider를 쓴다**(지시서 73-R §3). 종전엔 여기서
+        #:   `FakeCounselProvider()`를 **따로** 만들었는데, 그건 라우터가 쓰는 것과
+        #:   **다른 객체일 뿐 아니라 다른 문면**이 될 수 있었다 ⇒ «최초 응답 ↔ 복원 응답»
+        #:   대조가 **축과 무관한 이유로** 깨진다.
+        #: ⚠ 프로세스 상태를 물려받는 것이 아니다 — `_forget_instance()`가 방금
+        #:   `reset_counsel_stores()`로 **새로 꽂은** 것이고, provider는 상태가 아니라
+        #:   **설정**이다(실제 워커 프로세스도 `bootstrap_counsel_provider()`로 같은 것을 만든다).
+        provider = counsel_router.require_counsel_provider()
         try:
             async with open_counsel_pack_runner(
                 supervisor=_build_supervisor(),
@@ -541,19 +575,109 @@ def test_a_late_success_carries_the_body_to_a_brand_new_instance() -> None:
 
         assert result["draft_status"] == "generated", result["draft_status"]
         assert result["text"], "본문이 비었다"
-        #: 🔴 **인용을 값으로 본다** — 개수만 세면 «비슷한 것»이 통과한다.
-        cited = [(c["cite_id"], c["record_id"], c["summary"]) for c in result["citations"]]
-        assert cited, "citations가 비었다 — 계약 §4-③은 ≥1이다"
-        assert all(all(part for part in row) for row in cited), (
-            f"인용 필드가 비었다: {cited}"
+        #: 🔴 **정확 값이다** — *"비어 있지 않다"* 는 순서 뒤바뀜·남의 근거·다른 문면을
+        #:   전부 통과시킨다(지시서 73-R §1).
+        assert _cited(result) == _EXPECTED_CITATIONS, (
+            f"인용이 계약값과 다르다\n  기대: {_EXPECTED_CITATIONS}\n  실제: {_cited(result)}"
         )
-        assert result["labels_applied"], "labels_applied가 비었다"
+        #: 🔴 **배열 전문 대조** — 집합이면 순서 변경이 통과한다(§2).
+        assert result["labels_applied"] == _EXPECTED_LABELS, (
+            f"labels_applied가 다르다\n  기대: {_EXPECTED_LABELS}\n"
+            f"  실제: {result['labels_applied']}"
+        )
 
         #: 🔴 **다른 테넌트는 404다** — 본문이 PG에 남아도 격리가 먼저다.
         intruder = app_c.get(
             f"/v1/counsel/drafts/{job_id}", headers=_headers(_INTRUDER)
         )
         assert intruder.status_code == 404, intruder.text
+
+
+#: 🔴 **대조 축과 제외 축을 이름으로 갈라 둔다**(지시서 73-R §3).
+#: ⚠ `result` dict 전체를 `==`로 뭉치면 ⓐ `generated_at`이 달라 항상 red이고
+#:   ⓑ 제외한 것이 무엇인지 아무도 모른다. 반대로 필드를 손으로 세면 **새 필드가
+#:   생겼을 때 조용히 빠진다** ⇒ 아래 `_RESULT_FIELDS` 대조가 그 구멍을 막는다.
+_COMPARED_FIELDS: Final = (
+    "draft_status",
+    "text",
+    "citations",
+    "labels_applied",
+    "status_reason",
+    "label_suggestions",
+)
+#: 🔴 **조회 시각이라 서로 다를 수 있다** — 값 대조에서 빼되 **형식은 각각 본다.**
+_TIME_FIELDS: Final = ("generated_at",)
+
+
+def _result_of(client: TestClient, tenant: str, job_id: str) -> Mapping[str, Any]:
+    got = client.get(f"/v1/counsel/drafts/{job_id}", headers=_headers(tenant))
+    assert got.status_code == 200, got.text
+    data = got.json()["data"]
+    result = data["result"]
+    assert result is not None, f"result가 없다(status={data['status']})"
+    return dict(result)
+
+
+def test_the_restored_result_equals_the_immediate_one_field_by_field() -> None:
+    """🔴 **최초 응답과 복원 응답이 필드별로 같다** (지시서 73-R §3).
+
+    ⚠ 늦은 성공만 정확 값으로 재면 **최초 경로가 다른 파생을 쓰는 경우**를 놓친다 —
+    둘 다 정확해도 서로 다르면 같은 잡의 두 응답이 갈린 것이다.
+
+    | 경로 | 만드는 법 |
+    | --- | --- |
+    | 즉시 | POST가 자기 잡을 집어 그 자리에서 끝낸다(디코이 없음) |
+    | 늦은 성공 | A POST(미종단) → 워커 B 완주 → 인스턴스 C GET |
+
+    ⚠ `generated_at`은 **조회 시각**이라 제외한다 — 대신 둘 다 tz-aware인지 본다.
+    """
+    from test_counsel_router import _RESULT_FIELDS  # noqa: PLC0415
+
+    #: ── ① 즉시 완료 — 큐가 비어 있어 POST가 자기 잡을 집는다.
+    immediate_tenant = "t_flip_multi"
+    with instance() as app_now:
+        posted = _post(app_now, immediate_tenant, suffix="im").json()["data"]
+        assert posted["status"] == "succeeded", (
+            f"즉시 완료가 아니다({posted['status']}) — 이 검사의 한쪽 축이 없다"
+        )
+        immediate = _result_of(app_now, immediate_tenant, posted["job_id"])
+
+    #: ── ② 늦은 성공 — 프로세스 상태를 하나도 공유하지 않는다.
+    late_tenant = "t_flip_late"
+    with instance() as app_a:
+        _enqueue_decoy(app_a, late_tenant)
+        late_job = _post(app_a, late_tenant, suffix="eq").json()["data"]
+        assert late_job["status"] != "succeeded", "미종단 POST가 아니다"
+
+    _forget_instance()
+    _drain(late_tenant)
+    _forget_instance()
+    with instance() as app_c:
+        restored = _result_of(app_c, late_tenant, late_job["job_id"])
+
+    #: 🔴 **필드 집합이 계약과 같다** — 새 필드가 생기면 여기서 걸리고, 그때
+    #:   `_COMPARED_FIELDS`/`_TIME_FIELDS` 중 어디에 넣을지 정하게 된다.
+    assert set(immediate) == _RESULT_FIELDS, sorted(set(immediate) ^ _RESULT_FIELDS)
+    assert set(restored) == _RESULT_FIELDS, sorted(set(restored) ^ _RESULT_FIELDS)
+    assert set(_COMPARED_FIELDS) | set(_TIME_FIELDS) == _RESULT_FIELDS, (
+        "대조 축 + 제외 축이 계약 필드 전수와 다르다 — 조용히 빠진 필드가 있다"
+    )
+
+    for field in _COMPARED_FIELDS:
+        assert immediate[field] == restored[field], (
+            f"«{field}»가 두 경로에서 다르다\n"
+            f"  즉시: {immediate[field]!r}\n  복원: {restored[field]!r}"
+        )
+
+    #: 🔴 두 응답 모두 **계약 기대값**이다 — 서로 같기만 하고 둘 다 틀릴 수 있다.
+    assert _cited(immediate) == _EXPECTED_CITATIONS
+    assert immediate["labels_applied"] == _EXPECTED_LABELS
+
+    #: 제외 축은 **형식만** 본다 — tz-aware가 아니면 재현성 축이 깨진다.
+    for label, result in (("즉시", immediate), ("복원", restored)):
+        for field in _TIME_FIELDS:
+            stamp = datetime.fromisoformat(result[field])
+            assert stamp.tzinfo is not None, f"{label} {field}가 tz-naive다: {result[field]}"
 
 
 def test_the_late_body_is_identical_across_two_more_instances() -> None:
