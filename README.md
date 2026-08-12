@@ -42,13 +42,27 @@ uv run python -m ai.evaluation.backend_sim   # 기본 3일치, 신호·lifecycle
 **PR 전 로컬 검증** (필수 — GitHub Actions 대신 아래 한 명령이 전체 게이트다):
 
 > **고정 접속값:** `postgres:16` · `checkon`/`checkon`/`checkon_ai` · `5432`.
-> `docker-compose.yml`은 로컬 전용(`.gitignore`)이고 접속값 정본은 이 절이다.
 > `DATABASE_URL` 예: `postgresql+asyncpg://checkon:checkon@localhost:5432/checkon_ai`
 > 🔴 integration에는 스키마 재생성·마이그레이션 왕복이 포함된다. 검증기는 원격 호스트나
 > `checkon_ai`가 아닌 DB를 거부하지만, 이 로컬 DB도 반드시 **폐기 가능한 테스트 전용**으로 둔다.
 
+🔴 **로컬 DB 정의는 이 저장소에 없다.** `docker-compose.yml`·`docker-compose.yaml`은
+`.gitignore` 대상이라 **clone만 해서는 `docker compose up -d`가 안 된다.** 접속값 정본은
+**위 문단**이고, 아래 둘 중 하나로 그 값을 갖는 DB를 띄우면 된다.
+
+**ⓐ 파일 없이 한 줄로**(clone 직후 그대로 된다):
+
 ```bash
-docker compose up -d                         # 로컬 postgres:16 (docker-compose.yml)
+docker run -d --name checkon-ai-db \
+  -e POSTGRES_USER=checkon -e POSTGRES_PASSWORD=checkon -e POSTGRES_DB=checkon_ai \
+  -p 5432:5432 postgres:16
+docker start checkon-ai-db                   # 두 번째부터는 이것만
+```
+
+**ⓑ compose를 쓰고 싶으면** 위 고정 접속값으로 `docker-compose.yml`을 **직접 만든다**
+(`.gitignore`라 커밋되지 않는다) — 그 뒤 `docker compose up -d`.
+
+```bash
 uv run --frozen python -m ai.evaluation.pre_pr_verify
 ```
 

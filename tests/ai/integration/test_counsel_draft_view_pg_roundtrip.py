@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any, Final
 
 import pytest
+from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -58,7 +59,7 @@ async def _with_pg(scenario: _Scenario) -> str:
 
 def _run(scenario: _Scenario) -> None:
     if asyncio.run(_with_pg(scenario)) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose up -d")
+        pytest.skip(PG_UNAVAILABLE)
 
 
 def _snapshots(*, job_id: str) -> tuple[dict[str, Any], dict[str, Any]]:

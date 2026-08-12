@@ -17,6 +17,7 @@ from typing import Any, Final
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
+from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -89,7 +90,7 @@ def _run[T](coro: Coroutine[Any, Any, T]) -> T:
         return asyncio.run(coro)
     except Exception as exc:  # noqa: BLE001 — 접속 실패만 skip으로 가른다
         if "connect" in str(exc).lower() or "refused" in str(exc).lower():
-            pytest.skip("실 PG 미가용 — docker compose up -d")
+            pytest.skip(PG_UNAVAILABLE)
         raise
 
 

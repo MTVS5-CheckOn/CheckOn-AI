@@ -17,6 +17,7 @@ from collections.abc import Awaitable, Callable
 from typing import Final
 
 import pytest
+from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -77,7 +78,7 @@ def _run(scenario: Callable[[async_sessionmaker[AsyncSession]], Awaitable[None]]
         return "ok"
 
     if asyncio.run(go()) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose up -d")
+        pytest.skip(PG_UNAVAILABLE)
 
 
 async def _clean(sessions: async_sessionmaker[AsyncSession]) -> None:

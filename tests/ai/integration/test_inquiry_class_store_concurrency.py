@@ -26,6 +26,7 @@ from typing import Any, Final
 
 import pytest
 from first_sql_barrier import barrier_sessionmaker
+from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -157,7 +158,7 @@ def _run(coro: Callable[[], Coroutine[Any, Any, _Outcome]]) -> _Outcome:
         return asyncio.run(coro())
     except Exception as exc:  # noqa: BLE001 — 접속 실패만 skip으로 가른다
         if "connect" in str(exc).lower() or "refused" in str(exc).lower():
-            pytest.skip("실 PG 미가용 — docker compose up -d")
+            pytest.skip(PG_UNAVAILABLE)
         raise
 
 
@@ -255,7 +256,7 @@ def test_two_tenants_with_the_same_ref_are_independent() -> None:
         failures, (mine, theirs) = asyncio.run(_race_across_tenants())
     except Exception as exc:  # noqa: BLE001
         if "connect" in str(exc).lower() or "refused" in str(exc).lower():
-            pytest.skip("실 PG 미가용 — docker compose up -d")
+            pytest.skip(PG_UNAVAILABLE)
         raise
     assert not failures, _describe(failures)
     assert len(mine) == 1 and len(theirs) == 1, "테넌트별로 한 행씩 서지 않았다"
@@ -345,7 +346,7 @@ def test_the_barrier_actually_parks_every_writer() -> None:
         asyncio.run(scenario())
     except Exception as exc:  # noqa: BLE001
         if "connect" in str(exc).lower() or "refused" in str(exc).lower():
-            pytest.skip("실 PG 미가용 — docker compose up -d")
+            pytest.skip(PG_UNAVAILABLE)
         raise
 
 
@@ -382,7 +383,7 @@ def test_a_row_of_another_tenant_is_not_updated_in_place() -> None:
         mine, theirs = asyncio.run(scenario())
     except Exception as exc:  # noqa: BLE001
         if "connect" in str(exc).lower() or "refused" in str(exc).lower():
-            pytest.skip("실 PG 미가용 — docker compose up -d")
+            pytest.skip(PG_UNAVAILABLE)
         raise
 
     assert len(mine) == 1, f"내 테넌트 행이 {len(mine)}개다 — 남의 행을 갱신했을 수 있다"
@@ -508,7 +509,7 @@ def test_a_prediction_and_a_confirmation_converge_to_one_sequential_result() -> 
             failures, state = asyncio.run(_race_prediction_against_confirmation())
         except Exception as exc:  # noqa: BLE001
             if "connect" in str(exc).lower() or "refused" in str(exc).lower():
-                pytest.skip("실 PG 미가용 — docker compose up -d")
+                pytest.skip(PG_UNAVAILABLE)
             raise
         assert not failures, f"{round_index}회차 오류 — {_describe(failures)}"
         assert state in (_PREDICTION_FIRST, _CONFIRMATION_FIRST), (

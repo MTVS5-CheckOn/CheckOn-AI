@@ -29,6 +29,7 @@ import httpx
 import pytest
 from anyio.from_thread import BlockingPortal
 from fastapi.testclient import TestClient
+from pg_hint import pg_unavailable
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
@@ -194,7 +195,7 @@ def pg_default(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         #: 「PG가 없다」가 아니라 **「이 파일이 아무것도 안 봤다」**인데 초록으로 보였다.
         if not _looks_like_no_database(exc):
             raise
-        pytest.skip(f"실 PG 미가용 — docker compose up -d ({type(exc).__name__})")
+        pytest.skip(pg_unavailable(f"({type(exc).__name__})"))
     try:
         yield
     finally:
