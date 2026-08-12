@@ -8,7 +8,11 @@ from typing import Any
 
 import pytest
 
-from ai.contracts.graphrag import ContextLockedFields, GraphContextRequest
+from ai.contracts.graphrag import (
+    ContextLockedFields,
+    GraphContextOperation,
+    GraphContextRequest,
+)
 from ai.contracts.problem_generation import (
     Answer,
     Choice,
@@ -83,6 +87,32 @@ def test_unmapped_node_returns_context_without_reference_data() -> None:
     assert not has_reference_data(context)
     assert context.retrieval_trace["allowed_evidence_refs"] == []
     assert context.retrieval_trace["evidence_anchors"] == []
+
+
+def test_revision_context_reuses_approved_grammar_evidence_and_locked_inputs() -> None:
+    request = _request().model_copy(
+        update={
+            "current_item_snapshot": {"stem": "기존 문항"},
+            "redacted_instruction": "발문을 더 명확하게 바꿔 주세요.",
+        }
+    )
+
+    context = asyncio.run(
+        GrammarNormGraphContextService().resolve_revision_context(request)
+    )
+
+    assert context.operation is GraphContextOperation.REFINE
+    assert context.current_item_snapshot == request.current_item_snapshot
+    assert context.redacted_instruction == request.redacted_instruction
+    assert context.locked_fields == request.locked_fields
+    assert has_reference_data(context)
+
+
+def test_revision_context_rejects_missing_snapshot_or_instruction() -> None:
+    service = GrammarNormGraphContextService()
+
+    with pytest.raises(ValueError, match="현재 문항과 마스킹된 지시"):
+        asyncio.run(service.resolve_revision_context(_request()))
 
 
 def test_generator_hydrates_omitted_quote_from_approved_context() -> None:
