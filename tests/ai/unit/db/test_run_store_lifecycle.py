@@ -376,7 +376,8 @@ def _refused_payload_of(call: CollectedCall) -> CollectedCall:
 
     ⚠ `response_uncertain=True`가 거부 사유다(*"가렸지만 확신 없음"* 을 원장에 안 남긴다).
     """
-    from ai.db.repositories.run_store import CollectedPayload  # noqa: PLC0415
+    #: ⚠ 정본은 `llm_payload`다 — `run_store`의 재수출은 `__all__`에 없다(암묵 재수출 금지).
+    from ai.db.repositories.llm_payload import CollectedPayload  # noqa: PLC0415
 
     return CollectedCall(
         id=call.id,

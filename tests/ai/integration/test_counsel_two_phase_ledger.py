@@ -417,7 +417,8 @@ def test_the_same_call_id_with_different_content_conflicts_in_real_pg() -> None:
 
 def _refused_payload_of(call: CollectedCall) -> CollectedCall:
     """저장 직전 훅이 **거부할** 본문(`response_uncertain`) — 거부 카운터 대역."""
-    from ai.db.repositories.run_store import CollectedPayload  # noqa: PLC0415
+    #: ⚠ 정본은 `llm_payload`다 — `run_store`의 재수출은 `__all__`에 없다(암묵 재수출 금지).
+    from ai.db.repositories.llm_payload import CollectedPayload  # noqa: PLC0415
 
     return CollectedCall(
         id=call.id,
