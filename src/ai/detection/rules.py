@@ -156,7 +156,19 @@ def _r1(
             if week.accuracy is None:
                 return None, None
             drop_pp = (baseline.accuracy - week.accuracy) * 100
-        if drop_pp < drop_threshold:
+        # 🔴 **포함 경계를 float 오차가 배제하지 못하게 한다**(79-R2 · R4와 같은 결함).
+        #    계약은 *"하락폭이 임계값과 같으면 발화"* 인데, **수학적으로 같은 15.0pp가**
+        #    정수 조합에 따라 갈렸다(2026-08-12 실측 · 반례 223건):
+        #
+        #        base 18/20 → week 15/20   15.0              → 발화
+        #        base 14/20 → week 11/20   14.999999999999991 → 🔴 미발화
+        #        base 12/20 → week  9/20   14.999999999999996 → 🔴 미발화
+        #
+        #    ⚠ **R4가 쓰는 `_FLOAT_ABS_TOL` 정본을 그대로 재사용한다** — R1 전용 epsilon을
+        #      새로 두면 같은 판정이 두 값에 살고, 하나만 고쳐지는 날 규칙끼리 갈린다.
+        if drop_pp < drop_threshold and not isclose(
+            drop_pp, drop_threshold, rel_tol=0.0, abs_tol=_FLOAT_ABS_TOL
+        ):
             return None, None
         drops.append(drop_pp)
     score = _normalize(max(drops), p.drop_pp, p.saturation_drop_pp)
