@@ -24,7 +24,9 @@ from ai.contracts.execution import VersionSet
 from ai.contracts.graphrag import GraphContextService
 from ai.contracts.problem_generation import (
     ProblemGenerationOutcome,
+    ProblemItemStatus,
     ProblemRequest,
+    ProblemSetResult,
 )
 from ai.db.repositories.idempotency import IdempotencyStore
 from ai.db.repositories.run_store import RunStore, default_llm_call_collector
@@ -34,6 +36,7 @@ from ai.db.store_factory import (
     build_run_store,
 )
 from ai.problem_generation.application.drain import ProblemDrainLoop
+from ai.problem_generation.application.ports import ProblemItemStore
 from ai.problem_generation.application.workflow import DiagnosisCallable
 from ai.problem_generation.assembly import (
     ProblemGenerationRunner,
@@ -536,6 +539,165 @@ async def get_problem(job_id: str, request: Request) -> dict[str, Any]:
     )
 
 
+def _tenant_id(request: Request) -> str:
+    tenant_id = request.headers.get("X-Tenant-Id")
+    if not tenant_id:
+        raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": ["X-Tenant-Id"]})
+    return tenant_id
+
+
+def _set_result(
+    *, tenant_id: str, set_id: uuid.UUID
+) -> tuple[ProblemSetResult, VersionSet]:
+    for (cached_tenant, _job_id), cached in _views.items():
+        result = cached.view.result
+        if (
+            cached_tenant == tenant_id
+            and isinstance(result, ProblemSetResult)
+            and result.set_id == set_id
+        ):
+            return result, cached.versions
+    raise NotFound("set_id 부재", {"set_id": str(set_id)})
+
+
+def _set_id(raw_set_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(raw_set_id)
+    except ValueError as exc:
+        raise NotFound("set_id 부재", {"set_id": raw_set_id}) from exc
+
+
+def _item_store_for(tenant_id: str) -> ProblemItemStore:
+    return build_tenant_scoped_item_store(tenant_id=tenant_id) or _stores.items
+
+
+async def _revision_no(
+    *, tenant_id: str, set_id: uuid.UUID, slot_index: int
+) -> int:
+    return await _item_store_for(tenant_id).current_revision_no(set_id, slot_index)
+
+
+@router.get("/v1/problems/{set_id}/items")
+async def get_problem_items(set_id: str, request: Request) -> dict[str, Any]:
+    """Step3 검토 목록을 상태 카운터와 함께 반환한다."""
+
+    tenant_id = _tenant_id(request)
+    parsed_set_id = _set_id(set_id)
+    result, versions = _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
+    counts = {status.value: 0 for status in ProblemItemStatus}
+    items: list[dict[str, Any]] = []
+    for slot_index, item_result in enumerate(result.items):
+        counts[item_result.status.value] += 1
+        revision_no = (
+            await _revision_no(
+                tenant_id=tenant_id,
+                set_id=parsed_set_id,
+                slot_index=slot_index,
+            )
+            if item_result.item_id is not None
+            else 0
+        )
+        items.append(
+            {
+                "slot_index": slot_index,
+                "item_id": (
+                    str(item_result.item_id) if item_result.item_id is not None else None
+                ),
+                "status": item_result.status.value,
+                "current_revision_no": revision_no,
+                "review_reason": (
+                    item_result.review_reason.value
+                    if item_result.review_reason is not None
+                    else None
+                ),
+                "failure_reason": (
+                    item_result.failure_reason.value
+                    if item_result.failure_reason is not None
+                    else None
+                ),
+            }
+        )
+    return success_envelope(
+        data={"set_id": str(parsed_set_id), "status_counts": counts, "items": items},
+        execution_id=str(uuid.uuid4()),
+        versions=versions,
+    )
+
+
+@router.get("/v1/problems/{set_id}/items/{slot_index}")
+async def get_problem_item(
+    set_id: str, slot_index: int, request: Request
+) -> dict[str, Any]:
+    """Step3 문항 본문·교차 풀이·검증 상태를 한 번에 반환한다."""
+
+    tenant_id = _tenant_id(request)
+    parsed_set_id = _set_id(set_id)
+    result, versions = _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
+    if slot_index < 0 or slot_index >= len(result.items):
+        raise NotFound(
+            "문항 슬롯 부재", {"set_id": str(parsed_set_id), "slot_index": slot_index}
+        )
+    item_result = result.items[slot_index]
+    stored = None
+    candidate = None
+    revision_no = 0
+    if item_result.item_id is not None:
+        store = _item_store_for(tenant_id)
+        try:
+            stored = await store.get(parsed_set_id, slot_index)
+            revision_no = await store.current_revision_no(parsed_set_id, slot_index)
+            if stored.candidate_ref is not None:
+                candidate = await _stores.candidates.get(stored.candidate_ref)
+        except LookupError as exc:
+            raise NotFound(
+                "문항 슬롯 부재",
+                {"set_id": str(parsed_set_id), "slot_index": slot_index},
+            ) from exc
+    verified = item_result.status in {
+        ProblemItemStatus.VERIFIED,
+        ProblemItemStatus.NEEDS_REVIEW,
+    }
+    return success_envelope(
+        data={
+            "set_id": str(parsed_set_id),
+            "slot_index": slot_index,
+            "item_id": (
+                str(item_result.item_id) if item_result.item_id is not None else None
+            ),
+            "status": item_result.status.value,
+            "current_revision_no": revision_no,
+            "available_actions": [],
+            "item": (
+                stored.item.model_dump(mode="json")
+                if stored is not None and stored.item is not None
+                else None
+            ),
+            "cross_solve": (
+                candidate.solve_result.model_dump(mode="json")
+                if candidate is not None
+                else None
+            ),
+            "verification": {
+                "rule_validation": "passed" if verified else "unavailable",
+                "blind_cross_solve": "passed" if candidate is not None else "unavailable",
+                "release_decision": item_result.status.value,
+            },
+            "review_reason": (
+                item_result.review_reason.value
+                if item_result.review_reason is not None
+                else None
+            ),
+            "failure_reason": (
+                item_result.failure_reason.value
+                if item_result.failure_reason is not None
+                else None
+            ),
+        },
+        execution_id=str(uuid.uuid4()),
+        versions=versions,
+    )
+
+
 __all__ = [
     "VERSION_SCOPE",
     "ProblemJobView",
@@ -544,6 +706,8 @@ __all__ = [
     "bootstrap_problem_services",
     "bootstrap_problem_providers",
     "get_problem",
+    "get_problem_item",
+    "get_problem_items",
     "post_problem",
     "problem_drain_running",
     "problem_failure_versions",

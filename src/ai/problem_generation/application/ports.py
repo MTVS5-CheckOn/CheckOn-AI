@@ -54,6 +54,10 @@ class ProblemItemStore(Protocol):
         """세트와 슬롯으로 최종본을 읽는다."""
         ...
 
+    async def current_revision_no(self, set_id: UUID, slot_index: int) -> int:
+        """슬롯의 현재 낙관적 잠금 번호를 읽는다."""
+        ...
+
 
 class LexiconLookup(Protocol):
     """어휘 사전 조회 경계 — R-1 어휘 대조가 쓴다.

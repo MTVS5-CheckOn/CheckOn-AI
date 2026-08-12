@@ -241,6 +241,66 @@ def test_problem_router_roundtrip_and_prompt_version_ledger_match() -> None:
     assert default_llm_call_collector().evicted_runs == 0
 
 
+def test_step3_list_and_detail_return_saved_item_and_cross_solve() -> None:
+    _prepare()
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        result = client.get(
+            f"/v1/problems/{posted.json()['data']['job_id']}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        ).json()["data"]["result"]
+        set_id = result["set_id"]
+        listed = client.get(
+            f"/v1/problems/{set_id}/items",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+        detailed = client.get(
+            f"/v1/problems/{set_id}/items/0",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+
+    assert listed.status_code == 200, listed.text
+    list_data = listed.json()["data"]
+    assert list_data["status_counts"] == {
+        "verified": 0,
+        "needs_review": 1,
+        "dropped": 0,
+        "verification_unavailable": 0,
+    }
+    assert list_data["items"][0]["current_revision_no"] == 0
+    assert detailed.status_code == 200, detailed.text
+    detail = detailed.json()["data"]
+    assert detail["item"]["stem"]
+    assert len(detail["item"]["choices"]) == 5
+    assert detail["cross_solve"]["chosen"] == 1
+    assert detail["verification"] == {
+        "rule_validation": "passed",
+        "blind_cross_solve": "passed",
+        "release_decision": "needs_review",
+    }
+    assert detail["current_revision_no"] == 0
+    assert detail["available_actions"] == []
+
+
+def test_step3_items_hide_another_tenants_set() -> None:
+    _prepare()
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        result = client.get(
+            f"/v1/problems/{posted.json()['data']['job_id']}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        ).json()["data"]["result"]
+        hidden = client.get(
+            f"/v1/problems/{result['set_id']}/items",
+            headers={"X-Tenant-Id": "tenant-other"},
+        )
+
+    assert hidden.status_code == 404
+    assert hidden.json()["error"]["code"] == "NOT_FOUND"
+
+
 def test_problem_post_replays_202_and_conflicts_on_different_body() -> None:
     _prepare()
 

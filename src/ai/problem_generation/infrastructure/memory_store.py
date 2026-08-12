@@ -87,6 +87,16 @@ class InMemoryProblemItemStore:
                     f"저장되지 않은 문항: set={set_id}, slot={slot_index}"
                 ) from error
 
+    async def current_revision_no(self, set_id: UUID, slot_index: int) -> int:
+        """최초 생성 문항의 리비전 번호 0을 반환한다."""
+
+        async with self._lock:
+            if (set_id, slot_index) not in self._records:
+                raise LookupError(
+                    f"저장되지 않은 문항: set={set_id}, slot={slot_index}"
+                )
+            return 0
+
     async def list_all(self) -> tuple[StoredProblemItem, ...]:
         async with self._lock:
             return tuple(
