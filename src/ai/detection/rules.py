@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from math import isclose
+from typing import Final
 
 from ai.contracts.detection import (
     RULE_SIGNAL_MAP,
@@ -50,6 +52,14 @@ class RuleSkip:
 
     rule_id: RuleId
     reason: str
+
+
+#: 🔴 **포함 경계 판정에만 쓰는 허용오차**(79-R §2). 이진 부동소수점이 `0.05`·`1.5`를
+#: 정확히 표현하지 못해 **계약이 허용하는 경계가 배제되는** 것을 막는다.
+#: ⚠ **실제 임계 간격보다 훨씬 작다** — R4의 두 임계는 `5.0`·`1.5`이고 이 값은 `1e-9`라
+#: 「경계를 넓히는 것」이 아니라 「같은 값을 같다고 보는 것」이다.
+#: ⚠ **여러 함수에 복제하지 않는다** — 반례가 나온 R4의 두 비교만 쓴다(§4 감사 결과).
+_FLOAT_ABS_TOL: Final = 1e-9
 
 
 def _clamp01(value: float) -> float:
@@ -295,10 +305,25 @@ def _r4(
     ratios: list[float] = []
     for week in assess:
         assert week.accuracy is not None and week.norm_time is not None
-        if abs(week.accuracy - baseline.accuracy) * 100 > p.acc_stable_band_pp:
+        # 🔴 **포함 경계를 float 오차가 배제하지 못하게 한다**(79-R §2 · 2026-08-12 실측).
+        #    계약은 *"정답률 차이가 정확히 5.0pp면 허용"* · *"시간 배율이 정확히 1.5배면
+        #    발화"* 인데, 도메인 입력이 정수여도 **계산 표면은 float**다:
+        #
+        #        80/100 → 75/100   diff_pp = 5.000000000000004  > 5.0  → 초과로 오판
+        #        200/1000 → 300/1000  ratio = 1.4999999999999998 < 1.5 → 미달로 오판
+        #
+        #    ⚠ threshold를 반올림하거나 `round(v, 2)`로 비교하지 않는다 — 그러면 **경계가
+        #      아니라 정밀도가 계약이 된다**. 설정 전체를 `Decimal`로 바꾸지도 않는다
+        #      (계약 표면이 넓어지고 score 계산까지 끌려온다).
+        accuracy_diff_pp = abs(week.accuracy - baseline.accuracy) * 100
+        if accuracy_diff_pp > p.acc_stable_band_pp and not isclose(
+            accuracy_diff_pp, p.acc_stable_band_pp, rel_tol=0.0, abs_tol=_FLOAT_ABS_TOL
+        ):
             return None, None  # 정답률 유지 조건 위반
         time_ratio = week.norm_time / baseline.norm_time
-        if time_ratio < time_threshold:
+        if time_ratio < time_threshold and not isclose(
+            time_ratio, time_threshold, rel_tol=0.0, abs_tol=_FLOAT_ABS_TOL
+        ):
             return None, None
         ratios.append(time_ratio)
     score = _normalize(max(ratios), p.time_ratio, p.saturation_time_ratio)
