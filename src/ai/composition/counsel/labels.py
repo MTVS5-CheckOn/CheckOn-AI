@@ -86,8 +86,23 @@ def snapshot_from_labels(labels: Sequence[str]) -> tuple[LabelSnapshot, tuple[st
         )
     # `model_copy(update=…)`는 검증을 건너뛰어 enum 자리에 str이 남는다 — 생성자로 만든다.
     snapshot = LabelSnapshot(**{**DEFAULT_SNAPSHOT.as_axes(), **axes})
-    applied = tuple(snapshot.as_axes()[axis] for axis in _AXIS_ENUMS)
-    return snapshot, applied
+    return snapshot, labels_applied_of(snapshot)
 
 
-__all__ = ["DEFAULT_SNAPSHOT", "LabelVocabularyError", "snapshot_from_labels"]
+def labels_applied_of(snapshot: LabelSnapshot) -> tuple[str, ...]:
+    """스냅숏 → 응답의 `labels_applied`.
+
+    🔴 **파생 자리를 하나로 둔다**(99 #02 · ㉻). 늦게 끝난 잡의 결과를 되살릴 때는 원 요청의
+    `labels`가 없고 **동결된 스냅숏만** 있다 — 그때 여기서 유도해야 최초 응답과 값이 같다.
+    ⚠ 두 곳에 적으면 축 순서가 갈리는 날 **같은 잡의 두 응답이 달라진다.**
+    """
+    axes = snapshot.as_axes()
+    return tuple(axes[axis] for axis in _AXIS_ENUMS)
+
+
+__all__ = [
+    "DEFAULT_SNAPSHOT",
+    "LabelVocabularyError",
+    "labels_applied_of",
+    "snapshot_from_labels",
+]

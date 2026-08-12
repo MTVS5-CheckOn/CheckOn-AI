@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Final
 
 import pytest
 from alembic import command
@@ -165,3 +166,119 @@ async def _version_rows() -> list[str]:
             return [str(row[0]) for row in result]
     finally:
         await engine.dispose()
+
+
+# ── (㉻ · 지시서 73 §2-3) 0009 ↔ 0010 단계 왕복 ──
+
+
+_BUNDLE_TABLE: Final = "counsel_context_bundle"
+_PREVIOUS: Final = "0009_drop_agent_run_ai_fk"
+_TARGET: Final = "0010_counsel_ctx_draft_body"
+
+#: 🔴 **0010이 건드리면 안 되는 것** — AI_RUN FK 다섯 중 `draft`의 것과 `draft`의 기존 컬럼.
+#: ⚠ 이름을 적어 두지 않으면 *"컬럼이 늘었다"* 만 보고 **없어진 것을 못 본다.**
+_DRAFT_COLUMNS_0009: Final = frozenset(
+    {
+        "id",
+        "run_id",
+        "agent_run_id",
+        "tenant_id",
+        "kind",
+        "student_ref",
+        "guardian_ref",
+        "label_snapshot",
+        "status",
+        "fail_reason",
+        "created_at",
+    }
+)
+
+
+async def _columns(table: str) -> dict[str, bool]:
+    """컬럼명 → nullable."""
+    engine = create_async_engine(get_db_settings().database_url, poolclass=NullPool)
+    try:
+        async with engine.connect() as connection:
+            rows = await connection.execute(
+                text(
+                    "SELECT column_name, is_nullable FROM information_schema.columns"
+                    " WHERE table_name = :t"
+                ),
+                {"t": table},
+            )
+            return {str(row[0]): row[1] == "YES" for row in rows}
+    finally:
+        await engine.dispose()
+
+
+async def _draft_foreign_keys() -> set[str]:
+    engine = create_async_engine(get_db_settings().database_url, poolclass=NullPool)
+    try:
+        async with engine.connect() as connection:
+            rows = await connection.execute(
+                text(
+                    "SELECT conname FROM pg_constraint"
+                    " WHERE conrelid = 'draft'::regclass AND contype = 'f'"
+                )
+            )
+            return {str(row[0]) for row in rows}
+    finally:
+        await engine.dispose()
+
+
+def test_the_0010_step_adds_exactly_the_bundle_and_the_body(
+    clean_database: None,
+) -> None:
+    """🔴 **0009 → 0010 → 0009 → 0010** 을 단계마다 직접 센다 (㉻ §2-3).
+
+    ⚠ `head` 왕복은 *"전부 돌았다"* 까지다. **이 단계가 무엇을 더하고 무엇을 그대로 두는가**는
+    거기서 안 보인다 — downgrade가 남의 컬럼을 지워도 다시 올라가면 같은 모습이 된다.
+    """
+    config = _alembic_config()
+
+    #: ── 0009: 아직 둘 다 없다 ──
+    command.upgrade(config, _PREVIOUS)
+    assert _BUNDLE_TABLE not in _tables(), "0009인데 묶음 테이블이 있다"
+    draft_0009 = asyncio.run(_columns("draft"))
+    assert "content" not in draft_0009, "0009인데 본문 컬럼이 있다"
+    assert set(draft_0009) == _DRAFT_COLUMNS_0009, set(draft_0009)
+    fks_0009 = asyncio.run(_draft_foreign_keys())
+    assert fks_0009, "draft의 AI_RUN FK가 0009에 없다 — 이 검사의 전제가 깨졌다"
+
+    #: ── 0010: 둘 다 생기고 나머지는 그대로 ──
+    command.upgrade(config, _TARGET)
+    assert _BUNDLE_TABLE in _tables()
+    bundle = asyncio.run(_columns(_BUNDLE_TABLE))
+    assert set(bundle) == {
+        "id",
+        "tenant_id",
+        "class_ref",
+        "contexts",
+        "content_hash",
+        "created_at",
+    }, set(bundle)
+    assert not any(bundle.values()), f"nullable 컬럼이 있다: {bundle}"
+    draft_0010 = asyncio.run(_columns("draft"))
+    assert "content" in draft_0010, "본문 컬럼이 안 생겼다"
+    assert draft_0010["content"] is False, "🔴 content가 nullable이다 — 조용히 낮춰졌다"
+    assert set(draft_0010) - {"content"} == _DRAFT_COLUMNS_0009, (
+        f"0010이 draft의 다른 컬럼을 건드렸다: {set(draft_0010)}"
+    )
+    assert asyncio.run(_draft_foreign_keys()) == fks_0009, "draft의 FK가 바뀌었다"
+    assert asyncio.run(_version_rows()) == [_TARGET]
+    assert len(_TARGET) <= 32
+
+    #: ── downgrade 0009: 자기가 만든 것만 사라진다 ──
+    command.downgrade(config, _PREVIOUS)
+    assert _BUNDLE_TABLE not in _tables(), "downgrade가 묶음 테이블을 안 지웠다"
+    back = asyncio.run(_columns("draft"))
+    assert set(back) == _DRAFT_COLUMNS_0009, (
+        f"downgrade가 draft를 0009 상태로 못 되돌렸다: {set(back)}"
+    )
+    assert asyncio.run(_draft_foreign_keys()) == fks_0009, "downgrade가 FK를 건드렸다"
+    assert asyncio.run(_version_rows()) == [_PREVIOUS]
+
+    #: ── 다시 0010: 잔재로 두 번째 upgrade가 죽지 않는다(인덱스 중복 등) ──
+    command.upgrade(config, _TARGET)
+    assert _BUNDLE_TABLE in _tables()
+    assert asyncio.run(_columns("draft"))["content"] is False

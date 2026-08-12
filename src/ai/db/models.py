@@ -230,6 +230,20 @@ class Draft(Base):
     status: Mapped[str] = mapped_column(String)
     fail_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ)
+    #: 🔴 **게이트를 통과한 초안 본문**(㉻ · 지시서 73 §2-2 · 준영님 확정 2026-08-12).
+    #:
+    #: ⚠ **없던 것이 의도가 아니라 결손이었다**(`part_b/09` §1763). 본문이 테이블 밖에만
+    #: 있어서 늦게 성공한 잡의 GET이 `result=None`이었다 — 워커 프로세스가 죽으면
+    #: `InMemoryDraftResultStore`와 함께 사라졌다.
+    #:
+    #: 🔴 **`NOT NULL`이다.** 0010 시점에 `draft` 행이 **0건**이라 무손실로 세울 수 있다
+    #: (실측: 실 PG 0행 · `Draft` ORM을 참조하는 코드가 **정의 1곳뿐**이라 쓴 적이 없다).
+    #: ⚠ 빈 문자열 backfill·server default를 두지 않았다 — **빈 본문은 「초안이 있다」는
+    #: 거짓**이고, 그러면 게이트 거부와 정상 초안이 같은 값을 갖는다.
+    #:
+    #: ⚠ **`DRAFT_BLOCK.content`와 다른 축이다** — 그쪽은 블록 분해(§05 §4)이고 여기는
+    #: 최초 본문 전문이다. refine 이력은 계속 `DRAFT_REVISION`이 축이다.
+    content: Mapped[str] = mapped_column(Text)
 
 
 class DraftBlock(Base):
@@ -318,6 +332,42 @@ class CounselPackResult(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ)
     #: 🔴 정본 — CounselPackResultRecord 전문. 위 넷은 여기서 유도한 파생이다.
     snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
+
+
+class CounselContextBundle(Base):
+    """상담 워커의 **입력 묶음 정본** — `context://{id}`가 가리키는 대상 (㉻ · 지시서 73 §2-1).
+
+    🔴 **읽기 모델이 아니다.** `COUNSEL_DRAFT_VIEW`(`_CachedView`·`_DraftState`)는 조회
+    캐시고, 이 테이블은 **실행 전에 만들어져 워커가 소비하는 입력**이다 — 생애주기가 다르다.
+    한 테이블에 합치면 조회 캐시를 비우는 정리 배치가 **재개할 잡의 입력을 지운다.**
+
+    🔴 **`AI_RUN`과 FK로 잇지 않는다.** 이 행은 `begin_run()`보다 **먼저** 생긴다
+    (POST → enqueue → 워커 lease → `begin_run`). FK를 걸면 enqueue가 실행 원장을
+    선행 요구하게 되고, 그건 *"실행이 없는데 실행 기록을 만든다"* 는 99 #46의 반대편이다.
+
+    ⚠ **`contexts`가 무손실 정본이다** — `ContextBundleRecord.contexts`(학생 alias →
+    `DraftContext`)를 그대로 담는다. 여기서 파생해 다시 구성할 수 없는 **별도 손사본을
+    만들지 않는다**(선례: `PROBLEM_ITEM`이 컬럼 재조립으로 12건을 깎았다).
+
+    ⚠ **`content_hash`는 계약값이다** — 저장 시 재계산해 대체하지 않는다. 워커가 재개할 때
+    이 값을 state의 `context_hash`와 대조하는 것이 불변식 ④인데, 저장소가 자기 방식으로
+    다시 계산하면 **대조가 자기 자신과의 비교**가 되어 손상을 못 잡는다.
+    """
+
+    __tablename__ = "counsel_context_bundle"
+    __table_args__ = (
+        #: 보존기간·정리 배치가 테넌트별로 훑는 축 — `counsel_pack_result`와 같은 이유다.
+        #: ⚠ 조회는 `id + tenant_id`(PK 포함)라 별도 인덱스를 더 만들지 않는다.
+        Index("ix_counsel_context_bundle_tenant_created", "tenant_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    class_ref: Mapped[str] = mapped_column(String)
+    #: 🔴 정본 — `{student_ref: DraftContext}` 전문.
+    contexts: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    content_hash: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(_TZ)
 
 
 class CounselDraftView(Base):

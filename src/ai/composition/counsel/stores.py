@@ -203,10 +203,25 @@ class AgentStepSink(Protocol):
 
 
 class InMemoryContextStore:
+    """⚠ **PG 구현과 의미가 같아야 한다**(㉻ · 72-R에서 배운 자리).
+
+    🔴 종전에는 `self._rows[id] = record`로 **조용히 덮었다.** PG는 같은 id에 다른 전문이면
+    `ContextBundleConflict`다 — 갈리면 **백엔드에 따라 워커가 읽는 입력이 달라진다.**
+    """
+
     def __init__(self) -> None:
         self._rows: dict[UUID, ContextBundleRecord] = {}
 
     async def put(self, record: ContextBundleRecord) -> str:
+        stored = self._rows.get(record.id)
+        if stored is not None and stored != record:
+            #: ⚠ 예외 타입은 저장소 층 소유다 — 여기서 import하면 db가 counsel을,
+            #:   counsel이 db를 참조하는 순환이 된다. 지연 import가 그 경계다.
+            from ai.db.repositories.counsel_context_store import (  # noqa: PLC0415
+                ContextBundleConflict,
+            )
+
+            raise ContextBundleConflict(f"입력 묶음 멱등 충돌: id={record.id}")
         self._rows[record.id] = record
         return make_ref(CONTEXT_SCHEME, record.id)
 
@@ -218,10 +233,19 @@ class InMemoryContextStore:
 
 
 class InMemoryDraftResultStore:
+    """⚠ **PG 구현과 의미가 같아야 한다** — `InMemoryContextStore`와 같은 이유다."""
+
     def __init__(self) -> None:
         self._rows: dict[UUID, DraftRecord] = {}
 
     async def put(self, record: DraftRecord) -> str:
+        stored = self._rows.get(record.id)
+        if stored is not None and stored != record:
+            from ai.db.repositories.counsel_draft_store import (  # noqa: PLC0415
+                DraftRecordConflict,
+            )
+
+            raise DraftRecordConflict(f"초안 멱등 충돌: id={record.id}")
         self._rows[record.id] = record
         return make_ref(DRAFT_SCHEME, record.id)
 

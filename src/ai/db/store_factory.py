@@ -17,11 +17,15 @@ from ai.composition.counsel.stores import (
     AgentStepSink as CounselAgentStepSink,
 )
 from ai.composition.counsel.stores import (
-    InMemoryAgentStepSink as InMemoryCounselAgentStepSink,
-)
-from ai.composition.counsel.stores import (
+    ContextStore,
+    DraftResultStore,
+    InMemoryContextStore,
+    InMemoryDraftResultStore,
     InMemoryPackResultStore,
     PackResultStore,
+)
+from ai.composition.counsel.stores import (
+    InMemoryAgentStepSink as InMemoryCounselAgentStepSink,
 )
 from ai.db.counsel_read_model import (
     CounselDraftViewStore,
@@ -29,6 +33,8 @@ from ai.db.counsel_read_model import (
     PgCounselDraftViewStore,
 )
 from ai.db.repositories.agent_job import PgJobStore
+from ai.db.repositories.counsel_context_store import PgContextStore
+from ai.db.repositories.counsel_draft_store import PgDraftResultStore
 from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from ai.db.repositories.detection_store import (
     DetectionStore,
@@ -222,6 +228,40 @@ def build_pack_result_store(settings: DbSettings | None = None) -> PackResultSto
     if settings.store_backend == _PG:
         return PgPackResultStore(sessionmaker=get_sessionmaker())
     return InMemoryPackResultStore()
+
+
+def build_context_store(settings: DbSettings | None = None) -> ContextStore:
+    """counsel 워커의 **입력 묶음**(`context://`) 저장소 (㉻ · 지시서 73 §5).
+
+    🔴 **이 분기가 없어서 ㉻ ⓐ가 있었다.** `counsel.py`의 `_context_store`는 초기값도
+    reset도 `InMemoryContextStore()` 리터럴이라 `STORE_BACKEND=pg`가 **아무 영향을 못 줬고**,
+    다른 프로세스의 워커는 `payload_ref`를 해소하지 못해 `context_bundle_missing`으로 죽었다
+    (#37의 스텝 싱크와 같은 형태).
+
+    ⚠ **pg에서 인메모리로 강등하지 않는다** — 접속 실패는 실패로 올라온다. 폴백이 있으면
+    *"DB가 죽은 것"* 과 *"정상"* 이 같은 응답이 되고 그 사이 입력이 휘발한다.
+    """
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgContextStore(sessionmaker=get_sessionmaker())
+    return InMemoryContextStore()
+
+
+def build_draft_result_store(
+    settings: DbSettings | None = None,
+) -> DraftResultStore:
+    """counsel 초안 **본문**(`draft://`) 저장소 (㉻ · 지시서 73 §5).
+
+    🔴 **이 분기가 없어서 ㉻ ⓑ가 있었다.** 늦게 성공한 잡이 `phase=succeeded`인데 GET은
+    `result=None`이었다 — 본문이 워커 프로세스의 dict에만 있었기 때문이다.
+
+    ⚠ **`build_context_store`와 짝이다** — 한쪽만 배선하면 입력은 복원되는데 본문이
+    사라지거나(또는 그 반대) **결손이 절반만 닫힌다.**
+    """
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgDraftResultStore(sessionmaker=get_sessionmaker())
+    return InMemoryDraftResultStore()
 
 
 def build_counsel_draft_view_store(
