@@ -11,8 +11,10 @@
 
 | 성질 | 필드 | 규칙 |
 | --- | --- | --- |
-| **확정 축** | `execution_id`·`tenant_id`·`capability`·`input_snapshot_hash`·버전 10 | 하나라도 다르면 **충돌 예외** |
-| **사용 축** | `model_provider`·`model_name`·`generation_params` | 마지막 **성공** 호출로 갱신 · **값→None 금지** |
+| **확정 축** | `execution_id`·`tenant_id`·`capability`·`input_snapshot_hash`
+  + 버전 10 | 하나라도 다르면 **충돌 예외** |
+| **사용 축** | `model_provider`·`model_name`·`generation_params`
+  | 마지막 **성공** 호출로 갱신 · **값→None 금지** |
 | **최초 쓰기 축** | `created_at` | 최초 `begin_run` 값 유지 |
 
 ⚠ 이 저장소는 async 플러그인 없이 **`asyncio.run()` 관례**를 쓴다(레포 전반 동일).
@@ -36,7 +38,6 @@ from ai.contracts.execution import (
     VersionSet,
 )
 from ai.contracts.llm import CallOutcome, ModelRole
-from ai.llm.gateway import LlmCallRecord
 from ai.db.repositories.run_store import (
     CONFIRMED_AXES,
     CREATED_AXIS,
@@ -45,6 +46,7 @@ from ai.db.repositories.run_store import (
     InMemoryRunStore,
     RunIdentityConflict,
 )
+from ai.llm.gateway import LlmCallRecord
 
 _EXEC: Final = uuid.UUID(int=0x46)
 _TENANT: Final = "t_ledger"

@@ -55,6 +55,7 @@ from ai.db.repositories.run_store import (
     LlmCallCollector,
     RunStore,
     default_llm_call_collector,
+    last_success_call,
 )
 from ai.db.store_factory import build_run_store
 
@@ -249,40 +250,53 @@ class CounselPackRunner:
 
         # ③ 그래프 실행 — 학생 경계마다 체크포인트(§1.3).
         context = _execution_context(job)
+
+        # ③′ 🔴 **실행 시작 행을 먼저 세운다**(99 #46) — `DRAFT.run_id → AI_RUN.execution_id`
+        #     FK의 **부모**다. 그래프가 게이트 통과 직후 초안을 저장하므로(`graph.py` ④)
+        #     이 행이 없으면 **SQLSTATE 23503 `fk_draft_run_id_ai_run`** 이 난다(실측).
+        #     ⚠ **fail-closed다** — 원장을 못 세우면 planner·writer·초안 저장에 **진입하지
+        #       않는다.** 여기서 예외가 나면 `_run_guarded`가 잡 종단으로 수렴시킨다.
+        #     ⚠ **`bundle` 부재·테넌트 불일치보다 뒤**다 — 실행할 입력이 없으면 실행이
+        #       없었던 것이고, 없는 실행의 기록을 지어내지 않는다.
+        #     ⚠ 사용 축은 아직 **아무것도 모른다** — `begin_run`이 그걸 강제한다.
+        await self._runs.begin_run(
+            context.to_run_metadata(created_at=self._now())
+        )
+
         #: student_ref → 그 학생의 초안을 만든 LLM_CALL 행 id. 그래프가 채우고 ④가 읽는다.
         #: state에 싣지 않는 이유: §1.2 필드 집합이 문서와 1:1로 고정돼 있고(대조 테스트),
         #: 재개 시엔 이미 기록된 seq를 건너뛰므로 이 맵이 비어도 정확성이 유지된다.
         student_call_ids: dict[str, UUID] = {}
-        graph = build_counsel_graph(
-            planner=self._planner,
-            writer=self._writer,
-            contexts=bundle.contexts,
-            execution_context=context,
-            checkpointer=self._checkpointer,
-            call_log=self._call_log,
-            student_call_ids=student_call_ids,
-            regen_max=self._regen_max,
-            llm_failure_circuit=self._circuit,
-            draft_store=self._drafts,
-            tenant_id=job.tenant_id,
-            agent_run_id=job.job_id,
-            new_draft_id=self._new_id,
-            now=self._now,
-        )
-        # 🔴 **호출마다 상한을 명시한다**(불변식 6 · 99 #08 ⓑ). 안 주면 langgraph 기본값
-        #    `getenv("LANGGRAPH_DEFAULT_RECURSION_LIMIT", "10007")`이 쓰이는데, 그건
-        #    **사실상 무한**이고 **BE 운영이 만질 수 있는 저장소 밖 값**이다.
-        #    ⚠ `bundle.contexts`는 위에서 이미 역참조했다 — 다시 조회하지 않는다.
-        config = {
-            "configurable": {"thread_id": thread_id},
-            "recursion_limit": graph_recursion_limit(
-                student_count=len(bundle.contexts)
-            ),
-        }
-        #: 🔴 `finally`가 **모든 수렴 경로**를 지나게 하려고 둔 플래그다(라우터 2곳과 같은
-        #:  형태 — #117 → #119 → 여기가 4번째). 실패 경로에서만 적재 오류를 삼킨다.
         failed = True
         try:
+            #: 🔴 **그래프 조립도 `try` 안이다**(99 #46) — 실행 경계(`begin_run`)를 지난 뒤의
+            #:   조립 실패가 원장을 건너뛰면 *"실행이 없었다"* 로 읽힌다.
+            graph = build_counsel_graph(
+                planner=self._planner,
+                writer=self._writer,
+                contexts=bundle.contexts,
+                execution_context=context,
+                checkpointer=self._checkpointer,
+                call_log=self._call_log,
+                student_call_ids=student_call_ids,
+                regen_max=self._regen_max,
+                llm_failure_circuit=self._circuit,
+                draft_store=self._drafts,
+                tenant_id=job.tenant_id,
+                agent_run_id=job.job_id,
+                new_draft_id=self._new_id,
+                now=self._now,
+            )
+            # 🔴 **호출마다 상한을 명시한다**(불변식 6 · 99 #08 ⓑ). 안 주면 langgraph 기본값
+            #    `getenv("LANGGRAPH_DEFAULT_RECURSION_LIMIT", "10007")`이 쓰이는데, 그건
+            #    **사실상 무한**이고 **BE 운영이 만질 수 있는 저장소 밖 값**이다.
+            #    ⚠ `bundle.contexts`는 위에서 이미 역참조했다 — 다시 조회하지 않는다.
+            config = {
+                "configurable": {"thread_id": thread_id},
+                "recursion_limit": graph_recursion_limit(
+                    student_count=len(bundle.contexts)
+                ),
+            }
             graph_input = await self._resume_input(graph, config, job, bundle)
             final = await graph.ainvoke(graph_input, config=config)
             failed = False
@@ -369,9 +383,12 @@ class CounselPackRunner:
         판정 대상이라 **이 PR에서 바꾸지 않았다**(99 등재).
         """
         calls = self._call_log.take(context.execution_id)
-        last = calls[-1].record if calls else None
+        #: 🔴 **마지막 「성공」 호출이다**(99 #46) — 배열의 마지막 행이 아니다. 실패·timeout이
+        #:   끝에 있다고 그 provider를 최종본으로 적으면 거짓이다. 선택 규칙은 공용이다.
+        chosen = last_success_call(calls)
+        last = chosen.record if chosen is not None else None
         try:
-            await self._runs.record_run(
+            await self._runs.finalize_run(
                 context.to_run_metadata(
                     created_at=self._now(),
                     # 실측값을 옮긴다 — 조립부 설정을 여기서 재선언하면 두 값이 갈린다.
