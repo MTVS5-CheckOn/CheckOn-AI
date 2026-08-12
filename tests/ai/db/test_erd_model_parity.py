@@ -67,7 +67,9 @@ def test_erd_parsed_34_tables() -> None:
     # 36 → 37(2026-08-08): counsel_pack_result — `AGENT_RUN.result_ref`(`pack://`)가
     # 가리키던 대상이 없었다(99 ㉕). ⚠ 양자 승인 대상.
     # 37 → 38(2026-08-10): counsel_draft_view — 두 독립 읽기 캐시의 영속 자리.
-    assert len(ERD_TABLES) == 38, f"ERD 테이블 수 {len(ERD_TABLES)} != 38"
+    # 38 → 39(2026-08-12): counsel_context_bundle — 워커 입력 묶음의 정본(㉻).
+    #   ⚠ 읽기 모델(38번)과 **다른 생애주기**라 합치지 않았다. ⚠ 양자 승인 대상.
+    assert len(ERD_TABLES) == 39, f"ERD 테이블 수 {len(ERD_TABLES)} != 39"
 
 
 def test_table_set_matches_erd() -> None:

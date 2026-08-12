@@ -10,6 +10,8 @@ v4 확장: A-1 승인에 따라 [PART_B] 문제생성·진단 8테이블(`WEAKNE
 
 v5 확장: 기대치 입력 2테이블과 `COUNSEL_PACK_RESULT`에 이어 `COUNSEL_DRAFT_VIEW`를 편입했다. 애플리케이션 소유 테이블은 **총 38개**다. 읽기 모델 테이블은 `_CachedView`·`_DraftState` 배선 전의 자리이며 두 스냅숏을 독립 nullable 정본으로 둔다.
 
+v6 확장(2026-08-12 · ㉻): `COUNSEL_CONTEXT_BUNDLE`을 편입하고 `DRAFT.content`를 추가했다. 애플리케이션 소유 테이블은 **총 39개**다. 🔴 **입력 묶음은 읽기 모델이 아니다** — `COUNSEL_DRAFT_VIEW`는 조회 캐시고 이 테이블은 실행 **전에** 만들어져 워커가 소비하는 입력이라 생애주기가 다르다. 한 테이블에 합치면 조회 캐시를 비우는 정리 배치가 **재개할 잡의 입력을 지운다.**
+
 **`AI_RUN` 버전 세트:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이다. 공통 6종(`pipeline` · `engine` · `threshold` · `prompt` · `schema` · `contract`)과 [PART_B] 실행 전용 nullable 4종(`graph` · `taxonomy` · `verify_config` · `difficulty_calib`)으로 구성되며, **버전 컬럼은 총 10개**다. 실행 식별자·모델 정보·재현성 키·생성 시각까지 포함한 `AI_RUN` 전체 컬럼은 **총 18개**다.
 
 `threshold_version`은 감지 임계값 시트(`threshold_config`) 버전으로 `detection` 실행에만 의미가 있고, 그 외 실행에서는 null이다. 이 값이 없으면 과거 경보를 재현할 수 없다(CLAUDE.md 불변식 8).
@@ -231,6 +233,7 @@ erDiagram
     varchar status "generated|template_only|rejected_insufficient|failed"
     varchar fail_reason
     timestamptz created_at
+    text content "🔴 게이트를 통과한 초안 본문 전문 — 없던 것이 의도가 아니라 결손이었다(㉻). NOT NULL · 0010 시점 행 0건이라 무손실. DRAFT_BLOCK.content(블록 분해)·DRAFT_REVISION(핑퐁 이력)과 다른 축"
   }
   DRAFT_BLOCK {
     uuid id PK
@@ -271,6 +274,14 @@ erDiagram
     varchar plan_outcome "ok|llm_failed|redaction_blocked|unparsed|all_dropped — 강조점 0건의 사유를 세는 집계 축"
     timestamptz created_at "보존기간·정리 배치의 축 — INDEX(tenant_id, created_at)"
     jsonb snapshot "🔴 정본 — CounselPackResultRecord 전문. 위 넷은 여기서 유도한 파생이다"
+  }
+  COUNSEL_CONTEXT_BUNDLE {
+    uuid id PK "context://<id> 의 id — 워커 payload_ref가 가리키는 키(AI_RUN보다 먼저 생기므로 물리 FK 없음)"
+    varchar tenant_id "격리 술어 — 전 테이블 필수 · 조회는 id + tenant_id"
+    varchar class_ref "파기 술어 — 반 단위 삭제 축"
+    jsonb contexts "🔴 정본 — ContextBundleRecord.contexts 전문(student_ref → DraftContext). 별도 손사본을 만들지 않는다"
+    varchar content_hash "계약값 — 저장 시 재계산해 대체하지 않는다(재개의 불변식 ④ 대조 대상)"
+    timestamptz created_at "보존기간·정리 배치의 축 — INDEX(tenant_id, created_at)"
   }
   COUNSEL_DRAFT_VIEW {
     uuid id PK
