@@ -333,3 +333,39 @@ def test_record_run_is_still_atomic() -> None:
             await engine.dispose()
 
     _run(scenario())
+
+
+def test_the_same_call_id_with_different_content_conflicts_in_real_pg() -> None:
+    """🔴 같은 `call id`에 **다른 전문**이면 의미 충돌이다 — PG 경로도 같다.
+
+    ⚠ **이 검사가 없어서 뒤집기가 안 물었다**(실측): PG의 대조를 지워도 인메모리 검사만
+    red였다. **두 구현의 의미가 갈리면 백엔드에 따라 원장이 달라진다.**
+    """
+
+    async def scenario() -> None:
+        engine = create_async_engine(get_db_settings().database_url, poolclass=NullPool)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        try:
+            await _prepare(sessions, engine)
+            store = PgRunStore(sessionmaker=sessions)
+            execution_id = uuid.uuid4()
+            await store.begin_run(_meta(execution_id))
+            call = _call(provider="A", model="A1")
+            await store.finalize_run(
+                _meta(execution_id, provider="A", model="A1"), [call]
+            )
+            twisted = CollectedCall(
+                id=call.id, record=call.record.model_copy(update={"provider": "B"})
+            )
+            with pytest.raises(RunIdentityConflict, match=str(call.id)):
+                await store.finalize_run(
+                    _meta(execution_id, provider="B", model="B1"), [twisted]
+                )
+            #: 🔴 충돌은 **삼킨 실패가 아니다.**
+            assert set(store.swallowed_failures.values()) == {0}
+            _run_row, calls = await _rows(sessions, execution_id)
+            assert len(calls) == 1, "충돌인데 행이 늘었다"
+        finally:
+            await engine.dispose()
+
+    _run(scenario())

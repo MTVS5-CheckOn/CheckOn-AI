@@ -779,3 +779,67 @@ def test_the_context_lookup_still_runs_before_begin() -> None:
     assert job.phase is JobPhase.FAILED
     #: 🔴 **입력 부재의 오류 코드는 begin 실패와 다르다** — 두 경로가 구분된다.
     assert job.error_code == "context_bundle_missing", job.error_code
+
+
+class _CountingRunStore(InMemoryRunStore):
+    """`finalize_run` 호출 수를 센다 — **실행 경계 뒤 실패도 지나야** 한다."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.finalize_calls = 0
+
+    async def finalize_run(self, run: Any, calls: Any) -> None:  # noqa: ANN401
+        self.finalize_calls += 1
+        await super().finalize_run(run, calls)
+
+
+def test_a_graph_build_failure_still_finalizes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🔴 **그래프 조립 실패도 `finalize_run`을 지난다** (99 #46).
+
+    ⚠ 조립은 `begin_run` **뒤**다 — 실행 경계를 이미 지났으므로 *"실행이 없었다"* 가 아니다.
+    조립이 `try` 밖에 있으면 그 실패가 **원장을 통째로 건너뛴다.**
+    ⚠ **관측 대상은 `finalize_run` 호출 수**다 — AI_RUN 행은 `begin_run`이 이미 만들어서
+      「행이 있다」로는 이 축을 못 가른다(그 함정 때문에 첫 판 뒤집기가 안 물었다).
+    """
+    provider = _CountingProvider()
+    harness = _WorkerHarness(provider)
+    runs = _CountingRunStore()
+    harness.runs = runs
+    harness.runner = CounselPackRunner(
+        supervisor=harness.supervisor,
+        context_store=harness.contexts,
+        draft_store=InMemoryDraftResultStore(),
+        pack_store=InMemoryPackResultStore(),
+        step_sink=InMemoryAgentStepSink(),
+        planner=provider,
+        writer=provider,
+        checkpointer=InMemorySaver(),
+        regen_max=DEFAULT_REGEN_MAX,
+        lease_owner="worker-1",
+        new_id=_ids(),
+        now=lambda: _WORKER_NOW,
+        llm_failure_circuit=3,
+        run_store=runs,
+        call_log=harness.collector,
+    )
+
+    def explode(**kwargs: object) -> None:
+        raise RuntimeError("그래프 조립 실패(대역)")
+
+    monkeypatch.setattr(
+        "ai.composition.counsel.worker.build_counsel_graph", explode
+    )
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1"])
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    job = asyncio.run(scenario())
+    assert job.phase is JobPhase.FAILED
+    assert runs.runs, "begin_run이 시작 행을 안 만들었다 — 이 검사의 전제가 깨졌다"
+    assert runs.finalize_calls == 1, (
+        f"조립 실패가 finalize를 안 지났다(호출 {runs.finalize_calls}회) — "
+        f"조립이 try 밖이다"
+    )
