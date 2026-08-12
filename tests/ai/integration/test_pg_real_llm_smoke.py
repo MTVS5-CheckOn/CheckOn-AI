@@ -165,6 +165,13 @@ def _request() -> ProblemRequest:
     )
 
 
+def _loaded_prompt_version() -> str:
+    from ai.llm.prompts.loader import load_prompt_template
+
+    # registry 승격 때 스모크만 낡지 않도록 실행 프롬프트와 같은 정본에서 유도한다.
+    return load_prompt_template("pg.items.v1").version
+
+
 def _execution_context() -> ExecutionContext:
     return ExecutionContext(
         execution_id=UUID("33333333-3333-4333-8333-333333333333"),
@@ -176,7 +183,7 @@ def _execution_context() -> ExecutionContext:
             engine_version="engine-v1",
             schema_version="schema-v1",
             contract_version="contract-v1",
-            prompt_version="v2",
+            prompt_version=_loaded_prompt_version(),
             graph_version=_GRAPH_VERSION,
             taxonomy_version=_TAXONOMY_VERSION,
             verify_config_version="verify-config.v1",
