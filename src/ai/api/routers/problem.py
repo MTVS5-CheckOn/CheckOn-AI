@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -11,7 +12,7 @@ from datetime import timedelta
 from typing import Any, Final
 
 from fastapi import APIRouter, Request, Response
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ai.agents.supervisor import Supervisor, system_utc_now
@@ -32,6 +33,7 @@ from ai.db.store_factory import (
     build_idempotency_store,
     build_run_store,
 )
+from ai.problem_generation.application.drain import ProblemDrainLoop
 from ai.problem_generation.application.workflow import DiagnosisCallable
 from ai.problem_generation.assembly import (
     ProblemGenerationRunner,
@@ -100,6 +102,13 @@ class ProblemRouterSettings(BaseSettings):
 
     lease_seconds: int = 300
     priority_aging_seconds: int = 600
+    drain_enabled: bool = True
+    drain_max_jobs_per_cycle: int = Field(default=20, ge=1)
+    drain_cycle_interval_seconds: float = Field(default=0.25, gt=0)
+    drain_idle_interval_seconds: float = Field(default=1.0, gt=0)
+    drain_failure_backoff_initial_seconds: float = Field(default=1.0, gt=0)
+    drain_failure_backoff_max_seconds: float = Field(default=30.0, gt=0)
+    drain_shutdown_grace_seconds: float = Field(default=30.0, gt=0)
 
 
 class ProblemJobView(BaseModel):
@@ -125,6 +134,15 @@ _views: dict[tuple[str, str], _CachedView] = {}
 _providers: ProblemProviders | None = None
 _graph_context: GraphContextService | None = None
 _diagnosis: DiagnosisCallable | None = None
+
+
+@dataclass(slots=True)
+class _DrainRegistration:
+    drain: ProblemDrainLoop
+    users: int
+
+
+_drains: dict[asyncio.AbstractEventLoop, _DrainRegistration] = {}
 
 
 class ProblemProviderNotWired(RuntimeError):
@@ -158,14 +176,30 @@ def bootstrap_problem_providers() -> None:
     set_problem_providers(build_problem_providers())
 
 
-def _startup() -> None:
+async def _startup() -> None:
     bootstrap_problem_providers()
     bootstrap_problem_services()
     require_problem_providers()
     require_problem_services()
+    await _start_problem_drain()
 
 
 router.add_event_handler("startup", _startup)
+
+
+async def _shutdown() -> None:
+    loop = asyncio.get_running_loop()
+    registration = _drains.get(loop)
+    if registration is None:
+        return
+    registration.users -= 1
+    if registration.users > 0:
+        return
+    del _drains[loop]
+    await registration.drain.stop()
+
+
+router.add_event_handler("shutdown", _shutdown)
 
 
 def set_problem_services(
@@ -236,6 +270,42 @@ def reset_problem_router() -> None:
     _providers = None
     _graph_context = None
     _diagnosis = None
+
+
+async def _start_problem_drain() -> None:
+    settings = ProblemRouterSettings()
+    if not settings.drain_enabled:
+        return
+    loop = asyncio.get_running_loop()
+    registration = _drains.get(loop)
+    if registration is not None and registration.drain.is_running:
+        registration.users += 1
+        return
+    drain = ProblemDrainLoop(
+        run_next=_run_next_for_tenant,
+        max_jobs_per_cycle=settings.drain_max_jobs_per_cycle,
+        cycle_interval_seconds=settings.drain_cycle_interval_seconds,
+        idle_interval_seconds=settings.drain_idle_interval_seconds,
+        failure_backoff_initial_seconds=(
+            settings.drain_failure_backoff_initial_seconds
+        ),
+        failure_backoff_max_seconds=settings.drain_failure_backoff_max_seconds,
+        shutdown_grace_seconds=settings.drain_shutdown_grace_seconds,
+    )
+    await drain.start()
+    _drains[loop] = _DrainRegistration(drain=drain, users=1)
+
+
+def _notify_problem_drain(tenant_id: str) -> None:
+    registration = _drains.get(asyncio.get_running_loop())
+    if registration is not None:
+        registration.drain.notify_tenant(tenant_id)
+
+
+def problem_drain_running() -> bool:
+    """수명주기 테스트가 배경 태스크 잔존 여부를 관측하는 읽기 전용 seam."""
+
+    return any(registration.drain.is_running for registration in _drains.values())
 
 
 def _require_services() -> tuple[GraphContextService, DiagnosisCallable]:
@@ -323,6 +393,24 @@ async def _generate(request: ProblemRequest) -> tuple[ProblemJobView, WorkerJob]
         supervisor=supervisor,
         request_store=_stores.requests,
     ).enqueue(request)
+    try:
+        ran = await _run_next_for_tenant(request.tenant_id)
+    finally:
+        _notify_problem_drain(request.tenant_id)
+    if ran is not None and ran.job_id != job.job_id:
+        logger.info(
+            "PG 러너가 다른 잡을 실행했다 mine=%s ran=%s — 결과는 자기 잡에서 읽는다",
+            job.job_id,
+            ran.job_id,
+        )
+    mine = await supervisor.get(
+        tenant_id=request.tenant_id, job_id=job.job_id
+    ) or job
+    return await _view_for(mine, tenant_id=request.tenant_id), job
+
+
+async def _run_next_for_tenant(tenant_id: str) -> WorkerJob | None:
+    supervisor = _build_supervisor()
     graph_context, diagnosis = _require_services()
     providers = require_problem_providers()
     # 🔴 슬롯 최종본 저장소만 **요청 테넌트로 스코프**한다(09 §2-20.3) — Protocol에
@@ -330,7 +418,7 @@ async def _generate(request: ProblemRequest) -> tuple[ProblemJobView, WorkerJob]
     #  잡을 집으므로 다른 테넌트의 잡을 이 저장소로 실행할 경로가 없다.
     #  ⚠ `store_backend=memory`(기본)면 `None`이라 **`_stores`가 그대로 간다** — 주입 seam
     #   무변경. 교체할 때도 나머지 셋은 `_stores`에서 그대로 옮긴다(덮어쓰지 않는다).
-    tenant_items = build_tenant_scoped_item_store(tenant_id=request.tenant_id)
+    tenant_items = build_tenant_scoped_item_store(tenant_id=tenant_id)
     stores = (
         _stores
         if tenant_items is None
@@ -350,19 +438,7 @@ async def _generate(request: ProblemRequest) -> tuple[ProblemJobView, WorkerJob]
         lease_owner=_LEASE_OWNER,
         run_store=_run_store,
     ) as runner:
-        ran = await runner.run_next(tenant_id=request.tenant_id)
-        if ran is not None and ran.job_id != job.job_id:
-            logger.info(
-                "PG 러너가 다른 잡을 실행했다 mine=%s ran=%s — 결과는 자기 잡에서 읽는다",
-                job.job_id,
-                ran.job_id,
-            )
-        mine = await supervisor.get(
-            tenant_id=request.tenant_id, job_id=job.job_id
-        ) or job
-        return await _view_for(
-            mine, tenant_id=request.tenant_id, runner=runner
-        ), job
+        return await runner.run_next(tenant_id=tenant_id)
 
 
 @router.post("/v1/problems", status_code=202)
@@ -469,6 +545,7 @@ __all__ = [
     "bootstrap_problem_providers",
     "get_problem",
     "post_problem",
+    "problem_drain_running",
     "problem_failure_versions",
     "require_problem_providers",
     "require_problem_services",
