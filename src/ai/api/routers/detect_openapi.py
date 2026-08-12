@@ -8,8 +8,20 @@ FastAPI 자동 검증이 붙어 **계약에 없는 422**가 생기고 현행 **4
 사라진다(04 §2.4 · `error_codes` §2.1). 그래서 런타임은 손대지 않고 **스키마만**
 `openapi_extra`로 잇는다.
 
-⚠ **요청 스키마는 자기 완결이다**(`$defs` 동봉) — `openapi_extra`로 넣은 스키마는 FastAPI가
-`components`에 등록하지 않기 때문이다. OpenAPI 3.1은 JSON Schema 2020-12라 그게 유효하다.
+**요청 스키마는 완전히 인라인한다** — 남은 `$defs`·`$ref`가 **0건**이다.
+
+  ① `openapi_extra`로 넣은 스키마는 FastAPI가 **`components`에 자동 등록하지 않는다.**
+  ② 그래서 Pydantic이 낸 `#/$defs/X`는 **문서 루트 기준**으로 해석되는데 루트에 `$defs`가
+     없다 ⇒ **끊긴 참조**가 된다.
+  ③ 루트 `$defs` 주입이나 `components.schemas` 등록은 `api/app.py`(양자 승인)를 여는
+     길이라 이 회차에서 고르지 않았다.
+  ④ 재귀 모델이 생기면 인라인이 무한히 펼쳐진다 — 조용히 진행하지 않고
+     `RecursiveSchemaError`로 **실패**시킨다(그때가 ③의 승인 축이 필요한 시점이다).
+
+⚠ **초판 판단 정정(2026-08-12)** — 처음에는 *"`$defs`를 동봉하면 OpenAPI 3.1이라 유효하다"*
+고 적었다. **문서 루트 실해석으로 반증됐다**: 끊긴 참조 **19건**이었고, 당시 검사는
+`requestBody.schema` 안만 봐서 green이었다. 지금 문면이 현재 구현이다.
+
 응답 쪽은 `responses={...: {"model": ...}}`로 등록되므로 `components`를 쓴다.
 """
 

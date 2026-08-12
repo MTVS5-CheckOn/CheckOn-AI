@@ -24,8 +24,9 @@
 
 from __future__ import annotations
 
+import ast
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -34,6 +35,8 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from ai.api.app import create_app
+from ai.api.routers import detect as detect_router
+from ai.api.routers import detect_openapi
 from ai.api.routers.detect_openapi import (
     DETECT_OPERATION_ID,
     DetectErrorEnvelope,
@@ -41,6 +44,8 @@ from ai.api.routers.detect_openapi import (
     documented_version_keys,
 )
 from ai.contracts.execution import VersionSet
+from ai.db.store_factory import build_run_store
+from ai.runtime.errors import LedgerWriteFailed
 
 _PATH: Final = "/v1/detect"
 _EXAMPLES: Final = (
@@ -423,10 +428,20 @@ def _headers(key: str) -> dict[str, str]:
     }
 
 
-def test_the_success_path_still_returns_the_same_envelope(
+def test_the_success_path_returns_the_same_envelope_and_the_replay_matches_by_value(
     client: TestClient,
 ) -> None:
-    """🔴 200 · `{data, error, meta}` · **멱등 재응답이 바이트 동일**."""
+    """🔴 200 · `{data, error, meta}` · **멱등 재응답이 JSON 의미값으로 동일**하다.
+
+    ⚠ **「바이트 동일」이라고 말하지 않는다**(2026-08-12 정정). 실측상 재응답은 캐시를
+    거치며 **키 순서가 달라져** 바이트가 다르다 — 그건 이 PR이 만든 것이 아니고
+    **develop에서도 같다.** 검사 이름과 문면이 실제 단정(`==` 의미값 비교)과 어긋나 있어
+    바로잡았다: *"검사가 무엇을 보는가"* 를 잘못 적으면 다음 사람이 **없는 보장**을 믿는다.
+
+    ⚠ **`response.content` 비교로 바꾸지 않는다** — 그러면 지금 결함(키 순서)을 이 PR의
+    계약으로 끌어들이게 된다. 반대로 **바이트 차이를 고정하는 검사도 만들지 않는다**
+    (별건으로만 기록한다).
+    """
     body = _canonical_request()
     first = client.post("/v1/detect", json=body, headers=_headers("k-ok"))
     assert first.status_code == 200, first.text
@@ -437,7 +452,10 @@ def test_the_success_path_still_returns_the_same_envelope(
 
     again = client.post("/v1/detect", json=body, headers=_headers("k-ok"))
     assert again.status_code == 200
-    assert again.json() == payload, "멱등 재응답이 달라졌다"
+    replay = again.json()
+    #: 🔴 세 축을 **각각** 본다 — dict 전체 `==` 하나면 어디가 갈렸는지 안 보인다.
+    for axis in ("data", "error", "meta"):
+        assert replay[axis] == payload[axis], f"멱등 재응답의 «{axis}»가 달라졌다"
 
 
 @pytest.mark.parametrize(
@@ -566,3 +584,197 @@ def test_the_documented_error_envelope_requires_meta() -> None:
             {"data": None, "error": {"code": "X", "message": "y", "detail": None},
              "meta": None}
         )
+
+
+# ───────────────── 실제 500 응답 (76-R2 작업 3) ─────────────────
+#
+# 🔴 **문서는 「500도 `meta.versions`를 항상 싣는다」고 확정한다.** 그런데 실제 wire 검사는
+#    200·400·409만 탔다 — 그 확정을 **아무도 안 보고 있었다.**
+# ⚠ 손으로 만든 dict로 대신하지 않는다. 원장 적재를 실제로 터뜨려 **HTTP 응답**을 본다.
+
+
+class _LedgerFailsStore:
+    """`persist_ledger`만 터지는 감지 원장 대역 — 🔴 **fail-closed**인지 재려는 것이다.
+
+    ⚠ `load_feature_weeks`는 정상이어야 한다 — baseline 조회에서 먼저 죽으면 재려는
+    자리(원장 적재)에 **도달하지 않는다**.
+    """
+
+    def __init__(self) -> None:
+        self.persist_calls = 0
+
+    async def persist_ledger(self, ledger: object) -> None:
+        del ledger
+        self.persist_calls += 1
+        raise LedgerWriteFailed(
+            "감지 원장 적재 실패(대역)", {"table": "signal"}
+        )
+
+    async def load_feature_weeks(
+        self, tenant_id: str, student_refs: Sequence[str], *, feature_version: str
+    ) -> tuple[Any, ...]:
+        del tenant_id, student_refs, feature_version
+        return ()
+
+
+@pytest.fixture
+def ledger_failure() -> Iterator[_LedgerFailsStore]:
+    """원장만 터지게 바꿔 끼우고 **끝나면 되돌린다** — 다음 검사로 새면 안 된다."""
+    broken = _LedgerFailsStore()
+    #: ⚠ 대역이 `DetectionStore` Protocol을 구조적으로 만족한다 — cast가 필요 없다.
+    detect_router.set_detection_store(broken)
+    try:
+        yield broken
+    finally:
+        detect_router.reset_detection_store()
+        detect_router.reset_idempotency_store()
+        detect_router.set_detect_run_store(build_run_store())
+
+
+#: 🔴 **두 모드 모두 잰다** — 아래 docstring의 정정 사유를 값으로 고정한다.
+_CLIENT_MODES: Final = ((True, "기본"), (False, "예외 미전파"))
+
+
+@pytest.mark.parametrize(("reraise", "label"), _CLIENT_MODES)
+def test_a_real_500_carries_the_documented_error_envelope(
+    ledger_failure: _LedgerFailsStore, reraise: bool, label: str
+) -> None:
+    """🔴 **실제 500**이 문서 계약과 같은가 — `meta.versions`까지.
+
+    ⚠ **정정(2026-08-12)** — 처음엔 *"`raise_server_exceptions=False`가 필수다. 기본
+    `TestClient`는 예외를 재전파한다"* 고 적었는데 **이 앱에서는 틀렸다**:
+    `LedgerWriteFailed`는 `DomainException`이고 `api/app.py`에 **핸들러가 등록**돼 있어
+    **두 모드 모두 500 응답**이 된다(재전파는 *처리되지 않은* 예외에만 해당한다).
+    ⇒ 그래서 **두 모드를 함께 잰다** — 없는 이유를 근거로 쓰지 않는다.
+
+    🔴 **핸들러가 사라지면 여기서 걸린다** — Starlette 기본 500은 envelope가 아니라 평문
+    `Internal Server Error`라 아래 모델 검증이 red다.
+    """
+    with TestClient(create_app(), raise_server_exceptions=reraise) as client:
+        response = client.post(
+            #: ⚠ 멱등 키는 **HTTP 헤더**라 ASCII만 된다 — 한국어 라벨을 쓰면
+            #:   `UnicodeEncodeError`다(실측). 라벨은 실패 문면에만 쓴다.
+            "/v1/detect",
+            json=_canonical_request(),
+            headers=_headers(f"k-500-{int(reraise)}"),
+        )
+
+    assert response.status_code == 500, f"{label}: {response.text[:200]}"
+    assert ledger_failure.persist_calls == 1, "원장 적재에 도달하지 않았다"
+
+    payload = response.json()
+    #: 🔴 문서 모델로 **실제 본문**을 검증한다.
+    DetectErrorEnvelope.model_validate(payload)
+    assert payload["error"]["code"] == "INTERNAL", payload["error"]["code"]
+    assert payload["meta"] is not None, "500에 meta가 없다"
+    assert set(payload["meta"]["versions"]) == documented_version_keys()
+
+
+def test_the_500_body_does_not_leak_internals(
+    ledger_failure: _LedgerFailsStore,
+) -> None:
+    """🔴 스택·SQL·접속정보가 응답에 실리면 안 된다(불변식 3의 같은 방향)."""
+    del ledger_failure
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        response = client.post(
+            "/v1/detect", json=_canonical_request(), headers=_headers("k-500-leak")
+        )
+    text = response.text
+    for forbidden in (
+        "Traceback",
+        "postgresql+asyncpg",
+        "asyncpg",
+        "INSERT INTO",
+        "site-packages",
+        "/Users/",
+    ):
+        assert forbidden not in text, f"500 본문에 «{forbidden}»가 있다"
+
+
+def test_the_500_really_came_from_the_http_layer(
+    ledger_failure: _LedgerFailsStore,
+) -> None:
+    """🔴 **절단 가드** — 위 검사가 «함수 호출»이 아니라 **HTTP 응답**을 본다.
+
+    ⚠ 원장 대역이 안 불렸으면 500은 **다른 이유**로 난 것이고(예: 입력이 애초에 400),
+    그러면 위 검사는 재려던 자리를 본 적이 없다. 도달 횟수와 상태·헤더를 함께 본다.
+    """
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        response = client.post(
+            "/v1/detect", json=_canonical_request(), headers=_headers("k-500-layer")
+        )
+    assert ledger_failure.persist_calls == 1, "원장 적재에 도달하지 않았다"
+    assert response.status_code == 500
+    #: 🔴 HTTP를 지났다는 증거 — 미들웨어가 상관 ID를 되울린다(`app.py::_echo_request_id`).
+    assert response.headers.get("X-Request-Id") == "rq-openapi-1", dict(response.headers)
+    assert response.headers["content-type"].startswith("application/json")
+
+
+# ───────────────── 현재 문면 가드 (76-R2 작업 4) ─────────────────
+#
+# 🔴 **이 PR에서 문면이 두 번 낡았다.** ⓐ 모듈 상단이 «`$defs` 동봉이면 유효하다»로 남았고
+#    ⓑ 멱등 검사 이름이 «바이트 동일»이라 실제 단정(의미값 비교)과 어긋났다.
+#    **문면이 코드보다 넓게 약속하면 다음 사람이 없는 보장을 믿는다.**
+#
+# ⚠ **파일 전체 grep을 하지 않는다** — 과거 오판은 «정정» 문맥으로 **보존**해야 한다.
+#    현재 표면(모듈 docstring · 테스트 이름)만 좁게 본다.
+
+
+def _module_docstring() -> str:
+    """`detect_openapi.py`의 **모듈 docstring만** — 함수 주석·과거 기록은 안 본다."""
+    tree = ast.parse(
+        Path(str(detect_openapi.__file__)).read_text(encoding="utf-8")
+    )
+    return ast.get_docstring(tree) or ""
+
+
+def test_the_module_docstring_describes_full_inlining_not_bundled_defs() -> None:
+    """🔴 모듈 상단이 **현재 구현**(완전 인라인)을 말한다.
+
+    ⚠ 초판 판단(`$defs` 동봉)을 현재형으로 되돌리면 red다. **과거형 정정 문장은 허용**한다 —
+    지우면 다음 사람이 *"왜 인라인인가"* 를 다시 판단한다(99 ㊩).
+    """
+    text = _module_docstring()
+    assert "완전히 인라인" in text, text[:200]
+    assert "끊긴 참조" in text, "왜 인라인인지(루트 참조 결손)가 없다"
+    #: 🔴 현재형 주장으로 남아 있으면 red — 과거형 정정은 「초판」 표시가 있어야 한다.
+    stale = "요청 스키마는 자기 완결이다"
+    assert stale not in text, f"초판 문면이 현재형으로 남았다: «{stale}»"
+    assert "초판 판단 정정" in text, "과거 오판이 정정 문맥 없이 사라졌다"
+
+
+def test_no_test_name_claims_byte_equality() -> None:
+    """🔴 **검사 이름이 실제로 단정하는 것보다 넓으면 안 된다.**
+
+    ⚠ 멱등 재응답은 JSON 의미값으로 같고 **바이트로는 다르다**(키 순서 · develop도 동일).
+    이름에 «byte»를 넣으면 없는 보장을 약속하는 것이다.
+    """
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    offenders = [
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and "byte" in node.name.lower()
+        #: ⚠ **가드 자신을 제외한다** — 첫 판이 자기 이름을 잡아 red였다(로그 85 계열:
+        #:   「검사의 이름이 보는 것보다 넓다」). 이름으로만 빼고 규칙은 안 넓힌다.
+        and node.name != "test_no_test_name_claims_byte_equality"
+    ]
+    assert not offenders, f"«바이트 동일»을 주장하는 검사 이름: {offenders}"
+
+
+def test_the_idempotent_replay_check_compares_by_value() -> None:
+    """🔴 **짝 가드** — 이름만 고치고 단정을 `content` 비교로 바꾸면 red.
+
+    ⚠ `response.content` 비교로 바꾸면 지금 결함(키 순서)을 이 PR의 계약으로 끌어들인다.
+    ⚠ 반대로 **바이트 차이를 고정하는 검사도 만들지 않는다** — 별건으로만 기록한다.
+    """
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    target = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name.endswith("the_replay_matches_by_value")
+    )
+    body = ast.dump(target)
+    assert "'content'" not in body, "멱등 검사가 바이트를 비교한다"
+    assert "'json'" in body, "멱등 검사가 JSON 값을 안 읽는다"
