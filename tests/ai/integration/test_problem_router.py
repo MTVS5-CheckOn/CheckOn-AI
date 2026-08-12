@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from collections.abc import Coroutine, Sequence
 from datetime import timedelta
 from pathlib import Path
@@ -17,7 +18,7 @@ from ai.agents.job_store import InMemoryJobStore
 from ai.agents.supervisor import Supervisor
 from ai.api.app import create_app
 from ai.api.routers import problem as problem_router
-from ai.contracts.agents import WorkerKind
+from ai.contracts.agents import JobPhase, WorkerKind
 from ai.contracts.diagnosis import DiagnosisResult
 from ai.contracts.execution import ExecutionContext, RunMetadata
 from ai.contracts.llm import (
@@ -285,7 +286,7 @@ def test_idempotent_replay_does_not_recall_confirmed_slots() -> None:
 
 
 def test_problem_post_never_returns_another_queued_jobs_result() -> None:
-    _run_store, stores, _generator, _verifier = _prepare(calls=3)
+    _run_store, stores, _generator, _verifier = _prepare(calls=2)
     supervisor = Supervisor(
         store=build_agent_job_store(),
         lease_duration=timedelta(minutes=5),
@@ -298,32 +299,26 @@ def test_problem_post_never_returns_another_queued_jobs_result() -> None:
     )
 
     headers_mine = {**_HEADERS, "X-Request-Id": "request-mine", "Idempotency-Key": "idem-mine"}
-    headers_trigger = {
-        **_HEADERS,
-        "X-Request-Id": "request-trigger",
-        "Idempotency-Key": "idem-trigger",
-    }
     with TestClient(create_app()) as client:
         posted = client.post("/v1/problems", headers=headers_mine, json=_body())
         job_id = posted.json()["data"]["job_id"]
-        before = client.get(
-            f"/v1/problems/{job_id}",
-            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
-        )
-        client.post(
-            "/v1/problems",
-            headers=headers_trigger,
-            json=_body(target_ref="student-trigger"),
-        )
-        after = client.get(
-            f"/v1/problems/{job_id}",
-            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
-        )
+        deadline = time.monotonic() + 5.0
+        for _ in range(500):
+            after = client.get(
+                f"/v1/problems/{job_id}",
+                headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+            )
+            if after.json()["data"]["status"] == "succeeded":
+                break
+            if time.monotonic() >= deadline:
+                raise AssertionError("추가 POST 없이 자기 잡이 종단되지 않았다")
+            time.sleep(0.01)
+        else:
+            raise AssertionError("추가 POST 없이 자기 잡이 종단되지 않았다")
 
-    assert before.json()["data"] == {
+    assert posted.json()["data"] == {
         "job_id": job_id,
         "status": "queued",
-        "result": None,
     }
     assert after.json()["data"]["job_id"] == job_id
     assert after.json()["data"]["status"] == "succeeded"
@@ -750,6 +745,77 @@ def test_post_202_says_queued_when_the_runner_took_another_job() -> None:
         "앞선 잡이 있는데도 202가 종단으로 나온다 — 러너가 내 잡을 처리했다는 뜻이라 "
         "이 테스트의 전제(다음 잡 하나만 처리)가 깨졌다"
     )
+
+
+def test_background_drain_finishes_all_jobs_without_another_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST 한 번이 알린 테넌트의 기존 큐를 추가 요청 없이 종단까지 비운다."""
+
+    monkeypatch.setenv("PG_DRAIN_ENABLED", "true")
+    monkeypatch.setenv("PG_DRAIN_MAX_JOBS_PER_CYCLE", "2")
+    monkeypatch.setenv("PG_DRAIN_CYCLE_INTERVAL_SECONDS", "0.001")
+    monkeypatch.setenv("PG_DRAIN_IDLE_INTERVAL_SECONDS", "0.001")
+    _run_store, stores, _generator, _verifier = _prepare(calls=3)
+    supervisor = Supervisor(
+        store=build_agent_job_store(),
+        lease_duration=timedelta(minutes=5),
+        priority_aging_interval=timedelta(minutes=10),
+    )
+
+    async def enqueue_ahead_jobs() -> tuple[Any, Any]:
+        enqueuer = ProblemGenerationEnqueuer(
+            supervisor=supervisor, request_store=stores.requests
+        )
+        first = await enqueuer.enqueue(
+            _problem_request(request_id="drain-ahead-1", target_ref="student-ahead-1")
+        )
+        second = await enqueuer.enqueue(
+            _problem_request(request_id="drain-ahead-2", target_ref="student-ahead-2")
+        )
+        return first, second
+
+    first, second = _run(enqueue_ahead_jobs())
+
+    async def wait_for_terminal(posted_id: UUID) -> tuple[JobPhase, ...]:
+        deadline = asyncio.get_running_loop().time() + 5.0
+        job_ids = (first.job_id, second.job_id, posted_id)
+        for _ in range(500):
+            jobs = [
+                await supervisor.get(tenant_id=first.tenant_id, job_id=job_id)
+                for job_id in job_ids
+            ]
+            phases = tuple(job.phase for job in jobs if job is not None)
+            if len(phases) == 3 and all(
+                phase in {JobPhase.SUCCEEDED, JobPhase.FAILED} for phase in phases
+            ):
+                return phases
+            if asyncio.get_running_loop().time() >= deadline:
+                break
+            await asyncio.sleep(0.01)
+        raise AssertionError("추가 요청 없이 배경 드레인이 모든 잡을 종단시키지 못했다")
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        assert posted.status_code == 202
+        phases = _run(wait_for_terminal(UUID(posted.json()["data"]["job_id"])))
+
+    assert phases == (JobPhase.SUCCEEDED,) * 3
+    assert not problem_router.problem_drain_running()
+
+
+def test_each_app_lifecycle_cleans_up_only_its_own_drain_task() -> None:
+    """서로 다른 이벤트 루프의 앱이 상대 드레인 태스크를 취소하지 않는다."""
+
+    _prepare()
+
+    with TestClient(create_app()):
+        assert problem_router.problem_drain_running()
+        with TestClient(create_app()):
+            assert problem_router.problem_drain_running()
+        assert problem_router.problem_drain_running()
+
+    assert not problem_router.problem_drain_running()
 
 
 def test_response_versions_and_ledger_versions_are_the_same_row() -> None:

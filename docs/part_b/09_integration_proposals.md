@@ -1719,6 +1719,21 @@ pg는 POST 안에서 워커를 동기 실행하지만 **`run_next()`가 자기 �
 읽으면 틀린다. 202의 `status`가 그 오독을 막는 최소 장치이고, 진짜 해소는 워커 루프
 (BE-5 Kafka)와 같이 온다.
 
+> **구현 갱신 `[B 확정 · 2026-08-12]` — 위 제안 당시 문면을 보존하고 현재 상태를 덧붙인다.**
+> BE 미진행으로 API·이벤트 문서 축의 상위 결정권이 B로 왔다. 기다릴 Kafka 소비자·워커가
+> 없으므로 `api/routers/problem.py`의 router startup/shutdown과
+> `problem_generation/application/drain.py`에 **인프로세스 배경 드레인**을 붙여 이 공백을
+> 닫았다. POST가 enqueue한 tenant를 알리고, 드레인은 기존
+> `ProblemGenerationRunner.run_next(tenant_id=…)`만 호출하므로 lease·fencing·테넌트 격리를
+> 우회하지 않는다. 한 사이클 잡 수에 상한이 있고, 유휴 대기·연속 실패 백오프·종료 시
+> 사이클 정리와 태스크 cancel/await를 Settings로 제어한다. 기본은 켜짐이다. 꺼짐을 기본으로
+> 두면 운영 설정 누락만으로 #21이 그대로 재발하기 때문이다.
+>
+> 이 구현은 **Kafka 워커 루프를 대체하지 않는다.** 별도 워커·프로세스 간 wake-up·terminal
+> 이벤트 전달은 여전히 Kafka 축의 책임이다. 이번 드레인은 외부 워커가 없는 v1 프로세스에서
+> 마지막 queued 잡이 다음 POST 없이도 종단되게 하는 최소 실행 보장이다. `docs/99_open_items.md`
+> #21은 A 축이므로 **A 갱신 필요**다.
+
 #### 2-24.3 A에게 요청
 
 `04_api_contract.md` §3.11의 예시 줄이 종전 형태다 — 개정 부탁드린다.

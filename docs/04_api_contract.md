@@ -795,6 +795,8 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 // → 202 { "data": { "job_id": "8e94ceac-…", "status": "succeeded" }, "error": null, "meta": { … } }
 //   🔴 `status`가 실린다(#160) — counsel 202와 대칭이고 **BE는 이 값 하나로 분기한다**(아래 ⚠).
 //   ⚠ `queued`로 나가는 경로가 실재한다 — `run_next()`가 자기 잡을 처리한다는 보장이 없다.
+//   `queued`여도 다음 POST를 기다리지 않는다. 앱 startup에서 뜬 유한 배경 드레인이 같은
+//   tenant의 기존 `run_next()` 경로를 주기적으로 실행한다. 이 status는 응답 시점 값이므로 GET으로 갱신한다.
 //   헤더 파생 3필드(tenant_id·request_id·idempotency_key)를 바디에 중복하면 400
 //   같은 Idempotency-Key + 같은 바디 = 최초 202 재반환 · 다른 바디 = 409 IDEMPOTENCY_CONFLICT (§2.3)
 
@@ -841,7 +843,13 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 | `area_tag`가 `language`가 아니다 (독서·문학·화법·작문·매체) | 400 `INVALID_SCHEMA` + `detail.reason=source_procurement_not_implemented` | **같다 — 구현됨** ✅ ⚠ **다만 잡을 만든 뒤에 난다.** 문 앞 검사가 없고(`enqueue.py`·`routers/problem.py`에 `area_tag`·`passage` 참조 **0건**) 판정이 `workflow.py:541`, 즉 **잡 실행 안**에서 난다 ⇒ **`job_id`가 응답에 없는 실패 잡이 남는다**(원장에 `failed` 1건이 생기고 **조회할 수 없다**). 🔴 **아래 `apply` 행과 같은 형태다** — 그쪽은 500이고 여기는 400인 것이 다를 뿐, **고아 잡이 남는 것은 같다**(99 #01) |
 | `passage`가 있다 | 위와 같다 | **같다 — 구현됨** ✅ ⚠ **다만 잡을 만든 뒤에 난다.** 문 앞 검사가 없고(`enqueue.py`·`routers/problem.py`에 `area_tag`·`passage` 참조 **0건**) 판정이 `workflow.py:541`, 즉 **잡 실행 안**에서 난다 ⇒ **`job_id`가 응답에 없는 실패 잡이 남는다**(원장에 `failed` 1건이 생기고 **조회할 수 없다**). 🔴 **아래 `apply` 행과 같은 형태다** — 그쪽은 500이고 여기는 400인 것이 다를 뿐, **고아 잡이 남는 것은 같다**(99 #01) |
 | `type_tags`에 **`apply`** | 400 `type_tag_not_supported` | **같다 — 구현됨** ✅ (8/9 · B 구현). 🔴 **이 경로는 잡을 만들지 않는다** — 거절이 `enqueue.py::reject_unsupported_type_tags()`, 즉 요청 레코드·`WorkerJob` 생성보다 **앞**이다. ⇒ **고아 잡이 남지 않는다**(실측 8/9: HTTP **400** · `잡 0건` · `AI_RUN 0건`). ⚠ **위 두 행과 갈리는 지점이 여기다** — 그쪽은 `workflow.py`, 즉 **잡 실행 안**에서 거절해 실패 잡이 남는다(99 #01 · B의 `part_b/09` §2-19.4 「잡을 만드는가」 표와 **같은 분할**). `detail` = `{reason: "type_tag_not_supported", type_tags: [...], supported: ["concept","critic","fact","infer"]}` |
-| 프로세스 재시작 후 이전 `job_id` 조회 | — | ⚠ **404 `NOT_FOUND`.** `PROBLEM_ITEM` 영속 스키마 확정 전이라 v1은 인메모리 저장소로 돈다. 새 상태코드를 만들지 않으며 **재시작 후 복구가 보장되는 것으로 해석하지 마라** |
+| 프로세스 재시작 후 이전 `job_id` 조회 | — | **`STORE_BACKEND=memory`: 404 `NOT_FOUND`.** 잡 원장·요청·결과·문항·라우터 조회 캐시가 프로세스 메모리라 모두 사라진다. **`STORE_BACKEND=pg`: 현재 API도 404 `NOT_FOUND`.** 다만 이유가 다르다. `AGENT_RUN` 잡 원장·멱등·`AI_RUN`과 `PgProblemItemStore`의 문항 스냅숏은 PG에 남고 직접 왕복된다. 그러나 `problem.py`의 `_views`와 `assembly.py`의 요청·`ProblemGenerationOutcome` 결과 저장소는 아직 인메모리라, 재시작한 GET은 캐시 관문에서 404다. 즉 **문항 스냅숏 영속 ≠ 이전 job GET 복구**다. 근거: `problem_store.py`·`test_problem_store_pg_roundtrip.py`(PG 문항 저장·PR #197의 최초 저장 직렬화), `problem.py`·`assembly.py`(현재 조회 경로). ⚠ PR #182는 `COUNSEL_DRAFT_VIEW` 변경이므로 PG 재시작 조회의 근거로 쓰지 않는다. `store_backend` 기본값은 이 변경에서 손대지 않는다. |
+
+> **배경 드레인 근거(99 #21 해소):** `api/routers/problem.py`가 router startup/shutdown에
+> 드레인을 붙이고, `problem_generation/application/drain.py`가 사이클별 잡 수 상한·유휴 대기·
+> 연속 실패 백오프·종료 정리를 맡는다. 실행은 새 워커 경로가 아니라 기존
+> `ProblemGenerationRunner.run_next(tenant_id=…)`를 그대로 사용한다. 따라서 lease·fencing·
+> 테넌트 범위는 기존 규약과 같다. Kafka 배선은 포함하지 않는다.
 
 🔴 **`language` 제한은 트랙 제한이 아니라 「자료 조달 방식」 제한이다.** 현행 그래프에 지문·담화·매체를 만드는 *생성* 노드와 승인 저작물 풀에서 고르는 *저작물* 노드가 **없다**(05 §1.2). 게이트를 완화하거나 빈 자료로 실행하지 않는다.
 
