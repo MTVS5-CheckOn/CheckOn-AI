@@ -645,3 +645,137 @@ def test_no_ledger_before_the_execution_starts(removal: str) -> None:
     job = asyncio.run(scenario())
     assert job.phase is JobPhase.FAILED
     assert len(harness.runs.runs) == 0, "실행이 없었는데 실행 기록이 생겼다"
+
+
+# ── (지시서 72) begin_run 실패 종단 — 원장을 못 세우면 실행하지 않는다 (99 #46) ──
+
+
+class _BeginFailsStore(InMemoryRunStore):
+    """`begin_run`만 터지는 원장 — 🔴 **fail-closed**인지 재려는 대역이다."""
+
+    async def begin_run(self, run: Any) -> None:  # noqa: ANN401 — RunMetadata
+        del run
+        raise RuntimeError("실행 원장 시작 실패(대역)")
+
+
+class _CountingProvider:
+    """planner·writer 호출 수를 센다 — **한 번도 안 불려야** 한다.
+
+    ⚠ 인자를 그대로 흘려보낸다 — 이 대역이 재는 것은 **호출 수**이지 인자가 아니다.
+    """
+
+    def __init__(self) -> None:
+        self.plan_calls = 0
+        self.write_calls = 0
+        self._inner: Any = _ok_provider()
+
+    async def plan(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        self.plan_calls += 1
+        return await self._inner.plan(*args, **kwargs)
+
+    async def write(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        self.write_calls += 1
+        return await self._inner.write(*args, **kwargs)
+
+
+class _CountingDraftStore(InMemoryDraftResultStore):
+    """초안 저장 호출 수 — **0이어야** 한다(FK 부모가 없으니 저장돼서도 안 된다)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.put_calls = 0
+
+    async def put(self, record: Any) -> str:  # noqa: ANN401 — DraftRecord
+        self.put_calls += 1
+        return await super().put(record)
+
+
+def test_a_failed_begin_stops_before_the_graph() -> None:
+    """🔴 **원장을 못 세우면 planner·writer·초안 저장에 진입하지 않는다** (99 #46).
+
+    ⚠ `begin_run`은 `DRAFT.run_id → AI_RUN.execution_id` FK의 **부모**를 세우는 자리다.
+    실패했는데 그래프가 돌면 초안 저장이 **SQLSTATE 23503**으로 죽거나, 더 나쁘게는
+    **원장 없는 산출물**이 생긴다 ⇒ 관측이 아니라 **선행 조건**이라 fail-closed다.
+
+    ⚠ `!= succeeded` 같은 넓은 단정을 쓰지 않는다 — **정확한 phase와 오류 코드**를 본다.
+    """
+    provider = _CountingProvider()
+    harness = _WorkerHarness(provider)
+    harness.runs = _BeginFailsStore()
+    drafts = _CountingDraftStore()
+    harness.runner = CounselPackRunner(
+        supervisor=harness.supervisor,
+        context_store=harness.contexts,
+        draft_store=drafts,
+        pack_store=InMemoryPackResultStore(),
+        step_sink=InMemoryAgentStepSink(),
+        planner=provider,
+        writer=provider,
+        checkpointer=InMemorySaver(),
+        regen_max=DEFAULT_REGEN_MAX,
+        lease_owner="worker-1",
+        new_id=_ids(),
+        now=lambda: _WORKER_NOW,
+        llm_failure_circuit=3,
+        run_store=harness.runs,
+        call_log=harness.collector,
+    )
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1"])
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    job = asyncio.run(scenario())
+
+    #: 🔴 정확한 종단 — 현재 워커의 미분류 실패 코드 그대로다(새 코드를 만들지 않았다).
+    assert job.phase is JobPhase.FAILED, f"phase={job.phase}"
+    assert job.error_code == "worker_internal_error", job.error_code
+
+    #: 🔴 실행 경계 뒤로 **한 발도 못 갔다.**
+    assert harness.runs.runs == {}, "begin이 실패했는데 AI_RUN이 생겼다"
+    assert provider.plan_calls == 0, f"planner가 {provider.plan_calls}번 불렸다"
+    assert provider.write_calls == 0, f"writer가 {provider.write_calls}번 불렸다"
+    assert drafts.put_calls == 0, f"초안 저장이 {drafts.put_calls}번 불렸다"
+    residue = sum(len(bucket) for bucket in harness.collector._pending.values())
+    assert residue == 0, f"수집기에 호출 {residue}건이 남았다"
+
+
+def test_the_context_lookup_still_runs_before_begin() -> None:
+    """🔴 **순서 확인** — 입력이 없으면 `begin_run`까지 가지 않는다(원장 0건).
+
+    ⚠ 위 검사가 *"begin이 아예 안 불린다"* 로 통과하면 안 되므로, 그 반대편을 함께 본다.
+    """
+    provider = _CountingProvider()
+    harness = _WorkerHarness(provider)
+    harness.runs = _BeginFailsStore()
+    harness.runner = CounselPackRunner(
+        supervisor=harness.supervisor,
+        context_store=harness.contexts,
+        draft_store=InMemoryDraftResultStore(),
+        pack_store=InMemoryPackResultStore(),
+        step_sink=InMemoryAgentStepSink(),
+        planner=provider,
+        writer=provider,
+        checkpointer=InMemorySaver(),
+        regen_max=DEFAULT_REGEN_MAX,
+        lease_owner="worker-1",
+        new_id=_ids(),
+        now=lambda: _WORKER_NOW,
+        llm_failure_circuit=3,
+        run_store=harness.runs,
+        call_log=harness.collector,
+    )
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1"])
+        harness.contexts._rows.clear()  # 입력 부재 — begin 앞에서 죽는다
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    job = asyncio.run(scenario())
+    assert job.phase is JobPhase.FAILED
+    #: 🔴 **입력 부재의 오류 코드는 begin 실패와 다르다** — 두 경로가 구분된다.
+    assert job.error_code == "context_bundle_missing", job.error_code
