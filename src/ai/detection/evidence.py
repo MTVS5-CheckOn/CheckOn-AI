@@ -43,13 +43,29 @@ SKIP_AUTHORITATIVE_EVIDENCE_MISSING: Final = "authoritative_evidence_missing"
 _LEARNING_EVENT_TABLE: Final = "learning_event"
 
 
+#: 🔴 R2가 거슬러 올라가는 **명시 상한**(불변식 6) — 05·09의 rolling 10주 계약과 같은 값.
+MAX_ABSENCE_LOOKBACK_WEEKS: Final = 10
+#: R3 baseline 창 — 분석 주 **직전** 8주.
+R3_BASELINE_WEEKS: Final = 8
+
+
 @dataclass(frozen=True)
 class StudentEvidence:
     """한 학생의 **정본 근거 묶음** — 판정과 인용이 같은 레코드를 본다.
 
     ⚠ 판정에 쓴 값과 응답 evidence가 갈리면 BE가 원본을 열었을 때 숫자가 안 맞는다.
     그래서 규칙은 이 묶음에서 **값과 레코드를 함께** 꺼낸다.
+
+    🔴 **`analysis_week`가 여기 있는 이유**(99 #43·#44) — 부재형 규칙의 시간축을
+    `learning_events`에서 떼어내기 위해서다. `StudentFeatures.weeks`는 **학습 이벤트가 있는
+    주만** 만들므로, **완전 공백 주는 그 목록에 아예 없다** — 즉 *"가장 심한 공백"* 이
+    판정 창에서 빠졌다. 부재형 신호가 그 목록을 보면 **자기가 재려는 것을 못 본다.**
+    ⚠ **`StudentFeatures`에 빈 주를 억지로 넣지 않는다** — 그러면 R1·R4·R6의 평가 창까지
+    바뀌어 이번 작업과 무관한 골든이 흔들린다.
     """
+
+    analysis_week: date | None = None
+    """`snapshot_meta.week_start` — 부재형 셋의 **기준 주**. 학습 이벤트와 무관하다."""
 
     assignment_windows: Mapping[date, AssignmentWindowEvidence] = field(
         default_factory=dict
@@ -87,6 +103,7 @@ def build_student_evidence(request: DetectRequest) -> dict[str, StudentEvidence]
         for student in request.students
         if student.consent == CONSENT_GRANTED
     }
+    analysis_week = date.fromisoformat(request.snapshot_meta.week_start)
     windows: dict[str, dict[date, AssignmentWindowEvidence]] = defaultdict(dict)
     activity: dict[str, dict[date, WeeklyActivityEvidence]] = defaultdict(dict)
     transitions: dict[str, list[EnrollmentTransitionEvidence]] = defaultdict(list)
@@ -102,9 +119,13 @@ def build_student_evidence(request: DetectRequest) -> dict[str, StudentEvidence]
             #: ⚠ R5가 쓰는 것은 **복귀 전환뿐**이다 — 다른 전환은 담지 않는다(#22 회피).
             transitions[item.student_ref].append(item)
 
-    refs = set(windows) | set(activity) | set(transitions)
+    #: 🔴 **근거가 없는 학생도 항목을 만든다** — 그래야 규칙이 `analysis_week`을 보고
+    #:   *"집계가 없다"* 를 **판정**할 수 있다(항목이 없으면 `EMPTY_EVIDENCE`로 떨어져
+    #:   기준 주 자체를 모른다).
+    refs = set(windows) | set(activity) | set(transitions) | allowed
     return {
         ref: StudentEvidence(
+            analysis_week=analysis_week,
             assignment_windows=dict(windows.get(ref, {})),
             weekly_activity=dict(activity.get(ref, {})),
             returned_transitions=tuple(

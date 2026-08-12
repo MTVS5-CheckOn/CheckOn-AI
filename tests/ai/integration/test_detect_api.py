@@ -138,3 +138,89 @@ def test_determinism_same_signals_across_keys(client: TestClient) -> None:
     ).json()
     assert r1["data"] == r2["data"]  # signals·stats 동일
     assert r1["meta"]["execution_id"] != r2["meta"]["execution_id"]
+
+
+# ── (지시서 70-R) `detection_evidence` 위반이 실제로 400인가 (99 #43·#45) ──
+
+#: 🔴 **모델에서 `ValidationError`가 난다는 것은 HTTP 400을 증명하지 않는다.**
+#:   라우터가 그것을 어떤 코드로 번역하는지는 **응답으로만** 알 수 있다.
+_EVIDENCE_VIOLATIONS: dict[str, dict[str, Any]] = {
+    "제출이 예정 초과": {
+        "kind": "assignment_window",
+        "source_table": "assignment_week_summary",
+        "record_id": "aws_bad",
+        "week_start": "2026-07-13",
+        "expected_count": 1,
+        "submitted_count": 2,
+    },
+    "알 수 없는 kind": {
+        "kind": "mystery",
+        "source_table": "assignment_week_summary",
+        "record_id": "aws_bad",
+        "week_start": "2026-07-13",
+        "expected_count": 1,
+        "submitted_count": 0,
+    },
+    "kind/source_table 불일치": {
+        "kind": "assignment_window",
+        "source_table": "student_status_history",
+        "record_id": "aws_bad",
+        "week_start": "2026-07-13",
+        "expected_count": 1,
+        "submitted_count": 0,
+    },
+    "미래 집계": {
+        "kind": "weekly_activity",
+        "source_table": "student_week_activity",
+        "record_id": "swa_bad",
+        "week_start": "2026-12-28",
+        "activity_count": 0,
+    },
+    "timezone 없는 전환": {
+        "kind": "enrollment_transition",
+        "source_table": "student_status_history",
+        "record_id": "ssh_bad",
+        "occurred_at": "2026-07-13T09:00:00",
+        "from_status": "paused",
+        "to_status": "returned",
+    },
+    "상태와 복귀 전환 불일치": {
+        "kind": "enrollment_transition",
+        "source_table": "student_status_history",
+        "record_id": "ssh_bad",
+        "occurred_at": "2026-07-13T09:00:00+09:00",
+        "from_status": "paused",
+        "to_status": "returned",
+    },
+}
+
+
+@pytest.mark.parametrize("case", sorted(_EVIDENCE_VIOLATIONS))
+def test_detection_evidence_violations_are_http_400(
+    client: TestClient, case: str
+) -> None:
+    """🔴 여섯 위반이 **실제 `/v1/detect`에서 400 `INVALID_SCHEMA`** 로 수렴한다 (99 #45).
+
+    ⚠ 지시서 70 §9는 `submitted > expected`를 **422**로 적었지만, `error_codes` §1의
+    **7/22 A판정**이 *"바디 스키마 위반은 헤더 누락·JSON 파싱과 함께 하나의 400"* 으로 이미
+    확정했다. 🔴 **같은 배열의 위반이 상태 코드 둘로 갈리면** BE가 *"어떤 위반이 422인가"* 를
+    따로 알아야 한다 ⇒ **기존 상위 계약을 그대로 적용**한다(#45 해소 · 새 판정 없음).
+    """
+    payload = _payload()
+    row = dict(_EVIDENCE_VIOLATIONS[case])
+    row["student_ref"] = payload["students"][0]["student_ref"]
+    payload["detection_evidence"] = [row]
+
+    resp = client.post("/v1/detect", json=payload, headers=_HEADERS)
+    assert resp.status_code == 400, f"{case}: {resp.status_code} — {resp.text[:300]}"
+    body = resp.json()
+    assert body["error"]["code"] == "INVALID_SCHEMA", body["error"]
+    assert body["data"] is None
+
+
+def test_a_valid_evidence_request_is_still_202(client: TestClient) -> None:
+    """🔴 **절단 가드** — 위 여섯이 「무엇을 보내도 400」이라서 통과한 것이 아니다."""
+    payload = _payload()
+    assert payload["detection_evidence"], "픽스처가 근거를 안 만든다 — 축이 비었다"
+    resp = client.post("/v1/detect", json=payload, headers=_HEADERS)
+    assert resp.status_code == 200, resp.text

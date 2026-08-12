@@ -18,7 +18,6 @@ from ai.contracts.detection import (
     DetectRequest,
     DetectResponse,
     EnrollmentTransitionEvidence,
-    EvidenceKind,
     WeeklyActivityEvidence,
 )
 from ai.detection.canonical import canonical_snapshot_hash, canonical_snapshot_payload
@@ -274,21 +273,79 @@ def test_one_changed_value_changes_the_hash(over: dict[str, Any]) -> None:
     assert canonical_snapshot_hash(base) != canonical_snapshot_hash(changed)
 
 
-def test_the_canonical_vector_is_stable() -> None:
-    """🔴 **Python 참조 벡터** — Java 구현과 대조할 값이다(04 부록 A).
+#: 🔴 **Java 대조용 정확 벡터**(04 부록 A). 이 값이 바뀌면 **백엔드와 해시가 갈린다** —
+#: 계약 변경 없이 고치지 마라. 재산정: `canonical_snapshot_hash(request)`.
+_HASH_LEGACY: Final = (
+    "sha256:4e90fe4929dced9d3fed2a4c8585766569dd7680a8c50a1be7e1f282c59d8e54"
+)
+_HASH_AGGREGATE: Final = (
+    "sha256:42bf93a71cdaecc0b3d6e4348ba8eddaf0f556894a81869285fade630c4e265d"
+)
+_HASH_TRANSITION: Final = (
+    "sha256:103fd498b6bc7e09f0bc981acf8cde9a839981b81e398761d37af1a5a1ffb732"
+)
 
-    ⚠ 이 값이 바뀌면 **백엔드와의 해시가 갈린다** — 계약 변경 없이 바꾸지 마라.
+
+def _returned_body(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    body = _base_body(detection_evidence=rows)
+    body["students"][0]["status"] = "returned"
+    return body
+
+
+def test_the_legacy_vector_is_exact() -> None:
+    """🔴 기존 필드만 있는 요청 — **접두 확인이 아니라 정확 값**이다."""
+    request = DetectRequest.model_validate(_base_body())
+    assert canonical_snapshot_hash(request) == _HASH_LEGACY
+
+
+def test_the_aggregate_vector_is_exact() -> None:
+    request = DetectRequest.model_validate(
+        _base_body(detection_evidence=[_window(), _activity()])
+    )
+    assert canonical_snapshot_hash(request) == _HASH_AGGREGATE
+
+
+def test_the_transition_vector_is_exact() -> None:
+    request = DetectRequest.model_validate(_returned_body([_transition()]))
+    assert canonical_snapshot_hash(request) == _HASH_TRANSITION
+
+
+def test_the_canonical_json_text_is_pinned() -> None:
+    """🔴 **전문도 고정한다** — 해시만 고정하면 어디가 달라졌는지 Java 쪽에서 못 찾는다."""
+    request = DetectRequest.model_validate(
+        _base_body(detection_evidence=[_window(), _activity()])
+    )
+    serialized = json.dumps(
+        canonical_snapshot_payload(request),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    assert serialized == (
+        '{"alert_context":[],"detection_evidence":['
+        '{"at":"2026-08-10","expected_count":3,"kind":"assignment_window",'
+        '"record_id":"aws_1","source_table":"assignment_week_summary",'
+        '"student_ref":"st_1","submitted_count":0},'
+        '{"activity_count":0,"at":"2026-08-10","kind":"weekly_activity",'
+        '"record_id":"swa_1","source_table":"student_week_activity",'
+        '"student_ref":"st_1"}],"learning_events":[],'
+        '"snapshot_meta":{"term_context":"normal","week_start":"2026-08-10"},'
+        '"students":[{"class_ref":"cl_a1","consent":"granted","enrolled_weeks":10,'
+        '"status":"enrolled","student_ref":"st_1"}]}'
+    )
+
+
+def test_an_explicit_empty_array_hashes_like_an_omitted_field() -> None:
+    """🔴 **빈 배열과 생략은 같은 의미·같은 해시다**(계약 확정 8/12).
+
+    ⚠ 모델이 둘 다 `()`로 받으므로 *"클라이언트가 빈 배열을 명시했는가"* 를 **복원할 수
+    없다.** 복원 못 하는 구분을 해시에 넣으면 **BE와 AI가 서로 다른 값을 낼 수 있다** ⇒
+    canonical payload에서 **생략**으로 단순화한다(문서·벡터 동일).
     """
-    body = _base_body(detection_evidence=[_window(), _activity()])
-    request = DetectRequest.model_validate(body)
-    payload = canonical_snapshot_payload(request)
-    assert [row["kind"] for row in payload["detection_evidence"]] == [
-        EvidenceKind.ASSIGNMENT_WINDOW.value,
-        EvidenceKind.WEEKLY_ACTIVITY.value,
-    ]
-    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    assert '"detection_evidence":[{"at":"2026-08-10"' in serialized
-    assert canonical_snapshot_hash(request).startswith("sha256:")
+    omitted = DetectRequest.model_validate(_base_body())
+    explicit = DetectRequest.model_validate(_base_body(detection_evidence=[]))
+    assert canonical_snapshot_hash(explicit) == canonical_snapshot_hash(omitted)
+    assert canonical_snapshot_hash(explicit) == _HASH_LEGACY
 
 
 def test_the_evidence_models_carry_no_free_text() -> None:
@@ -311,3 +368,83 @@ def test_the_week_start_type_is_a_date_not_a_string() -> None:
     """주차 비교가 문자열로 되면 `2026-9-1` 같은 값이 조용히 어긋난다."""
     assert AssignmentWindowEvidence.model_fields["week_start"].annotation is date
     assert WeeklyActivityEvidence.model_fields["week_start"].annotation is date
+
+
+# ───────────────────────── kind ↔ source_table (§4) ─────────────────────────
+
+#: kind별 **정본 테이블 하나** — 자유 문자열이면 거짓 조합이 통과한다.
+_CANON_TABLE: Final = {
+    "assignment_window": "assignment_week_summary",
+    "weekly_activity": "student_week_activity",
+    "enrollment_transition": "student_status_history",
+}
+
+
+def _row_of(kind: str, **over: Any) -> dict[str, Any]:  # noqa: ANN401 — 픽스처 오버라이드
+    builder = {
+        "assignment_window": _window,
+        "weekly_activity": _activity,
+        "enrollment_transition": _transition,
+    }[kind]
+    return builder(**over)
+
+
+@pytest.mark.parametrize("kind", sorted(_CANON_TABLE))
+def test_the_matching_kind_and_table_is_accepted(kind: str) -> None:
+    rows = [_row_of(kind)]
+    body = _returned_body(rows) if kind == "enrollment_transition" else _base_body(
+        detection_evidence=rows
+    )
+    parsed = DetectRequest.model_validate(body).detection_evidence[0]
+    assert parsed.source_table == _CANON_TABLE[kind]
+
+
+@pytest.mark.parametrize(
+    ("kind", "wrong_table"),
+    [
+        (kind, table)
+        for kind in sorted(_CANON_TABLE)
+        for table in sorted(_CANON_TABLE.values())
+        if table != _CANON_TABLE[kind]
+    ],
+)
+def test_a_crossed_kind_and_table_is_rejected(kind: str, wrong_table: str) -> None:
+    """🔴 **교차 조합 6종 전부 거부** — `kind=assignment_window` + 상태 이력 테이블 등.
+
+    ⚠ JSON 타입은 **여전히 문자열**이다(BE DTO 무변경) — 허용값만 닫았다.
+    """
+    rows = [_row_of(kind, source_table=wrong_table)]
+    body = _returned_body(rows) if kind == "enrollment_transition" else _base_body(
+        detection_evidence=rows
+    )
+    with pytest.raises(ValidationError):
+        DetectRequest.model_validate(body)
+
+
+def test_the_response_evidence_carries_the_canonical_table() -> None:
+    """응답 evidence의 `source_table`이 **입력 kind의 정본 값**과 정확히 일치한다."""
+    from ai.detection.engine import detect  # noqa: PLC0415
+
+    body = _returned_body([_transition()])
+    response = detect(DetectRequest.model_validate(body))
+    tables = {item.source_table for s in response.signals for item in s.evidence}
+    assert tables == {_CANON_TABLE["enrollment_transition"]}, tables
+
+
+def test_the_source_table_is_never_used_as_a_sql_identifier() -> None:
+    """🔴 AI가 `source_table`을 **SQL 식별자로 쓰지 않는다** — 값이 쿼리에 안 들어간다.
+
+    ⚠ 문자열 grep이 아니라 **정본 테이블명이 SQL 문면에 등장하는지**를 본다.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    src = Path(__file__).resolve().parents[3] / "src" / "ai"
+    offenders: list[str] = []
+    for path in sorted(src.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        for table in _CANON_TABLE.values():
+            if f"FROM {table}" in text or f"from {table}" in text.lower().replace(
+                "_", "_"
+            ) and f"from {table}" in text:
+                offenders.append(f"{path.name}:{table}")
+    assert not offenders, f"정본 테이블명이 SQL에 쓰였다: {offenders}"

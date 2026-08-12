@@ -311,9 +311,6 @@ class _EvidenceBase(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    source_table: str = Field(min_length=1)
-    """백엔드 정본 테이블 **논리명** — 근거 역추적용."""
-
     record_id: str = Field(min_length=1)
     """백엔드 원본 PK — 응답 evidence에 그대로 실린다."""
 
@@ -331,6 +328,11 @@ class AssignmentWindowEvidence(_EvidenceBase):
     """
 
     kind: Literal[EvidenceKind.ASSIGNMENT_WINDOW]
+    source_table: Literal["assignment_week_summary"]
+    """🔴 **kind마다 정본 테이블이 하나다**(99 #43) — 자유 문자열이면
+    `kind=assignment_window`에 `student_status_history`를 넣어도 통과한다.
+    ⚠ JSON 타입은 그대로 문자열이다 — **허용값만 닫는다**(BE DTO 무변경)."""
+
     week_start: date
     expected_count: int = Field(ge=0)
     submitted_count: int = Field(ge=0)
@@ -354,6 +356,7 @@ class WeeklyActivityEvidence(_EvidenceBase):
     """
 
     kind: Literal[EvidenceKind.WEEKLY_ACTIVITY]
+    source_table: Literal["student_week_activity"]
     week_start: date
     activity_count: int = Field(ge=0)
 
@@ -366,6 +369,7 @@ class EnrollmentTransitionEvidence(_EvidenceBase):
     """
 
     kind: Literal[EvidenceKind.ENROLLMENT_TRANSITION]
+    source_table: Literal["student_status_history"]
     occurred_at: datetime
     from_status: StudentStatus
     to_status: StudentStatus
