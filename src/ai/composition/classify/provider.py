@@ -74,7 +74,7 @@ class FakeClassifyProvider:
 
 
 def build_classify_provider(settings: ClassifySettings | None = None) -> LLMProvider:
-    """settings로 provider 선택. 기본 fake — `openai_compat`이면 실 로컬 LLM.
+    """settings로 provider 선택. 기본 fake — `openai_compat`이면 OpenAI API.
 
     벤더 독립 유지: `openai` import는 어댑터 안에만 있고 여기선 구현을 선택만 한다.
     """

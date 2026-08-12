@@ -1,10 +1,8 @@
-"""OpenAI 호환 provider 어댑터 — 접속 대상은 env가 정한다 (B-5 확정 7/23).
+"""OpenAI API provider 어댑터 — 접속 대상은 `OPENAI_*` env가 정한다.
 
-🔴 **(8/6) 접속 설정 env 접두를 `OPENAI_*`로 교체했다.** 종전 팀 로컬 서버(Gemma 계열)가
-502로 내려가 측정이 막혔다. **구 접두 키는 `.env`에 남아 있지만 코드는 읽지 않는다** —
-경위·되돌리는 법은 99 ⓟ에 있다(README `.env` 키 표도 두 벌을 나란히 적는다).
-⚠ **어댑터 이름·`LLM_PROVIDER=openai_compat` 값은 그대로다.** 그건 벤더가 아니라 **규격**을
-뜻하고, OpenAI도 로컬 OpenAI 호환 서버도 같은 규격이다.
+🔴 **(8/6) 실서비스 백엔드는 OpenAI 단일로 재확정됐다.** 폐기된 서버의 구 설정은
+코드가 읽지 않으며 현재 실행 선택지가 아니다. 변경 이력은 99 ⓟ에 보존한다.
+⚠ `LLM_PROVIDER=openai_compat` 값은 기존 어댑터 식별자이므로 유지한다.
 
 사양 원본: `contracts/llm.py`(LLMProvider 인터페이스 — 양자 파일, 변경 금지) ·
 `docs/policies/error_codes.md` §4(Llm* → HTTP 매핑).
@@ -62,7 +60,7 @@ from ai.contracts.llm import (
 logger = logging.getLogger(__name__)
 
 #: provider 식별자 — LLM_CALL.provider에 기록된다.
-PROVIDER_NAME = "local-openai-compat"
+PROVIDER_NAME = "openai-compat"
 
 #: GenerationParams가 temperature를 주지 않을 때(None) 쓰는 provider 기본값.
 #: (인터페이스에 없는 값이 아니라 "미지정"일 때의 기본 — docstring 명시가 규약)
@@ -73,16 +71,12 @@ _RATE_LIMITED = 429
 
 
 class OpenAiSettings(BaseSettings):
-    """OpenAI 호환 백엔드 접속 설정 — env(.env, 노션 공유)로 주입. 하드코딩 금지(§1).
-
-    ⚠ 이름이 `OpenAi*`인 것은 **규격**(OpenAI 호환 API)을 뜻하지 벤더 고정이 아니다 —
-    같은 설정으로 로컬 호환 서버도 가리킬 수 있다(`OPENAI_BASE_URL`만 바꾸면 된다).
-    """
+    """OpenAI API 접속 설정 — `OPENAI_*` env로 주입. 하드코딩 금지(§1)."""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    openai_api_key: str = "local"
-    """API 키. 키를 요구하지 않는 서버면 임의 비밀값 — 빈 문자열은 SDK가 거부."""
+    openai_api_key: str = "missing"
+    """OpenAI API 키. 실호출은 명시적 opt-in과 유효한 scope를 모두 요구한다."""
 
     openai_model: str = "gpt-5.4-mini"
     """서버·벤더에 등록된 모델명 — 실제 값은 `OPENAI_MODEL`로 주입."""
@@ -104,8 +98,8 @@ class OpenAiSettings(BaseSettings):
        `"localhost" in openai_base_url`로 **실서버 미설정을 판정해 skip**한다. 값을 바꾸려면
        그 세 곳을 함께 고쳐야 한다.
 
-    ⚠ 이름이 `openai_*`라고 벤더가 고정된 게 아니다(클래스 docstring 참조) — 로컬 호환
-    서버를 쓰려면 이 env만 그 주소로 바꾸면 된다.
+    실호출에서는 `https://api.openai.com/v1`을 명시 주입한다. 기본 localhost는 env 누락이
+    외부 전송으로 이어지지 않게 하는 fail-closed 값일 뿐이다.
     """
 
     openai_timeout_s: float = 15.0
@@ -123,7 +117,7 @@ def get_llm_settings() -> OpenAiSettings:
 
 
 class OpenAICompatProvider:
-    """LLMProvider 구현 — 팀 로컬 OpenAI 호환 서버 어댑터.
+    """LLMProvider 구현 — OpenAI API 어댑터.
 
     client·settings는 주입 가능(테스트는 mock client를 꽂아 실서버 없이 결정론화).
     """

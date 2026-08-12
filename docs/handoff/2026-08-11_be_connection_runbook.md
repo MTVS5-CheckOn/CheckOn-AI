@@ -57,7 +57,7 @@ AI_RUN.model_provider = 'fake-counsel'      ← 🔴 이 표식으로 사후에�
 AI_RUN.model_name     = 'template'
 ```
 
-**실 LLM이면 `model_provider`가 벤더 이름(`local-openai-compat` 등)이고 `model_name`이
+**실 LLM이면 `model_provider='openai-compat'`이고 `model_name`이
 모델 ID입니다.** `fake-counsel`이 찍혀 있으면 그 실행은 Fake입니다 — 로그를 놓쳐도
 원장으로 되짚을 수 있습니다.
 

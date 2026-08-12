@@ -222,7 +222,7 @@ def test_single_provider_can_serve_generator_and_verifier() -> None:
 
 
 def test_multiple_providers_reject_same_generator_and_verifier_assignment() -> None:
-    shared = FakeProvider([], name="gemma")
+    shared = FakeProvider([], name="shared-provider")
     fallback = FakeProvider([], name="fallback")
 
     with pytest.raises(ValueError, match="같은 provider"):
