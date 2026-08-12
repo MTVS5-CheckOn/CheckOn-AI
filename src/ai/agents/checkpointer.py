@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
+from typing import Any
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy.engine import make_url
@@ -62,6 +63,39 @@ async def setup_checkpointer_schema(settings: DbSettings | None = None) -> None:
         await saver.setup()
 
 
+def checkpoint_loop_factory() -> Callable[[], asyncio.AbstractEventLoop] | None:
+    """🔴 **Windows에서만 `SelectorEventLoop`** — 체크포인터가 psycopg를 쓰기 때문이다.
+
+    앱의 다른 DB 경로는 **asyncpg**(SQLAlchemy)라 Windows 기본 `ProactorEventLoop`에서
+    잘 돈다. 그런데 `AsyncPostgresSaver`만 **psycopg**를 쓰고, psycopg의 async 구현은
+    Proactor에서 `InterfaceError`로 **연결 시도 전에** 거부한다 ⇒ 이 경계만 루프를
+    갈아 끼운다.
+
+    🔴 **여기가 그 규칙의 정본이다** — 종전에는 통합 검사 파일에만 같은 분기가 있어
+    **검사는 초록인데 배포 명령(`python -m ai.agents.checkpointer`)은 Windows에서
+    항상 exit 1**이었다(실측: 기본 실행 `InterfaceError` · 같은 함수를
+    `SelectorEventLoop`로 돌리면 `OperationalError`까지 진행). psycopg를 여는 자리가
+    이 모듈이므로 루프 규칙도 이 모듈이 소유한다.
+
+    ⚠ **macOS·Linux는 기존 경로 그대로**다(`None` → `asyncio.run`의 기본 루프).
+    ⚠ 함수로 뺀 이유는 **Windows 없이도 이 분기를 검사할 수 있게** 하려는 것이다.
+    """
+    if sys.platform == "win32":
+        return asyncio.SelectorEventLoop
+    return None
+
+
+def run_with_checkpoint_loop[T](coro: Coroutine[Any, Any, T]) -> T:
+    """체크포인터를 건드리는 코루틴을 **플랫폼에 맞는 루프**로 돌린다.
+
+    ⚠ `asyncio.run`의 `loop_factory`는 Python 3.12에서 들어왔다 — 이 저장소의 하한이다.
+    """
+    factory = checkpoint_loop_factory()
+    if factory is not None:
+        return asyncio.run(coro, loop_factory=factory)
+    return asyncio.run(coro)
+
+
 def main() -> int:
     """CLI 진입 — `python -m ai.agents.checkpointer`.
 
@@ -75,7 +109,7 @@ def main() -> int:
     **예외 타입만** 내보낸다(`--verbose` 같은 우회로도 두지 않는다).
     """
     try:
-        asyncio.run(setup_checkpointer_schema())
+        run_with_checkpoint_loop(setup_checkpointer_schema())
     except Exception as exc:  # noqa: BLE001 — 배포 명령이라 종류를 안 가리고 비정상 종료한다
         print(
             f"체크포인터 스키마 준비 실패: {type(exc).__name__} — 배포를 중단한다",

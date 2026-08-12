@@ -98,7 +98,7 @@ def clean_database() -> Iterator[None]:
     try:
         asyncio.run(_run("SELECT 1"))
     except Exception:  # noqa: BLE001 — 접속 불가 → skip
-        pytest.skip("실 PG 미가용 — docker compose -f compose.dev.yml up (99 #26)")
+        pytest.skip("실 PG 미가용 — docker compose up -d (99 #26)")
     _reset_schema()
     try:
         yield

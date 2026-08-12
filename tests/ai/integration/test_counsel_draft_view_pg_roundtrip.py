@@ -58,7 +58,7 @@ async def _with_pg(scenario: _Scenario) -> str:
 
 def _run(scenario: _Scenario) -> None:
     if asyncio.run(_with_pg(scenario)) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose -f compose.dev.yml up")
+        pytest.skip("실 PG 미가용 — docker compose up -d")
 
 
 def _snapshots(*, job_id: str) -> tuple[dict[str, Any], dict[str, Any]]:

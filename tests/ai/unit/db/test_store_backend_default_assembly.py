@@ -435,6 +435,8 @@ def test_the_pin_is_back(request: Any) -> None:  # noqa: ANN401
 _CHECKPOINTER: Final = _SRC / "agents" / "checkpointer.py"
 _SETUP: Final = "setup_checkpointer_schema"
 _ENTRY: Final = "main"
+#: 🔴 루프 선택을 맡은 러너 — Windows에서만 `SelectorEventLoop`로 갈아 끼운다.
+_RUNNER: Final = "run_with_checkpoint_loop"
 
 
 def _checkpointer_tree() -> ast.Module:
@@ -485,12 +487,22 @@ def test_the_deployment_entry_point_runs_the_setup_function() -> None:
 
 
 def test_the_entry_point_actually_runs_it_rather_than_building_a_coroutine() -> None:
-    """🔴 `asyncio.run(...)`으로 **실행**해야 한다 — 코루틴만 만들면 아무 일도 안 난다.
+    """🔴 코루틴을 **실행**해야 한다 — 만들기만 하면 아무 일도 안 난다.
 
     ⚠ 그 실수는 **경고 하나 없이 exit 0**이다(`RuntimeWarning: never awaited`는 stderr에만).
+
+    🔴 **`asyncio.run`을 부르는 자리가 한 겹 내려갔다**(2026-08-12). Windows에서는
+    psycopg가 기본 `ProactorEventLoop`를 거부해 배포 명령이 항상 `InterfaceError`로
+    죽었다 — 그래서 루프 선택을 `run_with_checkpoint_loop()`가 맡는다. **묻는 것은
+    그대로다**: 진입점이 코루틴을 정말 돌리는가. 그래서 **두 겹을 다 본다** —
+    진입점이 러너를 부르고, 러너가 `asyncio.run`을 부른다.
+    ⚠ 러너 쪽을 안 보면 그 함수가 코루틴을 **버리도록** 바뀌어도 여기선 초록이다.
     """
-    assert _calls_inside(_ENTRY, called="run") >= 1, (
-        f"`{_ENTRY}()`가 `asyncio.run(...)`을 안 쓴다 — 코루틴을 만들고 버릴 수 있다"
+    assert _calls_inside(_ENTRY, called=_RUNNER) >= 1, (
+        f"`{_ENTRY}()`가 `{_RUNNER}(...)`을 안 쓴다 — 코루틴을 만들고 버릴 수 있다"
+    )
+    assert _calls_inside(_RUNNER, called="run") >= 1, (
+        f"`{_RUNNER}()`가 `asyncio.run(...)`을 안 쓴다 — 코루틴이 실제로 안 돈다"
     )
 
 

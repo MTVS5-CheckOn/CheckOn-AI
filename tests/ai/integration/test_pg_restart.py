@@ -24,7 +24,7 @@ pytestmark = pytest.mark.integration
 def test_pg_survives_restart() -> None:
     outcome = asyncio.run(_run())
     if outcome == "skip":
-        pytest.skip("실 PG 미가용 — docker compose -f compose.dev.yml up (99 ⑫)")
+        pytest.skip("실 PG 미가용 — docker compose up -d (99 ⑫)")
 
 
 async def _run() -> str:
