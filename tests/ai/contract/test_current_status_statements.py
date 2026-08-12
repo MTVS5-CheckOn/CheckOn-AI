@@ -118,3 +118,81 @@ def test_the_shared_step_record_item_is_still_open() -> None:
     """⑱은 함께 닫지 않았다 — 같이 닫혔다고 적혔으면 red."""
     cell = _status_cell("⑱")
     assert "✅" not in cell, f"⑱이 닫혔다고 적혔다: {cell}"
+
+
+# ───────── 브리핑 매트릭스 문서의 **현재 결과 표** (79-R3 §3) ─────────
+#
+# 🔴 **문서 전체에서 `14.999`를 금지하면 과거 반례 기록까지 잡는다** — 그 절은 과거형·해소
+#    표시가 붙어 **보존 대상**이다(§1). 그래서 **현재 결과 표만** 잘라서 본다.
+
+_MATRIX: Final = _DOCS / "handoff" / "2026-08-12_detect_briefing_scenario_matrix.md"
+
+#: 현재 결과를 말하는 두 절 — 상단 상태표와 `## 3. S01~S22 결과`의 표.
+_STATUS_TABLE_HEAD: Final = "| 구간 | 상태 |"
+_RESULT_SECTION: Final = "## 3. S01~S22 결과"
+
+
+def _matrix_text() -> str:
+    return _MATRIX.read_text(encoding="utf-8")
+
+
+def _section(heading: str) -> str:
+    """그 제목 아래부터 다음 `## ` 전까지 — 다른 절의 과거 기록을 끌어오지 않는다."""
+    text = _matrix_text()
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    end = rest.find("\n## ")
+    return rest if end < 0 else rest[:end]
+
+
+def _result_row(label: str) -> str:
+    for line in _section(_RESULT_SECTION).splitlines():
+        if line.startswith("|") and label in line:
+            return line
+    raise AssertionError(f"현재 결과 표에 «{label}» 행이 없다 — 이 검사의 전제가 깨졌다")
+
+
+def test_the_s15_row_states_the_fixed_verdict_not_the_old_defect() -> None:
+    """🔴 **S15 현재 행에 `14.999…pp 미발화`가 남으면 안 된다** — 그건 고친 결함이다.
+
+    ⚠ 그 문장은 *"버그를 기대값으로 적은 것"* 이었다(#230). 현재 결과에 남기면 다음 사람이
+    **없는 계약**을 믿는다.
+    """
+    row = _result_row("S15 R1 경계")
+    assert "14.999" not in row, f"현재 결과에 옛 결함이 남았다: {row}"
+    assert "정확한 15.0pp" in row and "전부 발화" in row, row
+    assert "14.5pp" in row and "미발화" in row, "실제 미달 사례가 없다"
+    assert "20.0pp" in row, "실제 초과 사례가 없다"
+
+
+def test_the_status_table_pins_both_boundary_fix_prs() -> None:
+    """🔴 R4·R1 교정이 **어느 PR인지** 현재 표에 적혀 있다."""
+    table = _section(_STATUS_TABLE_HEAD)
+    for label, pr in (("R4 정확 경계 교정", "#229"), ("R1 정확 경계 교정", "#230")):
+        row = next(
+            line for line in table.splitlines() if line.startswith("|") and label in line
+        )
+        assert "✅" in row, row
+        assert pr in row, f"{label} 행에 {pr}이 없다: {row}"
+
+
+def test_the_b_stage_rows_are_still_open() -> None:
+    """⚠ **B단계를 안 했는데 완료로 적지 않는다** — 두 줄은 대기여야 한다."""
+    table = _section(_STATUS_TABLE_HEAD)
+    for label in ("Windows 실제 OpenAI B단계", "프롬프트 고도화 판정"):
+        row = next(
+            line for line in table.splitlines() if line.startswith("|") and label in line
+        )
+        assert "☐" in row and "✅" not in row, row
+
+
+def test_the_past_defect_record_is_preserved() -> None:
+    """🔴 **반대편** — 과거 결함 설명과 실제 계산값은 **지워지지 않았다**.
+
+    ⚠ 위 검사만 두면 *"S15 행에서 `14.999`를 뺐다"* 를 「문서에서 지웠다」로도 만족시킬 수
+    있다. 발견 기록이 사라지면 다음 사람이 *"R1은 왜 R4와 다르게 갔나"* 를 다시 판단한다.
+    """
+    text = _matrix_text()
+    assert "14.999999999999991" in text, "R1 반례의 실제 계산값이 사라졌다"
+    assert "5.000000000000004" in text, "R4 반례의 실제 계산값이 사라졌다"
+    assert "결함을 계약으로 굳혀" in text, "초판 S15가 왜 틀렸는지가 사라졌다"
