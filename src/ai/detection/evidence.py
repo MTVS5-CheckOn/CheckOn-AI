@@ -223,6 +223,6 @@ RULE_EVIDENCE_RESOLVERS: Final[Mapping[RuleId, EvidenceResolver]] = {
 def resolve_evidence(rule_id: RuleId, request: EvidenceRequest) -> tuple[EvidenceItem, ...]:
     """규칙의 근거를 만든다 — 🔴 **미등록 규칙은 폴백이 아니라 예외**다."""
     resolver = RULE_EVIDENCE_RESOLVERS.get(rule_id)
-    if resolver is None:  # pragma: no cover — 등록 검사가 먼저 잡는다
-        raise KeyError(f"근거 resolver가 등록되지 않은 규칙이다: {rule_id.value}")
+    if resolver is None:
+        raise KeyError(f"근거 resolver가 등록되지 않은 규칙이다: {rule_id!r}")
     return resolver(request)
