@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from ai.agents.checkpointer import main as checkpointer_main
-from ai.agents.checkpointer import setup_checkpointer_schema
+from ai.agents.checkpointer import run_with_checkpoint_loop, setup_checkpointer_schema
 from ai.api.app import create_app
 from ai.api.routers import classify as classify_router
 from ai.api.routers import confirmations as confirmations_router
@@ -184,7 +184,10 @@ def pg_default(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     get_db_settings.cache_clear()
     get_engine.cache_clear()
     try:
-        asyncio.run(_prepare_schema())
+        #: 🔴 **`asyncio.run`이 아니라 체크포인터의 루프로 돈다** — `_prepare_schema()`가
+        #: `setup_checkpointer_schema()`를 부르고 그건 psycopg다. Windows 기본
+        #: `ProactorEventLoop`에서는 이 파일 18건이 전부 `InterfaceError`로 죽었다.
+        run_with_checkpoint_loop(_prepare_schema())
     except Exception as exc:
         #: 🔴 **접속 실패만 skip이다.** 종전에는 `except Exception → skip`이라
         #: 정리 SQL의 오류(없는 컬럼)까지 삼켜 **13건 전부 skip**이 됐다 — 그건

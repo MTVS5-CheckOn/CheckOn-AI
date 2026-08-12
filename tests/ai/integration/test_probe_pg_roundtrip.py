@@ -15,7 +15,6 @@ AGENT_RUN.id(=job_id)를 참조함을 실 FK로 증명한다(§5 · fix 커밋�
 from __future__ import annotations
 
 import asyncio
-import sys
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -25,6 +24,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
+
+from ai.agents.checkpointer import run_with_checkpoint_loop
 
 pytestmark = pytest.mark.integration
 
@@ -54,7 +55,7 @@ async def _with_pg(scenario: _Scenario) -> str:
 
 def _run(scenario: _Scenario) -> None:
     if asyncio.run(_with_pg(scenario)) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose -f compose.dev.yml up (99 ⑫)")
+        pytest.skip("실 PG 미가용 — docker compose up -d (99 ⑫)")
 
 
 # ───────────────────────── 저장소 3종 왕복 ─────────────────────────
@@ -177,76 +178,27 @@ def test_agent_step_sink_roundtrip_fk_to_job_id() -> None:
 # ───────────────────────── PostgresSaver 체크포인트 재개 ─────────────────────────
 
 
-def checkpoint_loop_factory() -> Callable[[], asyncio.AbstractEventLoop] | None:
-    """🔴 **Windows에서만 `SelectorEventLoop`** — 체크포인터가 psycopg를 쓰기 때문이다.
-
-    이 파일의 다른 시나리오는 **asyncpg**(SQLAlchemy)라 Windows 기본 `ProactorEventLoop`에서
-    잘 돈다. 그런데 `AsyncPostgresSaver`만 **psycopg**를 쓰고, psycopg의 async 구현은
-    Proactor에서 동작하지 않는다 ⇒ **이 한 검사만** 루프를 갈아 끼운다.
-
-    ⚠ **skip으로 피하지 않는다** — 그러면 Windows에서 **PG 체크포인트 저장·재개 검증이
-    통째로 사라진다.** 그건 「안 봤다」이지 「통과했다」가 아니다.
-    ⚠ **macOS·Linux는 기존 경로 그대로**다(`None` → `asyncio.run`의 기본 루프).
-    ⚠ 함수로 뺀 이유는 **Windows 없이도 이 분기를 검사할 수 있게** 하려는 것이다
-      (아래 전용 단위 검사가 `sys.platform`을 갈아 끼워 확인한다).
-    """
-    if sys.platform == "win32":
-        return asyncio.SelectorEventLoop
-    return None
+#: 🔴 **규칙의 정본은 프로덕션이다** — `ai.agents.checkpointer`가 psycopg를 여는
+#: 자리라 루프 분기도 그 모듈이 소유한다. 종전에는 이 파일이 같은 분기를 **따로**
+#: 들고 있어서, **검사는 초록인데 배포 명령은 Windows에서 항상 exit 1**이었다.
+#: ⚠ **skip으로 피하지 않는다** — 그러면 Windows에서 PG 체크포인트 저장·재개 검증이
+#: 통째로 사라진다. 그건 「안 봤다」이지 「통과했다」가 아니다.
 
 
 def _run_checkpoint_scenario() -> str:
-    factory = checkpoint_loop_factory()
-    if factory is not None:
-        return asyncio.run(_checkpoint_scenario(), loop_factory=factory)
-    return asyncio.run(_checkpoint_scenario())
+    return run_with_checkpoint_loop(_checkpoint_scenario())
 
 
 def test_postgres_saver_checkpoint_survives_reopen() -> None:
     """propose_spec 앞 중단→새 saver(같은 PG)로 재개해도 완결 — 체크포인트 PG 생존(§4)."""
     outcome = _run_checkpoint_scenario()
     if outcome == "skip":
-        pytest.skip("실 PG 미가용 — docker compose -f compose.dev.yml up (99 ⑫)")
+        pytest.skip("실 PG 미가용 — docker compose up -d (99 ⑫)")
 
 
-@pytest.mark.parametrize(
-    ("platform", "expected_selector"),
-    [("win32", True), ("darwin", False), ("linux", False)],
-)
-def test_the_loop_factory_is_windows_only(
-    monkeypatch: pytest.MonkeyPatch, platform: str, expected_selector: bool
-) -> None:
-    """🔴 **Windows에서만** 루프를 갈아 끼우는지 — 그 OS 없이 값으로 확인한다.
-
-    ⚠ 이 검사가 없으면 *"Windows에서 고쳤다"* 를 **Windows에서만** 확인할 수 있고,
-    macOS 경로를 실수로 바꿔도 여기서는 안 보인다.
-    """
-    monkeypatch.setattr(sys, "platform", platform)
-    factory = checkpoint_loop_factory()
-    if expected_selector:
-        assert factory is asyncio.SelectorEventLoop
-    else:
-        assert factory is None, f"{platform}에서 루프를 갈아 끼웠다 — 기존 경로가 바뀐다"
-
-
-def test_the_windows_call_form_is_actually_supported() -> None:
-    """🔴 **Windows 분기의 호출 형태가 유효한가** — 아니면 그쪽만 `TypeError`가 난다.
-
-    ⚠ Windows가 없는 기기에서 이 분기를 **한 번도 실행하지 않고** 머지하면,
-    고쳤다고 믿은 자리에서 **다른 예외**가 난다. `loop_factory`는 Python 3.12에서
-    `asyncio.run`에 들어왔다 — **그 사실을 값으로** 확인한다(POSIX에도 `SelectorEventLoop`가
-    있어 호출 자체는 여기서도 돈다).
-    """
-    import inspect  # noqa: PLC0415
-
-    assert "loop_factory" in inspect.signature(asyncio.run).parameters, (
-        "이 파이썬의 asyncio.run은 loop_factory를 안 받는다 — Windows 분기가 TypeError다"
-    )
-
-    async def _noop() -> str:
-        return "ok"
-
-    assert asyncio.run(_noop(), loop_factory=asyncio.SelectorEventLoop) == "ok"
+#: 🔴 **루프 분기 자체의 검사는 `tests/ai/unit/test_checkpointer_loop.py`로 옮겼다.**
+#: 규칙이 프로덕션(`ai.agents.checkpointer`)으로 갔고, 그 검사는 PG가 필요 없다 —
+#: `integration` 마커 아래 두면 **기본 실행에서 안 돌아** 배포 명령의 회귀를 못 잡는다.
 
 
 async def _checkpoint_scenario() -> str:
