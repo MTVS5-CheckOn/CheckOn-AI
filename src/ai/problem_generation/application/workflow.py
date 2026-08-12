@@ -24,6 +24,7 @@ from ai.contracts.graphrag import (
     GraphContextService,
 )
 from ai.contracts.llm import (
+    FieldMissing,
     LlmError,
     ParseFailed,
     RedactionBlocked,
@@ -53,6 +54,7 @@ from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import (
     ProblemGenerator,
     build_candidate_snapshot,
+    schema_issues_from_field_missing,
 )
 from ai.problem_generation.application.literature_selector import (
     LiteratureSelectionUnavailable,
@@ -83,6 +85,7 @@ from ai.problem_generation.domain.identity import (
 from ai.problem_generation.domain.models import (
     CandidateSnapshot,
     RetryContext,
+    SchemaValidationIssue,
     TargetPlan,
 )
 from ai.problem_generation.domain.policy import (
@@ -180,6 +183,7 @@ class GraphContextReferenceInsufficient(GraphContextError):
 @dataclass(frozen=True, slots=True)
 class _AttemptFeedback:
     failed_checks: tuple[str, ...]
+    schema_issues: tuple[SchemaValidationIssue, ...] = ()
     previous_stem_hash: str | None = None
 
 
@@ -456,7 +460,12 @@ class ProblemGenerationWorkflow:
                 )
             except LlmError as error:
                 feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
-                    failed_checks=(f"generator:{type(error).__name__}",)
+                    failed_checks=(f"generator:{type(error).__name__}",),
+                    schema_issues=(
+                        schema_issues_from_field_missing(error)
+                        if isinstance(error, FieldMissing)
+                        else ()
+                    ),
                 )
                 if state.fallback_ref is not None:
                     return await self._restore_fallback(state)
@@ -806,6 +815,7 @@ class ProblemGenerationWorkflow:
         return RetryContext(
             attempt_no=state.item_attempt,
             failed_checks=previous.failed_checks if previous is not None else (),
+            schema_issues=previous.schema_issues if previous is not None else (),
             previous_stem_hash=(
                 previous.previous_stem_hash if previous is not None else None
             ),

@@ -1085,6 +1085,34 @@ provider는 실패를 **예외로 올린다.** 반환값의 `outcome`은 `OK` �
 소비자의 outcome 분기는 **도달 불가 방어**로 남긴다(#129). 이 규약을 바꾸면 재시도
 계약도 함께 바뀌므로 게이트웨이 소유자(B)에게 먼저 통보해야 한다.
 
+##### 구조화 출력 스키마 본문 전달 제안 `[A+B 양자 승인 필요 · 미구현]`
+
+2026-08-12 실 LLM 스모크(`gpt-5.4-mini` · language · count=1)에서 생성 응답의
+`GeneratedItem` 스키마 통과가 회차별 `1/3 · 3/3 · 0/3`으로 흔들렸고, 두 회차는
+`FieldMissing`으로 생성 상한 3회를 소진했다. 현 `LLMRequest`는
+`response_schema_name="GeneratedItem"`이라는 이름만 싣고 JSON Schema 본문은 싣지
+않으므로 provider가 OpenAI 호환 `response_format.type=json_schema`를 만들 근거가 없다.
+
+양자 승인 뒤 `contracts/llm.py::LLMRequest`에 다음 선택 필드를 추가하는 안을 제안한다.
+
+```python
+response_schema: dict[str, object] | None = None
+```
+
+값은 capability 호출자가 자신의 Pydantic 계약 모델에서 `model_json_schema()`로 만들어
+넘긴 JSON Schema 본문이다. `response_schema_name`은 관측·registry 대조용 이름으로 유지하고,
+본문이 있으면 provider는 이름과 본문으로 strict `json_schema` response format을 조립한다.
+본문이 없으면 기존 자유 텍스트 호출과 파싱 경로를 유지해 점진적으로 이관한다.
+
+🔴 provider가 `ai.contracts.problem_generation`·`ai.contracts.classify` 같은 capability 계약을
+직접 import해 이름별 모델 표를 갖는 형태는 금지한다. 그렇게 하면 벤더 어댑터가 도메인을
+알게 되고 새 capability가 추가될 때마다 공통 provider를 고쳐야 한다. 스키마는 호출자가
+만들어 넘기고 provider는 전달받은 표준 JSON Schema만 해석해야 벤더 독립 경계가 유지된다.
+
+이 변경은 양자 파일 `contracts/llm.py`의 공통 요청 계약을 넓히므로 A+B 승인이 필요하다.
+이번 변경에서는 구현하지 않았으며, provider·게이트·재시도 상한과 기존 스키마 제약도
+변경하지 않았다.
+
 | 예외 | wire 결과 |
 | --- | --- |
 | `ProblemWorkflowConfigurationError` | 400 `INVALID_SCHEMA` |

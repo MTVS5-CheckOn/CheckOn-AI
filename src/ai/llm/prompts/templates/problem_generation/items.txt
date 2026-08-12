@@ -15,6 +15,9 @@ $generation_input_json
 [재시도 문맥 JSON]
 $retry_context_json
 
+[GeneratedItem JSON Schema — 계약 모델에서 자동 유도]
+$response_schema_json
+
 규칙:
 1. item_format은 mcq만 허용하며 선지는 정확히 5개다.
 2. 요청의 area_tag, type_tag, skill_node_id를 그대로 보존한다.
@@ -22,7 +25,8 @@ $retry_context_json
    정답 선지의 why_wrong은 null이다.
 4. rationale은 evidence의 승인된 근거만 사용한다.
 5. evidence는 최소 1개이며 ContextPack의 EvidencePack 앵커만 참조한다.
-6. 아래 스키마의 JSON 객체 하나만 반환한다.
+6. 위 JSON Schema의 required·enum·길이·개수·중첩 구조·필드 설명과
+   additionalProperties 제약을 모두 만족하는 JSON 객체 하나만 반환한다.
 7. 예시 인물이 필요하면 사람 이름을 쓰지 않고 학생 A·갑·을 같은 비인명 표기를 쓴다.
    인명은 개인정보 마스킹에 걸려 교차 풀이가 fail-closed로 차단된다.
 
@@ -39,33 +43,8 @@ $retry_context_json
     low는 근거가 지문에 직접 있고, high는 두 정보의 결합·조건 한정을 요구한다.
     지문을 길게 하거나 어려운 어휘를 넣어 난이도를 만들지 않는다.
 
-스키마 — 필드명을 바꾸거나 새 필드를 추가하지 않는다:
-
-{
-  "area_tag": "요청 값 그대로",
-  "type_tag": "요청 값 그대로",
-  "item_format": "mcq",
-  "skill_node_id": "요청 값 그대로 또는 null",
-  "stem": "발문 문자열",
-  "choices": [
-    {"no": 1, "text": "선지 1", "why_wrong": null},
-    {"no": 2, "text": "선지 2", "why_wrong": "오답 사유"},
-    {"no": 3, "text": "선지 3", "why_wrong": "오답 사유"},
-    {"no": 4, "text": "선지 4", "why_wrong": "오답 사유"},
-    {"no": 5, "text": "선지 5", "why_wrong": "오답 사유"}
-  ],
-  "answer": {"correct_no": 1},
-  "rationale": "해설 문자열",
-  "evidence": [
-    {"kind": "grammar_rule", "ref": "앵커 ref", "quote": null}
-  ]
-}
-
-스키마 제약:
-- choices는 정확히 5개이고 no는 1..5를 한 번씩 쓴다.
-- 정답은 answer.correct_no(1..5)로만 표시한다. 선지 안에 정답 표시를 넣지 않는다.
-- evidence[].kind는 passage_span · dict_entry · grammar_rule · work_span 중 하나다.
-- kind가 passage_span 또는 work_span이면 quote에 원문을 넣고, 그 외에는 null이다.
-- options · is_correct · evidence_refs · difficulty · confidence 같은 필드를 만들지
-  않는다. 스키마에 없는 키가 하나라도 있으면 응답 전체가 거부된다.
+출력 규율:
+- 필드명을 바꾸거나 JSON Schema에 없는 키를 추가하지 않는다.
+- 정답은 answer.correct_no로만 표시하고 선지 안에 정답 표시를 넣지 않는다.
+- 재시도 문맥의 schema_issues가 비어 있지 않으면 각 path의 reason을 이번 응답에서 교정한다.
 - 코드 블록 표시나 설명 문장 없이 JSON 객체만 출력한다.

@@ -275,9 +275,17 @@ class Choice(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    no: int = Field(ge=1, le=5)
-    text: str = Field(min_length=1)
-    why_wrong: str | None = Field(default=None, min_length=1)
+    no: int = Field(
+        ge=1,
+        le=5,
+        description="선지 번호. choices 전체에서 1부터 5까지 중복 없이 한 번씩 사용한다.",
+    )
+    text: str = Field(min_length=1, description="비어 있지 않은 선지 본문.")
+    why_wrong: str | None = Field(
+        default=None,
+        min_length=1,
+        description="정답 선지는 null, 모든 오답 선지는 비어 있지 않은 오답 사유.",
+    )
 
 
 class Answer(BaseModel):
@@ -285,7 +293,11 @@ class Answer(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    correct_no: int = Field(ge=1, le=5)
+    correct_no: int = Field(
+        ge=1,
+        le=5,
+        description="유일한 정답 선지 번호. choices에 존재하는 번호여야 한다.",
+    )
 
 
 class EvidenceKind(StrEnum):
@@ -300,9 +312,16 @@ class EvidenceAnchor(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: EvidenceKind
-    ref: str = Field(min_length=1)
-    quote: str | None = Field(default=None, min_length=1)
+    kind: EvidenceKind = Field(description="승인 근거의 종류.")
+    ref: str = Field(min_length=1, description="ContextPack에 존재하는 승인 앵커 ref.")
+    quote: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "passage_span과 work_span이면 비어 있지 않은 원문 인용이 필수이고, "
+            "dict_entry와 grammar_rule이면 null이다."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_quote(self) -> Self:
@@ -316,15 +335,29 @@ class GeneratedItem(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    area_tag: AreaTag
-    type_tag: TypeTag
-    item_format: ItemFormat
-    skill_node_id: str | None = Field(default=None, min_length=1)
-    stem: str = Field(min_length=1)
-    choices: tuple[Choice, ...] = Field(min_length=5, max_length=5)
-    answer: Answer
-    rationale: str = Field(min_length=1)
-    evidence: tuple[EvidenceAnchor, ...] = Field(min_length=1)
+    area_tag: AreaTag = Field(description="생성 입력의 area_tag와 같은 enum 값.")
+    type_tag: TypeTag = Field(description="생성 입력의 type_tag와 같은 enum 값.")
+    item_format: ItemFormat = Field(description="v1에서는 mcq만 허용한다.")
+    skill_node_id: str | None = Field(
+        default=None,
+        min_length=1,
+        description="생성 입력의 skill_node_id와 같은 값. 입력이 없을 때만 null.",
+    )
+    stem: str = Field(min_length=1, description="비어 있지 않은 발문.")
+    choices: tuple[Choice, ...] = Field(
+        min_length=5,
+        max_length=5,
+        description=(
+            "정확히 5개. no는 1부터 5까지 중복 없이 한 번씩 사용하고, "
+            "answer.correct_no 이외의 모든 선지는 why_wrong이 필수다."
+        ),
+    )
+    answer: Answer = Field(description="유일한 정답 번호를 담는 중첩 객체.")
+    rationale: str = Field(min_length=1, description="승인 evidence만 사용한 비어 있지 않은 해설.")
+    evidence: tuple[EvidenceAnchor, ...] = Field(
+        min_length=1,
+        description="ContextPack의 승인 앵커를 참조하는 근거가 최소 1개 필요하다.",
+    )
 
     @field_validator("item_format")
     @classmethod

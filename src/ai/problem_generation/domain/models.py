@@ -15,6 +15,15 @@ from ai.contracts.problem_generation import (
 )
 
 
+class SchemaValidationIssue(BaseModel):
+    """LLM에 되돌려도 되는 Pydantic 검증 실패의 최소 표현."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    path: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
 class RetryContext(BaseModel):
     """다음 생성 시도에 전달하는 비민감 실패 요약."""
 
@@ -22,6 +31,7 @@ class RetryContext(BaseModel):
 
     attempt_no: int = Field(ge=1, le=3)
     failed_checks: tuple[str, ...] = ()
+    schema_issues: tuple[SchemaValidationIssue, ...] = ()
     previous_stem_hash: str | None = Field(
         default=None,
         pattern=r"^sha256:[0-9a-f]{64}$",
