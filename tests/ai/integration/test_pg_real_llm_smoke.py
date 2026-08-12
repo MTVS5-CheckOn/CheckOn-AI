@@ -610,8 +610,8 @@ def test_unavailable_reason_reports_only_categorical_failure_metadata() -> None:
     )
 
 
-def test_five_area_problem_generation_real_llm_roundtrip() -> None:
-    """실 모델이 5영역에서 스키마 응답을 내고 게이트가 정상 상태를 결정한다."""
+def test_t1_problem_generation_real_llm_roundtrip() -> None:
+    """정본 게이트의 보호된 실 호출은 실 근거 서비스가 있는 T1만 검사한다."""
 
     settings = get_llm_settings()
     # 🔴 **opt-in 없이는 안 부른다**(99 #32) — 종전 조건은 `.env`가 덮으면 열렸다.
@@ -622,28 +622,23 @@ def test_five_area_problem_generation_real_llm_roundtrip() -> None:
         pytest.skip("B-14 P2 전 외부 트레이싱 비활성 전제 — 스모크 skip")
 
     try:
-        summaries = asyncio.run(run_real_llm_smoke_matrix(repetitions=1))
+        observation = asyncio.run(run_real_llm_smoke(AreaTag.LANGUAGE))
     except RealLlmSmokeUnavailable as exc:
         pytest.skip(str(exc))
     except LlmError as exc:
         pytest.skip(f"OpenAI 미가용 — {type(exc).__name__}")
 
-    assert len(summaries) == len(AreaTag)
-    for summary in summaries:
-        assert not summary.unavailable_reasons
-        assert len(summary.observations) == 1
-        observation = summary.observations[0]
-        assert observation.generator_provider_name != observation.verifier_provider_name
-        assert len(observation.result.items) == 1
-        assert observation.result.items[0].status in _VALID_GATE_STATUSES
-        assert observation.parsed_items, (
-            f"{summary.area_tag.value} generator 응답이 GeneratedItem 스키마로 파싱되지 않았다"
-        )
-        item = observation.parsed_items[-1]
-        assert len(item.choices) == 5
-        assert 1 <= item.answer.correct_no <= 5
-        assert observation.generated_items
-        assert observation.generated_items[0].evidence[0].quote is not None
+    assert observation.generator_provider_name != observation.verifier_provider_name
+    assert len(observation.result.items) == 1
+    assert observation.result.items[0].status in _VALID_GATE_STATUSES
+    assert observation.parsed_items, (
+        "language generator 응답이 GeneratedItem 스키마로 파싱되지 않았다"
+    )
+    item = observation.parsed_items[-1]
+    assert len(item.choices) == 5
+    assert 1 <= item.answer.correct_no <= 5
+    assert observation.generated_items
+    assert observation.generated_items[0].evidence[0].quote is not None
 
 
 __all__ = [
