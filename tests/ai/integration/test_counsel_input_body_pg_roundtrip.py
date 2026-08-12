@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import Coroutine
 from datetime import UTC, datetime
@@ -178,6 +179,18 @@ def _sessions() -> tuple[Any, async_sessionmaker[AsyncSession]]:
     return engine, async_sessionmaker(engine, expire_on_commit=False)
 
 
+def _where_of(statement: str) -> str | None:
+    """🔴 **WHERE 절만** 돌려준다 — `SELECT` 목록에도 `tenant_id`가 **있다.**
+
+    ⚠ 처음엔 문장 전체에서 `"tenant_id" in statement`를 봤는데, 그건 **투영 컬럼**을
+    보고 통과하는 검사였다 — 술어를 지워도 green이었다(뒤집기 실측 · 로그 85:
+    「검사의 이름이 보는 것보다 넓다」).
+    ⚠ 공백으로 찾지 않는다 — SQLAlchemy는 `WHERE` 앞에 **개행**을 넣는다.
+    """
+    match = re.search(r"\bWHERE\b", statement, flags=re.IGNORECASE)
+    return None if match is None else statement[match.start() :]
+
+
 async def _count(
     sessions: async_sessionmaker[AsyncSession], table: str, tenant: str
 ) -> int:
@@ -279,8 +292,12 @@ def test_the_tenant_predicate_is_in_the_sql_not_in_python() -> None:
 
             selects = [s for s in seen if "counsel_context_bundle" in s.lower()]
             assert selects, f"조회 SQL이 안 잡혔다: {seen}"
-            assert all("tenant_id" in s for s in selects), (
-                f"테넌트 술어 없는 조회가 있다: {selects}"
+            wheres = [_where_of(statement) for statement in selects]
+            assert all(where is not None for where in wheres), (
+                f"WHERE 없는 조회가 있다: {selects}"
+            )
+            assert all("tenant_id" in (where or "") for where in wheres), (
+                f"테넌트 술어가 WHERE에 없다: {wheres}"
             )
         finally:
             await engine.dispose()
@@ -480,8 +497,12 @@ def test_the_draft_tenant_predicate_is_in_the_sql() -> None:
 
             selects = [s for s in seen if " draft" in s.lower()]
             assert selects, f"조회 SQL이 안 잡혔다: {seen}"
-            assert all("tenant_id" in s for s in selects), (
-                f"테넌트 술어 없는 조회가 있다: {selects}"
+            wheres = [_where_of(statement) for statement in selects]
+            assert all(where is not None for where in wheres), (
+                f"WHERE 없는 조회가 있다: {selects}"
+            )
+            assert all("tenant_id" in (where or "") for where in wheres), (
+                f"테넌트 술어가 WHERE에 없다: {wheres}"
             )
         finally:
             await engine.dispose()
