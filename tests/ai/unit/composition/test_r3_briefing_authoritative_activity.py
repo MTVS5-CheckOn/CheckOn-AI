@@ -159,6 +159,31 @@ def test_b10_merged_facts_also_use_the_authoritative_activity() -> None:
     assert f"{_EVENT_COUNT}건" not in values and "100%" not in values, values
 
 
+def test_the_baseline_also_comes_from_the_activity_aggregate() -> None:
+    """🔴 **분모까지 정본이어야 한다** — 분자만 바꾸면 비율이 여전히 틀린다.
+
+    ⚠ 앞의 반례는 두 기준선이 우연히 같아(둘 다 20) **분모가 어디서 오는지 못 본다**.
+    여기서는 기준선을 갈라 놓는다.
+
+    ```
+    learning_events 기준선   주당 20건
+    weekly_activity 기준선   주당 10건        ← R3 정본
+    분석 주 집계             3건
+
+    정본 분모 :  3 / 10 = 30%
+    잘못된 분모:  3 / 20 = 15%
+    ```
+    """
+    scenario = builder("r3base").student("st_a")
+    scenario.steady_history("st_a", n=_EVENT_COUNT, correct=17)
+    scenario.activity_series("st_a", counts={0: 3}, baseline=10)
+
+    facts = _facts(scenario)
+    assert facts["이번 주 학습 활동"] == "3건", facts
+    assert facts["평소 대비"] == "30%", facts
+    assert "15%" not in " ".join(facts.values()), facts
+
+
 # ───────────────────────── 정상 입력 대조 ─────────────────────────
 
 
