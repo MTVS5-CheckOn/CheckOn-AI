@@ -231,11 +231,26 @@ def _r3(
         return None, RuleSkip(
             rule_id=RuleId.R3, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
         )
-    if baseline.volume < p.min_baseline_events:
+    #: 🔴 **분자와 분모를 같은 자로 잰다**(99 #43) — 현재 주는 집계, baseline은 학습 이벤트
+    #:   개수로 재면 **두 다른 측정이 비교**된다. 증분 전송에서는 이벤트 수가 집계보다
+    #:   작을 수 있어 비율이 조용히 부풀거나 꺼진다.
+    #: ⚠ baseline 창의 집계가 하나라도 없으면 **판정하지 않는다** — 섞느니 안 한다.
+    prior = features.weeks[-1 - config.baseline_window_weeks : -1]
+    prior_counts = [
+        evidence.weekly_activity[week.week_monday].activity_count
+        for week in prior
+        if week.week_monday in evidence.weekly_activity
+    ]
+    if not prior or len(prior_counts) != len(prior):
+        return None, RuleSkip(
+            rule_id=RuleId.R3, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
+        )
+    baseline_volume = sum(prior_counts) / len(prior_counts)
+    if baseline_volume < p.min_baseline_events:
         return None, None
     mult = threshold_multiplier(RuleId.R3, segment, config.segments)
     ratio_threshold = p.volume_ratio * mult
-    actual_ratio = activity.activity_count / baseline.volume
+    actual_ratio = activity.activity_count / baseline_volume
     if actual_ratio >= ratio_threshold:
         return None, None
     # deficit 방향: threshold에서 0, 완전 공백(0)에서 1

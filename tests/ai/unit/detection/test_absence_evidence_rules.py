@@ -308,3 +308,32 @@ def test_an_unregistered_rule_raises_instead_of_falling_back() -> None:
     )
     with pytest.raises(KeyError):
         resolve_evidence("R99", request)  # type: ignore[arg-type]
+
+
+def test_evidence_of_a_student_without_consent_never_enters() -> None:
+    """🔴 **무동의 학생의 근거는 입구에서 빠진다**(불변식 3과 같은 방향).
+
+    ⚠ 계약 검증은 *"`students[]`에 있는가"* 만 본다 — **동의 여부는 안 본다.**
+    그 학생은 판정에서 제외되지만, 근거가 색인에 남으면 브리핑·원장 조립이 그것을 집을
+    경로가 열린다. **입구에서 거른다.**
+    """
+    from ai.detection.evidence import build_student_evidence  # noqa: PLC0415
+
+    denied = StudentPlan(
+        student_ref="st_denied",
+        class_ref=_CLASS,
+        weeks=10,
+        consent="withheld",
+        events_despite_exclusion=True,
+    )
+    granted = StudentPlan(student_ref="st_ok", class_ref=_CLASS, weeks=10)
+    request = build_detect_request(
+        week_start=_WEEK, seed=7, students=[denied, granted]
+    )
+    assert any(
+        item.student_ref == "st_denied" for item in request.detection_evidence
+    ), "무동의 학생의 근거가 요청에 없다 — 이 검사가 아무것도 안 본다"
+
+    indexed = build_student_evidence(request)
+    assert "st_denied" not in indexed, "무동의 학생의 근거가 색인에 들어왔다"
+    assert "st_ok" in indexed

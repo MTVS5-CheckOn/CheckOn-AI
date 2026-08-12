@@ -140,6 +140,41 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 > - **② week_start·status 엄격 검증:** 수용. `week_start`는 ISO date 형식, `status`는 enum으로 경계 모델에서 검증하고 오타는 `400 INVALID_SCHEMA`로 수렴시킨다(계약 강화 커밋). `AlertContextItem` 상태 조합 validator(resolved↔resolved_at)·14일 경계·이력 격리 테스트도 함께 수용.
 > - **③ consent는 enum 강제하지 않는 것이 의도다.** 사양(09 §2)에 `granted`만 존재하며 다른 값을 발명하지 않는다("문서에 없는 설계 금지"). `granted`가 아닌 값은 `400`이 아니라 **'폐기'가 사양** — 09 §2 원문("granted가 아니면 이벤트를 전부 버림")대로 feature/evidence 조립 전에 폐기한다. `paused`도 판정 제외로 폐기. 두 적대 입력 회귀 테스트는 유지.
 
+### 2-보강. `detection_evidence` — 부재형 신호의 정본 근거 `[A 확정 8/12 · 백엔드 통보 필요]`
+
+🔴 **R2·R3·R5는 「기록이 없거나 상태가 바뀌었다」는 사실로 발화하는데, 그 사실을 증명할
+백엔드 원본이 요청에 없었다.** 그래서 엔진은 근거가 비면 **가장 최근 아무 `learning_event`**
+를 대신 인용했다 — R2가 과거 `solve`를, R3가 **과거 주**를, R5가 복귀 전 `solve`를.
+⚠ 그 폴백은 *"임의 무관 대체 금지"*(§3 A판정 7/22)를 지키려던 것이지만 **최근이라고 무관하지
+않은 것은 아니다.** 불변식 2는 「evidence 1건 이상」이 아니라 **「그 주장을 뒷받침하는 근거」**다.
+
+⇒ **요청에 optional 배열 하나를 추가한다.** 기존 필드 변경 0 · 응답 구조 변경 0.
+
+| kind | 규칙 | 고유 필드 | 판정 |
+| --- | --- | --- | --- |
+| `assignment_window` | **R2** | `week_start` · `expected_count` · `submitted_count` | 연속 미제출 한 주 = `expected > 0 AND submitted == 0`. **`expected == 0`은 미제출이 아니다**(방학·휴강 — 연속에서 제외). 일부 제출은 **연속 종료** |
+| `weekly_activity` | **R3** | `week_start` · `activity_count` | 이 값이 **판정값이자 evidence**다. **0건도 실존 레코드**. ⚠ `learning_events` 개수와 섞지 않는다 |
+| `enrollment_transition` | **R5** | `occurred_at`(tz 필수) · `from_status` · `to_status` | `to_status == returned` + **전환 주 == 분석 주** + `students[].status == returned` |
+
+**공통 필드:** `kind` · `source_table`(정본 테이블 **논리명**) · `record_id`(원본 PK) · `student_ref`.
+⚠ **실명·연락처·자유 원문이 들어올 자리가 없다**(`extra="forbid"` · 불변식 3).
+⚠ **AI는 `source_table`을 SQL 식별자로 쓰지 않는다** — 응답 evidence에 그대로 실어 **BE가
+자기 원본을 조회**하게 하는 값이다. **원본 전문을 AI PG에 복제 저장하지 않는다.**
+
+**없으면 어떻게 되나** — R1·R4·R6는 기존대로, **R2·R3·R5는 미판정 + `rules_skipped`에
+`authoritative_evidence_missing`**. 🔴 **다른 기록으로 대신하지 않는다**(fail-closed).
+
+**요청 경계(전부 `400 INVALID_SCHEMA`)** — `students[]`에 없는 `student_ref` · 같은 학생·주차
+집계 중복(값이 같아도) · 같은 `(source_table, record_id)`에 다른 내용 · 분석 주차보다 미래 ·
+naive `occurred_at` · `submitted > expected` · 복귀 전환과 `students[].status` 불일치.
+⚠ **상태와 이력이 갈리면 조용히 한쪽을 고르지 않는다** — 어느 쪽이 사실인지 AI가 정할 수 없다.
+
+⚠ **R2·R3는 baseline 창의 집계도 필요하다** — 분자와 분모를 **같은 자로** 재야 한다.
+증분 전송에서 이번 주 집계만 오면 **R3는 skip**된다(실측). 섞느니 판정하지 않는다.
+⚠ **R2의 「제출률 하락」 경로는 아직 안 열었다**(04 §1 R2 · BE-10).
+
+`snapshot_hash` 대상이다 — 04 부록 A. 안 보낸 요청의 canonical payload는 **종전과 같다**.
+
 ## 3. Response — AI → 백엔드
 
 표시 규칙: `[저장]` = Alert 테이블에 그대로 저장할 것 · `[표시]` = 화면까지 그대로 나가는 값 · `[로그]` = 저장만 하고 화면엔 안 씀.
