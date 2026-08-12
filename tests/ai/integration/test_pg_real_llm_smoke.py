@@ -113,6 +113,15 @@ class RealLlmSmokeUnavailable(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderFailureObservation:
+    """본문·URL 없이 provider 실패의 분류 정보만 남기는 실측 메타."""
+
+    exception_type: str
+    cause_type: str | None
+    http_status: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class _AreaSmokeCase:
     area_tag: AreaTag
     skill_node_id: str
@@ -215,6 +224,7 @@ class _ObservingProvider:
     def __init__(self, delegate: LLMProvider) -> None:
         self._delegate = delegate
         self.completions: list[LLMResult] = []
+        self.failures: list[ProviderFailureObservation] = []
 
     @property
     def name(self) -> str:
@@ -225,9 +235,57 @@ class _ObservingProvider:
         request: LLMRequest,
         context: ExecutionContext,
     ) -> LLMResult:
-        result = await self._delegate.complete(request, context)
+        try:
+            result = await self._delegate.complete(request, context)
+        except Exception as error:
+            self.failures.append(_provider_failure_observation(error))
+            raise
         self.completions.append(result)
         return result
+
+
+def _provider_failure_observation(error: Exception) -> ProviderFailureObservation:
+    """계약 예외의 원인 체인에서 타입과 정수 상태 코드만 추출한다."""
+
+    cause = error.__cause__
+    deepest = cause
+    while deepest is not None and deepest.__cause__ is not None:
+        deepest = deepest.__cause__
+    status = getattr(deepest, "status_code", None)
+    return ProviderFailureObservation(
+        exception_type=type(error).__name__,
+        cause_type=type(deepest).__name__ if deepest is not None else None,
+        http_status=status if isinstance(status, int) else None,
+    )
+
+
+def _unavailable_reason(
+    *,
+    role: ModelRole,
+    records: tuple[LlmCallRecord, ...],
+    failures: tuple[ProviderFailureObservation, ...],
+) -> str:
+    outcomes = sorted(
+        {
+            record.outcome.value
+            for record in records
+            if record.role is role and record.outcome in _UPSTREAM_FAILURES
+        }
+    )
+    exception_types = sorted({failure.exception_type for failure in failures})
+    cause_types = sorted(
+        {failure.cause_type for failure in failures if failure.cause_type is not None}
+    )
+    statuses = sorted(
+        {failure.http_status for failure in failures if failure.http_status is not None}
+    )
+    return (
+        f"{role.value} provider 미가용"
+        f" outcomes={','.join(outcomes) or 'unknown'}"
+        f" exceptions={','.join(exception_types) or 'unknown'}"
+        f" causes={','.join(cause_types) or 'unknown'}"
+        f" http_statuses={','.join(str(status) for status in statuses) or 'none'}"
+    )
 
 
 async def _diagnose(request: ProblemRequest) -> DiagnosisResult:
@@ -404,13 +462,25 @@ async def run_real_llm_smoke(
     if not generator.completions and _role_is_unavailable(
         frozen_records, ModelRole.GENERATOR
     ):
-        raise RealLlmSmokeUnavailable("generator provider 미가용")
+        raise RealLlmSmokeUnavailable(
+            _unavailable_reason(
+                role=ModelRole.GENERATOR,
+                records=frozen_records,
+                failures=tuple(generator.failures),
+            )
+        )
     if (
         outcome.items
         and outcome.items[0].status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
         and _role_is_unavailable(frozen_records, ModelRole.VERIFIER)
     ):
-        raise RealLlmSmokeUnavailable("verifier provider 미가용")
+        raise RealLlmSmokeUnavailable(
+            _unavailable_reason(
+                role=ModelRole.VERIFIER,
+                records=frozen_records,
+                failures=tuple(verifier.failures),
+            )
+        )
 
     parsed_items = _parse_generated_items(tuple(generator.completions))
     generated_items: list[GeneratedItem] = []
@@ -490,6 +560,54 @@ def test_smoke_cases_use_real_curriculum_nodes_and_supported_source_shapes() -> 
 def test_smoke_matrix_rejects_nonpositive_repetitions() -> None:
     with pytest.raises(ValueError, match="1 이상"):
         asyncio.run(run_real_llm_smoke_matrix(repetitions=0))
+
+
+def test_provider_failure_observation_excludes_message_and_keeps_safe_metadata() -> None:
+    class _HttpFailure(Exception):
+        status_code = 400
+
+    cause = _HttpFailure("https://secret.example/v1?api_key=secret")
+    error = LlmError("민감한 요청 원문")
+    error.__cause__ = cause
+
+    observation = _provider_failure_observation(error)
+
+    assert observation == ProviderFailureObservation(
+        exception_type="LlmError",
+        cause_type="_HttpFailure",
+        http_status=400,
+    )
+    assert "secret" not in repr(observation)
+
+
+def test_unavailable_reason_reports_only_categorical_failure_metadata() -> None:
+    record = LlmCallRecord(
+        role=ModelRole.GENERATOR,
+        prompt_id="pg.items.v1",
+        prompt_version="v4",
+        provider="local-generator",
+        model=None,
+        usage=None,
+        latency_ms=1,
+        outcome=CallOutcome.PROVIDER_ERROR,
+    )
+
+    reason = _unavailable_reason(
+        role=ModelRole.GENERATOR,
+        records=(record,),
+        failures=(
+            ProviderFailureObservation(
+                exception_type="LlmError",
+                cause_type="BadRequestError",
+                http_status=400,
+            ),
+        ),
+    )
+
+    assert reason == (
+        "generator provider 미가용 outcomes=provider_error exceptions=LlmError "
+        "causes=BadRequestError http_statuses=400"
+    )
 
 
 def test_five_area_problem_generation_real_llm_roundtrip() -> None:
