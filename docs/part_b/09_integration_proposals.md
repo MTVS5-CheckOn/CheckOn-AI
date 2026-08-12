@@ -1394,7 +1394,7 @@ select(ProblemItem).join(
 | 저장소 | 판정 | 처리 |
 | --- | --- | --- |
 | `problem_store.py` | 같은 슬롯의 동시 최초 저장에서 진 트랜잭션이 23505로 새어 `ImmutableStoreConflict` 계약을 위반 | **이번 처리** — `problem_item\x1f{tenant_id}\x1f{set_id}\x1f{slot_index}` 자문 잠금으로 읽기 전부터 직렬화 |
-| `inquiry_class_store.py` | 같은 최초 저장 경합 | **A 별도 처리** — 이 PR에서 수정하지 않음 |
+| `inquiry_class_store.py` | 같은 최초 저장 경합 | ✅ **해소(2026-08-12 · PR #210)** — `inquiry_class\x1f{tenant_id}\x1f{inquiry_ref}` 자문 잠금. 아래 후속 참조 |
 | `idempotency.py` | 저장 실패를 요청 실패로 올리지 않는 fail-open 계약 | **대상 아님** — 같은 처방을 강제하지 않음 |
 
 `problem_item`은 결정론 UUID PK와 `UNIQUE(set_id, slot_index)`에 같은 자연키가 두 번
@@ -1408,6 +1408,29 @@ select(ProblemItem).join(
 **별건 등재 — `problem_set`.** 저장소 전체에 `problem_set`을 `INSERT`하는 코드는 0건이고
 `problem_store.py`는 읽기·조인만 하므로 지금은 무해하다. 향후 쓰기 경로를 여는 시점에는
 자연키와 최초 저장 경합을 함께 설계해야 한다. 이번에는 고치지 않는다.
+
+**후속 확인 — `inquiry_class_store.py` 해소 `[2026-08-12]`.** A가 PR #210에서 같은 처방으로
+닫았다 — 읽기 전 `pg_advisory_xact_lock(hashtextextended(:key, 0))`이고, 키는 `lock_key()`
+한 함수가 만든다(`inquiry_class` 네임스페이스 + 자연키 두 축 · 구분자 `\x1f`). 형태·구분자
+근거가 `problem_store.py`와 같으므로 이 표의 처방이 저장소 둘에 같은 모양으로 서 있다.
+
+B가 실 PG에서 재현했다 — 경합 검사 9건 통과. 뒤집기 둘로 검사의 검출력도 확인했다:
+잠금을 **둘 다** 빼면 5건 실패(최초 저장 3건 + 배리어 + 갱신 경합), **`apply_confirmation`
+쪽만** 빼면 1건 실패다. 후자가 이번 건의 핵심이다 — 자문 잠금은 협력형이라 **한쪽만
+잠그는 것은 안 잠근 것**이고, 그때 남는 행은 오류 없이 **순차 실행 두 갈래 어디에도 없는
+값**이 된다.
+
+🔴 **이 표의 판정 축은 「최초 INSERT」였다.** #42(기존 행 갱신 경합)는 8/10 전수 조사가
+보지 않은 축이고, A가 별건으로 등재·해소했다. 다음 전수 조사는 **갱신 경합도 같이 센다** —
+같은 자연키에 협력 writer가 둘 이상이면 전원이 같은 키에 서는지가 판정 대상이다.
+
+8/10 이후 신설된 저장소도 다시 대조했다. `pack_store.py`는 SELECT 후 INSERT 형태지만 키가
+랜덤 UUID라 같은 키가 두 번 오는 경로가 없고(재시도 고아 행 축은 #24로 별도 추적),
+`probe_stores.py`는 선행 SELECT 없는 단순 INSERT다 ⇒ 이 표에 새로 들어올 저장소는 없다.
+
+**제안만 남김 — 잠금 SQL 문면 공용화.** 같은 `_LOCK_SQL` 문면이 이제 셋에 있다
+(`problem_store.py`·`inquiry_class_store.py`·`counsel_read_model.py`). 공용 경계로 올리면
+A·B 소유 파일을 함께 건드리므로 이번에도 제안으로만 남긴다 — 아래 SQLSTATE 항목과 같은 결이다.
 
 **제안만 남김 — SQLSTATE 추출 공용화.** 향후 여러 저장소에서 예외 번역이 실제로 필요해지면
 `agent_job.py`의 `_sqlstate`와 같은 드라이버 차이 흡수 헬퍼를 공용 경계로 올린다. 지금은
