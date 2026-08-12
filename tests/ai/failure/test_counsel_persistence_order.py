@@ -27,9 +27,10 @@ from uuid import UUID, uuid4
 import pytest
 
 # ⚠ 같은 디렉터리의 하네스를 재사용한다 — 워커 조립을 또 복제하면 한쪽만 낡는다(99 #02).
-from test_ledger_survives_every_failure import (  # type: ignore[import-not-found]
-    _WorkerHarness,
+from test_ledger_survives_every_failure import (
+    _MutatingContextStore,
     _ok_provider,
+    _WorkerHarness,
 )
 
 from ai.composition.counsel.stores import (
@@ -102,8 +103,12 @@ class _FailsOncePerStudent:
         return await self._inner.write(**kwargs)
 
 
-class _FailingContexts(InMemoryContextStore):
-    """입력 묶음 저장이 터진다 — enqueue까지 가면 안 된다."""
+class _FailingContexts(_MutatingContextStore):
+    """입력 묶음 저장이 터진다 — enqueue까지 가면 안 된다.
+
+    ⚠ 하네스의 `contexts` 타입(`_MutatingContextStore`)을 그대로 잇는다 — 형제 검사가
+    쓰는 조회 갈고리를 잃지 않는다.
+    """
 
     async def put(self, record: ContextBundleRecord) -> str:
         del record
@@ -114,7 +119,7 @@ def _state_of(harness: _WorkerHarness, job: WorkerJob) -> dict[str, Any]:
     """체크포인트에 실제로 저장된 state — **워커가 아니라 저장된 것**을 본다."""
 
     async def read() -> dict[str, Any]:
-        config = {"configurable": {"thread_id": str(job.job_id)}}
+        config: Any = {"configurable": {"thread_id": str(job.job_id)}}
         snapshot = await harness.runner._checkpointer.aget(config)  # noqa: SLF001
         assert snapshot is not None, "체크포인트가 아예 없다 — 이 검사의 전제가 깨졌다"
         values: dict[str, Any] = snapshot["channel_values"]
