@@ -499,8 +499,24 @@ class InMemoryRunStore:
             )
             return
         _require_same_identity(existing, run)
+        #: 🔴 **검증을 다 끝낸 뒤 한 번에 반영한다**(99 #46 보완). 종전에는 사용 축을 먼저
+        #:   갱신하고 호출을 붙였는데, 호출 검증에서 충돌이 나면 **사용 축만 갱신된 채**
+        #:   남았다 — PG는 한 트랜잭션이라 통째로 롤백된다 ⇒ **백엔드에 따라 충돌 뒤
+        #:   원장 내용이 달라졌다.** 계산을 지역 변수에 준비하고 마지막에 반영한다.
+        fresh = self._fresh_calls(run.execution_id, calls)
+        payloads, refused = accepted_payloads(fresh)
+        created_at = self._clock()
+        rows = [
+            llm_call_orm(call, run_id=run.execution_id, created_at=created_at)
+            for call in fresh
+        ]
+        # ── 여기부터 상태 변경 — 위에서 예외가 나면 아무것도 안 바뀐다 ──
         self.runs[run.execution_id] = _merged_usage(existing, run)
-        await self._append_calls(run.execution_id, calls)
+        self.calls.extend(rows)
+        self.refused_payloads += refused
+        self.payloads.update(
+            {payload.call_id: payload_orm(payload) for payload in payloads}
+        )
 
     async def record_run(
         self, run: RunMetadata, calls: Sequence[CollectedCall]
@@ -514,27 +530,36 @@ class InMemoryRunStore:
     ) -> None:
         await self._append_calls(execution_id, calls)
 
-    async def _append_calls(
+    def _fresh_calls(
         self, execution_id: uuid.UUID, calls: Sequence[CollectedCall]
-    ) -> None:
+    ) -> list[CollectedCall]:
         """🔴 **call id 기준 멱등** — 재개가 이전 호출을 다시 넘겨도 행이 안 는다.
 
         ⚠ 같은 id에 **다른 전문**이면 의미 충돌이다(조용히 무시하면 원장이 거짓이 된다).
-        ⚠ 중복 하나 때문에 **같은 호출의 새 항목까지** 버리지 않는다 — 새 것만 덧붙인다.
+        ⚠ 중복 하나 때문에 **같은 호출의 새 항목까지** 버리지 않는다 — 새 것만 돌려준다.
+        ⚠ **상태를 안 바꾼다** — 호출자가 검증을 다 끝낸 뒤 반영한다.
         """
         created_at = self._clock()
         known = {row.id: row for row in self.calls}
         fresh: list[CollectedCall] = []
         for call in calls:
             existing = known.get(call.id)
-            candidate = llm_call_orm(call, run_id=execution_id, created_at=created_at)
             if existing is None:
                 fresh.append(call)
                 continue
+            candidate = llm_call_orm(call, run_id=execution_id, created_at=created_at)
             if not _same_call_row(existing, candidate):
                 raise RunIdentityConflict(
                     f"같은 llm_call id에 다른 전문이 왔다: {call.id}"
                 )
+        return fresh
+
+    async def _append_calls(
+        self, execution_id: uuid.UUID, calls: Sequence[CollectedCall]
+    ) -> None:
+        """`record_calls`·`record_run`의 적재 — 검증 뒤 반영은 같은 규칙이다."""
+        fresh = self._fresh_calls(execution_id, calls)
+        created_at = self._clock()
         self.calls.extend(
             llm_call_orm(call, run_id=execution_id, created_at=created_at)
             for call in fresh
@@ -615,7 +640,7 @@ class PgRunStore:
         self, run: RunMetadata, calls: Sequence[CollectedCall]
     ) -> None:
         """사용 축 갱신 + 새 호출만 추가 — SQL 장애는 fail-open, 의미 충돌은 예외."""
-        payloads, refused = accepted_payloads(calls)
+        refused = 0
         try:
             async with self._sessionmaker() as session, session.begin():
                 stored = await self._select_run(
@@ -646,6 +671,10 @@ class PgRunStore:
                     )
                 )
                 fresh = await self._fresh_calls(session, run.execution_id, calls)
+                #: 🔴 **거부 판정은 `fresh`에만 돌린다**(99 #46 보완) — 종전에는 `calls`
+                #:   전체에 돌려서, 이미 저장된 호출을 재전달할 때마다 **거부 카운터가
+                #:   다시 올라갔다**(InMemory와 값이 갈렸다).
+                payloads, refused = accepted_payloads(fresh)
                 self._add_calls(session, run.execution_id, fresh, payloads)
         except RunIdentityConflict:
             raise  # 🔴 의미 충돌은 fail-open이 아니다

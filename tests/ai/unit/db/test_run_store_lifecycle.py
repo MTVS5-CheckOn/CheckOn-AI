@@ -366,3 +366,75 @@ def test_the_usage_axis_comes_from_the_last_successful_call() -> None:
     assert (chosen.record.provider, chosen.record.model) == ("A", "A1")
     #: 같은 선택을 두 함수가 공유한다.
     assert last_success_id(calls) == chosen.id
+
+
+# ── (지시서 72-R) 충돌 뒤 상태가 **정확히 이전 값**인가 ──
+
+
+def _refused_payload_of(call: CollectedCall) -> CollectedCall:
+    """저장 직전 훅이 **거부할** 본문을 단 호출 — 거부 카운터를 재려는 대역이다.
+
+    ⚠ `response_uncertain=True`가 거부 사유다(*"가렸지만 확신 없음"* 을 원장에 안 남긴다).
+    """
+    from ai.db.repositories.run_store import CollectedPayload  # noqa: PLC0415
+
+    return CollectedCall(
+        id=call.id,
+        record=call.record,
+        payload=CollectedPayload(
+            call_id=call.id,
+            request_masked="정상 요청",
+            response_masked="정상 응답",
+            response_uncertain=True,
+        ),
+    )
+
+
+def test_a_conflict_leaves_the_store_exactly_as_before() -> None:
+    """🔴 **부분 반영 금지** — 충돌이 나면 사용 축·호출·본문·거부 수가 전부 이전 값이다.
+
+    ⚠ 종전 InMemory는 **사용 축을 먼저 갱신하고** 호출을 붙였다 — 호출 검증에서 충돌이
+    나면 **사용 축만 바뀐 채** 남았다. PG는 한 트랜잭션이라 통째로 롤백된다 ⇒
+    **백엔드에 따라 충돌 뒤 원장 내용이 달라졌다.**
+    """
+    store = _started()
+    call = _call(provider="A", model="A1")
+    _run(store.finalize_run(_meta(provider="A", model="A1"), [call]))
+
+    before = (
+        store.runs[_EXEC].model_provider,
+        store.runs[_EXEC].model_name,
+        {row.id for row in store.calls},
+        set(store.payloads),
+        store.refused_payloads,
+    )
+    twisted = CollectedCall(
+        id=call.id, record=call.record.model_copy(update={"provider": "B"})
+    )
+    fresh = _call(provider="B", model="B1")
+    with pytest.raises(RunIdentityConflict):
+        _run(store.finalize_run(_meta(provider="B", model="B1"), [twisted, fresh]))
+
+    after = (
+        store.runs[_EXEC].model_provider,
+        store.runs[_EXEC].model_name,
+        {row.id for row in store.calls},
+        set(store.payloads),
+        store.refused_payloads,
+    )
+    assert after == before, f"충돌 뒤 상태가 바뀌었다\\n  전: {before}\\n  후: {after}"
+    assert set(store.swallowed_failures.values()) == {0}
+
+
+def test_a_repeated_call_does_not_recount_a_refused_payload() -> None:
+    """🔴 **중복 재전달이 거부 카운터를 다시 올리면 안 된다** — 같은 본문을 두 번 세는 것이다."""
+    store = _started()
+    call = _refused_payload_of(_call(provider="A", model="A1"))
+    _run(store.finalize_run(_meta(provider="A", model="A1"), [call]))
+    first = store.refused_payloads
+    assert first == 1, f"거부가 {first}건이다 — 이 검사가 아무것도 안 재고 있다"
+
+    _run(store.finalize_run(_meta(provider="A", model="A1"), [call]))
+    assert store.refused_payloads == first, (
+        f"재전달로 거부 수가 {first} → {store.refused_payloads}로 늘었다"
+    )

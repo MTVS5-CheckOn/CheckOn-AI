@@ -53,6 +53,7 @@ from ai.contracts.agents import WorkerJob, WorkerKind
 from ai.contracts.execution import ExecutionContext
 from ai.db.repositories.run_store import (
     LlmCallCollector,
+    RunIdentityConflict,
     RunStore,
     default_llm_call_collector,
     last_success_call,
@@ -405,6 +406,12 @@ class CounselPackRunner:
                 ),
                 calls,
             )
+        except RunIdentityConflict:
+            #: 🔴 **의미 충돌은 `swallow_errors`가 삼킬 대상이 아니다**(99 #46 보완).
+            #:   그 플래그는 *"일반 원장 장애가 원인 예외를 교체하지 않게"* 두는 장치이지
+            #:   **「다른 실행이 같은 원장 행을 쓰려 한다」를 숨기는 장치가 아니다.**
+            #:   삼키면 재현성(불변식 8)이 조용히 무너진 채 잡만 실패로 수렴한다.
+            raise
         except Exception:  # noqa: BLE001 — 원인 예외를 덮지 않는다(위 docstring)
             if not swallow_errors:
                 raise
