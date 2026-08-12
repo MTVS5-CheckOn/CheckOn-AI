@@ -10,8 +10,9 @@
 경계 밖 필드(실명 등)를 구조적으로 차단한다.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from enum import StrEnum
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -280,6 +281,111 @@ class AlertContextItem(BaseModel):
         return self
 
 
+# ─────────────── 부재형 신호의 정본 근거 (R2·R3·R5 · 99 #43) ───────────────
+
+
+class EvidenceKind(StrEnum):
+    """정본 근거의 종류 — 🔴 **discriminator다**(09 §2-보강).
+
+    ⚠ **한 모델에 nullable 필드를 몰아넣지 않는다** — 그러면 `kind=weekly_activity`인데
+    `expected_count`가 실린 **거짓 조합**이 문법상 가능해지고, 검증이 모델 밖으로 샌다.
+    """
+
+    ASSIGNMENT_WINDOW = "assignment_window"
+    """R2 — 그 주 예정 과제와 제출 결과 집계."""
+
+    WEEKLY_ACTIVITY = "weekly_activity"
+    """R3 — 그 주 전체 학습량 집계. **0건도 실존하는 레코드**다."""
+
+    ENROLLMENT_TRANSITION = "enrollment_transition"
+    """R5 — 재원 상태 전환 이력 1건."""
+
+
+class _EvidenceBase(BaseModel):
+    """세 근거의 공통 축 — 백엔드 정본을 **참조만** 한다(복제 저장 금지).
+
+    🔴 **`source_table`을 AI가 SQL 식별자로 쓰지 않는다** — 응답 evidence에 그대로 실어
+    **BE가 자기 원본을 조회**하게 하는 논리명일 뿐이다.
+    ⚠ 실명·연락처·자유 원문이 들어올 자리가 **없다**(`extra="forbid"` · 불변식 3).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_table: str = Field(min_length=1)
+    """백엔드 정본 테이블 **논리명** — 근거 역추적용."""
+
+    record_id: str = Field(min_length=1)
+    """백엔드 원본 PK — 응답 evidence에 그대로 실린다."""
+
+    student_ref: str = Field(min_length=1)
+    """학생 alias — `students[]`에 실재해야 한다(요청 단위 검증)."""
+
+
+class AssignmentWindowEvidence(_EvidenceBase):
+    """R2 — 그 주 **예정 과제 수와 제출 수**(09 §2-보강).
+
+    🔴 **`expected_count == 0`은 미제출이 아니다** — 과제가 없던 주다(방학·휴강).
+    연속 미제출은 `expected_count > 0 AND submitted_count == 0`일 때만 센다.
+    ⚠ **일부 제출은 v1의 `consecutive_missing`에 넣지 않는다** — 제출률 하락 경로는
+    분모 계약이 서기 전까지 열지 않는다(04 §1 R2 · BE-10).
+    """
+
+    kind: Literal[EvidenceKind.ASSIGNMENT_WINDOW]
+    week_start: date
+    expected_count: int = Field(ge=0)
+    submitted_count: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_submitted_within_expected(self) -> "AssignmentWindowEvidence":
+        if self.submitted_count > self.expected_count:
+            raise ValueError(
+                "submitted_count는 expected_count를 넘을 수 없다"
+                f"({self.submitted_count} > {self.expected_count})"
+            )
+        return self
+
+
+class WeeklyActivityEvidence(_EvidenceBase):
+    """R3 — 그 주 **전체 학습량 집계**(09 §2-보강).
+
+    🔴 **0건도 실존하는 집계 레코드다** — 「기록이 없다」와 「집계가 0이다」는 다른 사실이고
+    앞은 증명할 수 없다. R3는 이 값을 **판정과 evidence에 함께** 쓴다.
+    ⚠ `learning_events` 개수로 다시 센 값을 정본처럼 섞지 않는다.
+    """
+
+    kind: Literal[EvidenceKind.WEEKLY_ACTIVITY]
+    week_start: date
+    activity_count: int = Field(ge=0)
+
+
+class EnrollmentTransitionEvidence(_EvidenceBase):
+    """R5 — 재원 **상태 전환 이력** 1건(09 §2-보강).
+
+    🔴 `students[].status`는 **현재 값**이라 *"언제 바뀌었는가"* 를 말하지 않는다.
+    복귀 케어는 **전환 사실**로 발화하므로 그 이력이 정본이다.
+    """
+
+    kind: Literal[EvidenceKind.ENROLLMENT_TRANSITION]
+    occurred_at: datetime
+    from_status: StudentStatus
+    to_status: StudentStatus
+
+    @field_validator("occurred_at")
+    @classmethod
+    def validate_timezone_aware(cls, value: datetime) -> datetime:
+        """🔴 **naive datetime 금지** — 주차 귀속이 기기 시간대에 좌우되면 안 된다."""
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("occurred_at은 timezone-aware여야 한다")
+        return value
+
+
+#: 🔴 **discriminated union** — `kind`로만 갈린다. 다른 kind의 필드를 섞으면 거부된다.
+type DetectionEvidence = Annotated[
+    AssignmentWindowEvidence | WeeklyActivityEvidence | EnrollmentTransitionEvidence,
+    Field(discriminator="kind"),
+]
+
+
 class DetectRequest(BaseModel):
     """POST /v1/detect 요청 바디 — 명세 §2 (백엔드 → AI).
 
@@ -293,6 +399,85 @@ class DetectRequest(BaseModel):
     learning_events: tuple[LearningEvent, ...] = ()
     alert_context: tuple[AlertContextItem, ...] = ()
     """최근 30일 경보 이력 — 없으면 전 신호가 lifecycle=new로 판정된다."""
+
+    detection_evidence: tuple[DetectionEvidence, ...] = ()
+    """R2·R3·R5의 **정본 근거**(99 #43). 🔴 **optional이라 기존 요청이 안 깨진다.**
+
+    ⚠ **없으면 세 규칙은 발화하지 않고 `authoritative_evidence_missing`으로 skip**된다 —
+    조용히 다른 기록을 근거로 삼지 않는다(fail-closed). R1·R4·R6는 영향이 없다.
+    ⚠ **판정 입력이므로 `snapshot_hash` 대상**이다(04 부록 A · `canonical_snapshot_payload`).
+    """
+
+    @model_validator(mode="after")
+    def validate_detection_evidence(self) -> "DetectRequest":
+        """🔴 새 배열의 **요청 단위 경계**만 본다(기존 필드 관계 무결성은 후속 P1).
+
+        전부 **400 `INVALID_SCHEMA`** 로 수렴한다 — error_codes §1의 7/22 A판정이
+        *"바디 스키마 위반은 헤더 누락·JSON 파싱과 함께 하나의 400"* 으로 확정했다.
+        ⚠ **`submitted > expected`만 422로 가르지 않았다** — 그러면 같은 배열의 위반이
+        상태 코드 둘로 갈리고, 그 구분은 04·error_codes 계약 변경 없이는 세울 수 없다.
+        """
+        known = {student.student_ref for student in self.students}
+        by_record: dict[tuple[str, str], DetectionEvidence] = {}
+        window_keys: set[tuple[str, str, date]] = set()
+        activity_keys: set[tuple[str, date]] = set()
+        for item in self.detection_evidence:
+            if item.student_ref not in known:
+                raise ValueError(
+                    f"detection_evidence의 student_ref가 students[]에 없다: {item.student_ref!r}"
+                )
+            #: 같은 원본 PK가 **다른 내용**으로 두 번 오면 어느 쪽이 정본인지 못 정한다.
+            record_key = (item.source_table, item.record_id)
+            seen = by_record.get(record_key)
+            if seen is not None and seen != item:
+                raise ValueError(
+                    f"같은 (source_table, record_id)에 다른 내용이 왔다: {record_key}"
+                )
+            by_record[record_key] = item
+
+            if isinstance(item, AssignmentWindowEvidence):
+                #: ⚠ 종류·학생·주차가 같은 집계가 둘이면 **값이 같아도** 거부한다 —
+                #:   집계 정본은 하나여야 한다(둘을 합치는 규칙을 발명하지 않는다).
+                key = (item.kind.value, item.student_ref, item.week_start)
+                if key in window_keys:
+                    raise ValueError(f"과제 주차 집계가 중복됐다: {key}")
+                window_keys.add(key)
+            elif isinstance(item, WeeklyActivityEvidence):
+                activity_key = (item.student_ref, item.week_start)
+                if activity_key in activity_keys:
+                    raise ValueError(f"주간 학습량 집계가 중복됐다: {activity_key}")
+                activity_keys.add(activity_key)
+        self._validate_evidence_against_snapshot()
+        return self
+
+    def _validate_evidence_against_snapshot(self) -> None:
+        """분석 기준 주차·학생 상태와의 정합 — 🔴 **미래와 불일치를 거부한다.**"""
+        week_monday = date.fromisoformat(self.snapshot_meta.week_start)
+        status_of = {s.student_ref: s.status for s in self.students}
+        returned_transition: set[str] = set()
+        for item in self.detection_evidence:
+            if isinstance(item, AssignmentWindowEvidence | WeeklyActivityEvidence):
+                if item.week_start > week_monday:
+                    raise ValueError(
+                        f"분석 주차보다 미래인 집계다: {item.week_start} > {week_monday}"
+                    )
+                continue
+            occurred_monday = item.occurred_at.date()
+            occurred_monday -= timedelta(days=occurred_monday.weekday())
+            if occurred_monday > week_monday:
+                raise ValueError(
+                    f"분석 주차보다 미래인 상태 전환이다: {occurred_monday} > {week_monday}"
+                )
+            if item.to_status is StudentStatus.RETURNED:
+                returned_transition.add(item.student_ref)
+        #: 🔴 **상태와 전환이 갈리면 조용히 한쪽을 고르지 않는다** — 어느 쪽이 사실인지
+        #:   AI가 정할 수 없다. 요청을 거부해 BE가 맞춰 보내게 한다.
+        for student_ref in returned_transition:
+            if status_of.get(student_ref) is not StudentStatus.RETURNED:
+                raise ValueError(
+                    "복귀 전환 이력이 있는데 students[].status가 returned가 아니다: "
+                    f"{student_ref!r}"
+                )
 
 
 # ───────────────────────── Response (AI → 백엔드) ─────────────────────────

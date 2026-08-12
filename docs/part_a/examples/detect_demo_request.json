@@ -17214,5 +17214,1716 @@
       "resolved_at": null,
       "followed_up": false
     }
+  ],
+  "detection_evidence": [
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_01",
+      "student_ref": "st_01",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_01",
+      "student_ref": "st_01",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_02",
+      "student_ref": "st_02",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_02",
+      "student_ref": "st_02",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_03",
+      "student_ref": "st_03",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_03",
+      "student_ref": "st_03",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 0
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 8
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 0
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 8
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_04",
+      "student_ref": "st_04",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 0
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_04",
+      "student_ref": "st_04",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 8
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_05",
+      "student_ref": "st_05",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_05",
+      "student_ref": "st_05",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_06",
+      "student_ref": "st_06",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_06",
+      "student_ref": "st_06",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_07",
+      "student_ref": "st_07",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_07",
+      "student_ref": "st_07",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 25
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_08",
+      "student_ref": "st_08",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_08",
+      "student_ref": "st_08",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 9
+    },
+    {
+      "source_table": "student_status_history",
+      "record_id": "ssh_st_08_2026-07-20",
+      "student_ref": "st_08",
+      "kind": "enrollment_transition",
+      "occurred_at": "2026-07-20T09:00:00+09:00",
+      "from_status": "paused",
+      "to_status": "returned"
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 11
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 11
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 11
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 11
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 11
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 11
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 11
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 11
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 11
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_09",
+      "student_ref": "st_09",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_09",
+      "student_ref": "st_09",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 4
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-18_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-05-18",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-18_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-18",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-05-25_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-05-25",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-05-25_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-05-25",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-01_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-06-01",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-01_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-01",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-08_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-06-08",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-08_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-08",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-15_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-06-15",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-15_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-15",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-22_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-06-22",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-22_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-22",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-06-29_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-06-29",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-06-29_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-06-29",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-06_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-07-06",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-06_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-06",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-13_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-07-13",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-13_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-13",
+      "activity_count": 9
+    },
+    {
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_2026-07-20_st_10",
+      "student_ref": "st_10",
+      "kind": "assignment_window",
+      "week_start": "2026-07-20",
+      "expected_count": 1,
+      "submitted_count": 1
+    },
+    {
+      "source_table": "student_week_activity",
+      "record_id": "swa_2026-07-20_st_10",
+      "student_ref": "st_10",
+      "kind": "weekly_activity",
+      "week_start": "2026-07-20",
+      "activity_count": 9
+    }
   ]
 }
