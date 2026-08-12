@@ -833,10 +833,15 @@ class ProblemGenerationWorkflow:
         if state.fallback_ref is not None:
             return await self._restore_fallback(state)
         if not result.verification_available:
+            detail = (
+                "R-1 어휘 대조 구현 안 됨 — LexiconLookup 미배선"
+                if "R-1:어휘_대조_미구현" in result.failed_checks
+                else "R-1 기준 자료를 검증할 수 없음"
+            )
             return await self._finalize_verification_unavailable(
                 state,
                 item=item,
-                detail="R-1 기준 자료를 검증할 수 없음",
+                detail=detail,
                 failure_reason=ProblemFailureReason.SOURCE_UNVERIFIED,
             )
         if result.banned_topic:

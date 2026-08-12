@@ -829,6 +829,33 @@ def test_attempt_is_checkpointed_before_external_generation_call() -> None:
     assert len(harness.generator_provider.requests) == 1
 
 
+def test_dict_entry_evidence_stops_as_explicit_unimplemented_verification() -> None:
+    evidence_ref = "표준국어대사전:484613"
+    harness = _WorkflowHarness(
+        generator_steps=(
+            _item_json(
+                "어휘 대조",
+                evidence_refs=(evidence_ref,),
+                evidence_kind=EvidenceKind.DICT_ENTRY,
+            ),
+        ),
+        verifier_steps=(),
+        graph_steps=((evidence_ref,),),
+    )
+
+    result = _run(
+        harness,
+        harness.request(target_source=TargetSource.TEACHER_MANUAL),
+    )
+
+    item_result = result.items[0]
+    assert item_result.status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
+    assert item_result.failure_reason is ProblemFailureReason.SOURCE_UNVERIFIED
+    assert item_result.failure_detail == "R-1 어휘 대조 구현 안 됨 — LexiconLookup 미배선"
+    assert len(harness.generator_provider.requests) == 1
+    assert not harness.verifier_provider.requests
+
+
 def test_saved_slot_result_is_reconnected_without_repeating_llm_call() -> None:
     harness = _WorkflowHarness(
         generator_steps=(),

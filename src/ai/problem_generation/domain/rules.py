@@ -8,7 +8,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from ai.contracts.graphrag import ContextPack
-from ai.contracts.problem_generation import GeneratedItem, ProblemRequest
+from ai.contracts.problem_generation import EvidenceKind, GeneratedItem, ProblemRequest
 from ai.contracts.taxonomy import TypeTag
 from ai.problem_generation.domain.policy import BannedTopicsConfig
 
@@ -99,6 +99,16 @@ class RuleValidator:
         banned = any(term.casefold() in inspected_text for term in self._banned_topics.all_terms)
         if banned:
             failed.append("R-5:금칙_오염")
+
+        if any(anchor.kind is EvidenceKind.DICT_ENTRY for anchor in item.evidence):
+            failed.append("R-1:어휘_대조_미구현")
+            return RuleValidationResult(
+                passed=False,
+                verification_available=False,
+                failed_checks=tuple(failed),
+                banned_topic=banned,
+                source_unverified=True,
+            )
 
         allowed_refs = _allowed_evidence_refs(context_pack)
         if allowed_refs is None or not allowed_refs:
