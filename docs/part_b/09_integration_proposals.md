@@ -2007,6 +2007,27 @@ reading·literature의 기존 출제 경로도 수동 목표로만 도달 가능
 않았다. 자료 생성은 `area_specs.yaml` 규격 블록을 프롬프트에 싣고 승인 evidence가 없거나
 미승인 ref를 쓰면 문항 생성 전에 실패 닫힘한다.
 
+### 실 LLM matrix의 GraphContext 대체 한계 `[판정 기록]`
+
+`tests/ai/integration/test_pg_real_llm_smoke.py::_graph_context()`는 `language`만
+`GrammarNormGraphContextService`를 쓰고 T2~T5에는 `FakeGraphContextService`가 만든
+`curriculum:<skill_node_id>` 승인 ref를 넣는다. 반면 운영 기동부
+`api/routers/problem.py::bootstrap_problem_services()`는 전 영역에 어문규범 서비스 하나만
+주입한다.
+
+| 트랙 | 실제 운영 ContextPack | 실 서비스 여부 | matrix를 운영 경로로 바꾸는 비용·위험 |
+| --- | --- | --- | --- |
+| T2 독서 | 어문규범 서비스가 비언어 노드에 빈 ref를 반환해 `PassageGenerator` 호출 전에 `rejected_insufficient` | 없음 | 단순 교체 불가. 독서 승인 자료를 조회해 ref·hash·license를 구성하는 실 서비스가 선행돼야 한다 |
+| T3 문학 | 빈 기본 pack에 동봉 만료 작품 풀의 `WorkExcerpt`·`work_span` 앵커를 결정론 결합 | 있음 | 스모크의 base를 어문규범 서비스로 바꾸는 비용은 작고 LLM 호출 수도 늘지 않는다. 다만 빈 어문규범 pack을 비언어 공통 껍데기로 쓰는 결합을 고착할 위험이 있다 |
+| T4 화법과작문 | 어문규범 서비스의 빈 ref 때문에 `SourceMaterialGenerator` 호출 전에 `rejected_insufficient` | 없음 | 단순 교체 불가. 화작 승인 기준 자료용 실 ContextPack 생산자가 필요하다 |
+| T5 매체 | 어문규범 서비스의 빈 ref 때문에 `SourceMaterialGenerator` 호출 전에 `rejected_insufficient` | 없음 | 단순 교체 불가. 매체 승인 기준 자료용 실 ContextPack 생산자가 필요하다 |
+
+따라서 현 matrix의 T2~T5 초록은 **LLM 자료·문항 스키마, 게이트, 저장 경로가 Fake 승인 ref
+위에서 연결된다**는 증거일 뿐이다. 근거 원문의 실존, 권리, 버전, hash를 운영 경로로
+검증했다는 뜻이 아니며 이를 근거로 “T5까지 운영 검증 완료”라고 보고하면 안 된다. 이번
+판정에서는 코드를 바꾸지 않는다. T3의 실 경로 정합과 T2·T4·T5 실 ContextPack 생산자
+도입 범위는 사람 결정 뒤 별도 작업으로 분리한다.
+
 실제 57노드 그래프와 결정론 진단기로 `speech_writing.writing.material` 및
 `media.reception.credibility`를 `weak_confirmed`로 산출한 뒤, 그 노드가 자료 생성 → 문항
 생성 → 규칙 게이트 → blind 교차 풀이 → 저장을 완주하는 FakeProvider E2E를 고정했다.
