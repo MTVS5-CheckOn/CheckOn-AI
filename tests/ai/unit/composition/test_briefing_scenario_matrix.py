@@ -280,12 +280,89 @@ def test_s14_a_followed_up_resolution_suppresses_the_signal() -> None:
 def test_s15_r1_boundary_fires_at_exactly_the_threshold() -> None:
     """S15 — R1은 임계값과 **정확히 같을 때 발화**하고 그 아래는 안 한다.
 
-    실측: `18/20 → 15/20`은 정확히 `15.0pp`다. 미발화 쪽은 **소수점 아래에서** 갈리는
-    `114/120 → 96/120`(14.999…pp)를 쓴다 — 10pp짜리 넉넉한 반례보다 경계를 좁힌다.
+    ⚠ **초판의 「미발화」 사례가 결함을 인코딩했다**(79-R2 정정). `114/120 → 96/120`은
+    **수학적으로 정확히 15.0pp**인데 float가 `14.999…`로 떨어져 미발화했고, 그것을
+    「임계 아래」로 적었다. 🔴 그건 계약이 아니라 **버그를 계약으로 굳힌 것**이다.
+    ⇒ 미발화 쪽은 **실제로 미달인** 14.5pp(`200 → 171`)를 쓴다.
     """
     assert _CONFIG.r1.drop_pp == 15.0, "임계가 바뀌었다 — 이 경계 픽스처를 다시 만들어라"
     assert _rules(_run(_drop_history("s15fire", n=20, base=18, week=15))) == ["R1"]
-    assert _rules(_run(_drop_history("s15under", n=120, base=114, week=96))) == []
+    assert _rules(_run(_drop_history("s15under", n=200, base=200, week=171))) == []
+
+
+#: 🔴 **수학적으로 정확히 15.0pp인 정수 조합** — float 표현만 다르다(79-R2 §3).
+#: ⚠ 223건 전부를 fixture로 박지 않는다 — 대표만 고정하고 범위 순회는 아래 탐색 검사가 한다.
+_R1_EXACT_DROPS: Final = (
+    #: (분모, 기준선 정답 수, 판정 주 정답 수, 종전 동작)
+    (20, 18, 15, "종전에도 발화(15.000000000000002)"),
+    (20, 19, 16, "종전에는 미발화(14.999999999999991)"),
+    (20, 14, 11, "종전에는 미발화(14.999999999999991)"),
+    (40, 38, 32, "종전에는 미발화(14.999999999999991)"),
+    (40, 33, 27, "종전에는 미발화(14.999999999999991)"),
+)
+
+#: 실제로 임계 미달·초과인 대조군 — 부동소수점과 무관하게 갈려야 한다.
+_R1_OFF_BOUNDARY: Final = (
+    (200, 200, 171, 14.5, False),  # 14.5pp — 실제 미달(경계에 가깝다)
+    (20, 18, 16, 10.0, False),     # 10.0pp — 실제 미달
+    (20, 18, 14, 20.0, True),      # 20.0pp — 실제 초과
+)
+
+
+@pytest.mark.parametrize(("n", "base", "week", "note"), _R1_EXACT_DROPS)
+def test_r1_fires_for_every_exactly_at_threshold_combination(
+    n: int, base: int, week: int, note: str
+) -> None:
+    """🔴 **수학적으로 같은 15.0pp가 정수 조합에 따라 갈리지 않는다** (79-R2).
+
+    실측(2026-08-12): 정확한 하락폭이 셋 다 `15.0pp`인데 float 표현이 달라
+    일부만 발화했다 — 계약은 «임계값과 같으면 발화»다.
+    """
+    exact = (base - week) * 100 / n
+    assert exact == pytest.approx(_CONFIG.r1.drop_pp), f"픽스처가 경계가 아니다: {exact}"
+    response = _run(_drop_history(f"r1x{n}{base}{week}", n=n, base=base, week=week))
+    assert "R1" in _rules(response), f"{note} — 정확히 {exact}pp인데 미발화다"
+
+
+@pytest.mark.parametrize(("n", "base", "week", "drop_pp", "fires"), _R1_OFF_BOUNDARY)
+def test_r1_off_boundary_inputs_are_unchanged(
+    n: int, base: int, week: int, drop_pp: float, fires: bool
+) -> None:
+    """⚠ **경계 밖은 그대로다** — 허용오차가 실제 임계 판정을 덮지 않았다."""
+    exact = (base - week) * 100 / n
+    assert exact == pytest.approx(drop_pp)
+    fired = "R1" in _rules(_run(_drop_history(f"r1o{n}{base}{week}", n=n, base=base, week=week)))
+    assert fired is fires, f"{exact}pp — 기대 {fires}, 실제 {fired}"
+
+
+def test_no_exactly_at_threshold_combination_is_rejected_in_the_swept_range() -> None:
+    """🔴 **탐색 검사** — 조사 범위 안의 **모든** 정확 경계 조합이 발화한다.
+
+    ⚠ 순회 범위를 문서에 적는다(79-R2 §3): 분모 `n ∈ {20, 40}` · 기준선 정답 수
+    `base ∈ [n×0.65, n]` · 판정 주는 정확히 15.0pp가 되는 값 하나.
+    ⚠ 결정론 순회다 — 난수를 쓰지 않는다.
+
+    🔴 **판정 주 정답률을 50% 이상으로 제한한다** — 그 아래면 R6(유형 편중)이 함께 발화해
+    **병합 대표가 R6이 되고** `rule_id`만 보면 *"R1이 안 났다"* 로 읽힌다(실측). 재려는 것은
+    R1 발화이고 병합 규칙이 아니다.
+    """
+    threshold = _CONFIG.r1.drop_pp
+    checked = 0
+    missed: list[tuple[int, int, int]] = []
+    for n in (20, 40):
+        step = threshold * n / 100
+        if step != int(step):
+            continue  # 그 분모로는 정확 경계를 만들 수 없다
+        for base in range(int(n * 0.65), n + 1):
+            week = base - int(step)
+            if week * 2 < n:
+                continue  # 판정 주 50% 미만 — R6이 끼어든다
+            checked += 1
+            name = f"sweep{n}_{base}"
+            if "R1" not in _rules(_run(_drop_history(name, n=n, base=base, week=week))):
+                missed.append((n, base, week))
+    assert checked >= 15, f"조사 조합이 {checked}개다 — 탐색이 좁다"
+    assert not missed, f"정확 경계인데 미발화한 조합 {len(missed)}건: {missed[:5]}"
 
 
 def test_s16_r3_boundary_and_absent_aggregate() -> None:
