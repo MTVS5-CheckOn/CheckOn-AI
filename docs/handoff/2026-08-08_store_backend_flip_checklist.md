@@ -200,7 +200,8 @@ pack_miss_absent · pack_miss_foreign →  None  →  수      (PG 저장소가 
 | **기본값 플립** `STORE_BACKEND=pg` | ✅ **8/12 · 99 #39** — 선언 기본값 `pg` · 명시 `memory` 계속 지원 |
 | **㉿** (ⓐⓑⓒ 8/10 · **ⓓ 8/12**) | ✅ **해소** — 멱등 202 뒤 다른 인스턴스 GET **200 · 값 동일** |
 | **㉬** 정정 루프 교차 인스턴스 | ✅ **해소** — A `/v1/classify` → B `/v1/confirmations` **200 accepted** |
-| **㉻** 늦은 성공 본문 | ☐ **미해소 — 원인 확정(8/12)**: `ContextStore`·`DraftResultStore`가 **팩토리를 안 탄다** + 대응 스키마 부재 |
+| **2단계 AI_RUN 관문** | ✅ **8/12 · 99 #46** — `begin_run`/`finalize_run`. `DRAFT.run_id` FK의 부모를 실행 경계에서 먼저 세운다(㉻의 **선행조건**) |
+| **㉻** 늦은 성공 본문 | ☐ **미해소** — 스키마·저장소·배선이 남았다(`COUNSEL_CONTEXT_BUNDLE`·`DRAFT.content`·`PgContextStore`·`PgDraftResultStore`). ⚠ **선행 원장 관문은 열렸다**(#46) |
 
 ⚠ **㉬·㉻·㉿는 플립을 막지 않는다** — 인메모리에서도 이미 그 상태이고 플립이 나쁘게
 만들지 않는다(㉬는 오히려 좋아진다).

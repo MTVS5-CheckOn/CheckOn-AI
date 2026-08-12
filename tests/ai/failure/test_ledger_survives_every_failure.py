@@ -84,7 +84,11 @@ from ai.contracts.composition import (
 )
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError, LLMRequest, LLMResult, LlmTimeout, LlmUnavailable
-from ai.db.repositories.run_store import InMemoryRunStore, default_llm_call_collector
+from ai.db.repositories.run_store import (
+    InMemoryRunStore,
+    RunIdentityConflict,
+    default_llm_call_collector,
+)
 from ai.db.store_factory import reset_shared_agent_runtime
 
 #: 실패 종류 축 — 🔴 `RedactionUncertain`을 **반드시** 포함한다(그게 빠져 결함이 통과했다).
@@ -426,7 +430,19 @@ def _ids() -> Callable[[], UUID]:
 class _WorkerHarness:
     """워커 1개 + 저장소 — 원장·수집기를 주입해 관측한다."""
 
-    def __init__(self, provider: object, *, circuit: int = 3) -> None:
+    def __init__(
+        self,
+        provider: object,
+        *,
+        circuit: int = 3,
+        run_store: InMemoryRunStore | None = None,
+        draft_store: InMemoryDraftResultStore | None = None,
+    ) -> None:
+        """🔴 **대역 저장소는 여기로 주입한다**(99 #02).
+
+        ⚠ 종전엔 호출부 셋이 `CounselPackRunner(...)`를 **손으로 다시 조립**했다 —
+        러너 인자가 하나 늘면 세 곳 중 한 곳만 고쳐지고 그쪽 검사만 낡는다.
+        """
         self.jobs = InMemoryJobStore()
         self.supervisor = Supervisor(
             store=self.jobs,
@@ -435,14 +451,17 @@ class _WorkerHarness:
             clock=lambda: _WORKER_NOW,
         )
         self.contexts = _MutatingContextStore()
-        self.runs = InMemoryRunStore()
+        self.runs = run_store if run_store is not None else InMemoryRunStore()
+        self.drafts = (
+            draft_store if draft_store is not None else InMemoryDraftResultStore()
+        )
         #: ⚠ 러너와 게이트웨이가 **같은 수집기**를 써야 버킷이 안 갈린다(assembly 규약).
         self.collector = default_llm_call_collector()
         self.collector.reset()
         self.runner = CounselPackRunner(
             supervisor=self.supervisor,
             context_store=self.contexts,
-            draft_store=InMemoryDraftResultStore(),
+            draft_store=self.drafts,
             pack_store=InMemoryPackResultStore(),
             step_sink=InMemoryAgentStepSink(),
             planner=provider,  # type: ignore[arg-type]
@@ -645,3 +664,217 @@ def test_no_ledger_before_the_execution_starts(removal: str) -> None:
     job = asyncio.run(scenario())
     assert job.phase is JobPhase.FAILED
     assert len(harness.runs.runs) == 0, "실행이 없었는데 실행 기록이 생겼다"
+
+
+# ── (지시서 72) begin_run 실패 종단 — 원장을 못 세우면 실행하지 않는다 (99 #46) ──
+
+
+class _BeginFailsStore(InMemoryRunStore):
+    """`begin_run`만 터지는 원장 — 🔴 **fail-closed**인지 재려는 대역이다."""
+
+    async def begin_run(self, run: Any) -> None:  # noqa: ANN401 — RunMetadata
+        del run
+        raise RuntimeError("실행 원장 시작 실패(대역)")
+
+
+class _CountingProvider:
+    """planner·writer 호출 수를 센다 — **한 번도 안 불려야** 한다.
+
+    ⚠ 인자를 그대로 흘려보낸다 — 이 대역이 재는 것은 **호출 수**이지 인자가 아니다.
+    """
+
+    def __init__(self) -> None:
+        self.plan_calls = 0
+        self.write_calls = 0
+        self._inner: Any = _ok_provider()
+
+    async def plan(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        self.plan_calls += 1
+        return await self._inner.plan(*args, **kwargs)
+
+    async def write(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        self.write_calls += 1
+        return await self._inner.write(*args, **kwargs)
+
+
+class _CountingDraftStore(InMemoryDraftResultStore):
+    """초안 저장 호출 수 — **0이어야** 한다(FK 부모가 없으니 저장돼서도 안 된다)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.put_calls = 0
+
+    async def put(self, record: Any) -> str:  # noqa: ANN401 — DraftRecord
+        self.put_calls += 1
+        return await super().put(record)
+
+
+def test_a_failed_begin_stops_before_the_graph() -> None:
+    """🔴 **원장을 못 세우면 planner·writer·초안 저장에 진입하지 않는다** (99 #46).
+
+    ⚠ `begin_run`은 `DRAFT.run_id → AI_RUN.execution_id` FK의 **부모**를 세우는 자리다.
+    실패했는데 그래프가 돌면 초안 저장이 **SQLSTATE 23503**으로 죽거나, 더 나쁘게는
+    **원장 없는 산출물**이 생긴다 ⇒ 관측이 아니라 **선행 조건**이라 fail-closed다.
+
+    ⚠ `!= succeeded` 같은 넓은 단정을 쓰지 않는다 — **정확한 phase와 오류 코드**를 본다.
+    """
+    provider = _CountingProvider()
+    drafts = _CountingDraftStore()
+    harness = _WorkerHarness(
+        provider, run_store=_BeginFailsStore(), draft_store=drafts
+    )
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1"])
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    job = asyncio.run(scenario())
+
+    #: 🔴 정확한 종단 — 현재 워커의 미분류 실패 코드 그대로다(새 코드를 만들지 않았다).
+    assert job.phase is JobPhase.FAILED, f"phase={job.phase}"
+    assert job.error_code == "worker_internal_error", job.error_code
+
+    #: 🔴 실행 경계 뒤로 **한 발도 못 갔다.**
+    assert harness.runs.runs == {}, "begin이 실패했는데 AI_RUN이 생겼다"
+    assert provider.plan_calls == 0, f"planner가 {provider.plan_calls}번 불렸다"
+    assert provider.write_calls == 0, f"writer가 {provider.write_calls}번 불렸다"
+    assert drafts.put_calls == 0, f"초안 저장이 {drafts.put_calls}번 불렸다"
+    residue = sum(len(bucket) for bucket in harness.collector._pending.values())
+    assert residue == 0, f"수집기에 호출 {residue}건이 남았다"
+
+
+def test_the_context_lookup_still_runs_before_begin() -> None:
+    """🔴 **순서 확인** — 입력이 없으면 `begin_run`까지 가지 않는다(원장 0건).
+
+    ⚠ 위 검사가 *"begin이 아예 안 불린다"* 로 통과하면 안 되므로, 그 반대편을 함께 본다.
+    """
+    provider = _CountingProvider()
+    harness = _WorkerHarness(provider, run_store=_BeginFailsStore())
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1"])
+        harness.contexts._rows.clear()  # 입력 부재 — begin 앞에서 죽는다
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    job = asyncio.run(scenario())
+    assert job.phase is JobPhase.FAILED
+    #: 🔴 **입력 부재의 오류 코드는 begin 실패와 다르다** — 두 경로가 구분된다.
+    assert job.error_code == "context_bundle_missing", job.error_code
+
+
+class _CountingRunStore(InMemoryRunStore):
+    """`finalize_run` 호출 수를 센다 — **실행 경계 뒤 실패도 지나야** 한다."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.finalize_calls = 0
+
+    async def finalize_run(self, run: Any, calls: Any) -> None:  # noqa: ANN401
+        self.finalize_calls += 1
+        await super().finalize_run(run, calls)
+
+
+def test_a_graph_build_failure_still_finalizes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🔴 **그래프 조립 실패도 `finalize_run`을 지난다** (99 #46).
+
+    ⚠ 조립은 `begin_run` **뒤**다 — 실행 경계를 이미 지났으므로 *"실행이 없었다"* 가 아니다.
+    조립이 `try` 밖에 있으면 그 실패가 **원장을 통째로 건너뛴다.**
+    ⚠ **관측 대상은 `finalize_run` 호출 수**다 — AI_RUN 행은 `begin_run`이 이미 만들어서
+      「행이 있다」로는 이 축을 못 가른다(그 함정 때문에 첫 판 뒤집기가 안 물었다).
+    """
+    provider = _CountingProvider()
+    runs = _CountingRunStore()
+    harness = _WorkerHarness(provider, run_store=runs)
+
+    def explode(**kwargs: object) -> None:
+        raise RuntimeError("그래프 조립 실패(대역)")
+
+    monkeypatch.setattr(
+        "ai.composition.counsel.worker.build_counsel_graph", explode
+    )
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1"])
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    job = asyncio.run(scenario())
+    assert job.phase is JobPhase.FAILED
+    assert runs.runs, "begin_run이 시작 행을 안 만들었다 — 이 검사의 전제가 깨졌다"
+    assert runs.finalize_calls == 1, (
+        f"조립 실패가 finalize를 안 지났다(호출 {runs.finalize_calls}회) — "
+        f"조립이 try 밖이다"
+    )
+
+
+# ── (지시서 72-R §1) 실패 경로의 **의미 충돌**은 삼킬 대상이 아니다 (99 #46) ──
+#
+# 🔴 `swallow_errors=True`는 *"원장 장애가 원인 예외를 덮지 않게"* 두는 장치다. 그런데
+#    `RunIdentityConflict`는 **SQL 장애가 아니라** *"다른 실행이 같은 원장 행을 쓰려 한다"*
+#    는 **판정**이다. 삼키면 재현성(불변식 8)이 조용히 무너진 채 잡만 paused로 수렴한다 —
+#    운영에서 보이는 것은 *"LLM이 죽었다"* 뿐이고 원장이 갈린 사실은 **어디에도 안 남는다.**
+
+
+class _ConflictOnFinalizeStore(InMemoryRunStore):
+    """`finalize_run`이 **의미 충돌**로 거절한다 — 워커가 삼키면 안 되는 쪽."""
+
+    async def finalize_run(self, run: Any, calls: Any) -> None:  # noqa: ANN401
+        del run, calls
+        raise RunIdentityConflict("다른 실행이 같은 원장 행을 쓰려 한다(대역)")
+
+
+class _BrokenFinalizeStore(InMemoryRunStore):
+    """`finalize_run`이 **일반 장애**로 죽는다 — 워커가 삼켜야 하는 쪽."""
+
+    async def finalize_run(self, run: Any, calls: Any) -> None:  # noqa: ANN401
+        del run, calls
+        raise RuntimeError("원장 SQL 장애(대역)")
+
+
+def _paused_scenario(harness: _WorkerHarness) -> WorkerJob:
+    """서킷을 열어 **실패 경로**(`swallow_errors=True`)로 보낸다."""
+
+    async def scenario() -> WorkerJob:
+        await harness.enqueue(["st_1", "st_2", "st_3", "st_4", "st_5"])
+        job = await harness.runner.run_next(tenant_id="t1")
+        assert job is not None
+        return job
+
+    return asyncio.run(scenario())
+
+
+def test_a_semantic_conflict_is_not_swallowed_on_the_failure_path() -> None:
+    """🔴 **의미 충돌은 실패 경로에서도 올라온다** — 종단이 paused가 아니라 failed다.
+
+    ⚠ *"예외가 났다"* 로는 못 가른다. 삼키면 원인 예외(`LlmCircuitOpenError`)가 그대로
+    남아 잡이 **paused**로 가고, 올리면 `_run_guarded`의 미분류 절이 잡아
+    **failed/worker_internal_error**로 간다 — **관측 가능한 차이**가 종단 phase다.
+    """
+    harness = _WorkerHarness(_GatewayThenFail(), run_store=_ConflictOnFinalizeStore())
+    job = _paused_scenario(harness)
+
+    assert job.phase is JobPhase.FAILED, (
+        f"종단이 {job.phase}다 — 의미 충돌이 삼켜져 서킷 개방으로 위장됐다"
+    )
+    assert job.error_code == "worker_internal_error", job.error_code
+
+
+def test_a_plain_ledger_failure_is_still_swallowed_on_the_failure_path() -> None:
+    """🔴 **반대편** — 일반 장애는 여전히 삼킨다(원인 예외를 덮지 않는다).
+
+    ⚠ 이 검사가 없으면 위 검사는 *"실패 경로에서 원장 예외를 전부 올린다"* 로도 통과한다.
+    그러면 *"LLM이 죽었다"* 가 *"워커가 알 수 없는 이유로 죽었다"* 로 뒤집혀
+    **paused로 갈 잡이 failed로 간다** — 사용자에게 보이는 결과가 달라진다.
+    """
+    harness = _WorkerHarness(_GatewayThenFail(), run_store=_BrokenFinalizeStore())
+    job = _paused_scenario(harness)
+
+    assert job.phase is JobPhase.PAUSED, (
+        f"종단이 {job.phase}다 — 일반 원장 장애가 원인 예외를 덮었다"
+    )
+    assert job.error_code is None, job.error_code

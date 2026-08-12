@@ -44,10 +44,18 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Final, NamedTuple, Protocol, runtime_checkable
 
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ai.contracts.execution import ExecutionContext, RunMetadata
+from ai.contracts.execution import (
+    Capability,
+    ExecutionContext,
+    GenerationParams,
+    RunMetadata,
+)
 from ai.contracts.llm import CallOutcome
 from ai.db.models import AiRun, LlmCall, LlmPayload
 
@@ -161,6 +169,91 @@ def llm_call_orm(
     )
 
 
+#: 🔴 **확정 축** — 같은 `execution_id`의 기존 행과 하나라도 다르면 **같은 실행이 아니다**.
+#: 실행 시작 시점에 이미 다 정해져 있고, 재개해도 바뀌지 않는다.
+CONFIRMED_AXES: Final = (
+    "execution_id",
+    "tenant_id",
+    "capability",
+    "input_snapshot_hash",
+    "pipeline_version",
+    "engine_version",
+    "threshold_version",
+    "prompt_version",
+    "schema_version",
+    "contract_version",
+    "graph_version",
+    "taxonomy_version",
+    "verify_config_version",
+    "difficulty_calib_version",
+)
+#: 🔴 **사용 축** — 실행이 **끝나야** 아는 값이다. 마지막 **성공** 호출 기준으로 갱신한다.
+#: ⚠ **값 → None은 갱신이 아니다** — 실패만 있던 재개 구간이 앞의 성공을 지우면 거짓이 된다.
+USAGE_AXES: Final = ("model_provider", "model_name", "generation_params")
+#: 🔴 **최초 쓰기 축** — 최초 `begin_run` 값만 유지한다(재개·최종화 시각으로 안 덮는다).
+CREATED_AXIS: Final = "created_at"
+
+#: 삼킨 실패를 세는 **닫힌 키**(99 #46) — 임의 문자열 키를 만들지 않는다.
+SWALLOWED_OPERATIONS: Final = ("record_run", "finalize_run", "record_calls")
+
+
+class RunIdentityConflict(RuntimeError):
+    """🔴 **같은 `execution_id`인데 확정 축이 다르다** — 의미 충돌이다.
+
+    ⚠ **SQL 장애가 아니다.** fail-open 블록에서 삼키면 *"다른 실행이 같은 원장 행을
+    덮어썼다"* 가 조용히 지나간다 — 재현성(불변식 8)이 통째로 무너지는 자리다.
+    ⚠ 문면에 **스냅숏 내용·접속정보를 싣지 않는다** — 어긋난 **필드 이름**까지만 말한다.
+    """
+
+
+def _confirmed_mismatch(existing: RunMetadata, incoming: RunMetadata) -> list[str]:
+    """확정 축 중 값이 다른 필드 이름 — 🔴 **값 자체는 안 싣는다.**"""
+    return [
+        axis
+        for axis in CONFIRMED_AXES
+        if getattr(existing, axis) != getattr(incoming, axis)
+    ]
+
+
+def _require_same_identity(existing: RunMetadata, incoming: RunMetadata) -> None:
+    mismatched = _confirmed_mismatch(existing, incoming)
+    if mismatched:
+        raise RunIdentityConflict(
+            f"같은 execution_id인데 확정 축이 다르다: {', '.join(mismatched)}"
+        )
+
+
+def _require_empty_usage(run: RunMetadata) -> None:
+    """🔴 **begin 단계에서 사용 결과를 지어내지 않는다** — 아직 아무것도 안 불렀다."""
+    filled = [axis for axis in USAGE_AXES if getattr(run, axis) is not None]
+    if filled:
+        raise ValueError(f"begin_run에 사용 축이 채워져 있다: {', '.join(filled)}")
+
+
+def _merged_usage(existing: RunMetadata, incoming: RunMetadata) -> RunMetadata:
+    """사용 축 **last-write-wins(non-null)** + `created_at` 최초값 유지.
+
+    ⚠ 세 축을 **따로** 본다 — 한 축만 새로 성공해도 그 축만 갱신된다.
+    """
+    update: dict[str, object] = {CREATED_AXIS: getattr(existing, CREATED_AXIS)}
+    for axis in USAGE_AXES:
+        fresh = getattr(incoming, axis)
+        update[axis] = fresh if fresh is not None else getattr(existing, axis)
+    return existing.model_copy(update=update)
+
+
+def last_success_call(calls: Sequence[CollectedCall]) -> CollectedCall | None:
+    """마지막 **성공** 호출 — 🔴 배열의 마지막 행이 아니다.
+
+    실패·timeout이 배열 끝이라고 그 provider를 최종본으로 적으면 **거짓**이다.
+    ⚠ `last_success_id()`가 이 함수를 쓴다 — 선택 규칙을 두 벌로 만들지 않는다(99 #02).
+    """
+    for call in reversed(calls):
+        if call.record.outcome is CallOutcome.OK:
+            return call
+    return None
+
+
 def last_success_id(calls: Sequence[CollectedCall]) -> uuid.UUID | None:
     """**마지막 성공 호출**의 행 id — `llm_call_id`가 가리킬 대상이다.
 
@@ -171,10 +264,8 @@ def last_success_id(calls: Sequence[CollectedCall]) -> uuid.UUID | None:
 
     성공이 하나도 없으면 None이고, 그때는 산출물도 없다(참조할 것이 없는 게 맞다).
     """
-    for call in reversed(calls):
-        if call.record.outcome is CallOutcome.OK:
-            return call.id
-    return None
+    chosen = last_success_call(calls)
+    return chosen.id if chosen is not None else None
 
 
 class LlmCallCollector:
@@ -282,7 +373,34 @@ def default_llm_call_collector() -> LlmCallCollector:
 
 @runtime_checkable
 class RunStore(Protocol):
-    """실행 원장 저장소 — 라우터·워커는 이 타입에만 의존한다."""
+    """실행 원장 저장소 — 라우터·워커는 이 타입에만 의존한다.
+
+    🔴 **표면이 넷이고 실패 정책이 둘로 갈린다**(99 #46):
+
+    | 메서드 | 의미 | 실패 |
+    | --- | --- | --- |
+    | `begin_run` | 실행 시작 행 보장 | **fail-closed** — 원장을 못 세우면 실행하지 않는다 |
+    | `finalize_run` | 사용 축 갱신 + 호출 추가 | fail-open(SQL 장애만) |
+    | `record_run` | 기존 one-shot 원자 저장 | fail-open |
+    | `record_calls` | 기존 행에 호출 추가 | fail-open |
+
+    ⚠ **`record_run`을 `begin_run`+`finalize_run`으로 구현하면 안 된다** — 기존 소비자
+    (classify·refine·problem_generation·mapping_probe)는 **한 트랜잭션**을 전제한다.
+    ⚠ **의미 충돌(`RunIdentityConflict`)은 fail-open이 아니다** — SQL 장애가 아니다.
+    """
+
+    async def begin_run(self, run: RunMetadata) -> None:
+        """실행 **시작** 행을 보장한다 — 사용 축은 전부 `None`이어야 한다.
+
+        멱등이다: 같은 확정 축으로 다시 부르면 성공하고 `created_at`은 최초값을 지킨다.
+        """
+        ...
+
+    async def finalize_run(
+        self, run: RunMetadata, calls: Sequence[CollectedCall]
+    ) -> None:
+        """실행 **종료** — 사용 축을 갱신하고 새 호출만 덧붙인다."""
+        ...
 
     async def record_run(
         self, run: RunMetadata, calls: Sequence[CollectedCall]
@@ -320,6 +438,30 @@ def accepted_payloads(
     return tuple(accepted), refused
 
 
+#: LLM_CALL 멱등 판정에 쓰는 값 컬럼 — `created_at`은 **적재 시각**이라 뺀다
+#: (재개 시 같은 호출을 다시 넘겨도 적재 시각은 달라진다).
+_CALL_VALUE_COLUMNS: Final = (
+    "run_id",
+    "role",
+    "provider",
+    "model",
+    "prompt_id",
+    "prompt_version",
+    "tokens_in",
+    "tokens_out",
+    "cost_usd",
+    "latency_ms",
+    "outcome",
+)
+
+
+def _same_call_row(left: LlmCall, right: LlmCall) -> bool:
+    return all(
+        getattr(left, column) == getattr(right, column)
+        for column in _CALL_VALUE_COLUMNS
+    )
+
+
 class InMemoryRunStore:
     """프로세스 인메모리 — CI 기본. 재시작 소실·멀티워커 비공유."""
 
@@ -330,23 +472,99 @@ class InMemoryRunStore:
         self.payloads: dict[uuid.UUID, LlmPayload] = {}
         #: 저장 직전 훅이 거부한 수 — 조용한 누락 금지.
         self.refused_payloads = 0
+        #: 🔴 **삼킨 실패를 센다**(99 #46) — 로그만 남기면 읽는 사람이 0명이다.
+        #:   정상 동작에서는 전부 0이다.
+        self.swallowed_failures: dict[str, int] = dict.fromkeys(SWALLOWED_OPERATIONS, 0)
         self._clock = clock
+
+    async def begin_run(self, run: RunMetadata) -> None:
+        """실행 시작 행 — 🔴 **dict overwrite가 아니다**(확정 축을 대조한다)."""
+        _require_empty_usage(run)
+        existing = self.runs.get(run.execution_id)
+        if existing is None:
+            self.runs[run.execution_id] = run
+            return
+        _require_same_identity(existing, run)  # 멱등 — created_at·사용 축 무변경
+
+    async def finalize_run(
+        self, run: RunMetadata, calls: Sequence[CollectedCall]
+    ) -> None:
+        existing = self.runs.get(run.execution_id)
+        if existing is None:
+            #: begin 전제가 깨졌다 — 호출자 요청을 새 오류로 뒤집지 않고 **센다**.
+            self.swallowed_failures["finalize_run"] += 1
+            logger.warning(
+                "finalize_run에 시작 행이 없다 — begin_run 전제가 깨졌다 execution_id=%s",
+                run.execution_id,
+            )
+            return
+        _require_same_identity(existing, run)
+        #: 🔴 **검증을 다 끝낸 뒤 한 번에 반영한다**(99 #46 보완). 종전에는 사용 축을 먼저
+        #:   갱신하고 호출을 붙였는데, 호출 검증에서 충돌이 나면 **사용 축만 갱신된 채**
+        #:   남았다 — PG는 한 트랜잭션이라 통째로 롤백된다 ⇒ **백엔드에 따라 충돌 뒤
+        #:   원장 내용이 달라졌다.** 계산을 지역 변수에 준비하고 마지막에 반영한다.
+        fresh = self._fresh_calls(run.execution_id, calls)
+        payloads, refused = accepted_payloads(fresh)
+        created_at = self._clock()
+        rows = [
+            llm_call_orm(call, run_id=run.execution_id, created_at=created_at)
+            for call in fresh
+        ]
+        # ── 여기부터 상태 변경 — 위에서 예외가 나면 아무것도 안 바뀐다 ──
+        self.runs[run.execution_id] = _merged_usage(existing, run)
+        self.calls.extend(rows)
+        self.refused_payloads += refused
+        self.payloads.update(
+            {payload.call_id: payload_orm(payload) for payload in payloads}
+        )
 
     async def record_run(
         self, run: RunMetadata, calls: Sequence[CollectedCall]
     ) -> None:
+        #: ⚠ **공개 2단계를 안 부른다** — one-shot 원자성이 이 메서드의 계약이다.
         self.runs[run.execution_id] = run
         await self.record_calls(execution_id=run.execution_id, calls=calls)
 
     async def record_calls(
         self, *, execution_id: uuid.UUID, calls: Sequence[CollectedCall]
     ) -> None:
+        await self._append_calls(execution_id, calls)
+
+    def _fresh_calls(
+        self, execution_id: uuid.UUID, calls: Sequence[CollectedCall]
+    ) -> list[CollectedCall]:
+        """🔴 **call id 기준 멱등** — 재개가 이전 호출을 다시 넘겨도 행이 안 는다.
+
+        ⚠ 같은 id에 **다른 전문**이면 의미 충돌이다(조용히 무시하면 원장이 거짓이 된다).
+        ⚠ 중복 하나 때문에 **같은 호출의 새 항목까지** 버리지 않는다 — 새 것만 돌려준다.
+        ⚠ **상태를 안 바꾼다** — 호출자가 검증을 다 끝낸 뒤 반영한다.
+        """
+        created_at = self._clock()
+        known = {row.id: row for row in self.calls}
+        fresh: list[CollectedCall] = []
+        for call in calls:
+            existing = known.get(call.id)
+            if existing is None:
+                fresh.append(call)
+                continue
+            candidate = llm_call_orm(call, run_id=execution_id, created_at=created_at)
+            if not _same_call_row(existing, candidate):
+                raise RunIdentityConflict(
+                    f"같은 llm_call id에 다른 전문이 왔다: {call.id}"
+                )
+        return fresh
+
+    async def _append_calls(
+        self, execution_id: uuid.UUID, calls: Sequence[CollectedCall]
+    ) -> None:
+        """`record_calls`·`record_run`의 적재 — 검증 뒤 반영은 같은 규칙이다."""
+        fresh = self._fresh_calls(execution_id, calls)
         created_at = self._clock()
         self.calls.extend(
             llm_call_orm(call, run_id=execution_id, created_at=created_at)
-            for call in calls
+            for call in fresh
         )
-        payloads, refused = accepted_payloads(calls)
+        payloads, refused = accepted_payloads(fresh)
         self.refused_payloads += refused
         # LLM_CALL을 먼저 넣은 뒤 본문을 붙인다 — PG의 FK 순서와 같은 순서다.
         self.payloads.update(
@@ -366,6 +584,7 @@ class InMemoryRunStore:
         self.calls.clear()
         self.payloads.clear()
         self.refused_payloads = 0
+        self.swallowed_failures = dict.fromkeys(SWALLOWED_OPERATIONS, 0)
 
 
 class PgRunStore:
@@ -375,7 +594,10 @@ class PgRunStore:
     (`detection_store`, fail-closed)과 정반대 판단인데, 근거는 소비자다: 감지 원장은
     baseline 축적분이라 반쪽이면 다음 판정이 왜곡되지만, LLM_CALL은 회계·추적용이고
     이것 때문에 강사의 초안 요청을 500으로 되돌리면 관측이 기능을 이긴 것이 된다
-    (게이트웨이 `_record`가 이미 같은 철학으로 서 있다).
+    (`counsel/worker.py`의 실패 경로와 같은 판단).
+
+    🔴 **`begin_run`만 예외다**(99 #46) — 그 행은 `DRAFT.run_id` FK의 **부모**라, 못 세우면
+    초안이 저장될 수 없다. 관측이 아니라 **선행 조건**이므로 fail-closed다.
     """
 
     def __init__(
@@ -386,45 +608,184 @@ class PgRunStore:
     ) -> None:
         self._sessionmaker = sessionmaker
         self._clock = clock
-        #: 저장 직전 훅이 거부한 수 — 조용한 누락 금지.
         self.refused_payloads = 0
+        #: 🔴 삼킨 실패를 **operation별로** 센다(99 #46) — 닫힌 키.
+        self.swallowed_failures: dict[str, int] = dict.fromkeys(SWALLOWED_OPERATIONS, 0)
+
+    # ── 2단계 ──────────────────────────────────────────────────
+
+    async def begin_run(self, run: RunMetadata) -> None:
+        """실행 시작 행 — 🔴 **fail-closed**. 예외가 호출자까지 올라간다.
+
+        ⚠ **없는 행은 `SELECT`로 잠글 수 없다** — 동시 begin이 둘 다 *"행이 없다"* 를 보고
+        INSERT하면 `pk_ai_run`이 하나를 죽인다. `ON CONFLICT DO NOTHING` **뒤에 반드시
+        기존 행을 정확 대조**한다 — 충돌을 성공으로 간주하면 **다른 실행이 같은 원장 행을
+        쓰는 것**을 못 본다(99 #46).
+        """
+        _require_empty_usage(run)
+        async with self._sessionmaker() as session, session.begin():
+            await session.execute(
+                pg_insert(AiRun)
+                .values(_ai_run_values(run))
+                .on_conflict_do_nothing(index_elements=[AiRun.execution_id])
+            )
+            stored = await self._select_run(session, run.execution_id)
+            if stored is None:  # pragma: no cover — 방금 넣었으므로 도달 불가
+                raise RunIdentityConflict(
+                    f"begin 직후 시작 행을 못 읽었다: {run.execution_id}"
+                )
+            _require_same_identity(stored, run)
+
+    async def finalize_run(
+        self, run: RunMetadata, calls: Sequence[CollectedCall]
+    ) -> None:
+        """사용 축 갱신 + 새 호출만 추가 — SQL 장애는 fail-open, 의미 충돌은 예외."""
+        refused = 0
+        try:
+            async with self._sessionmaker() as session, session.begin():
+                stored = await self._select_run(
+                    session, run.execution_id, for_update=True
+                )
+                if stored is None:
+                    #: begin 전제가 깨졌다 — FK 오류로 흘려보내지 않고 **센다**.
+                    self.swallowed_failures["finalize_run"] += 1
+                    logger.warning(
+                        "finalize_run에 시작 행이 없다 — begin_run 전제가 깨졌다 "
+                        "execution_id=%s",
+                        run.execution_id,
+                    )
+                    return
+                _require_same_identity(stored, run)
+                merged = _merged_usage(stored, run)
+                await session.execute(
+                    sa_update(AiRun)
+                    .where(AiRun.execution_id == run.execution_id)
+                    .values(
+                        model_provider=merged.model_provider,
+                        model_name=merged.model_name,
+                        generation_params=(
+                            merged.generation_params.model_dump(mode="json")
+                            if merged.generation_params is not None
+                            else None
+                        ),
+                    )
+                )
+                fresh = await self._fresh_calls(session, run.execution_id, calls)
+                #: 🔴 **거부 판정은 `fresh`에만 돌린다**(99 #46 보완) — 종전에는 `calls`
+                #:   전체에 돌려서, 이미 저장된 호출을 재전달할 때마다 **거부 카운터가
+                #:   다시 올라갔다**(InMemory와 값이 갈렸다).
+                payloads, refused = accepted_payloads(fresh)
+                self._add_calls(session, run.execution_id, fresh, payloads)
+        except RunIdentityConflict:
+            raise  # 🔴 의미 충돌은 fail-open이 아니다
+        except SQLAlchemyError:
+            self.swallowed_failures["finalize_run"] += 1
+            logger.warning(
+                "실행 원장 최종화 실패 — 요청은 성공 처리 execution_id=%s calls=%d",
+                run.execution_id,
+                len(calls),
+                exc_info=True,
+            )
+        else:
+            self.refused_payloads += refused
+
+    # ── 기존 one-shot ──────────────────────────────────────────
 
     async def record_run(
         self, run: RunMetadata, calls: Sequence[CollectedCall]
     ) -> None:
-        await self._write(run.execution_id, run, calls)
+        #: ⚠ **공개 2단계를 안 부른다** — 기존 소비자는 「AI_RUN과 LLM_CALL이 한
+        #:   트랜잭션」을 전제한다. 두 호출로 쪼개면 호출 저장이 실패해도 AI_RUN만 남는다.
+        await self._write("record_run", run.execution_id, run, calls)
 
     async def record_calls(
         self, *, execution_id: uuid.UUID, calls: Sequence[CollectedCall]
     ) -> None:
+        await self._write("record_calls", execution_id, None, calls)
+
+    # ── 내부 ───────────────────────────────────────────────────
+
+    @staticmethod
+    async def _select_run(
+        session: AsyncSession, execution_id: uuid.UUID, *, for_update: bool = False
+    ) -> RunMetadata | None:
+        statement = select(AiRun).where(AiRun.execution_id == execution_id)
+        if for_update:
+            statement = statement.with_for_update()
+        row = (await session.execute(statement)).scalar_one_or_none()
+        return _run_metadata_of(row) if row is not None else None
+
+    async def _fresh_calls(
+        self,
+        session: AsyncSession,
+        execution_id: uuid.UUID,
+        calls: Sequence[CollectedCall],
+    ) -> list[CollectedCall]:
+        """🔴 **call id 기준 멱등** — 재개가 이전 호출을 다시 넘겨도 행이 안 는다.
+
+        ⚠ 같은 id에 **다른 전문**이면 의미 충돌이다. ⚠ 중복 하나 때문에 **같은 호출의
+        새 항목까지** 버리지 않는다.
+        """
         if not calls:
-            return
-        await self._write(execution_id, None, calls)
+            return []
+        created_at = self._clock()
+        known = {
+            row.id: row
+            for row in (
+                await session.execute(
+                    select(LlmCall).where(LlmCall.id.in_([c.id for c in calls]))
+                )
+            )
+            .scalars()
+            .all()
+        }
+        fresh: list[CollectedCall] = []
+        for call in calls:
+            existing = known.get(call.id)
+            if existing is None:
+                fresh.append(call)
+                continue
+            candidate = llm_call_orm(call, run_id=execution_id, created_at=created_at)
+            if not _same_call_row(existing, candidate):
+                raise RunIdentityConflict(
+                    f"같은 llm_call id에 다른 전문이 왔다: {call.id}"
+                )
+        return fresh
+
+    def _add_calls(
+        self,
+        session: AsyncSession,
+        execution_id: uuid.UUID,
+        calls: Sequence[CollectedCall],
+        payloads: Sequence[CollectedPayload],
+    ) -> None:
+        created_at = self._clock()
+        fresh_ids = {call.id for call in calls}
+        for call in calls:
+            session.add(llm_call_orm(call, run_id=execution_id, created_at=created_at))
+        # ② 🔴 본문은 **LLM_CALL 뒤**다 — `llm_payload.call_id`가 PK 겸 FK다.
+        #    ⚠ **새로 넣은 호출의 본문만** 붙인다 — 이미 있는 call의 payload를 다시 넣으면
+        #      PK 충돌로 그 트랜잭션의 **새 호출까지 전량 롤백**된다.
+        for payload in payloads:
+            if payload.call_id in fresh_ids:
+                session.add(payload_orm(payload))
 
     async def _write(
         self,
+        operation: str,
         execution_id: uuid.UUID,
         run: RunMetadata | None,
         calls: Sequence[CollectedCall],
     ) -> None:
-        created_at = self._clock()
         payloads, refused = accepted_payloads(calls)
         self.refused_payloads += refused
         try:
             async with self._sessionmaker() as session, session.begin():
                 if run is not None:
                     session.add(ai_run_orm(run))  # ① FK 대상이 먼저 선다
-                for call in calls:
-                    session.add(
-                        llm_call_orm(call, run_id=execution_id, created_at=created_at)
-                    )
-                # ② 🔴 본문은 **LLM_CALL 뒤**다 — `llm_payload.call_id`가 `llm_call.id`를
-                #    PK 겸 FK로 참조하므로 순서가 뒤집히면 FK 위반이다(순서가 계약이다).
-                #    한 트랜잭션이라 flush 순서는 `session.add` 순서가 아니라 의존 관계로
-                #    정해지지만, 삽입 순서를 코드로도 못 박아 의도를 남긴다.
-                for payload in payloads:
-                    session.add(payload_orm(payload))
+                self._add_calls(session, execution_id, calls, payloads)
         except SQLAlchemyError:
+            self.swallowed_failures[operation] += 1
             logger.warning(
                 "실행 원장 적재 실패 — 요청은 성공 처리 execution_id=%s ai_run=%s "
                 "calls=%d payloads=%d",
@@ -436,7 +797,46 @@ class PgRunStore:
             )
 
 
+def _ai_run_values(run: RunMetadata) -> dict[str, object]:
+    """`ai_run_orm`과 **같은 매핑**을 dict로 — INSERT…ON CONFLICT에 쓴다(#02 회피)."""
+    row = ai_run_orm(run)
+    return {
+        column.name: getattr(row, column.name) for column in AiRun.__table__.columns
+    }
+
+
+def _run_metadata_of(row: AiRun) -> RunMetadata:
+    """AI_RUN 행 → `RunMetadata` — 확정 축 대조와 사용 축 병합의 입력."""
+    gen = row.generation_params
+    return RunMetadata(
+        execution_id=row.execution_id,
+        tenant_id=row.tenant_id,
+        capability=Capability(row.capability),
+        pipeline_version=row.pipeline_version,
+        engine_version=row.engine_version,
+        threshold_version=row.threshold_version,
+        prompt_version=row.prompt_version,
+        schema_version=row.schema_version,
+        contract_version=row.contract_version,
+        graph_version=row.graph_version,
+        taxonomy_version=row.taxonomy_version,
+        verify_config_version=row.verify_config_version,
+        difficulty_calib_version=row.difficulty_calib_version,
+        model_provider=row.model_provider,
+        model_name=row.model_name,
+        generation_params=GenerationParams.model_validate(gen) if gen else None,
+        input_snapshot_hash=row.input_snapshot_hash,
+        created_at=row.created_at,
+    )
+
+
 __all__ = [
+    "CONFIRMED_AXES",
+    "CREATED_AXIS",
+    "SWALLOWED_OPERATIONS",
+    "USAGE_AXES",
+    "RunIdentityConflict",
+    "last_success_call",
     "MAX_CALLS_PER_RUN",
     "MAX_PENDING_RUNS",
     "UNKNOWN_MODEL",
