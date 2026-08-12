@@ -16,6 +16,7 @@ from ai.contracts.problem_generation import (
     EvidenceAnchor,
     EvidenceKind,
     GeneratedItem,
+    ProblemItemStatus,
     ProblemRequest,
     SolveResult,
     TargetKind,
@@ -143,6 +144,10 @@ def test_ai_refine_applies_only_after_rule_and_blind_cross_solve() -> None:
     assert outcome.applied
     assert outcome.item is not None and outcome.item.stem == revised.stem
     assert outcome.solve_result == _solve()
+    assert outcome.release_status is ProblemItemStatus.VERIFIED
+    assert outcome.review_reason is None
+    assert outcome.difficulty_est is not None
+    assert outcome.difficulty_band is not None
     assert len(generator.requests) == len(verifier.requests) == 1
     assert "발문을 조금 더 명확하게" in generator.requests[0].prompt
 

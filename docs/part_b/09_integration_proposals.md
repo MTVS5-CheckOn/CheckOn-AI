@@ -1270,6 +1270,16 @@ verification_unavailable | dropped`와 1:1 대응한다. BE가 목록을 다시 
 ③ 근거·금칙어·노출 판정을 **전부 다시 실행**한다. 강사 직접 수정과 rollback도 예외가
 아니며 일부 필드만 검사하고 이전 통과 상태를 재사용하지 않는다(`07_refine_policy.md` §4).
 
+**구현 상태(2026-08-12 · B):** 위 한 경로 중 `ai_refine`만 먼저 열었다. 응답은 200이며
+`revision`·`current_revision_no`와 규칙/교차 풀이/release 재판정 결과를 반환한다. 같은
+멱등키+같은 바디는 같은 200을 재반환하고, stale·진행 중 충돌은 LLM 호출 전에 위 409로
+끝난다. 통과·차단 턴 모두 이력을 남기되 현재 본문은 마지막 전체 검증 통과본을 유지한다.
+현재 근거 재조회가 가능한 `language` 문항만 `available_actions=["refine"]`이며,
+`teacher_direct`·`rollback`과 다른 4영역의 수정은 아직 열지 않았다. 다른 4영역은 생성 당시
+자료 원문/EvidencePack 영속 재조회가 선행돼야 하며, 그 전에는 API가 임의로 근거를 복원하지
+않는다. 근거: `api/routers/problem.py`·`application/refiner.py`·
+`db/repositories/problem_revision_store.py`와 해당 테스트.
+
 #### 2-19.8 교체·삭제 경로 `[v1 스펙 확정 · 구현 후속]` `[경로 제안 · BE 합의 대기]`
 
 counsel의 동작별 하위 경로 관례에 맞춰 교체는

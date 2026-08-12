@@ -20,13 +20,19 @@ from ai.api.envelope import success_envelope
 from ai.api.version_scope import RouterScope
 from ai.contracts.agents import JobPhase, WorkerJob
 from ai.contracts.diagnosis import DiagnosisResult
-from ai.contracts.execution import VersionSet
+from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.graphrag import GraphContextService
+from ai.contracts.llm import CallOutcome, LlmError
 from ai.contracts.problem_generation import (
+    GeneratedItem,
+    ItemFieldChange,
+    ItemRevision,
+    ItemRevisionRequest,
     ProblemGenerationOutcome,
     ProblemItemStatus,
     ProblemRequest,
     ProblemSetResult,
+    RevisionKind,
 )
 from ai.db.repositories.idempotency import IdempotencyStore
 from ai.db.repositories.run_store import RunStore, default_llm_call_collector
@@ -35,30 +41,52 @@ from ai.db.store_factory import (
     build_idempotency_store,
     build_run_store,
 )
+from ai.llm.determinism import deterministic_params
+from ai.llm.prompts.loader import load_prompt_template
 from ai.problem_generation.application.drain import ProblemDrainLoop
-from ai.problem_generation.application.ports import ProblemItemStore
+from ai.problem_generation.application.ports import (
+    ProblemItemStore,
+    ProblemRevisionStore,
+    RevisionConflict,
+)
+from ai.problem_generation.application.refiner import ProblemItemRefiner
 from ai.problem_generation.application.workflow import DiagnosisCallable
 from ai.problem_generation.assembly import (
     ProblemGenerationRunner,
     ProblemRuntimeStores,
     build_tenant_scoped_item_store,
+    build_tenant_scoped_revision_store,
     open_problem_generation_runner,
     problem_runtime_stores,
     problem_versions,
     reset_problem_memory_runtime,
 )
+from ai.problem_generation.domain.identity import canonical_json
 from ai.problem_generation.enqueue import ProblemGenerationEnqueuer
-from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.config import (
+    load_area_specs,
+    load_banned_topics,
+    load_verify_config,
+)
 from ai.problem_generation.infrastructure.graph_context import (
     GrammarNormGraphContextService,
 )
-from ai.problem_generation.provider import ProblemProviders, build_problem_providers
+from ai.problem_generation.infrastructure.memory_store import (
+    InMemoryProblemRevisionStore,
+)
+from ai.problem_generation.provider import (
+    ProblemProviders,
+    build_problem_gateway,
+    build_problem_providers,
+)
 from ai.runtime.errors import (
     DomainException,
     IdempotencyConflict,
     NotFound,
     SnapshotInvalid,
+    domain_error_for,
 )
+from ai.runtime.redaction import redact
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +165,7 @@ _views: dict[tuple[str, str], _CachedView] = {}
 _providers: ProblemProviders | None = None
 _graph_context: GraphContextService | None = None
 _diagnosis: DiagnosisCallable | None = None
+_revision_stores: dict[tuple[str, int], ProblemRevisionStore] = {}
 
 
 @dataclass(slots=True)
@@ -154,6 +183,13 @@ class ProblemProviderNotWired(RuntimeError):
 
 class ProblemServicesNotWired(RuntimeError):
     """GraphContext·진단 서비스가 아직 조립되지 않음."""
+
+
+class ProblemRevisionConflict(DomainException):
+    """문항 수정 낙관적 잠금·진행 중 충돌."""
+
+    code = "REVISION_CONFLICT"
+    http_status = 409
 
 
 def set_problem_providers(providers: ProblemProviders) -> None:
@@ -270,6 +306,7 @@ def reset_problem_router() -> None:
     _run_store = build_run_store()
     _stores = problem_runtime_stores()
     _views.clear()
+    _revision_stores.clear()
     _providers = None
     _graph_context = None
     _diagnosis = None
@@ -560,6 +597,18 @@ def _set_result(
     raise NotFound("set_id 부재", {"set_id": str(set_id)})
 
 
+def _set_job_id(*, tenant_id: str, set_id: uuid.UUID) -> uuid.UUID:
+    for (cached_tenant, job_id), cached in _views.items():
+        result = cached.view.result
+        if (
+            cached_tenant == tenant_id
+            and isinstance(result, ProblemSetResult)
+            and result.set_id == set_id
+        ):
+            return uuid.UUID(job_id)
+    raise NotFound("set_id 부재", {"set_id": str(set_id)})
+
+
 def _set_id(raw_set_id: str) -> uuid.UUID:
     try:
         return uuid.UUID(raw_set_id)
@@ -569,6 +618,93 @@ def _set_id(raw_set_id: str) -> uuid.UUID:
 
 def _item_store_for(tenant_id: str) -> ProblemItemStore:
     return build_tenant_scoped_item_store(tenant_id=tenant_id) or _stores.items
+
+
+def _revision_store_for(tenant_id: str) -> ProblemRevisionStore:
+    pg_store = build_tenant_scoped_revision_store(tenant_id=tenant_id)
+    if pg_store is not None:
+        return pg_store
+    item_store = _item_store_for(tenant_id)
+    key = (tenant_id, id(item_store))
+    store = _revision_stores.get(key)
+    if store is None:
+        store = InMemoryProblemRevisionStore(item_store)
+        _revision_stores[key] = store
+    return store
+
+
+class _AiRefineBody(BaseModel):
+    """헤더 파생 필드를 제외한 Step3 AI 수정 HTTP body."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    base_revision_no: int = Field(ge=0)
+    revision_kind: RevisionKind
+    instruction: str = Field(min_length=1)
+
+
+def _item_diff(
+    before: GeneratedItem, after: GeneratedItem
+) -> tuple[ItemFieldChange, ...]:
+    before_body = before.model_dump(mode="json")
+    after_body = after.model_dump(mode="json")
+    return tuple(
+        ItemFieldChange(
+            path=f"$.{field}",
+            before_json=canonical_json(before_body[field]),
+            after_json=canonical_json(after_body[field]),
+        )
+        for field in sorted(before_body)
+        if before_body[field] != after_body[field]
+    )
+
+
+async def _problem_request_for_set(
+    *, tenant_id: str, set_id: uuid.UUID
+) -> ProblemRequest:
+    job_id = _set_job_id(tenant_id=tenant_id, set_id=set_id)
+    job = await _build_supervisor().get(tenant_id=tenant_id, job_id=job_id)
+    if job is None:
+        raise NotFound("set_id 부재", {"set_id": str(set_id)})
+    request = await _stores.requests.get(job.payload_ref, tenant_id=tenant_id)
+    if request is None:
+        raise NotFound("set_id 부재", {"set_id": str(set_id)})
+    return request
+
+
+async def _record_revision_run(
+    context: ExecutionContext,
+    *,
+    swallow_errors: bool = False,
+) -> uuid.UUID | None:
+    calls = default_llm_call_collector().take(context.execution_id)
+    generated_call_id = next(
+        (
+            call.id
+            for call in reversed(calls)
+            if call.record.prompt_id == "pg.refine.v1"
+            and call.record.outcome is CallOutcome.OK
+        ),
+        None,
+    )
+    last = calls[-1].record if calls else None
+    try:
+        await _run_store.record_run(
+            context.to_run_metadata(
+                created_at=system_utc_now(),
+                model_provider=last.provider if last is not None else None,
+                model_name=last.model if last is not None else None,
+                generation_params=(
+                    deterministic_params() if last is not None else None
+                ),
+            ),
+            calls,
+        )
+    except Exception:
+        if not swallow_errors:
+            raise
+        logger.exception("문항 수정 장애 턴의 원장 적재 실패 — 원인 예외를 유지한다")
+    return generated_call_id
 
 
 async def _revision_no(
@@ -640,13 +776,30 @@ async def get_problem_item(
     item_result = result.items[slot_index]
     stored = None
     candidate = None
+    current_item = None
+    latest_revision = None
     revision_no = 0
     if item_result.item_id is not None:
         store = _item_store_for(tenant_id)
         try:
             stored = await store.get(parsed_set_id, slot_index)
             revision_no = await store.current_revision_no(parsed_set_id, slot_index)
-            if stored.candidate_ref is not None:
+            current_item = stored.item
+            if revision_no > 0:
+                history = await _revision_store_for(tenant_id).list_revisions(
+                    parsed_set_id, slot_index
+                )
+                latest_revision = history[-1] if history else None
+                current_item = next(
+                    (
+                        revision.result_snapshot
+                        for revision in reversed(history)
+                        if revision.verifications_passed
+                        and revision.result_snapshot is not None
+                    ),
+                    current_item,
+                )
+            if revision_no == 0 and stored.candidate_ref is not None:
                 candidate = await _stores.candidates.get(stored.candidate_ref)
         except LookupError as exc:
             raise NotFound(
@@ -666,10 +819,15 @@ async def get_problem_item(
             ),
             "status": item_result.status.value,
             "current_revision_no": revision_no,
-            "available_actions": [],
+            "available_actions": (
+                ["refine"]
+                if current_item is not None
+                and current_item.area_tag.value == "language"
+                else []
+            ),
             "item": (
-                stored.item.model_dump(mode="json")
-                if stored is not None and stored.item is not None
+                current_item.model_dump(mode="json")
+                if current_item is not None
                 else None
             ),
             "cross_solve": (
@@ -678,10 +836,45 @@ async def get_problem_item(
                 else None
             ),
             "verification": {
-                "rule_validation": "passed" if verified else "unavailable",
-                "blind_cross_solve": "passed" if candidate is not None else "unavailable",
-                "release_decision": item_result.status.value,
+                "rule_validation": (
+                    "passed"
+                    if latest_revision is not None
+                    and latest_revision.verifications_passed
+                    else "blocked"
+                    if latest_revision is not None
+                    else "passed"
+                    if verified
+                    else "unavailable"
+                ),
+                "blind_cross_solve": (
+                    "passed"
+                    if latest_revision is not None
+                    and latest_revision.verifications_passed
+                    else "blocked"
+                    if latest_revision is not None
+                    else "passed"
+                    if candidate is not None
+                    else "unavailable"
+                ),
+                "release_decision": (
+                    "passed"
+                    if latest_revision is not None
+                    and latest_revision.verifications_passed
+                    else "blocked"
+                    if latest_revision is not None
+                    else item_result.status.value
+                ),
             },
+            "revisions": [
+                revision.model_dump(mode="json")
+                for revision in (
+                    await _revision_store_for(tenant_id).list_revisions(
+                        parsed_set_id, slot_index
+                    )
+                    if revision_no > 0
+                    else ()
+                )
+            ],
             "review_reason": (
                 item_result.review_reason.value
                 if item_result.review_reason is not None
@@ -698,6 +891,182 @@ async def get_problem_item(
     )
 
 
+@router.post("/v1/problems/{set_id}/items/{slot_index}/revisions")
+async def post_problem_item_revision(
+    set_id: str, slot_index: int, request: Request
+) -> dict[str, Any]:
+    """language 문항의 AI 수정 1턴을 전체 재검증하고 리비전으로 남긴다."""
+
+    missing = [name for name in _REQUIRED_HEADERS if not request.headers.get(name)]
+    if missing:
+        raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": missing})
+    tenant_id = request.headers["X-Tenant-Id"]
+    request_id = request.headers["X-Request-Id"]
+    idempotency_key = request.headers["Idempotency-Key"]
+    parsed_set_id = _set_id(set_id)
+    _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
+    try:
+        raw_body = await request.json()
+    except ValueError as exc:
+        raise SnapshotInvalid("요청 바디가 유효한 JSON이 아님") from exc
+    if not isinstance(raw_body, dict):
+        raise SnapshotInvalid("요청 바디는 JSON 객체여야 한다")
+    body_hash = _canonical_hash(raw_body)
+    endpoint = f"/v1/problems/{parsed_set_id}/items/{slot_index}/revisions"
+    hit = await _idempotency_store.get(
+        tenant_id=tenant_id,
+        endpoint=endpoint,
+        idempotency_key=idempotency_key,
+    )
+    if hit is not None:
+        if hit.snapshot_hash == body_hash:
+            return hit.response_body
+        raise IdempotencyConflict(
+            "같은 Idempotency-Key에 다른 바디",
+            {"idempotency_key": idempotency_key},
+        )
+    try:
+        body = _AiRefineBody.model_validate(raw_body)
+    except ValidationError as exc:
+        raise SnapshotInvalid(
+            "요청 바디 스키마 위반", _format_validation_error(exc)
+        ) from exc
+    if body.revision_kind is not RevisionKind.AI_REFINE:
+        raise SnapshotInvalid("MVP 수정 API는 ai_refine만 지원한다")
+
+    item_store = _item_store_for(tenant_id)
+    try:
+        stored = await item_store.get(parsed_set_id, slot_index)
+    except LookupError as exc:
+        raise NotFound(
+            "문항 슬롯 부재",
+            {"set_id": str(parsed_set_id), "slot_index": slot_index},
+        ) from exc
+    if stored.item is None:
+        raise NotFound(
+            "문항 슬롯 부재",
+            {"set_id": str(parsed_set_id), "slot_index": slot_index},
+        )
+    if stored.item.area_tag.value != "language":
+        raise SnapshotInvalid("MVP ai_refine은 language 문항만 지원한다")
+    command = ItemRevisionRequest(
+        request_id=request_id,
+        idempotency_key=idempotency_key,
+        item_id=stored.item_id,
+        base_revision_no=body.base_revision_no,
+        revision_kind=body.revision_kind,
+        instruction=body.instruction,
+    )
+    problem_request = await _problem_request_for_set(
+        tenant_id=tenant_id, set_id=parsed_set_id
+    )
+    versions = problem_versions(
+        taxonomy_version=problem_request.taxonomy_version,
+        verify_config_version=load_verify_config().version,
+        prompt_version=load_prompt_template("pg.refine.v1").version,
+    )
+    execution_context = ExecutionContext(
+        execution_id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        capability=Capability.PROBLEM_GENERATION,
+        input_snapshot_hash=problem_request.snapshot_hash,
+        versions=versions,
+    )
+    revision_store = _revision_store_for(tenant_id)
+    try:
+        async with revision_store.reserve(
+            set_id=parsed_set_id,
+            slot_index=slot_index,
+            base_revision_no=command.base_revision_no,
+        ) as session:
+            verify_config = load_verify_config()
+            refiner = ProblemItemRefiner(
+                gateway=build_problem_gateway(
+                    verify_config=verify_config,
+                    recorder=default_llm_call_collector(),
+                    providers=require_problem_providers(),
+                ),
+                graph_context=require_problem_services()[0],
+                verify_config=verify_config,
+                banned_topics=load_banned_topics(),
+                area_specs=load_area_specs(),
+            )
+            try:
+                outcome = await refiner.refine(
+                    original=session.current_item,
+                    request=problem_request,
+                    instruction=body.instruction,
+                    execution_context=execution_context,
+                )
+            except LlmError as exc:
+                await _record_revision_run(execution_context, swallow_errors=True)
+                raise domain_error_for(exc) from exc
+            llm_call_id = await _record_revision_run(execution_context)
+            revision = ItemRevision(
+                revision_no=session.current_revision_no + 1,
+                revision_kind=RevisionKind.AI_REFINE,
+                instruction=redact(body.instruction).masked_text,
+                result_snapshot=outcome.item if outcome.applied else None,
+                diff=(
+                    _item_diff(session.current_item, outcome.item)
+                    if outcome.item is not None
+                    else ()
+                ),
+                verifications_passed=outcome.applied,
+                blocked_reason=outcome.blocked_reason,
+                llm_call_id=llm_call_id,
+            )
+            await session.append(revision)
+    except RevisionConflict as exc:
+        raise ProblemRevisionConflict(
+            "문항 리비전 충돌",
+            {
+                "reason": exc.reason,
+                "base_revision_no": body.base_revision_no,
+                "current_revision_no": exc.current_revision_no,
+            },
+        ) from exc
+
+    envelope = success_envelope(
+        data={
+            "set_id": str(parsed_set_id),
+            "slot_index": slot_index,
+            "revision": revision.model_dump(mode="json"),
+            "current_revision_no": revision.revision_no,
+            "verification": {
+                "rule_validation": "passed" if outcome.applied else "blocked",
+                "blind_cross_solve": "passed" if outcome.applied else "blocked",
+                "release_decision": (
+                    outcome.release_status.value
+                    if outcome.release_status is not None
+                    else "blocked"
+                ),
+                "review_reason": (
+                    outcome.review_reason.value
+                    if outcome.review_reason is not None
+                    else None
+                ),
+                "difficulty_est": outcome.difficulty_est,
+                "difficulty_band": (
+                    outcome.difficulty_band.value
+                    if outcome.difficulty_band is not None
+                    else None
+                ),
+            },
+        },
+        execution_id=str(execution_context.execution_id),
+        versions=versions,
+    )
+    await _idempotency_store.put(
+        tenant_id=tenant_id,
+        endpoint=endpoint,
+        idempotency_key=idempotency_key,
+        snapshot_hash=body_hash,
+        response_body=envelope,
+    )
+    return envelope
+
+
 __all__ = [
     "VERSION_SCOPE",
     "ProblemJobView",
@@ -709,6 +1078,7 @@ __all__ = [
     "get_problem_item",
     "get_problem_items",
     "post_problem",
+    "post_problem_item_revision",
     "problem_drain_running",
     "problem_failure_versions",
     "require_problem_providers",

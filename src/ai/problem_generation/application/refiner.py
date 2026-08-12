@@ -13,7 +13,14 @@ from ai.contracts.graphrag import (
     GraphContextService,
 )
 from ai.contracts.llm import LLMRequest, ModelRole, RedactionBlocked
-from ai.contracts.problem_generation import GeneratedItem, ProblemRequest, SolveResult
+from ai.contracts.problem_generation import (
+    DifficultyBand,
+    GeneratedItem,
+    ProblemItemStatus,
+    ProblemRequest,
+    ReviewReason,
+    SolveResult,
+)
 from ai.contracts.taxonomy import AreaTag
 from ai.llm.determinism import deterministic_params
 from ai.llm.gateway import LlmGateway
@@ -27,6 +34,11 @@ from ai.problem_generation.application.generator import (
     require_successful_text,
 )
 from ai.problem_generation.domain.cross_solve import validate_cross_solve
+from ai.problem_generation.domain.difficulty import (
+    classify_t1_difficulty,
+    estimate_t1_difficulty,
+    needs_difficulty_regeneration,
+)
 from ai.problem_generation.domain.identity import canonical_json
 from ai.problem_generation.domain.policy import (
     AreaSpecs,
@@ -49,6 +61,10 @@ class ProblemRefineOutcome(BaseModel):
     solve_result: SolveResult | None = None
     blocked_reason: BlockedReason | None = None
     failed_checks: tuple[str, ...] = ()
+    release_status: ProblemItemStatus | None = None
+    review_reason: ReviewReason | None = None
+    difficulty_est: float | None = None
+    difficulty_band: DifficultyBand | None = None
 
     @model_validator(mode="after")
     def validate_outcome(self) -> ProblemRefineOutcome:
@@ -57,6 +73,22 @@ class ProblemRefineOutcome(BaseModel):
                 raise ValueError("적용된 수정에는 문항과 교차 풀이 결과가 필요하다")
             if self.blocked_reason is not None or self.failed_checks:
                 raise ValueError("적용된 수정에는 차단 정보를 기록하지 않는다")
+            if (
+                self.release_status is None
+                or self.difficulty_est is None
+                or self.difficulty_band is None
+            ):
+                raise ValueError("적용된 수정에는 release 재판정 결과가 필요하다")
+            if (
+                self.release_status is ProblemItemStatus.NEEDS_REVIEW
+                and self.review_reason is None
+            ):
+                raise ValueError("검토 필요 수정에는 review_reason이 필요하다")
+            if (
+                self.release_status is ProblemItemStatus.VERIFIED
+                and self.review_reason is not None
+            ):
+                raise ValueError("검증 완료 수정에는 review_reason을 기록하지 않는다")
         elif self.blocked_reason is None:
             raise ValueError("차단된 수정에는 blocked_reason이 필요하다")
         return self
@@ -161,13 +193,13 @@ class ProblemItemRefiner:
                 "response_schema_json": generated_item_schema_json(),
             }
         )
-        redacted_prompt = redact(prompt_text)
-        if redacted_prompt.uncertain:
+        redacted = redact(prompt_text)
+        if redacted.uncertain:
             raise RedactionBlocked("문항 수정 프롬프트의 개인정보 마스킹이 불확실하다")
         result = await self._gateway.complete(
             LLMRequest(
                 role=ModelRole.GENERATOR,
-                prompt=redacted_prompt.masked_text,
+                prompt=redacted.masked_text,
                 prompt_id=self._prompt.prompt_id,
                 prompt_version=self._prompt.version,
                 response_schema_name=self._prompt.response_schema_name,
@@ -211,7 +243,39 @@ class ProblemItemRefiner:
                 blocked_reason=BlockedReason.ANSWER_INTEGRITY,
                 failed_checks=cross_result.failed_checks,
             )
-        return ProblemRefineOutcome(applied=True, item=revised, solve_result=solve)
+        difficulty_est = estimate_t1_difficulty(
+            item=revised,
+            solve=solve,
+            config=self._verify_config,
+        )
+        difficulty_band = classify_t1_difficulty(
+            difficulty_est, self._verify_config
+        )
+        difficulty_mismatch = needs_difficulty_regeneration(
+            difficulty_band,
+            request.requested_difficulty,
+            self._verify_config,
+        )
+        review_reason = (
+            ReviewReason.DIFFICULTY_BAND_MISMATCH
+            if difficulty_mismatch
+            else ReviewReason.LOW_CONFIDENCE
+            if cross_result.low_confidence
+            else None
+        )
+        return ProblemRefineOutcome(
+            applied=True,
+            item=revised,
+            solve_result=solve,
+            release_status=(
+                ProblemItemStatus.NEEDS_REVIEW
+                if review_reason is not None
+                else ProblemItemStatus.VERIFIED
+            ),
+            review_reason=review_reason,
+            difficulty_est=difficulty_est,
+            difficulty_band=difficulty_band,
+        )
 
 
 __all__ = ["ProblemItemRefiner", "ProblemRefineOutcome"]
