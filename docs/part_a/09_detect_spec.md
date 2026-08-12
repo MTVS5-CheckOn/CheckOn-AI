@@ -272,8 +272,12 @@ skip된다 — 분자와 분모를 **같은 자로** 재야 하고, 섞느니 �
     "execution_id": "uuid",
         // [저장] 이 실행의 추적 ID. 나중에 "이 경보 왜 떴어요?" 문의가 오면
         // 이 ID로 AI 로그를 역추적할 수 있으니 Alert에 같이 저장
-    "versions": { "pipeline": "1.0.0", "engine": "detection-rules-0.2", "threshold": "v4", "contract": "1.0" }
+    "versions": { "pipeline": "0.1.0", "engine": "detection-rules-0.3", "schema": "0.1",
+                  "contract": "0.2", "threshold": "default-v3", "prompt": "0.2" }
         // [로그] 어떤 버전의 규칙으로 판정했는지 — 재현성 근거
+        // 🔴 **현재 실행값이다**(8/12 실측). 종전 예시는 `pipeline 1.0.0`·`threshold v4`·
+        //    `contract 1.0`이었는데 그건 **한 번도 실제였던 적이 없는 자리표시자**라
+        //    현재값처럼 읽혔다. engine·contract는 이번에 올랐다(99 #43·#44).
   }
 }
 ```

@@ -22,7 +22,6 @@ from ai.detection.baseline import Baseline
 from ai.detection.evidence import (
     EMPTY_EVIDENCE,
     MAX_ABSENCE_LOOKBACK_WEEKS,
-    R3_BASELINE_WEEKS,
     SKIP_AUTHORITATIVE_EVIDENCE_MISSING,
     StudentEvidence,
 )
@@ -240,9 +239,14 @@ def _r3(
             rule_id=RuleId.R3, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
         )
     activity = evidence.weekly_activity.get(analysis_week)
+    #: 🔴 **기준창은 설정이 정본이다**(`config.baseline_window_weeks`) — 종전에는 이 모듈에
+    #: `R3_BASELINE_WEEKS = 8` 상수를 따로 뒀다. 그러면 **값이 두 곳에 살고**, 설정을 2주로
+    #: 낮춘 테넌트·테스트에서 **여전히 8주를 요구해** 영영 skip된다(값이 바뀌면 코드 diff가
+    #: 생기면 위치가 틀린 것 · 03 §1).
+    baseline_weeks = config.baseline_window_weeks
     prior = [
         evidence.weekly_activity.get(analysis_week - timedelta(weeks=back))
-        for back in range(1, R3_BASELINE_WEEKS + 1)
+        for back in range(1, baseline_weeks + 1)
     ]
     if activity is None or any(row is None for row in prior):
         return None, RuleSkip(

@@ -233,12 +233,12 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "864be2fa-225f-4ea2-bb49-862e068e10fd",
+    "execution_id": "7cec49eb-c40e-4a5d-a09f-3d6a415f665e",
     "versions": {
       "pipeline": "0.1.0",
-      "engine": "detection-rules-0.2",
+      "engine": "detection-rules-0.3",
       "schema": "0.1",
-      "contract": "0.1",
+      "contract": "0.2",
       "threshold": "default-v3",
       "prompt": "0.2",
       "graph": null,
