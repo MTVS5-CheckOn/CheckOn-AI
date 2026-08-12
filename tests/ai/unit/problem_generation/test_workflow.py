@@ -54,7 +54,10 @@ from ai.llm.determinism import DETERMINISTIC_TEMPERATURE, LLM_SEED
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application import workflow as workflow_module
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
-from ai.problem_generation.application.generator import ProblemGenerator
+from ai.problem_generation.application.generator import (
+    ProblemGenerator,
+    generated_item_schema_json,
+)
 from ai.problem_generation.application.literature_selector import LiteratureSelector
 from ai.problem_generation.application.passage_generator import (
     PassageGenerator,
@@ -69,7 +72,7 @@ from ai.problem_generation.application.workflow import (
     ProblemWorkflowConfigurationError,
     graph_recursion_limit,
 )
-from ai.problem_generation.domain.identity import problem_item_id
+from ai.problem_generation.domain.identity import canonical_json, problem_item_id
 from ai.problem_generation.domain.models import TargetPlan
 from ai.problem_generation.domain.policy import (
     DifficultyRange,
@@ -216,7 +219,7 @@ class _WorkflowHarness:
                 engine_version="engine-v1",
                 schema_version="schema-v1",
                 contract_version="contract-v1",
-                prompt_version="v3",
+                prompt_version="v4",
                 graph_version=_GRAPH_VERSION,
                 taxonomy_version=_TAXONOMY_VERSION,
                 verify_config_version="verify-config.v1",
@@ -456,6 +459,62 @@ def test_generation_failures_stop_at_three_attempts_without_fourth_call() -> Non
     assert result.items[0].attempt_no == 3
     assert len(harness.generator_provider.requests) == 3
     assert not harness.verifier_provider.requests
+
+
+def test_field_missing_retry_returns_sanitized_path_and_reason_to_generator() -> None:
+    invalid = GeneratedItem.model_validate_json(_item_json("첫시도")).model_dump(mode="json")
+    invalid.pop("rationale")
+    harness = _WorkflowHarness(
+        generator_steps=(canonical_json(invalid), _item_json("교정")),
+        verifier_steps=(_solve_json(),),
+    )
+
+    result = _run(harness, harness.request())
+
+    assert result.items[0].status is ProblemItemStatus.VERIFIED
+    assert len(harness.generator_provider.requests) == 2
+    first_prompt = harness.generator_provider.requests[0].prompt
+    retry_prompt = harness.generator_provider.requests[1].prompt
+    assert '"schema_issues":[]' in first_prompt
+    assert '"schema_issues":[{"path":"$.rationale","reason":"missing"}]' in retry_prompt
+    assert "LLM 구조화 출력이 응답 스키마를 충족하지 않는다" not in retry_prompt
+
+
+def test_generator_prompt_uses_schema_derived_from_generated_item_contract() -> None:
+    harness = _WorkflowHarness(
+        generator_steps=(_item_json("스키마"),),
+        verifier_steps=(_solve_json(),),
+    )
+
+    _run(harness, harness.request())
+
+    prompt = harness.generator_provider.requests[0].prompt
+    schema_json = generated_item_schema_json()
+    assert schema_json in prompt
+    assert '"required":["area_tag","type_tag","item_format","stem","choices",' in schema_json
+    assert '"answer","rationale","evidence"]' in schema_json
+    assert '"additionalProperties":false' in schema_json
+    assert '"minItems":5' in schema_json
+    assert '"maxItems":5' in schema_json
+    assert '"enum":["fact","infer","critic","concept","apply"]' in schema_json
+    assert "⟪확인필요⟫" not in schema_json
+
+
+def test_generated_item_schema_is_derived_instead_of_copied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract_schema = {
+        "type": "object",
+        "properties": {"contract_marker": {"type": "string"}},
+        "required": ["contract_marker"],
+    }
+    monkeypatch.setattr(
+        GeneratedItem,
+        "model_json_schema",
+        classmethod(lambda _model: contract_schema),
+    )
+
+    assert generated_item_schema_json() == canonical_json(contract_schema)
 
 
 @pytest.mark.parametrize(
@@ -768,6 +827,33 @@ def test_attempt_is_checkpointed_before_external_generation_call() -> None:
     resumed = ProblemGenerationState.model_validate(resumed_state)
     assert resumed.is_terminal
     assert len(harness.generator_provider.requests) == 1
+
+
+def test_dict_entry_evidence_stops_as_explicit_unimplemented_verification() -> None:
+    evidence_ref = "표준국어대사전:484613"
+    harness = _WorkflowHarness(
+        generator_steps=(
+            _item_json(
+                "어휘 대조",
+                evidence_refs=(evidence_ref,),
+                evidence_kind=EvidenceKind.DICT_ENTRY,
+            ),
+        ),
+        verifier_steps=(),
+        graph_steps=((evidence_ref,),),
+    )
+
+    result = _run(
+        harness,
+        harness.request(target_source=TargetSource.TEACHER_MANUAL),
+    )
+
+    item_result = result.items[0]
+    assert item_result.status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
+    assert item_result.failure_reason is ProblemFailureReason.SOURCE_UNVERIFIED
+    assert item_result.failure_detail == "R-1 어휘 대조 구현 안 됨 — LexiconLookup 미배선"
+    assert len(harness.generator_provider.requests) == 1
+    assert not harness.verifier_provider.requests
 
 
 def test_saved_slot_result_is_reconnected_without_repeating_llm_call() -> None:

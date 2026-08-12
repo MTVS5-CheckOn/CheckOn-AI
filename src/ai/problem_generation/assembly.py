@@ -25,6 +25,7 @@ from ai.contracts.problem_generation import (
     ProblemGenerationOutcome,
     ProblemRequest,
 )
+from ai.db.repositories.problem_revision_store import PgProblemRevisionStore
 from ai.db.repositories.problem_store import PgProblemItemStore
 from ai.db.repositories.run_store import (
     LlmCallCollector,
@@ -35,7 +36,11 @@ from ai.db.session import get_sessionmaker
 from ai.db.settings import DbSettings, get_db_settings
 from ai.llm.determinism import deterministic_params
 from ai.llm.prompts.loader import load_prompt_template
-from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
+from ai.problem_generation.application.ports import (
+    CandidateStore,
+    ProblemItemStore,
+    ProblemRevisionStore,
+)
 from ai.problem_generation.application.workflow import DiagnosisCallable
 from ai.problem_generation.bootstrap import build_problem_workflow
 from ai.problem_generation.enqueue import ProblemRequestStore
@@ -177,6 +182,19 @@ def build_tenant_scoped_item_store(
     if settings.store_backend != _PG:
         return None
     return PgProblemItemStore(sessionmaker=get_sessionmaker(), tenant_id=tenant_id)
+
+
+def build_tenant_scoped_revision_store(
+    *, tenant_id: str, settings: DbSettings | None = None
+) -> ProblemRevisionStore | None:
+    """`store_backend=pg`면 테넌트 스코프 리비전 저장소를 만든다."""
+
+    settings = settings or get_db_settings()
+    if settings.store_backend != _PG:
+        return None
+    return PgProblemRevisionStore(
+        sessionmaker=get_sessionmaker(), tenant_id=tenant_id
+    )
 
 
 def problem_runtime_stores(
@@ -446,6 +464,7 @@ __all__ = [
     "ProblemResultStore",
     "ProblemRuntimeStores",
     "build_tenant_scoped_item_store",
+    "build_tenant_scoped_revision_store",
     "default_problem_runtime_stores",
     "open_problem_generation_runner",
     "problem_runtime_stores",

@@ -162,6 +162,36 @@ def test_rule_validator_checks_echo_evidence_and_banned_topics() -> None:
     assert failed.source_unverified
 
 
+def test_dict_entry_evidence_fails_as_unimplemented_lexicon_verification() -> None:
+    validator = RuleValidator(
+        load_banned_topics(),
+        duplicate_similarity_max=load_verify_config().dup_similarity_max,
+    )
+    item = _item(evidence_refs=("표준국어대사전:484613",)).model_copy(
+        update={
+            "evidence": (
+                EvidenceAnchor(
+                    kind=EvidenceKind.DICT_ENTRY,
+                    ref="표준국어대사전:484613",
+                ),
+            )
+        }
+    )
+
+    result = validator.validate(
+        item=item,
+        request=_request(),
+        type_tag=TypeTag.CONCEPT,
+        skill_node_id="grammar.node-1",
+        context_pack=_context_pack(),
+    )
+
+    assert not result.passed
+    assert not result.verification_available
+    assert result.source_unverified
+    assert "R-1:어휘_대조_미구현" in result.failed_checks
+
+
 def test_cross_gate_and_t1_difficulty_are_code_determined() -> None:
     config = load_verify_config()
     item = _item(evidence_refs=("grammar:rule-1", "grammar:rule-2"))

@@ -27,6 +27,7 @@ _EXPECTED_GATEWAY_CALLS = frozenset(
             "problem_generation/application/passage_generator.py",
             "generate_source_material",
         ),
+        ("problem_generation/application/refiner.py", "refine"),
     }
 )
 

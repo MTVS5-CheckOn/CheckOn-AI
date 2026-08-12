@@ -1085,6 +1085,34 @@ provider는 실패를 **예외로 올린다.** 반환값의 `outcome`은 `OK` �
 소비자의 outcome 분기는 **도달 불가 방어**로 남긴다(#129). 이 규약을 바꾸면 재시도
 계약도 함께 바뀌므로 게이트웨이 소유자(B)에게 먼저 통보해야 한다.
 
+##### 구조화 출력 스키마 본문 전달 제안 `[A+B 양자 승인 필요 · 미구현]`
+
+2026-08-12 실 LLM 스모크(`gpt-5.4-mini` · language · count=1)에서 생성 응답의
+`GeneratedItem` 스키마 통과가 회차별 `1/3 · 3/3 · 0/3`으로 흔들렸고, 두 회차는
+`FieldMissing`으로 생성 상한 3회를 소진했다. 현 `LLMRequest`는
+`response_schema_name="GeneratedItem"`이라는 이름만 싣고 JSON Schema 본문은 싣지
+않으므로 provider가 OpenAI 호환 `response_format.type=json_schema`를 만들 근거가 없다.
+
+양자 승인 뒤 `contracts/llm.py::LLMRequest`에 다음 선택 필드를 추가하는 안을 제안한다.
+
+```python
+response_schema: dict[str, object] | None = None
+```
+
+값은 capability 호출자가 자신의 Pydantic 계약 모델에서 `model_json_schema()`로 만들어
+넘긴 JSON Schema 본문이다. `response_schema_name`은 관측·registry 대조용 이름으로 유지하고,
+본문이 있으면 provider는 이름과 본문으로 strict `json_schema` response format을 조립한다.
+본문이 없으면 기존 자유 텍스트 호출과 파싱 경로를 유지해 점진적으로 이관한다.
+
+🔴 provider가 `ai.contracts.problem_generation`·`ai.contracts.classify` 같은 capability 계약을
+직접 import해 이름별 모델 표를 갖는 형태는 금지한다. 그렇게 하면 벤더 어댑터가 도메인을
+알게 되고 새 capability가 추가될 때마다 공통 provider를 고쳐야 한다. 스키마는 호출자가
+만들어 넘기고 provider는 전달받은 표준 JSON Schema만 해석해야 벤더 독립 경계가 유지된다.
+
+이 변경은 양자 파일 `contracts/llm.py`의 공통 요청 계약을 넓히므로 A+B 승인이 필요하다.
+이번 변경에서는 구현하지 않았으며, provider·게이트·재시도 상한과 기존 스키마 제약도
+변경하지 않았다.
+
 | 예외 | wire 결과 |
 | --- | --- |
 | `ProblemWorkflowConfigurationError` | 400 `INVALID_SCHEMA` |
@@ -1241,6 +1269,16 @@ verification_unavailable | dropped`와 1:1 대응한다. BE가 목록을 다시 
 수정 폭과 종류에 관계없이 매 턴 게이트 ① 스키마·규칙 검증, ② blind 교차 풀이,
 ③ 근거·금칙어·노출 판정을 **전부 다시 실행**한다. 강사 직접 수정과 rollback도 예외가
 아니며 일부 필드만 검사하고 이전 통과 상태를 재사용하지 않는다(`07_refine_policy.md` §4).
+
+**구현 상태(2026-08-12 · B):** 위 한 경로 중 `ai_refine`만 먼저 열었다. 응답은 200이며
+`revision`·`current_revision_no`와 규칙/교차 풀이/release 재판정 결과를 반환한다. 같은
+멱등키+같은 바디는 같은 200을 재반환하고, stale·진행 중 충돌은 LLM 호출 전에 위 409로
+끝난다. 통과·차단 턴 모두 이력을 남기되 현재 본문은 마지막 전체 검증 통과본을 유지한다.
+현재 근거 재조회가 가능한 `language` 문항만 `available_actions=["refine"]`이며,
+`teacher_direct`·`rollback`과 다른 4영역의 수정은 아직 열지 않았다. 다른 4영역은 생성 당시
+자료 원문/EvidencePack 영속 재조회가 선행돼야 하며, 그 전에는 API가 임의로 근거를 복원하지
+않는다. 근거: `api/routers/problem.py`·`application/refiner.py`·
+`db/repositories/problem_revision_store.py`와 해당 테스트.
 
 #### 2-19.8 교체·삭제 경로 `[v1 스펙 확정 · 구현 후속]` `[경로 제안 · BE 합의 대기]`
 
@@ -1442,6 +1480,13 @@ A 소유 파일을 리팩터링하거나 이 PR에 공용 헬퍼를 만들지 �
 축이므로 B 테스트만 다르게 고치지 않고 A와 함께 프록시를 실제로 통과하는 가드로 올릴지
 판정한다. 다만 이번 브랜치에서는 자문 잠금 제거 시 동시성 테스트가 **5/5 결정론으로 red**가
 되어 프록시가 실제 경합을 만들고 있다는 실증은 이미 있다.
+
+✅ **해소(#198 · #200).** #198에서 counsel·problem_item 두 절단 가드를 공용 프록시
+`tests/ai/fakes/first_sql_barrier.py`로 합쳤고, 이제 `asyncio.Barrier` 자체가 아니라 실제
+세션 프록시를 지난다. #200은 party 1 배리어가 두 번째 `wait()`도 즉시 통과시켜 프록시가
+**첫 SQL에서만** 서는지를 놓치던 미탐을 party 부족으로 잡았다. 제안 당시 5/5 red는
+프록시가 **동작했다**는 실증이고, 두 후속은 그 동작을 회귀 테스트가 **단정하게** 만든다.
+두 PR 모두 test-only 해소이며 프로덕션 코드 변경은 없다.
 
 ---
 
@@ -1682,6 +1727,17 @@ config에 안 실으면 **선언만 있고 소비가 0**인 상태(㊺)가 되�
 여전히 0건이다. 따라서 지문 생성이 어휘 표제어 실존 대조까지 해결했다고 간주하면 안 된다.
 어휘 대조가 필요한 문항을 지원한다고 선언하기 전에 이 포트를 R-1 경로에 배선해야 하며,
 그 전에는 생성 노드만으로 대조 근거를 대신하거나 게이트를 완화하지 않는다.
+
+#### 2-23.1 v1 잠금 상태 `[B 구현 · 2026-08-12]`
+
+프로덕션 전수 확인에서 `DICT_ENTRY` 근거를 생산해 워크플로에 넣는 경로는 여전히 0건이다.
+따라서 생성 문항이 `DICT_ENTRY` 근거를 요구하면 조용히 통과하거나 폐기하지 않고
+`verification_unavailable + source_unverified`로 끝내며, 상세에
+`LexiconLookup 미배선`을 명시한다. 이는 게이트 완화가 아니라 미구현 축의 fail-closed 잠금이다.
+
+`LexiconLookup` 포트와 `stdict.py` 어댑터는 삭제하지 않는다. 어휘 문항을 v1 지원 범위로
+열려면 R-1이 표제어·의미 코드를 조회하고 승인된 `DICT_ENTRY` 앵커를 생산하는 경로를 먼저
+배선해야 하며, 그때 이 잠금을 실제 사전 대조 판정으로 교체한다.
 
 ---
 

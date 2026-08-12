@@ -1,11 +1,13 @@
-"""문제출제 T1 실 LLM 왕복 스모크 — integration 전용."""
+"""문제출제 5영역 실 LLM 왕복 스모크 — integration 전용."""
 
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -32,17 +34,29 @@ from ai.contracts.llm import (
 )
 from ai.contracts.problem_generation import (
     GeneratedItem,
+    LiteratureGenre,
+    MediaSourceKind,
+    MediaSourceRequest,
+    PassageDomain,
+    PassageRequest,
     ProblemItemStatus,
     ProblemRequest,
     ProblemSetResult,
+    SentenceComplexity,
+    SourceRequest,
+    SpeechWritingSourceKind,
+    SpeechWritingSourceRequest,
     TargetKind,
     TargetSource,
+    WorkSelection,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
+from ai.diagnosis.skill_graph import load_skill_graph
 from ai.llm.gateway import LlmCallRecord
 from ai.llm.providers.openai_compat import OpenAiSettings, get_llm_settings
 from ai.llm.structured import parse
 from ai.problem_generation.bootstrap import build_problem_workflow
+from ai.problem_generation.domain.policy import supports_source_procurement
 from ai.problem_generation.infrastructure.config import load_verify_config
 from ai.problem_generation.infrastructure.graph_context import (
     GrammarNormGraphContextService,
@@ -61,13 +75,27 @@ from ai.problem_generation.provider import (
 from ai.runtime.real_llm import real_llm_skip_reason
 from ai.runtime.tracing import external_tracing_active
 
+_FAKES_DIR = Path(__file__).parents[1] / "fakes"
+sys.path.insert(0, str(_FAKES_DIR))
+
+from fake_graph_context import (  # noqa: E402
+    FakeGraphContextService,
+)
+
 pytestmark = pytest.mark.integration
 
-_GRAPH_VERSION = "curriculum-graph.v1"
-_SKILL_NODE_ID = "language.grammar.phonological_change"
+_GRAPH_VERSION = "curriculum-five-area-v1"
 _SNAPSHOT_HASH = "snapshot-pg-real-llm-smoke"
-_TAXONOMY_VERSION = "taxonomy-v1"
+_TAXONOMY_VERSION = "v1"
 _KST = ZoneInfo("Asia/Seoul")
+_GRAPH_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "ai"
+    / "diagnosis"
+    / "data"
+    / "curriculum_graph.yaml"
+)
 _VALID_GATE_STATUSES = frozenset(
     {
         ProblemItemStatus.VERIFIED,
@@ -85,7 +113,76 @@ class RealLlmSmokeUnavailable(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderFailureObservation:
+    """본문·URL 없이 provider 실패의 분류 정보만 남기는 실측 메타."""
+
+    exception_type: str
+    cause_type: str | None
+    http_status: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _AreaSmokeCase:
+    area_tag: AreaTag
+    skill_node_id: str
+    passage: SourceRequest | None = None
+    work_selection: WorkSelection | None = None
+
+
+_AREA_CASES = (
+    _AreaSmokeCase(
+        area_tag=AreaTag.LANGUAGE,
+        skill_node_id="language.grammar.phonological_change",
+    ),
+    _AreaSmokeCase(
+        area_tag=AreaTag.READING,
+        skill_node_id="reading.reasoning.inference",
+        passage=PassageRequest(
+            domain=PassageDomain.SCIENCE,
+            topic_hint="생태계의 상호 작용",
+            word_count=500,
+            sentence_complexity=SentenceComplexity.STANDARD,
+            paragraph_count=2,
+            banned_topics_version="pg-banned-v1",
+        ),
+    ),
+    _AreaSmokeCase(
+        area_tag=AreaTag.LITERATURE,
+        skill_node_id="literature.structure.composition",
+        work_selection=WorkSelection(
+            genre=LiteratureGenre.MODERN_NOVEL,
+            era="근대",
+            concept_keywords=("달",),
+        ),
+    ),
+    _AreaSmokeCase(
+        area_tag=AreaTag.SPEECH_WRITING,
+        skill_node_id="speech_writing.speech.audience",
+        passage=SpeechWritingSourceRequest(
+            source_kind=SpeechWritingSourceKind.PRESENTATION,
+            topic_hint="교내 자원 절약",
+            banned_topics_version="pg-banned-v1",
+        ),
+    ),
+    _AreaSmokeCase(
+        area_tag=AreaTag.MEDIA,
+        skill_node_id="media.reception.intent",
+        passage=MediaSourceRequest(
+            source_kind=MediaSourceKind.PAIRED,
+            topic_hint="온라인 정보 검증",
+            banned_topics_version="pg-banned-v1",
+        ),
+    ),
+)
+
+
+def _case_for(area_tag: AreaTag) -> _AreaSmokeCase:
+    return next(case for case in _AREA_CASES if case.area_tag is area_tag)
+
+
+@dataclass(frozen=True, slots=True)
 class RealLlmSmokeObservation:
+    area_tag: AreaTag
     called_at: datetime
     duration_s: float
     generator_endpoint: str
@@ -103,10 +200,31 @@ class RealLlmSmokeObservation:
     generated_items: tuple[GeneratedItem, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class RealLlmAreaSummary:
+    area_tag: AreaTag
+    observations: tuple[RealLlmSmokeObservation, ...]
+    unavailable_reasons: tuple[str, ...]
+
+    @property
+    def generation_attempts(self) -> int:
+        return sum(len(item.generator_completions) for item in self.observations)
+
+    @property
+    def schema_passed(self) -> int:
+        return sum(len(item.parsed_items) for item in self.observations)
+
+    @property
+    def schema_pass_rate(self) -> float | None:
+        attempts = self.generation_attempts
+        return self.schema_passed / attempts if attempts else None
+
+
 class _ObservingProvider:
     def __init__(self, delegate: LLMProvider) -> None:
         self._delegate = delegate
         self.completions: list[LLMResult] = []
+        self.failures: list[ProviderFailureObservation] = []
 
     @property
     def name(self) -> str:
@@ -117,12 +235,62 @@ class _ObservingProvider:
         request: LLMRequest,
         context: ExecutionContext,
     ) -> LLMResult:
-        result = await self._delegate.complete(request, context)
+        try:
+            result = await self._delegate.complete(request, context)
+        except Exception as error:
+            self.failures.append(_provider_failure_observation(error))
+            raise
         self.completions.append(result)
         return result
 
 
-async def _diagnose(_: ProblemRequest) -> DiagnosisResult:
+def _provider_failure_observation(error: Exception) -> ProviderFailureObservation:
+    """계약 예외의 원인 체인에서 타입과 정수 상태 코드만 추출한다."""
+
+    cause = error.__cause__
+    deepest = cause
+    while deepest is not None and deepest.__cause__ is not None:
+        deepest = deepest.__cause__
+    status = getattr(deepest, "status_code", None)
+    return ProviderFailureObservation(
+        exception_type=type(error).__name__,
+        cause_type=type(deepest).__name__ if deepest is not None else None,
+        http_status=status if isinstance(status, int) else None,
+    )
+
+
+def _unavailable_reason(
+    *,
+    role: ModelRole,
+    records: tuple[LlmCallRecord, ...],
+    failures: tuple[ProviderFailureObservation, ...],
+) -> str:
+    outcomes = sorted(
+        {
+            record.outcome.value
+            for record in records
+            if record.role is role and record.outcome in _UPSTREAM_FAILURES
+        }
+    )
+    exception_types = sorted({failure.exception_type for failure in failures})
+    cause_types = sorted(
+        {failure.cause_type for failure in failures if failure.cause_type is not None}
+    )
+    statuses = sorted(
+        {failure.http_status for failure in failures if failure.http_status is not None}
+    )
+    return (
+        f"{role.value} provider 미가용"
+        f" outcomes={','.join(outcomes) or 'unknown'}"
+        f" exceptions={','.join(exception_types) or 'unknown'}"
+        f" causes={','.join(cause_types) or 'unknown'}"
+        f" http_statuses={','.join(str(status) for status in statuses) or 'none'}"
+    )
+
+
+async def _diagnose(request: ProblemRequest) -> DiagnosisResult:
+    case = _case_for(request.area_tag)
+    cell_key = f"{case.area_tag.value}×infer"
     return DiagnosisResult(
         status=DiagnosisStatus.GENERATED,
         weakness_map=WeaknessMap(
@@ -131,7 +299,7 @@ async def _diagnose(_: ProblemRequest) -> DiagnosisResult:
             config_version="verify-config.v1",
             snapshot_hash=_SNAPSHOT_HASH,
             cells={
-                "language×infer": WeaknessCell(
+                cell_key: WeaknessCell(
                     acc=0.4,
                     n=10,
                     verdict=CellVerdict.WEAK,
@@ -139,30 +307,40 @@ async def _diagnose(_: ProblemRequest) -> DiagnosisResult:
                 )
             },
             nodes={
-                _SKILL_NODE_ID: WeaknessNode(
+                case.skill_node_id: WeaknessNode(
                     verdict=NodeVerdict.WEAK_CONFIRMED,
-                    basis=("cell:language×infer",),
+                    basis=(f"cell:{cell_key}",),
                 )
             },
         ),
     )
 
 
-def _request() -> ProblemRequest:
+def _request(area_tag: AreaTag = AreaTag.LANGUAGE) -> ProblemRequest:
+    case = _case_for(area_tag)
     return ProblemRequest(
-        request_id="req-pg-real-llm-smoke",
-        idempotency_key="idem-pg-real-llm-smoke",
+        request_id=f"req-pg-real-llm-smoke-{area_tag.value}",
+        idempotency_key=f"idem-pg-real-llm-smoke-{area_tag.value}",
         tenant_id="tenant-pg-real-smoke",
         target_kind=TargetKind.STUDENT,
         target_ref="student-pg-real-smoke",
         target_source=TargetSource.WEAKNESS_AUTO,
         snapshot_hash=_SNAPSHOT_HASH,
         taxonomy_version=_TAXONOMY_VERSION,
-        area_tag=AreaTag.LANGUAGE,
+        area_tag=area_tag,
         type_tags=(TypeTag.INFER,),
         item_format=ItemFormat.MCQ,
         count=1,
+        passage=case.passage,
+        work_selection=case.work_selection,
     )
+
+
+def _loaded_prompt_version() -> str:
+    from ai.llm.prompts.loader import load_prompt_template
+
+    # registry 승격 때 스모크만 낡지 않도록 실행 프롬프트와 같은 정본에서 유도한다.
+    return load_prompt_template("pg.items.v1").version
 
 
 def _execution_context() -> ExecutionContext:
@@ -176,12 +354,19 @@ def _execution_context() -> ExecutionContext:
             engine_version="engine-v1",
             schema_version="schema-v1",
             contract_version="contract-v1",
-            prompt_version="v2",
+            prompt_version=_loaded_prompt_version(),
             graph_version=_GRAPH_VERSION,
             taxonomy_version=_TAXONOMY_VERSION,
             verify_config_version="verify-config.v1",
         ),
     )
+
+
+def _graph_context(area_tag: AreaTag) -> GrammarNormGraphContextService | FakeGraphContextService:
+    if area_tag is AreaTag.LANGUAGE:
+        return GrammarNormGraphContextService()
+    case = _case_for(area_tag)
+    return FakeGraphContextService(((f"curriculum:{case.skill_node_id}",),))
 
 
 def _provider_endpoints(
@@ -230,8 +415,10 @@ def _parse_generated_items(
     return tuple(parsed)
 
 
-async def run_real_llm_smoke() -> RealLlmSmokeObservation:
-    """실 provider 두 역할로 T1 한 문항을 실행하고 비민감 관측값을 반환한다."""
+async def run_real_llm_smoke(
+    area_tag: AreaTag = AreaTag.LANGUAGE,
+) -> RealLlmSmokeObservation:
+    """실 provider 두 역할로 지정 영역 한 문항을 실행하고 비민감 관측값을 반환한다."""
 
     local_settings = get_llm_settings()
     provider_settings = get_problem_provider_settings()
@@ -256,7 +443,7 @@ async def run_real_llm_smoke() -> RealLlmSmokeObservation:
     )
     workflow = build_problem_workflow(
         gateway=gateway,
-        graph_context=GrammarNormGraphContextService(),
+        graph_context=_graph_context(area_tag),
         diagnosis=_diagnose,
         candidate_store=InMemoryCandidateStore(),
         item_store=item_store,
@@ -266,22 +453,34 @@ async def run_real_llm_smoke() -> RealLlmSmokeObservation:
 
     called_at = datetime.now(_KST)
     started = time.perf_counter()
-    outcome = await workflow.run(_request(), _execution_context())
+    outcome = await workflow.run(_request(area_tag), _execution_context())
     duration_s = time.perf_counter() - started
     if not isinstance(outcome, ProblemSetResult):
-        raise AssertionError("T1 실측이 ProblemSetResult로 끝나지 않았다")
+        raise AssertionError(f"{area_tag.value} 실측이 ProblemSetResult로 끝나지 않았다")
 
     frozen_records = tuple(records)
     if not generator.completions and _role_is_unavailable(
         frozen_records, ModelRole.GENERATOR
     ):
-        raise RealLlmSmokeUnavailable("generator provider 미가용")
+        raise RealLlmSmokeUnavailable(
+            _unavailable_reason(
+                role=ModelRole.GENERATOR,
+                records=frozen_records,
+                failures=tuple(generator.failures),
+            )
+        )
     if (
         outcome.items
         and outcome.items[0].status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
         and _role_is_unavailable(frozen_records, ModelRole.VERIFIER)
     ):
-        raise RealLlmSmokeUnavailable("verifier provider 미가용")
+        raise RealLlmSmokeUnavailable(
+            _unavailable_reason(
+                role=ModelRole.VERIFIER,
+                records=frozen_records,
+                failures=tuple(verifier.failures),
+            )
+        )
 
     parsed_items = _parse_generated_items(tuple(generator.completions))
     generated_items: list[GeneratedItem] = []
@@ -296,6 +495,7 @@ async def run_real_llm_smoke() -> RealLlmSmokeObservation:
         _provider_endpoints(local_settings, provider_settings)
     )
     return RealLlmSmokeObservation(
+        area_tag=area_tag,
         called_at=called_at,
         duration_s=duration_s,
         generator_endpoint=generator_endpoint,
@@ -314,8 +514,104 @@ async def run_real_llm_smoke() -> RealLlmSmokeObservation:
     )
 
 
-def test_t1_problem_generation_real_llm_roundtrip() -> None:
-    """실 모델이 스키마 응답을 내고 게이트가 정상 상태를 결정한다."""
+async def run_real_llm_smoke_matrix(
+    *, repetitions: int
+) -> tuple[RealLlmAreaSummary, ...]:
+    """5영역을 지정 횟수만큼 실행하고 영역별 스키마 통과율 입력값을 모은다."""
+
+    if repetitions < 1:
+        raise ValueError("실 LLM 스모크 반복 횟수는 1 이상이어야 한다")
+    summaries: list[RealLlmAreaSummary] = []
+    for case in _AREA_CASES:
+        observations: list[RealLlmSmokeObservation] = []
+        unavailable_reasons: list[str] = []
+        for _ in range(repetitions):
+            try:
+                observations.append(await run_real_llm_smoke(case.area_tag))
+            except RealLlmSmokeUnavailable as error:
+                unavailable_reasons.append(str(error))
+        summaries.append(
+            RealLlmAreaSummary(
+                area_tag=case.area_tag,
+                observations=tuple(observations),
+                unavailable_reasons=tuple(unavailable_reasons),
+            )
+        )
+    return tuple(summaries)
+
+
+def test_smoke_cases_use_real_curriculum_nodes_and_supported_source_shapes() -> None:
+    graph = load_skill_graph(_GRAPH_PATH, expected_taxonomy_version=_TAXONOMY_VERSION)
+    nodes = {node.id: node for node in graph.nodes}
+
+    assert {case.area_tag for case in _AREA_CASES} == set(AreaTag)
+    for case in _AREA_CASES:
+        node = nodes[case.skill_node_id]
+        request = _request(case.area_tag)
+        assert node.area_tag is case.area_tag
+        assert TypeTag.INFER in node.type_affinity
+        assert supports_source_procurement(
+            area_tag=case.area_tag,
+            has_passage_request=request.passage is not None,
+            has_work_selection=request.work_selection is not None,
+        )
+
+
+def test_smoke_matrix_rejects_nonpositive_repetitions() -> None:
+    with pytest.raises(ValueError, match="1 이상"):
+        asyncio.run(run_real_llm_smoke_matrix(repetitions=0))
+
+
+def test_provider_failure_observation_excludes_message_and_keeps_safe_metadata() -> None:
+    class _HttpFailure(Exception):
+        status_code = 400
+
+    cause = _HttpFailure("https://secret.example/v1?api_key=secret")
+    error = LlmError("민감한 요청 원문")
+    error.__cause__ = cause
+
+    observation = _provider_failure_observation(error)
+
+    assert observation == ProviderFailureObservation(
+        exception_type="LlmError",
+        cause_type="_HttpFailure",
+        http_status=400,
+    )
+    assert "secret" not in repr(observation)
+
+
+def test_unavailable_reason_reports_only_categorical_failure_metadata() -> None:
+    record = LlmCallRecord(
+        role=ModelRole.GENERATOR,
+        prompt_id="pg.items.v1",
+        prompt_version="v4",
+        provider="local-generator",
+        model=None,
+        usage=None,
+        latency_ms=1,
+        outcome=CallOutcome.PROVIDER_ERROR,
+    )
+
+    reason = _unavailable_reason(
+        role=ModelRole.GENERATOR,
+        records=(record,),
+        failures=(
+            ProviderFailureObservation(
+                exception_type="LlmError",
+                cause_type="BadRequestError",
+                http_status=400,
+            ),
+        ),
+    )
+
+    assert reason == (
+        "generator provider 미가용 outcomes=provider_error exceptions=LlmError "
+        "causes=BadRequestError http_statuses=400"
+    )
+
+
+def test_five_area_problem_generation_real_llm_roundtrip() -> None:
+    """실 모델이 5영역에서 스키마 응답을 내고 게이트가 정상 상태를 결정한다."""
 
     settings = get_llm_settings()
     # 🔴 **opt-in 없이는 안 부른다**(99 #32) — 종전 조건은 `.env`가 덮으면 열렸다.
@@ -326,26 +622,34 @@ def test_t1_problem_generation_real_llm_roundtrip() -> None:
         pytest.skip("B-14 P2 전 외부 트레이싱 비활성 전제 — 스모크 skip")
 
     try:
-        observation = asyncio.run(run_real_llm_smoke())
+        summaries = asyncio.run(run_real_llm_smoke_matrix(repetitions=1))
     except RealLlmSmokeUnavailable as exc:
         pytest.skip(str(exc))
     except LlmError as exc:
         pytest.skip(f"OpenAI 미가용 — {type(exc).__name__}")
 
-    assert observation.generator_provider_name != observation.verifier_provider_name
-    assert len(observation.result.items) == 1
-    assert observation.result.items[0].status in _VALID_GATE_STATUSES
-    assert observation.parsed_items, "generator 응답이 GeneratedItem 스키마로 파싱되지 않았다"
-
-    item = observation.parsed_items[-1]
-    assert len(item.choices) == 5
-    assert 1 <= item.answer.correct_no <= 5
-    assert observation.generated_items
-    assert observation.generated_items[0].evidence[0].quote is not None
+    assert len(summaries) == len(AreaTag)
+    for summary in summaries:
+        assert not summary.unavailable_reasons
+        assert len(summary.observations) == 1
+        observation = summary.observations[0]
+        assert observation.generator_provider_name != observation.verifier_provider_name
+        assert len(observation.result.items) == 1
+        assert observation.result.items[0].status in _VALID_GATE_STATUSES
+        assert observation.parsed_items, (
+            f"{summary.area_tag.value} generator 응답이 GeneratedItem 스키마로 파싱되지 않았다"
+        )
+        item = observation.parsed_items[-1]
+        assert len(item.choices) == 5
+        assert 1 <= item.answer.correct_no <= 5
+        assert observation.generated_items
+        assert observation.generated_items[0].evidence[0].quote is not None
 
 
 __all__ = [
+    "RealLlmAreaSummary",
     "RealLlmSmokeObservation",
     "RealLlmSmokeUnavailable",
     "run_real_llm_smoke",
+    "run_real_llm_smoke_matrix",
 ]

@@ -175,6 +175,15 @@ class PgProblemItemStore:
         # 🔴 스냅숏만 읽는다 — 파생 컬럼으로 재조립하지 않는다.
         return StoredProblemItem.model_validate(row.snapshot)
 
+    async def current_revision_no(self, set_id: UUID, slot_index: int) -> int:
+        """테넌트 범위 슬롯의 현재 낙관적 잠금 번호를 읽는다."""
+
+        async with self._sessionmaker() as session:
+            row = await self._select_row(session, set_id, slot_index)
+        if row is None:
+            raise LookupError(f"저장되지 않은 문항: set={set_id}, slot={slot_index}")
+        return row.current_revision_no
+
     async def _select_row(
         self, session: AsyncSession, set_id: UUID, slot_index: int
     ) -> ProblemItemRow | None:

@@ -863,15 +863,17 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 | 09 절 | 무엇 | 왜 04에 없나 |
 | --- | --- | --- |
-| §2-19.5 | `GET /v1/problems/{set_id}/items` — Step3 검토 목록 | `[v1 스펙 확정 · 구현 후속]` — 라우터에 없다 |
-| §2-19.6 | `GET …/items/{slot_index}` — 문항 상세 | 같음. **문항 본문·evidence는 이 표면으로만 나간다** |
-| §2-19.7 | `POST …/revisions` — 수정·롤백 | 같음 |
+| §2-19.5 | `GET /v1/problems/{set_id}/items` — Step3 검토 목록 | **구현됨** — 상태 카운터·슬롯·현재 리비전 번호 반환 (`problem.py`, 2026-08-12) |
+| §2-19.6 | `GET …/items/{slot_index}` — 문항 상세 | **구현됨** — 현재 검증본·evidence·검증 상태·리비전 이력 반환 (`problem.py`, 2026-08-12) |
+| §2-19.7 | `POST …/revisions` — 수정·롤백 | **부분 구현** — `language`의 `ai_refine`만 200 동기 처리. `teacher_direct`·`rollback`·다른 4영역 수정은 미구현 (`problem.py`·`refiner.py`, 2026-08-12) |
 | §2-19.8 | 교체·삭제 | 같음 + `[경로 제안 · BE 합의 대기]` |
 | §2-19.9 | evidence `quote=null`과 "출처 확인됨" 배지 | 🔴 **구현된 표면에 evidence가 없다** — `ItemResult`는 `item_id`·`status`·난이도 등 **요약 9필드뿐**이고 `evidence`를 싣지 않는다(실측 8/7). evidence는 `GeneratedItem`에 있고 §2-19.6으로만 나간다 ⇒ 배지 규약은 **지금 도달 불가**다 |
 | §2-19.10 | 완료 알림 최소 payload | `[구현 후속]` + Kafka 토픽 미확정(§8) |
 | §2-19.11 | 약점 진단(Step1) 응답 요구 | `[구현 후속]` |
 
-🔴 **BE는 3~6번 표면이 현행 라우터에 존재한다고 해석하면 안 된다.** 09가 그것을 적어 둔 이유는 **화면 계약을 먼저 맞추기 위해서**이지 호출 가능해서가 아니다.
+🔴 **BE는 위 표의 구현 상태를 종류별로 따라야 한다.** Step3 목록·상세는 호출 가능하고,
+리비전은 `language`의 `ai_refine`만 가능하다. 교체·삭제·직접 수정·롤백과 다른 4영역 수정은
+아직 화면 계약일 뿐 호출 가능하다고 해석하면 안 된다.
 
 #### 🔴 `type_tag` 화면 라벨 — AI 근거와 화면 표시는 **소유가 다르다**
 

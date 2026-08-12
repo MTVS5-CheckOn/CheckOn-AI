@@ -67,11 +67,12 @@ testpaths = ["tests"]
 #: ⚠ **디렉터리별 conftest로 넣지 않는다** — 아홉 디렉터리에 같은 세 줄이 생기고
 #:   (#02 부류) mypy가 `conftest` 모듈 중복으로 막는다. 기존 둘은 그대로 뒀다.
 pythonpath = ["src", "tests/ai/fakes"]
-# 03_coding_rules §7 — 실 LLM·실 DB 테스트는 마커로 분리, 기본 실행은 오프라인
+# 03_coding_rules §7 — 실 LLM·실 DB·외부 서비스 테스트는 마커로 분리, 기본 실행은 오프라인
 markers = [
     "integration: 실 LLM·실 DB 호출 (기본 실행에서 제외)",
+    "external: 명시적 옵트인으로만 실행하는 실 외부 서비스 스모크",
 ]
 #: 🔴 `store_backend_pin`을 **플러그인으로** 싣는다(99 #39) — 기본값이 `pg`로 뒤집혀서
 #: 오프라인 회귀는 `STORE_BACKEND=memory`를 **명시로** 골라야 한다(안 걸면 151건 red · 실측).
 #: ⚠ conftest로 두면 mypy가 `conftest` 모듈 중복으로 막는다(위 주석과 같은 함정).
-addopts = "-m 'not integration' -p store_backend_pin"
+addopts = "-m 'not integration and not external' -p store_backend_pin"

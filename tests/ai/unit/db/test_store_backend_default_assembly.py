@@ -63,6 +63,7 @@ from ai.db.repositories.probe_stores import (
     PgProfileStore,
     PgSpecResultStore,
 )
+from ai.db.repositories.problem_revision_store import PgProblemRevisionStore
 from ai.db.repositories.problem_store import PgProblemItemStore
 from ai.db.repositories.run_store import InMemoryRunStore, PgRunStore
 from ai.db.session import get_engine
@@ -72,7 +73,10 @@ from ai.import_mapping.probe.stores import (
     InMemoryProfileStore,
     InMemorySpecResultStore,
 )
-from ai.problem_generation.assembly import build_tenant_scoped_item_store
+from ai.problem_generation.assembly import (
+    build_tenant_scoped_item_store,
+    build_tenant_scoped_revision_store,
+)
 
 _SRC: Final = Path(__file__).resolve().parents[4] / "src" / "ai"
 
@@ -121,6 +125,10 @@ _UNCALLED_BRANCHES: Final[dict[str, str]] = {
     "ai.problem_generation.assembly::build_tenant_scoped_item_store": (
         "**아래 전용 검사가 직접 부른다** — `tenant_id`가 필수 인자이고 memory에서 "
         "`None`(=교체할 것이 없다)을 돌려주므로 위 표의 (pg타입, memory타입) 모양에 안 맞는다"
+    ),
+    "ai.problem_generation.assembly::build_tenant_scoped_revision_store": (
+        "**아래 전용 검사가 직접 부른다** — item store와 같은 테넌트 스코프이며 memory에서 "
+        "`None`을 반환하므로 일반 팩토리 표의 (pg타입, memory타입) 모양과 다르다"
     ),
 }
 
@@ -205,6 +213,23 @@ def test_the_tenant_scoped_item_store_follows_the_same_flag(
 def test_the_tenant_scoped_item_store_is_none_on_memory(memory_settings: None) -> None:
     del memory_settings
     assert build_tenant_scoped_item_store(tenant_id="t_flip") is None
+
+
+def test_the_tenant_scoped_revision_store_follows_the_same_flag(
+    default_settings: None,
+) -> None:
+    del default_settings
+    assert isinstance(
+        build_tenant_scoped_revision_store(tenant_id="t_flip"),
+        PgProblemRevisionStore,
+    )
+
+
+def test_the_tenant_scoped_revision_store_is_none_on_memory(
+    memory_settings: None,
+) -> None:
+    del memory_settings
+    assert build_tenant_scoped_revision_store(tenant_id="t_flip") is None
 
 
 # ───────────────────────── 표가 낡지 않게 하는 가드 ─────────────────────────
