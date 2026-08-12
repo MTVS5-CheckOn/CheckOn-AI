@@ -31,6 +31,7 @@ from typing import Final
 import pytest
 from alembic import command
 from alembic.config import Config
+from pg_hint import pg_unavailable
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
@@ -98,7 +99,7 @@ def clean_database() -> Iterator[None]:
     try:
         asyncio.run(_run("SELECT 1"))
     except Exception:  # noqa: BLE001 — 접속 불가 → skip
-        pytest.skip("실 PG 미가용 — docker compose up -d (99 #26)")
+        pytest.skip(pg_unavailable("(99 #26)"))
     _reset_schema()
     try:
         yield

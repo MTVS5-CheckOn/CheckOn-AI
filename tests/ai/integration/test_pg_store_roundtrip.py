@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from pg_hint import pg_unavailable
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -50,7 +51,7 @@ async def _with_pg(scenario: _Scenario) -> str:
 
 def _run(scenario: _Scenario) -> None:
     if asyncio.run(_with_pg(scenario)) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose up -d (99 ⑫)")
+        pytest.skip(pg_unavailable("(99 ⑫)"))
 
 
 def test_idempotency_roundtrip_persists() -> None:

@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
+from pg_hint import pg_unavailable
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -24,7 +25,7 @@ pytestmark = pytest.mark.integration
 def test_pg_survives_restart() -> None:
     outcome = asyncio.run(_run())
     if outcome == "skip":
-        pytest.skip("실 PG 미가용 — docker compose up -d (99 ⑫)")
+        pytest.skip(pg_unavailable("(99 ⑫)"))
 
 
 async def _run() -> str:

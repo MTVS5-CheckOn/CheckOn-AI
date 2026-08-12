@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
+from pg_hint import pg_unavailable
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -55,7 +56,7 @@ async def _with_pg(scenario: _Scenario) -> str:
 
 def _run(scenario: _Scenario) -> None:
     if asyncio.run(_with_pg(scenario)) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose up -d (99 ⑫)")
+        pytest.skip(pg_unavailable("(99 ⑫)"))
 
 
 # ───────────────────────── 저장소 3종 왕복 ─────────────────────────
@@ -193,7 +194,7 @@ def test_postgres_saver_checkpoint_survives_reopen() -> None:
     """propose_spec 앞 중단→새 saver(같은 PG)로 재개해도 완결 — 체크포인트 PG 생존(§4)."""
     outcome = _run_checkpoint_scenario()
     if outcome == "skip":
-        pytest.skip("실 PG 미가용 — docker compose up -d (99 ⑫)")
+        pytest.skip(pg_unavailable("(99 ⑫)"))
 
 
 #: 🔴 **루프 분기 자체의 검사는 `tests/ai/unit/test_checkpointer_loop.py`로 옮겼다.**

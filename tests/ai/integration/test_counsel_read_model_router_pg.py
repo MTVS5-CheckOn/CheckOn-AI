@@ -26,6 +26,7 @@ from typing import Any, Final
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -81,7 +82,7 @@ def _truncate() -> None:
 @pytest.fixture
 def pg_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     if not _pg_available():
-        pytest.skip("실 PG 미가용 — docker compose up -d")
+        pytest.skip(PG_UNAVAILABLE)
     del monkeypatch
     reset_shared_agent_runtime()
     reset_counsel_stores()
