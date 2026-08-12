@@ -45,6 +45,8 @@ from ai.composition.counsel.stores import (
 )
 from ai.db.counsel_read_model import PgCounselDraftViewStore
 from ai.db.models import Base
+from ai.db.repositories.counsel_context_store import PgContextStore
+from ai.db.repositories.counsel_draft_store import PgDraftResultStore
 from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from ai.db.repositories.idempotency import PgIdempotencyStore
 from ai.db.repositories.inquiry_class_store import PgInquiryClassStore
@@ -470,15 +472,14 @@ def test_a_late_success_is_produced_at_all() -> None:
         assert got["result"] is None, "미종단인데 결과가 실렸다"
 
 
-def test_a_worker_in_another_process_cannot_even_run_the_job() -> None:
-    """🔴 **㉻ 결손 ⓐ** — 다른 프로세스의 워커는 **입력 묶음을 못 찾는다.**
+def test_a_worker_in_another_process_restores_the_input_and_completes() -> None:
+    """🔴 **㉻ ⓐ 해소** — 다른 프로세스의 워커가 **입력 묶음을 PG에서 복원**해 완주한다.
 
-    실측: `error_code=context_bundle_missing`. 이유는 `ContextStore`가
-    **팩토리를 안 탄다**는 것이다 — `counsel.py`의 `_context_store`는 초기값도 reset도
-    `InMemoryContextStore()` **리터럴**이라 `STORE_BACKEND=pg`가 **아무 영향을 못 준다**
-    (`#37`의 스텝 싱크와 같은 형태 · 다만 그때는 꽂을 PG 구현이 있었다).
-    ⚠ **PG 구현을 만들 수 없다** — 대응 테이블이 없고 `db/models.py`·마이그레이션은
-    이 회차의 무접촉이다. **㉻는 안 닫는다.**
+    종전 실측은 `error_code=context_bundle_missing`이었다. 원인은 구현이 아니라 **배선**
+    이었다 — `_context_store`가 초기값도 reset도 `InMemoryContextStore()` 리터럴이라
+    `STORE_BACKEND=pg`가 아무 영향을 못 줬다(#37의 스텝 싱크와 같은 형태).
+
+    ⚠ **`!= failed`로 재지 않는다** — 잡 종단과 **오류 코드 부재**를 함께 본다.
     """
     tenant = "t_flip_late"
     with instance() as app_a:
@@ -491,62 +492,107 @@ def test_a_worker_in_another_process_cannot_even_run_the_job() -> None:
     with instance() as app_c:
         got = app_c.get(f"/v1/counsel/drafts/{job_id}", headers=_headers(tenant))
         assert got.status_code == 200, got.text
-        assert got.json()["data"]["status"] == "failed", (
-            "다른 프로세스 워커가 잡을 완주시켰다 — ㉻ 결손 ⓐ가 사라졌다면 "
-            "이 검사와 99 ㉻를 함께 갱신하라"
+        data = got.json()["data"]
+        assert data["status"] == "succeeded", (
+            f"다른 프로세스 워커가 완주 못 했다({data['status']}) — "
+            f"입력 묶음을 PG에서 못 찾은 것이다"
         )
+        #: 🔴 **오류 코드 자체가 없어야 한다** — 종전 결손의 이름을 못 박는다.
+        assert data.get("error_code") in (None, ""), data.get("error_code")
 
 
-def test_a_late_success_updates_the_status_but_not_the_body() -> None:
-    """🔴 **㉻ 결손 ⓑ** — 인메모리 저장소를 손으로 넘겨 워커가 완주해도 **본문이 없다.**
+def test_a_late_success_carries_the_body_to_a_brand_new_instance() -> None:
+    """🔴 **㉻ ⓑ 해소 — 늦게 끝난 잡의 본문이 새 인스턴스의 GET에 실린다.**
 
-    ⚠ 이 검사는 **결함을 고정한다.** ㉻가 닫히면 여기서 red가 나고, 그것이
-    *"이 파일과 99 ㉻를 같이 갱신하라"* 는 신호다 — 조용히 지나가는 것보다 낫다.
-    실측: `phase=succeeded` · `result_ref=pack://…` 인데 GET은 `result=None`.
-    `_refresh_view`가 **phase만 갱신**하고, 재조립하려 해도 초안 본문은
-    `_draft_store`(인메모리)에만 있다.
+    종전 실측은 `phase=succeeded` · `result_ref=pack://…` 인데 GET은 `result=None`이었다:
+    초안 본문이 `_draft_store`(인메모리)에만 있었기 때문이다.
+
+    🔴 **`result is not None`으로 재지 않는다**(지시서 73 §6) — 본문·인용·라벨·상태를
+    **값으로** 대조한다. 인스턴스 A·워커 B·조회 C가 **프로세스 상태를 하나도 공유하지
+    않는다** — 손으로 넘기는 `set_counsel_stores`는 이제 쓰지 않는다.
     """
     tenant = "t_flip_late"
     with instance() as app_a:
         _enqueue_decoy(app_a, tenant)
-        job_id = _post(app_a, tenant, suffix="b").json()["data"]["job_id"]
-        handed_over = (counsel_router._context_store, counsel_router._draft_store)
+        posted = _post(app_a, tenant, suffix="b").json()["data"]
+        job_id = posted["job_id"]
+        assert posted["status"] != "succeeded", "미종단 POST가 아니다 — 늦은 성공이 아니다"
+
+    #: 워커 B — 인스턴스 A의 메모리를 **한 톨도 물려받지 않는다.**
+    _forget_instance()
+    _drain(tenant)
+
+    #: 조회 C — 또 다른 인스턴스.
+    _forget_instance()
+    with instance() as app_c:
+        got = app_c.get(f"/v1/counsel/drafts/{job_id}", headers=_headers(tenant))
+        assert got.status_code == 200, got.text
+        data = got.json()["data"]
+        assert data["status"] == "succeeded", f"워커가 완주 못 했다({data['status']})"
+        result = data["result"]
+        assert result is not None, "늦은 성공의 본문이 없다 — ㉻ ⓑ 그대로다"
+
+        assert result["draft_status"] == "generated", result["draft_status"]
+        assert result["text"], "본문이 비었다"
+        #: 🔴 **인용을 값으로 본다** — 개수만 세면 «비슷한 것»이 통과한다.
+        cited = [(c["cite_id"], c["record_id"], c["summary"]) for c in result["citations"]]
+        assert cited, "citations가 비었다 — 계약 §4-③은 ≥1이다"
+        assert all(all(part for part in row) for row in cited), (
+            f"인용 필드가 비었다: {cited}"
+        )
+        assert result["labels_applied"], "labels_applied가 비었다"
+
+        #: 🔴 **다른 테넌트는 404다** — 본문이 PG에 남아도 격리가 먼저다.
+        intruder = app_c.get(
+            f"/v1/counsel/drafts/{job_id}", headers=_headers(_INTRUDER)
+        )
+        assert intruder.status_code == 404, intruder.text
+
+
+def test_the_late_body_is_identical_across_two_more_instances() -> None:
+    """🔴 **캐시가 아니라 PG에서 온다** — 인스턴스를 두 번 더 갈아도 같은 값이다.
+
+    ⚠ 한 인스턴스에서만 재면 **프로세스 캐시가 답한 것**과 구분되지 않는다.
+    """
+    tenant = "t_flip_late"
+    with instance() as app_a:
+        _enqueue_decoy(app_a, tenant)
+        job_id = _post(app_a, tenant, suffix="r").json()["data"]["job_id"]
 
     _forget_instance()
-    counsel_router.set_counsel_stores(
-        context_store=handed_over[0], draft_store=handed_over[1]
-    )
     _drain(tenant)
-    carried = (counsel_router._context_store, counsel_router._draft_store)
 
-    with instance() as app_c:
-        counsel_router.set_counsel_stores(
-            context_store=carried[0], draft_store=carried[1]
-        )
-        got = app_c.get(f"/v1/counsel/drafts/{job_id}", headers=_headers(tenant))
-        data = got.json()["data"]
-        assert got.status_code == 200, got.text
-        assert data["status"] == "succeeded", (
-            f"워커가 완주 못 했다({data['status']}) — 이 검사는 ⓑ를 안 보고 있다"
-        )
-        assert data["result"] is None, (
-            "늦은 성공의 본문이 실렸다 — ㉻가 닫혔다면 이 검사와 99 ㉻를 함께 갱신하라"
-        )
+    seen: list[Any] = []
+    for _ in range(2):
+        _forget_instance()
+        with instance() as app_n:
+            got = app_n.get(f"/v1/counsel/drafts/{job_id}", headers=_headers(tenant))
+            assert got.status_code == 200, got.text
+            result = got.json()["data"]["result"]
+            assert result is not None, "새 인스턴스에서 본문이 사라졌다"
+            seen.append((result["text"], result["draft_status"], result["citations"]))
+
+    assert seen[0] == seen[1], f"인스턴스마다 값이 다르다:\n  {seen[0]}\n  {seen[1]}"
 
 
-def test_the_two_stores_that_block_the_late_body_are_still_in_memory() -> None:
-    """🔴 **결손의 위치를 이름으로 못 박는다** — 둘이 배선되면 이 검사가 red다.
+def test_the_two_counsel_stores_are_wired_to_pg() -> None:
+    """🔴 **㉻의 원인이던 두 자리가 팩토리를 탄다** — 인메모리로 되돌리면 red.
 
-    ⚠ 「본문이 없다」만 적어 두면 다음 사람이 **`_refresh_view`를 고치려 든다.**
-    막고 있는 것은 그게 아니라 **이 두 저장소가 팩토리를 안 탄다**는 사실이다.
+    ⚠ 「본문이 있다」만 재면 다음 사람이 `_refresh_view`를 고치려 든다. 막고 있던 것은
+    그게 아니라 **이 두 저장소가 팩토리를 안 탄다**는 사실이었다.
     """
     with instance():
-        assert isinstance(counsel_router._context_store, InMemoryContextStore), (
-            "ContextStore가 배선됐다 — ㉻ 결손 ⓐ를 다시 재라"
+        assert isinstance(counsel_router._context_store, PgContextStore), (
+            f"ContextStore가 {type(counsel_router._context_store).__name__}다 — "
+            f"기본값 pg에서 인메모리면 ㉻ ⓐ가 그대로다"
         )
-        assert isinstance(counsel_router._draft_store, InMemoryDraftResultStore), (
-            "DraftResultStore가 배선됐다 — ㉻ 결손 ⓑ를 다시 재라"
+        assert isinstance(counsel_router._draft_store, PgDraftResultStore), (
+            f"DraftResultStore가 {type(counsel_router._draft_store).__name__}다 — "
+            f"㉻ ⓑ가 그대로다"
         )
+        #: ⚠ 반대편 — 인메모리 구현이 사라진 것은 아니다(memory 백엔드는 그대로다).
+        assert issubclass(InMemoryContextStore, object)
+        assert issubclass(InMemoryDraftResultStore, object)
 
 
 # ───────────────────────── 실패·격리 ─────────────────────────
