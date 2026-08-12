@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any, Final
 
 import pytest
@@ -228,6 +228,24 @@ def test_every_factory_in_the_module_is_covered() -> None:
     assert not stale, f"표에 없어진 팩토리가 남아 있다: {stale}"
 
 
+def _dotted_module_name(relative_path: PurePath) -> str:
+    """`src/` 기준 상대 경로 → **점 표기 모듈명**. 🔴 **경로 구분자와 무관하다.**
+
+    ⚠ 종전에는 `str(path).replace("/", ".")` 였고, 그건 **POSIX에서만 우연히** 맞았다.
+    Windows에서는 결함이 **둘 겹쳤다**(2026-08-12 실측):
+
+        str(...)            → 'ai\\composition\\counsel\\assembly'
+        .replace("/", ".")  → 그대로 (구분자가 '\\'라 안 바뀐다)
+        .removeprefix("ai.")→ 그대로 ('ai.'가 아니라 'ai\\'다 — **불발**)
+        "ai." + …           → 'ai.ai\\composition\\counsel\\assembly'  ← 이중 접두까지
+
+    그래서 `_UNCALLED_BRANCHES`의 점 표기와 **하나도 안 맞아** Windows에서 영구 red였다.
+    🔴 **사유 목록에 역슬래시 이름을 더하는 것은 결함을 정답 목록으로 옮기는 것**이라
+    하지 않았다. ⚠ OS 분기·skip도 두지 않는다 — `parts`가 두 OS에서 같은 값을 낸다.
+    """
+    return ".".join(relative_path.with_suffix("").parts)
+
+
 def _pg_branch_sites() -> dict[str, str]:
     """`store_backend`를 비교하는 자리 전수 → `모듈::함수`.
 
@@ -236,9 +254,8 @@ def _pg_branch_sites() -> dict[str, str]:
     sites: dict[str, str] = {}
     for path in sorted(_SRC.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        module = "ai." + str(path.relative_to(_SRC.parent).with_suffix("")).replace(
-            "/", "."
-        ).removeprefix("ai.")
+        #: ⚠ 상대 경로가 이미 `ai/…`로 시작한다 — `"ai." +` 접두를 따로 붙이지 않는다.
+        module = _dotted_module_name(path.relative_to(_SRC.parent))
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
@@ -250,6 +267,112 @@ def _pg_branch_sites() -> dict[str, str]:
 
 def _reads_backend(expr: ast.expr) -> bool:
     return isinstance(expr, ast.Attribute) and expr.attr == "store_backend"
+
+
+# ────────── 모듈명 파생은 경로 구분자와 무관하다 (지시서 74) ──────────
+#
+# 🔴 **실행 OS에 기대지 않는다.** macOS/Linux에서 돌면 `PurePosixPath`만 지나가고
+#    Windows 경로는 **아무도 안 본다** — 그게 이 결함이 CI에서 안 잡힌 이유다.
+#    `PureWindowsPath`를 **직접** 넣어 두 OS의 입력을 같은 실행에서 대조한다.
+
+#: 같은 파일을 두 OS 표기로 — 결과는 **하나**여야 한다.
+_SAME_MODULE: Final = "ai.composition.counsel.assembly"
+_PATH_FLAVOURS: Final = (
+    ("posix", PurePosixPath("ai/composition/counsel/assembly.py")),
+    ("windows", PureWindowsPath(r"ai\composition\counsel\assembly.py")),
+)
+
+
+@pytest.mark.parametrize(("flavour", "relative"), _PATH_FLAVOURS)
+def test_the_module_name_is_the_same_on_both_separators(
+    flavour: str, relative: PurePath
+) -> None:
+    r"""🔴 **Windows·POSIX 경로가 같은 모듈명으로 수렴한다.**
+
+    ⚠ 종전 구현은 Windows에서 `ai.ai\composition\counsel\assembly`를 냈다 —
+    구분자가 남고 `ai.`가 **두 번** 붙었다(`removeprefix("ai.")`가 `ai\`에 안 걸린다).
+    """
+    actual = _dotted_module_name(relative)
+    assert actual == _SAME_MODULE, f"{flavour}: {actual}"
+
+
+@pytest.mark.parametrize(("flavour", "relative"), _PATH_FLAVOURS)
+def test_the_module_name_has_no_separator_and_no_double_prefix(
+    flavour: str, relative: PurePath
+) -> None:
+    """🔴 실패 형태 셋을 **이름으로** 못 박는다 — 값 대조가 통과해도 여기서 또 본다."""
+    actual = _dotted_module_name(relative)
+    assert "/" not in actual, f"{flavour}: 슬래시가 남았다 — {actual}"
+    assert "\\" not in actual, f"{flavour}: 역슬래시가 남았다 — {actual}"
+    assert not actual.startswith("ai.ai."), f"{flavour}: `ai.` 이중 접두 — {actual}"
+    assert not actual.endswith(".py"), f"{flavour}: 확장자가 안 떨어졌다 — {actual}"
+
+
+def test_a_nested_and_a_top_level_module_both_derive_correctly() -> None:
+    """⚠ 깊이 1과 깊이 4를 함께 본다 — `parts` 오프셋을 잘못 잡으면 한쪽만 맞는다."""
+    assert _dotted_module_name(PurePosixPath("ai/api/app.py")) == "ai.api.app"
+    assert (
+        _dotted_module_name(PureWindowsPath(r"ai\db\repositories\run_store.py"))
+        == "ai.db.repositories.run_store"
+    )
+
+
+def test_the_scanner_actually_uses_the_helper(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🔴 **절단 가드** — 헬퍼만 고치고 스캐너가 옛 치환을 계속 쓰면 Windows는 그대로다.
+
+    ⚠ 순수 함수 검사는 *"헬퍼가 맞다"* 까지만 말한다. **실제 호출 연결**은 별개 사실이라
+    헬퍼를 바꿔치기해 스캐너 결과가 따라 변하는지 본다(AST보다 강하다 — 런타임 경로다).
+    """
+    monkeypatch.setattr(
+        "test_store_backend_default_assembly._dotted_module_name",
+        lambda relative: "sentinel." + relative.stem,
+    )
+    sites = _pg_branch_sites()
+    assert sites, "분기를 하나도 못 찾았다 — 절단 가드의 전제가 깨졌다"
+    assert all(name.startswith("sentinel.") for name in sites), (
+        f"스캐너가 헬퍼를 안 쓴다 — 모듈명이 바꿔치기를 안 따라갔다: {sorted(sites)[:3]}"
+    )
+
+
+#: 🔴 **OS 우회 금지 목록** — 이 파일의 축은 *"경로 구분자와 무관하다"* 이고,
+#: skip·플랫폼 분기는 그 축을 **재는 대신 끄는** 방법이다(지시서 74 §5).
+_PLATFORM_ATTRS: Final = frozenset({"platform", "name", "system"})
+_PLATFORM_ROOTS: Final = frozenset({"sys", "os", "platform"})
+
+
+def _self_tree() -> ast.Module:
+    return ast.parse(Path(__file__).resolve().read_text(encoding="utf-8"))
+
+
+def test_this_file_never_skips_and_never_asks_which_os_it_is_on() -> None:
+    """🔴 **전용 가드** — Windows 전용 skip·플랫폼 분기를 넣으면 red.
+
+    ⚠ **`pre_pr_verify`가 이걸 안 잡는다**(2026-08-12 실측): 그 명령의 skip 계약은
+    **integration 단계의 실 LLM 보호 3건**만 본다 — 오프라인 검사에 skip을 하나 더해도
+    **통과한다.** 그래서 축을 가진 이 파일이 **자기 자신을** 본다.
+
+    🔴 skip은 *"이 환경에서는 안 잰다"* 이고, 이 파일이 재는 것은 **환경에 무관함**이다 —
+    그 둘은 같이 설 수 없다.
+    """
+    offenders: list[str] = []
+    for node in ast.walk(_self_tree()):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr in {"skip", "skipif"}:
+                offenders.append(f"{func.attr}() 호출(line {node.lineno})")
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr in _PLATFORM_ATTRS
+            and isinstance(node.value, ast.Name)
+            and node.value.id in _PLATFORM_ROOTS
+        ):
+            offenders.append(f"{node.value.id}.{node.attr}(line {node.lineno})")
+
+    assert not offenders, (
+        f"이 파일에 OS 우회가 생겼다: {offenders} — "
+        f"Windows에서 red면 **끄지 말고 파생을 고쳐라**(사유 목록에 역슬래시 이름을 "
+        f"더하는 것도 같은 회피다)"
+    )
 
 
 def test_every_backend_branch_is_either_called_or_excused() -> None:
