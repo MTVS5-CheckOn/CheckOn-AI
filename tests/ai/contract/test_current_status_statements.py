@@ -176,14 +176,11 @@ def test_the_status_table_pins_both_boundary_fix_prs() -> None:
         assert pr in row, f"{label} 행에 {pr}이 없다: {row}"
 
 
-def test_the_b_stage_rows_are_still_open() -> None:
-    """⚠ **B단계를 안 했는데 완료로 적지 않는다** — 두 줄은 대기여야 한다."""
-    table = _section(_STATUS_TABLE_HEAD)
-    for label in ("Windows 실제 OpenAI B단계", "프롬프트 고도화 판정"):
-        row = next(
-            line for line in table.splitlines() if line.startswith("|") and label in line
-        )
-        assert "☐" in row and "✅" not in row, row
+#: ⚠ **종전 가드는 여기 있었다** — *"B단계 두 줄은 ☐여야 한다"*(79-R3).
+#: 🔴 **B단계가 #231에서 완료되면서 그 가드가 「지난 상태」를 고정하게 됐다.** S15가 결함을
+#: 계약으로 굳혔던 것과 같은 형태라, **현재 판정을 고정하는 가드로 교체**했다 —
+#: 아래 `test_the_b_stage_status_row_states_the_current_verdict`가 그 자리다
+#: (B단계 ✅ · 프롬프트 현행 유지 ✅ · **R3만 ☐**).
 
 
 def test_the_past_defect_record_is_preserved() -> None:
@@ -196,3 +193,85 @@ def test_the_past_defect_record_is_preserved() -> None:
     assert "14.999999999999991" in text, "R1 반례의 실제 계산값이 사라졌다"
     assert "5.000000000000004" in text, "R4 반례의 실제 계산값이 사라졌다"
     assert "결함을 계약으로 굳혀" in text, "초판 S15가 왜 틀렸는지가 사라졌다"
+
+
+# ───────── B단계 기록의 **현재 표면** (지시서 81 §6) ─────────
+#
+# 🔴 **문서 전체에서 「Windows에서 실행」을 금지하지 않는다** — 과거 기록에는 정당하게
+#    남는다(실행 전 계획을 보존한 절). 현재를 말하는 셋만 잘라서 본다:
+#      ⓐ B단계 상태표 ⓑ 「현재 남은 작업」 절 ⓒ 원장·호출 범위 절.
+
+_B_STATUS_HEAD: Final = "### B단계 (지시서 80"
+_REMAINING_HEAD: Final = "### 현재 남은 작업"
+
+
+def _matrix_block(heading: str, *, stop: str = "\n#") -> str:
+    text = _matrix_text()
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    end = rest.find(stop)
+    return rest if end < 0 else rest[:end]
+
+
+def _b_status_row(label: str) -> str:
+    for line in _matrix_block(_B_STATUS_HEAD).splitlines():
+        if line.startswith("|") and label in line:
+            return line
+    raise AssertionError(f"B단계 상태표에 «{label}» 행이 없다 — 전제가 깨졌다")
+
+
+@pytest.mark.parametrize(
+    ("label", "mark"),
+    [
+        ("Windows 실제 OpenAI 실행", "✅"),
+        ("프롬프트 고도화 판정", "✅"),
+        ("R3 판정 근거 ↔ 브리핑 facts 정합", "☐"),
+    ],
+)
+def test_the_b_stage_status_row_states_the_current_verdict(
+    label: str, mark: str
+) -> None:
+    """🔴 B단계는 **완료**, 프롬프트는 **현행 유지**, R3만 **미해소**다."""
+    row = _b_status_row(label)
+    assert mark in row, row
+    if mark == "☐":
+        assert "✅" not in row, f"R3가 해소로 적혔다: {row}"
+
+
+def test_the_remaining_work_does_not_ask_for_a_full_rerun() -> None:
+    """🔴 **현재 남은 작업에 「Windows 전체 14건 재실행」이 없다.**
+
+    ⚠ 남은 것은 **R3 두 사례**뿐이다 — 전체 재실행을 적으면 이미 끝난 일을 다시 시키고
+    실 OpenAI 비용이 또 든다.
+    """
+    block = _matrix_block(_REMAINING_HEAD)
+    assert "R3" in block, block
+    for forbidden in ("14건 실행", "대표 14건", "전체 재실행"):
+        assert forbidden not in block, f"현재 작업에 «{forbidden}»가 있다:\n{block}"
+
+
+def test_the_past_windows_plan_is_marked_as_a_record() -> None:
+    """⚠ 실행 전 지침은 **지우지 않고** 「당시 기록·완료된 지침」으로 가려져 있다."""
+    text = _matrix_text()
+    assert "## 8. B단계 실행 환경 판정 — **당시 기록**" in text
+    assert "## 9. B단계 실행 전 순서 — **완료된 지침**" in text
+    assert "이 순서는 #231에서 실행 완료됐다" in text
+    #: 🔴 반대편 — 과거 판정 근거가 사라지지 않았다.
+    assert "Missing scopes: api.model.read" in text, "당시 환경 판정 근거가 지워졌다"
+
+
+def test_the_call_total_and_the_ledger_are_not_one_population() -> None:
+    """🔴 **28회(실행기 카운터)와 원장 14행(한 논리 회차)을 같은 합계로 적지 않는다.**
+
+    ⚠ 확인하지 못한 칸은 **0이 아니라 미확정**이다 — 0으로 쓰면 «중복 회차가 원장을 안
+    남겼다»는 **없는 사실**이 된다.
+    """
+    text = _matrix_text()
+    assert "채점에 사용한 논리 회차 1세트" in text
+    assert "같은 모집단이 아니다" in text
+    assert "미확정" in text, "확인 못 한 범위가 미확정으로 남지 않았다"
+    assert "사후 확정 불가" in text
+    #: 🔴 그 표에 `0`으로 채운 칸이 없어야 한다.
+    for line in _matrix_block("| 범위 | `AI_RUN` |").splitlines():
+        if line.startswith("|") and "중복 실행 회차" in line:
+            assert "0" not in line.replace("`", ""), f"미확정을 0으로 적었다: {line}"
