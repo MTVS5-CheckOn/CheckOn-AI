@@ -53,19 +53,19 @@
         },
         "evidence": [
           {
-            "source_table": "learning_event",
-            "record_id": "le_334",
-            "summary": "submit_drop 근거 기록"
+            "source_table": "assignment_week_summary",
+            "record_id": "aws_2026-07-06_st_04",
+            "summary": "예정 과제 1건 중 제출 0건"
           },
           {
-            "source_table": "learning_event",
-            "record_id": "le_335",
-            "summary": "submit_drop 근거 기록"
+            "source_table": "assignment_week_summary",
+            "record_id": "aws_2026-07-13_st_04",
+            "summary": "예정 과제 1건 중 제출 0건"
           },
           {
-            "source_table": "learning_event",
-            "record_id": "le_336",
-            "summary": "submit_drop 근거 기록"
+            "source_table": "assignment_week_summary",
+            "record_id": "aws_2026-07-20_st_04",
+            "summary": "예정 과제 1건 중 제출 0건"
           }
         ]
       },
@@ -155,19 +155,9 @@
         },
         "evidence": [
           {
-            "source_table": "learning_event",
-            "record_id": "le_977",
-            "summary": "volume_gap 근거 기록"
-          },
-          {
-            "source_table": "learning_event",
-            "record_id": "le_978",
-            "summary": "volume_gap 근거 기록"
-          },
-          {
-            "source_table": "learning_event",
-            "record_id": "le_979",
-            "summary": "volume_gap 근거 기록"
+            "source_table": "student_week_activity",
+            "record_id": "swa_2026-07-20_st_09",
+            "summary": "해당 주 학습 활동 4건"
           }
         ]
       },
@@ -189,19 +179,9 @@
         },
         "evidence": [
           {
-            "source_table": "learning_event",
-            "record_id": "le_869",
-            "summary": "return_care 근거 기록"
-          },
-          {
-            "source_table": "learning_event",
-            "record_id": "le_870",
-            "summary": "return_care 근거 기록"
-          },
-          {
-            "source_table": "learning_event",
-            "record_id": "le_871",
-            "summary": "return_care 근거 기록"
+            "source_table": "student_status_history",
+            "record_id": "ssh_st_08_2026-07-20",
+            "summary": "휴원 후 복귀 상태 전환 기록"
           }
         ]
       },
@@ -253,7 +233,7 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "b9946bfb-a74f-4953-9ab3-bc9890e6dfd8",
+    "execution_id": "864be2fa-225f-4ea2-bb49-862e068e10fd",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.2",

@@ -6,8 +6,11 @@
 
 from __future__ import annotations
 
+from typing import Final
+
 import pytest
 
+from ai.contracts.detection import RuleId
 from ai.contracts.evaluation import GoldenSuite
 from ai.detection.engine import detect
 from ai.evaluation.detection_eval import DetectionEvaluator
@@ -108,14 +111,50 @@ def test_ongoing_exempt_from_cap() -> None:
 
 
 def test_evidence_record_ids_all_exist() -> None:
-    """모든 신호의 evidence record_id가 입력 스냅숏에 실존한다."""
+    """모든 신호의 evidence record_id가 입력 스냅숏에 실존한다.
+
+    ⚠ **정본 근거가 생기면서 출처가 둘이 됐다**(99 #43) — 학습 기록과 `detection_evidence`.
+    두 집합의 합에서 찾는다. 🔴 **어느 표에서 왔는지는 아래 검사가 따로 본다** —
+    여기서 합쳐 놓고 끝내면 *"R2가 학습 기록을 인용한다"* 가 다시 통과한다.
+    """
     for scenario in all_scenarios():
         response = detect(scenario.request)
         known = {event.record_id for event in scenario.request.learning_events}
+        known |= {item.record_id for item in scenario.request.detection_evidence}
         for signal in response.signals:
             assert signal.evidence, f"{scenario.case_id}: evidence 비어 있음"
             for item in signal.evidence:
                 assert item.record_id in known, f"{scenario.case_id}: {item.record_id} 미존재"
+
+
+#: 🔴 부재형 규칙이 인용해야 하는 **정본 테이블** — 학습 기록을 인용하면 red다(99 #43).
+_ABSENCE_SOURCE_TABLES: Final = {
+    RuleId.R2: "assignment_week_summary",
+    RuleId.R3: "student_week_activity",
+    RuleId.R5: "student_status_history",
+}
+
+
+def test_absence_rules_cite_their_authoritative_table() -> None:
+    """🔴 **R2·R3·R5는 자기 주장의 정본만 인용한다** — 골든 전 시나리오에서.
+
+    종전에는 근거가 비면 **가장 최근 아무 `learning_event`** 를 붙였다. 그 폴백이 사라졌는지를
+    시나리오 전량에서 본다.
+    """
+    seen: set[RuleId] = set()
+    for scenario in all_scenarios():
+        response = detect(scenario.request)
+        for signal in response.signals:
+            expected_table = _ABSENCE_SOURCE_TABLES.get(signal.rule_id)
+            if expected_table is None:
+                continue
+            seen.add(signal.rule_id)
+            tables = {item.source_table for item in signal.evidence}
+            assert tables == {expected_table}, (
+                f"{scenario.case_id}: {signal.rule_id.value}가 {sorted(tables)}를 인용한다 "
+                f"— {expected_table}만 근거다"
+            )
+    assert seen, "골든에 부재형 신호가 하나도 없다 — 이 검사가 아무것도 안 보고 있다"
 
 
 # ── 기대치 입력 층 — 콜드 스타트 동일성 (04 §1 · 2026-08-03) ────

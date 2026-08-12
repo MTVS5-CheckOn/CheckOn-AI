@@ -56,6 +56,34 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
       "resolved_at": null,                  // resolved일 때 해소 일시 — "해소 후 2주" 쿨다운 기준
       "followed_up": false                  // 해소 후 팔로업 카드가 이미 나갔는지 (중복 방지)
     }
+  ],
+  "detection_evidence": [                   // ★(8/12 신설 · **optional**) R2·R3·R5의 정본 근거 (99 #43)
+    {
+      "kind": "assignment_window",          // R2 — 그 주 예정 과제와 제출 결과
+      "source_table": "assignment_week_summary",
+      "record_id": "aws_20260810_st_8f2a",  // 백엔드 원본 PK — 응답 evidence에 그대로 실린다
+      "student_ref": "st_8f2a",
+      "week_start": "2026-08-10",
+      "expected_count": 3,                  // 0이면 「과제가 없던 주」 — 미제출 연속에서 제외
+      "submitted_count": 0                  // expected 이하. 1 이상이면 연속 종료
+    },
+    {
+      "kind": "weekly_activity",            // R3 — 그 주 전체 학습량 집계. **0건도 실존 레코드**
+      "source_table": "student_week_activity",
+      "record_id": "swa_20260810_st_8f2a",
+      "student_ref": "st_8f2a",
+      "week_start": "2026-08-10",
+      "activity_count": 0
+    },
+    {
+      "kind": "enrollment_transition",      // R5 — 휴원→복귀 상태 전환 이력
+      "source_table": "student_status_history",
+      "record_id": "ssh_st_8f2a_20260810",
+      "student_ref": "st_8f2a",
+      "occurred_at": "2026-08-10T09:00:00+09:00",  // timezone-aware 필수
+      "from_status": "paused",
+      "to_status": "returned"               // students[].status도 returned여야 한다(불일치 시 400)
+    }
   ]
 }
 ```
@@ -260,3 +288,44 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
 // ③ POST /v1/agents/{agent_run_id}/resume — paused 재개 (body 없음)
 {}
 ```
+
+---
+
+## `detection_evidence` — 없으면 어떻게 되나 (8/12 · 99 #43)
+
+**optional이라 기존 요청은 그대로 파싱된다.** 다만 세 규칙의 동작이 달라진다.
+
+| 규칙 | 배열 없음 |
+| --- | --- |
+| R1 · R4 · R6 | **기존대로 판정** |
+| **R2 · R3 · R5** | **미판정** + `stats.rules_skipped`에 `authoritative_evidence_missing` |
+
+🔴 **다른 기록을 근거로 대신 삼지 않는다**(fail-closed). 종전에는 근거가 비면 **그 학생의
+가장 최근 아무 `learning_event`** 를 인용해서, R2가 과거 `solve`를, R5가 복귀 전 `solve`를
+근거로 실었다.
+
+### 🔴 전송 계약 — 원시 기록은 증분, 주간 집계는 **rolling 10주 동봉** (8/12 확정)
+
+| 배열 | 전송 범위 |
+| --- | --- |
+| `learning_events` | **기존 계약대로 증분** |
+| `detection_evidence.assignment_window` | **학생별 최근 10주 전량** |
+| `detection_evidence.weekly_activity` | **학생별 최근 10주 전량** |
+| `detection_evidence.enrollment_transition` | 분석 주에 해당하는 전환 이력 |
+
+⚠ **집계는 작다** — 실측(데모 학생 10명): `detection_evidence` **201행 · 38.9KB**로
+전체 요청의 **9.7%**다(학생당 **20.1행 ≈ 3.9KB**). 학생 수에 **선형**이다.
+
+🔴 **자르면 판정이 달라진다**(실측): 이번 주 집계만 보내면 R2·R3가
+`authoritative_evidence_missing`으로 **skip**된다 — 분자(이번 주)와 분모(평소)를 **같은 자로**
+재야 하고, 두 측정을 섞느니 판정하지 않기 때문이다. **빠진 주는 0이 아니라 「측정 부재」**다.
+
+⚠ **AI PG에 집계 전문을 복제 저장하지 않는다** — 그래서 이 축을 저장이 아니라 **요청 계약**으로
+닫는다(`db/models.py`·마이그레이션 무접촉). 전량 스냅숏과 증분 요청이 **같은 판정**을 내는지
+회귀 검사가 값으로 지킨다(발화·score·evidence·`signal_id`·`rules_skipped` 전부).
+
+⚠ **AI는 이 레코드를 복제 저장하지 않는다** — 응답 evidence의 `source_table` + `record_id`로
+**백엔드가 자기 원본을 조회**한다. `source_table`은 논리명이며 AI가 SQL 식별자로 쓰지 않는다.
+
+⚠ **R2의 「제출률 하락」 경로는 아직 열지 않았다** — 일부 제출은 연속을 끊을 뿐이고,
+분모 계약이 설 때 별도로 연다(04 §1 R2 · BE-10).

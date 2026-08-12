@@ -83,7 +83,14 @@ def test_no_real_name_fields() -> None:
 def test_json_payload_shape() -> None:
     """05 §1 형태 — snake_case 키 · occurred_at은 ISO-8601 +09:00 (KST)."""
     payload = to_payload(fixture_stable())
-    assert set(payload) == {"snapshot_meta", "students", "learning_events", "alert_context"}
+    assert set(payload) == {
+        "snapshot_meta",
+        "students",
+        "learning_events",
+        "alert_context",
+        #: 🔴 optional이지만 **직렬화에는 항상 나온다** — 기본값 빈 배열(99 #43).
+        "detection_evidence",
+    }
     solve = next(e for e in payload["learning_events"] if e["type"] == "solve")
     assert solve["occurred_at"].endswith("+09:00")
     # 파싱 가능한 tz-aware ISO여야 한다

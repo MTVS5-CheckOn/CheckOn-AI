@@ -10,10 +10,22 @@ score는 §3.1대로 [임계값, 포화값] 선형 정규화한다 — **세그�
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
-from ai.contracts.detection import RULE_SIGNAL_MAP, RuleId, SignalType
+from ai.contracts.detection import (
+    RULE_SIGNAL_MAP,
+    RuleId,
+    SignalType,
+    StudentStatus,
+)
 from ai.detection.baseline import Baseline
+from ai.detection.evidence import (
+    EMPTY_EVIDENCE,
+    MAX_ABSENCE_LOOKBACK_WEEKS,
+    R3_BASELINE_WEEKS,
+    SKIP_AUTHORITATIVE_EVIDENCE_MISSING,
+    StudentEvidence,
+)
 from ai.detection.features import StudentFeatures, WeekFeatures
 from ai.detection.segments import Segment, is_rule_active, threshold_multiplier
 from ai.detection.thresholds import ThresholdConfig
@@ -58,15 +70,21 @@ def evaluate_student(
     config: ThresholdConfig,
     segment: Segment,
     r1_drop_threshold_pp: float | None = None,
+    evidence: StudentEvidence | None = None,
 ) -> tuple[list[RuleFinding], list[RuleSkip]]:
     """한 학생의 R1~R6 판정. 발화 목록과 skip 사유를 반환한다.
 
     `r1_drop_threshold_pp`는 테넌트 풀에서 산출한 R1 임계다(04 §1 발동률 목표 방식).
     미지정이면 `config.r1.drop_pp` 폴백 — 단위 테스트·단건 호출의 편의값이며, 엔진은
     항상 명시 주입한다.
+
+    🔴 **`evidence`는 R2·R3·R5의 정본 입력이다**(99 #43). 없으면 그 셋은 **발화하지 않고**
+    `authoritative_evidence_missing`으로 skip된다 — 다른 기록을 근거로 삼지 않는다.
+    ⚠ R1·R4·R6는 이 인자를 안 본다(학습 기록 자체가 근거다).
     """
     findings: list[RuleFinding] = []
     skips: list[RuleSkip] = []
+    student_evidence = evidence if evidence is not None else EMPTY_EVIDENCE
     r1_threshold = (
         r1_drop_threshold_pp if r1_drop_threshold_pp is not None else config.r1.drop_pp
     )
@@ -77,16 +95,20 @@ def evaluate_student(
     if skip is not None:
         skips.append(skip)
 
-    for rule_fn in (_r2, _r3, _r4, _r6):
+    for rule_fn in (_r4, _r6):
         finding, skip = rule_fn(features, baseline, config, segment)
         if finding is not None:
             findings.append(finding)
         if skip is not None:
             skips.append(skip)
 
-    r5 = _r5(features, config, segment)
-    if r5 is not None:
-        findings.append(r5)
+    #: 🔴 **부재형 셋은 정본 근거를 받는다**(99 #43) — 시그니처가 달라 위 루프와 안 섞는다.
+    for absence_fn in (_r2, _r3, _r5):
+        finding, skip = absence_fn(features, baseline, config, segment, student_evidence)
+        if finding is not None:
+            findings.append(finding)
+        if skip is not None:
+            skips.append(skip)
 
     return findings, skips
 
@@ -133,22 +155,49 @@ def _r1(
 
 
 def _r2(
-    features: StudentFeatures, baseline: Baseline, config: ThresholdConfig, segment: Segment
+    features: StudentFeatures,
+    baseline: Baseline,
+    config: ThresholdConfig,
+    segment: Segment,
+    evidence: StudentEvidence,
 ) -> tuple[RuleFinding | None, RuleSkip | None]:
-    """R2 연속 미제출 — 최근 주부터 submit 없는 주 연속.
+    """R2 연속 미제출 — 🔴 **과제 주차 집계에서 파생한다**(99 #43).
 
-    v0는 consecutive_missing 경로만 (submit_drop_pp는 제출률 분모 부재 — 04 §1 R2 · BE-10).
+    종전에는 `WeekFeatures.submitted: bool` 하나만 봤다 — 그 값으로는
+    *"과제가 있었는데 안 냈다"* 와 *"과제가 없었다"* 가 **구분되지 않는다.**
+
+    🔴 **시간축이 `features.weeks`가 아니다**(99 #44) — 그 목록은 **학습 이벤트가 있는 주만**
+    만들므로 **완전 미제출 주(이벤트 0건)가 통째로 빠진다.** 분석 주부터 **직접** 거슬러 간다.
+
+    연속 미제출 한 주 = `expected_count > 0 AND submitted_count == 0`.
+    ⚠ `expected_count == 0`인 주는 **연속에서 제외**한다(방학·휴강 — 미제출이 아니다).
+    ⚠ 일부 제출(`submitted_count > 0`)은 **연속을 끊는다** — 제출률 하락 경로는 분모 계약이
+    서기 전까지 열지 않는다(04 §1 R2 · BE-10).
+    ⚠ **루프에 명시 상한**(불변식 6) — `MAX_ABSENCE_LOOKBACK_WEEKS`.
     """
+    del features, baseline
     p = config.r2
     if not is_rule_active(RuleId.R2, segment):
         return None, None
+    analysis_week = evidence.analysis_week
+    if analysis_week is None or not evidence.assignment_windows:
+        #: 🔴 집계가 하나도 없으면 **판정 자체를 안 한다** — 0으로 간주하지 않는다.
+        return None, RuleSkip(
+            rule_id=RuleId.R2, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
+        )
     mult = threshold_multiplier(RuleId.R2, segment, config.segments)
     missing_threshold = round(p.consecutive_missing * mult)
     streak: list[date] = []
-    for week in reversed(features.weeks):
-        if week.submitted:
-            break
-        streak.append(week.week_monday)
+    for back in range(MAX_ABSENCE_LOOKBACK_WEEKS):
+        week_monday = analysis_week - timedelta(weeks=back)
+        window = evidence.assignment_windows.get(week_monday)
+        if window is None:
+            break  # 그 주 집계가 없다 — 연속을 이어 붙일 근거가 없다
+        if window.expected_count == 0:
+            continue  # 과제가 없던 주 — 미제출이 아니라 **연속에서 제외**
+        if window.submitted_count > 0:
+            break  # 냈다 — 연속 종료
+        streak.append(week_monday)
     if len(streak) < missing_threshold:
         return None, None
     score = _normalize(len(streak), p.consecutive_missing, p.saturation_missing)
@@ -164,25 +213,62 @@ def _r2(
 
 
 def _r3(
-    features: StudentFeatures, baseline: Baseline, config: ThresholdConfig, segment: Segment
+    features: StudentFeatures,
+    baseline: Baseline,
+    config: ThresholdConfig,
+    segment: Segment,
+    evidence: StudentEvidence,
 ) -> tuple[RuleFinding | None, RuleSkip | None]:
-    """R3 학습 공백 — 최근 주 이벤트 수가 baseline 학습량의 volume_ratio 미만."""
+    """R3 학습 공백 — 🔴 **주간 학습량 집계**가 판정값이다(99 #43).
+
+    🔴 **`features.weeks[-1]`을 안 쓴다**(99 #44) — 분석 주에 학습 이벤트가 0건이면 그 주가
+    목록에 없어서 *"가장 심한 공백"* 이 판정 창에서 밀려났다. 기준 주는 `analysis_week`다.
+
+    ⚠ **집계가 없으면 0으로 간주하지 않는다** — 「기록이 없다」와 「집계가 0이다」는 다른
+    사실이고 앞은 증명할 수 없다. `learning_events` 개수와 조용히 섞지도 않는다.
+    ⚠ **분자와 분모를 같은 자로 잰다** — baseline도 집계에서 뽑고, 직전 8주 중 **하나라도**
+    빠지면 판정하지 않는다(섞느니 안 한다).
+    ⚠ 0건도 실존 레코드이므로 **evidence가 존재한다**.
+    """
+    del features, baseline
     p = config.r3
-    if not is_rule_active(RuleId.R3, segment) or baseline.volume is None:
+    if not is_rule_active(RuleId.R3, segment):
         return None, None
-    if baseline.volume < p.min_baseline_events:
-        return None, None
-    if not features.weeks:
+    analysis_week = evidence.analysis_week
+    if analysis_week is None:
+        return None, RuleSkip(
+            rule_id=RuleId.R3, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
+        )
+    activity = evidence.weekly_activity.get(analysis_week)
+    prior = [
+        evidence.weekly_activity.get(analysis_week - timedelta(weeks=back))
+        for back in range(1, R3_BASELINE_WEEKS + 1)
+    ]
+    if activity is None or any(row is None for row in prior):
+        return None, RuleSkip(
+            rule_id=RuleId.R3, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
+        )
+    baseline_volume = sum(row.activity_count for row in prior if row is not None) / len(
+        prior
+    )
+    if baseline_volume < p.min_baseline_events:
         return None, None
     mult = threshold_multiplier(RuleId.R3, segment, config.segments)
     ratio_threshold = p.volume_ratio * mult
-    recent = features.weeks[-1]
-    actual_ratio = recent.event_count / baseline.volume
+    actual_ratio = activity.activity_count / baseline_volume
     if actual_ratio >= ratio_threshold:
         return None, None
     # deficit 방향: threshold에서 0, 완전 공백(0)에서 1
     score = _normalize(p.volume_ratio - actual_ratio, 0.0, p.volume_ratio)
-    return _finding(RuleId.R3, score, (recent,)), None
+    return (
+        RuleFinding(
+            rule_id=RuleId.R3,
+            signal_type=RULE_SIGNAL_MAP[RuleId.R3],
+            score=score,
+            evidence_weeks=(analysis_week,),
+        ),
+        None,
+    )
 
 
 def _r4(
@@ -216,18 +302,46 @@ def _r4(
 
 
 def _r5(
-    features: StudentFeatures, config: ThresholdConfig, segment: Segment
-) -> RuleFinding | None:
-    """R5 복귀 케어 — status=returned 복귀 첫 주. auto_flag(점수 무관, score=1.0)."""
-    if features.status.value != "returned":
-        return None
-    weeks = (features.weeks[-1].week_monday,) if features.weeks else ()
-    return RuleFinding(
-        rule_id=RuleId.R5,
-        signal_type=RULE_SIGNAL_MAP[RuleId.R5],
-        score=1.0,
-        evidence_weeks=weeks,
-        detail="복귀 첫 주 — 점수 무관 케어 신호",
+    features: StudentFeatures,
+    baseline: Baseline,
+    config: ThresholdConfig,
+    segment: Segment,
+    evidence: StudentEvidence,
+) -> tuple[RuleFinding | None, RuleSkip | None]:
+    """R5 복귀 케어 — 🔴 **상태 전환 이력**이 있어야 발화한다(99 #43).
+
+    종전에는 `status == returned` 하나로 발화했다. 상태 필드는 **현재 값**이라
+    *"언제 바뀌었는가"* 를 말하지 않는다 — 복귀 케어는 **전환 사실**로 발화하는 신호다.
+
+    🔴 **`features.weeks`가 비어 있어도 판정한다**(99 #44) — 복귀 첫 주에 활동이 0건인 것은
+    **드문 일이 아니고**, 오히려 케어가 필요한 상태다. 그 주가 목록에 없다고 신호가
+    사라지면 안 된다.
+
+    조건 전부: ⓐ `status == returned` ⓑ 같은 학생의 `to_status == returned` 이력
+    ⓒ 전환 주 == 분석 주. ⚠ 다른 주의 복귀는 이번 주 신호가 아니다.
+    """
+    del baseline, config, segment
+    analysis_week = evidence.analysis_week
+    if analysis_week is None:
+        return None, None
+    if features.status is not StudentStatus.RETURNED:
+        #: ⚠ **이중 방어**다 — 계약 검증이 「복귀 이력 ⇒ status=returned」를 이미 강제하지만,
+        #:   규칙이 자기 조건을 스스로 말하지 않으면 다음 사람이 그 결합을 못 본다.
+        return None, None
+    if not evidence.returns_in_week(analysis_week):
+        #: 상태만 returned이고 이력이 없다 — 발화하지 않고 사유를 남긴다.
+        return None, RuleSkip(
+            rule_id=RuleId.R5, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
+        )
+    return (
+        RuleFinding(
+            rule_id=RuleId.R5,
+            signal_type=RULE_SIGNAL_MAP[RuleId.R5],
+            score=1.0,
+            evidence_weeks=(analysis_week,),
+            detail="복귀 첫 주 — 점수 무관 케어 신호",
+        ),
+        None,
     )
 
 

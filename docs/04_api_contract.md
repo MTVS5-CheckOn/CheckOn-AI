@@ -280,6 +280,15 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
   },
   "students":        [ { "...": "§4.1 · 09 §2 students 표 참조" } ],        // 재원생 전체 (consent 포함)
   "learning_events": [ { "...": "§4.1 · 09 §2 learning_events 표 참조" } ], // 지난 주차 증분만
+  "detection_evidence": [ {              // ★(8/12 신설·optional) R2·R3·R5의 정본 근거 (09 §2-보강 · 99 #43)
+    "kind": "assignment_window",         // assignment_window | weekly_activity | enrollment_transition
+    "source_table": "assignment_week_summary",  // 백엔드 정본 테이블 **논리명** — AI는 SQL 식별자로 쓰지 않는다
+    "record_id": "aws_20260810_st_8f2a", // 백엔드 원본 PK — 응답 evidence에 그대로 실린다
+    "student_ref": "st_8f2a",
+    "week_start": "2026-08-10",          // assignment_window · weekly_activity
+    "expected_count": 3,                 // assignment_window만 — 0이면 「과제가 없던 주」(미제출 아님)
+    "submitted_count": 0                 // assignment_window만 — expected 이하
+  } ],                                   // ⚠ **없으면 R2·R3·R5는 fail-closed skip**(다른 기록을 근거로 삼지 않는다)
   "alert_context":   [ {                 // ★(7/16 신설) 최근 30일 경보 이력 — lifecycle 판정 입력 (09 §2·§4)
     "student_ref": "st_8f2a",
     "signal_type": "hidden_risk",        // 09 §1의 6값 중 하나
@@ -959,10 +968,28 @@ sha256( canonical_json({
   snapshot_meta: { week_start, term_context },
   students:        sorted by student_ref,
   learning_events: sorted by record_id,
-  alert_context:   sorted by (student_ref, signal_type)   // (7/16) lifecycle 입력이라 해시 대상에 포함
+  alert_context:   sorted by (student_ref, signal_type),  // (7/16) lifecycle 입력이라 해시 대상에 포함
+  detection_evidence: sorted by (kind, student_ref, at, source_table, record_id)
+                                                          // ★(8/12) R2·R3·R5 정본 근거 — 판정 입력이라 포함
 }) )
 ```
 
 canonical_json = 키 정렬 · 공백 제거 · UTF-8. **동일 구현 검증용 테스트 벡터 3건을 v1.0에 첨부한다** (백엔드 Java와 AI Python이 같은 해시를 내는지 통합 전 확인).
+
+🔴 **`detection_evidence`는 `optional`이지만 보내면 해시 대상이다**(8/12 · 99 #43).
+- **안 보낸 요청의 canonical payload에는 키 자체가 없다** — 기존 요청의 해시가 **바뀌지 않는다**(하위 호환).
+- 🔴 **빈 배열과 생략은 같은 의미·같은 해시다.** 모델이 둘 다 `()`로 받아 *"클라이언트가 빈 배열을 명시했는가"* 를 **복원할 수 없으므로**, 복원 못 하는 구분을 해시에 넣지 않는다(넣으면 BE와 AI가 다른 값을 낼 수 있다).
+- **정확 벡터 3종**(Python 참조 · `tests/ai/contract/test_detection_evidence_contract.py`에 고정):
+
+| 요청 | `snapshot_hash` |
+| --- | --- |
+| legacy(새 필드 없음 = 빈 배열) | `sha256:4e90fe4929dced9d3fed2a4c8585766569dd7680a8c50a1be7e1f282c59d8e54` |
+| `assignment_window` + `weekly_activity` | `sha256:42bf93a71cdaecc0b3d6e4348ba8eddaf0f556894a81869285fade630c4e265d` |
+| `enrollment_transition` | `sha256:103fd498b6bc7e09f0bc981acf8cde9a839981b81e398761d37af1a5a1ffb732` |
+
+- `source_table`은 **kind마다 값이 하나**다(`assignment_window`→`assignment_week_summary` · `weekly_activity`→`student_week_activity` · `enrollment_transition`→`student_status_history`). ⚠ **JSON 타입은 문자열 그대로** — 허용값만 닫았다(BE DTO 무변경). 교차 조합은 **400**.
+- `at` = 집계는 `week_start`, 상태 전환은 `occurred_at`. 배열 **입력 순서가 달라도 같은 해시**.
+- 값 하나가 바뀌면 해시가 달라진다 — **같은 멱등키에 근거만 다른 요청은 409 `IDEMPOTENCY_CONFLICT`**.
+- AI 쪽 참조 구현: `src/ai/detection/canonical.py`(`canonical_snapshot_payload`). ⚠ **AI는 요청 해시를 재계산해 검증하지 않는다** — 산정 주체는 백엔드다. Java ↔ Python 실 대조는 후속 API 통신 테스트.
 
 > 요약·리뷰용 시각 버전(팀공유본 html)은 노션에 있다 — **충돌 시 레포의 본 md가 정답.** JSON 예시의 `//` 주석은 설명용이며 실제 전송 페이로드에는 포함하지 않는다. 요청 바디만 빠르게 볼 때는 `05_request_json.md`.

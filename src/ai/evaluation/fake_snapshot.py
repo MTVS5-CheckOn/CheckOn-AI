@@ -22,7 +22,7 @@ detection 구현 작업의 범위다 (08_evaluation_plan.md §2).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from itertools import count
@@ -33,7 +33,9 @@ from zoneinfo import ZoneInfo
 from ai.contracts.detection import (
     AlertContextItem,
     AlertStatus,
+    DetectionEvidence,
     DetectRequest,
+    EnrollmentTransitionEvidence,
     EventSource,
     SignalType,
     StudentStatus,
@@ -127,6 +129,20 @@ class StudentPlan:
 
     bias_accuracy: float = 0.35
     """편중 셀의 낮은 정답률 (bias가 있을 때만)."""
+
+    assignment_expected: int | tuple[int, ...] = 1
+    """주간 **예정 과제 수**(99 #43) — R2의 분모다.
+
+    🔴 `0`이면 그 주는 **과제가 없던 주**라 미제출 연속에서 제외된다(방학·휴강).
+    ⚠ 제출 수는 `submit_ok`에서 파생한다 — 두 값을 따로 주면 픽스처가 모순될 수 있다.
+    """
+
+    emit_detection_evidence: bool = True
+    """🔴 **정본 근거 배열을 함께 만들 것인가**(99 #43).
+
+    `False`면 근거 없는 **기존 형태의 요청**이 나온다 — R2·R3·R5가
+    `authoritative_evidence_missing`으로 skip되는 경로를 조립할 때 쓴다.
+    """
 
     events_despite_exclusion: bool = False
     """True면 무동의·paused 학생에게도 learning_events를 생성한다.
@@ -325,6 +341,7 @@ def build_detect_request(
 
     class_refs = sorted({plan.class_ref for plan in students})
     learning_events: list[dict[str, Any]] = []
+    detection_evidence: list[dict[str, Any]] = []
     student_rows: list[dict[str, Any]] = []
     for plan in students:
         student_rows.append(
@@ -342,7 +359,12 @@ def build_detect_request(
         excluded = plan.status is StudentStatus.PAUSED or plan.consent != "granted"
         if excluded and not plan.events_despite_exclusion:
             continue
-        learning_events.extend(_solve_events(plan, week_monday, rng, next_id))
+        plan_events = _solve_events(plan, week_monday, rng, next_id)
+        learning_events.extend(plan_events)
+        if plan.emit_detection_evidence:
+            detection_evidence.extend(
+                _detection_evidence(plan, week_monday, plan_events)
+            )
 
     payload: dict[str, Any] = {
         "snapshot_meta": {
@@ -354,8 +376,71 @@ def build_detect_request(
         "students": student_rows,
         "learning_events": learning_events,
         "alert_context": [item.model_dump(mode="python") for item in alert_context],
+        "detection_evidence": detection_evidence,
     }
     return DetectRequest.model_validate(payload)
+
+
+def _detection_evidence(
+    plan: StudentPlan, week_monday: date, events: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """R2·R3·R5의 **정본 근거**를 계획에서 파생한다 (99 #43).
+
+    🔴 **백엔드가 보낼 것과 같은 모양**이다 — 픽스처가 근거를 지어내는 것이 아니라,
+    같은 계획에서 학습 이벤트와 집계를 **함께** 전개한다(둘이 갈리면 픽스처가 거짓이 된다).
+    ⚠ 제출 수는 `submit_ok`에서 파생한다 — 예정이 0이면 제출도 0이다.
+    """
+    weeks = plan.weeks
+    submits = _per_week_bool(plan.submit_ok, weeks)
+    expected_counts = _per_week_int(plan.assignment_expected, weeks)
+    per_week_events: dict[date, int] = {}
+    for event in events:
+        occurred = datetime.fromisoformat(str(event["occurred_at"])).date()
+        monday = occurred - timedelta(days=occurred.weekday())
+        per_week_events[monday] = per_week_events.get(monday, 0) + 1
+
+    rows: list[dict[str, Any]] = []
+    for index in range(weeks):
+        monday = week_monday - timedelta(weeks=weeks - 1 - index)
+        stamp = monday.isoformat()
+        expected = expected_counts[index]
+        rows.append(
+            {
+                "kind": "assignment_window",
+                "source_table": "assignment_week_summary",
+                "record_id": f"aws_{stamp}_{plan.student_ref}",
+                "student_ref": plan.student_ref,
+                "week_start": stamp,
+                "expected_count": expected,
+                "submitted_count": 1 if (expected > 0 and submits[index]) else 0,
+            }
+        )
+        rows.append(
+            {
+                "kind": "weekly_activity",
+                "source_table": "student_week_activity",
+                "record_id": f"swa_{stamp}_{plan.student_ref}",
+                "student_ref": plan.student_ref,
+                "week_start": stamp,
+                "activity_count": per_week_events.get(monday, 0),
+            }
+        )
+    if plan.status is StudentStatus.RETURNED:
+        #: 복귀 학생은 **이번 주 전환 이력**이 있어야 R5가 선다(99 #43).
+        rows.append(
+            {
+                "kind": "enrollment_transition",
+                "source_table": "student_status_history",
+                "record_id": f"ssh_{plan.student_ref}_{week_monday.isoformat()}",
+                "student_ref": plan.student_ref,
+                "occurred_at": datetime.combine(
+                    week_monday, time(9, 0), tzinfo=KST
+                ).isoformat(),
+                "from_status": StudentStatus.PAUSED.value,
+                "to_status": StudentStatus.RETURNED.value,
+            }
+        )
+    return rows
 
 
 def to_payload(request: DetectRequest) -> dict[str, Any]:
@@ -450,7 +535,12 @@ def _week_monday_of(day: date) -> date:
 def take_week_range(
     request: DetectRequest, *, week_start: str, weeks_back: int
 ) -> DetectRequest:
-    """week_start 주부터 과거 weeks_back주까지의 learning_events만 남긴 스냅숏."""
+    """week_start 주부터 과거 weeks_back주까지만 남긴 스냅숏.
+
+    🔴 **`detection_evidence`도 같은 창으로 자른다**(99 #43) — 그것도 **판정 입력**이다.
+    안 자르면 분석 주차보다 **미래인 집계**가 남아 요청이 거부된다(실측: 400).
+    ⚠ 창 밖 집계를 남겨 두는 것은 *"과거 스냅숏을 재현했다"* 가 아니다.
+    """
     end = _monday_of(week_start)
     start = end - timedelta(weeks=weeks_back - 1)
     events = tuple(
@@ -458,8 +548,26 @@ def take_week_range(
         for event in request.learning_events
         if start <= _week_monday_of(event.occurred_at.date()) <= end
     )
+    evidence = tuple(
+        item
+        for item in request.detection_evidence
+        if start <= _evidence_week_of(item) <= end
+    )
     meta = request.snapshot_meta.model_copy(update={"week_start": week_start})
-    return request.model_copy(update={"snapshot_meta": meta, "learning_events": events})
+    return request.model_copy(
+        update={
+            "snapshot_meta": meta,
+            "learning_events": events,
+            "detection_evidence": evidence,
+        }
+    )
+
+
+def _evidence_week_of(item: DetectionEvidence) -> date:
+    """정본 근거가 속한 주(월요일) — 집계는 `week_start`, 전환은 발생일에서 유도."""
+    if isinstance(item, EnrollmentTransitionEvidence):
+        return _week_monday_of(item.occurred_at.date())
+    return item.week_start
 
 
 def take_single_week(request: DetectRequest, *, week_start: str) -> DetectRequest:
