@@ -190,7 +190,12 @@ class SnapshotMeta(BaseModel):
     """요청 본문 전체(alert_context 포함)의 해시 — 재현·감사 키 (04 부록 A)."""
 
     term_context: TermContext
-    classes: tuple[ClassRef, ...] = Field(min_length=1)
+    #: ⚠ **빈 배열을 허용한다**(2026-08-13). 백엔드는 반 미배정 학생의 `cl_unassigned`를
+    #:   classes에서 거르므로(`LearningRecordSnapshotService :: build`), 전원 미배정인
+    #:   강사는 빈 배열을 보낸다. AI 판정은 classes를 읽지 않는다 — 여기서 400을 내면
+    #:   잃는 것만 있다.
+    #: 🔴 **기본값을 주지 마라** — 키 자체는 필수다. 「안 보냈다」와 「비었다」를 섞지 않는다.
+    classes: tuple[ClassRef, ...]
 
     @field_validator("week_start")
     @classmethod
