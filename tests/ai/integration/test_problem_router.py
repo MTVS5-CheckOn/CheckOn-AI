@@ -633,6 +633,7 @@ def test_step3_list_and_detail_return_saved_item_and_cross_solve() -> None:
     }
     assert len(execution_ids) == 1
     detail = detailed.json()["data"]
+    assert detail["job_id"] == posted.json()["data"]["job_id"]
     assert detail["item"]["stem"]
     assert len(detail["item"]["choices"]) == 5
     assert detail["cross_solve"]["chosen"] == 1
@@ -723,6 +724,34 @@ def test_step3_ai_refine_revalidates_persists_and_replays_idempotently() -> None
         "blind_cross_solve": "passed",
         "release_decision": "passed",
     }
+
+
+def test_step3_memory_mode_keeps_job_payload_request_path() -> None:
+    _run_store, _stores, generator, verifier = _prepare(calls=2)
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        result = client.get(
+            f"/v1/problems/{posted.json()['data']['job_id']}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        ).json()["data"]["result"]
+        revised = client.post(
+            f"/v1/problems/{result['set_id']}/items/0/revisions",
+            headers={
+                **_HEADERS,
+                "X-Request-Id": "request-memory-refine",
+                "Idempotency-Key": "idem-memory-refine",
+            },
+            json={
+                "base_revision_no": 0,
+                "revision_kind": "ai_refine",
+                "instruction": "발문을 더 명확하게 다듬어 주세요.",
+            },
+        )
+
+    assert revised.status_code == 200, revised.text
+    assert revised.json()["data"]["revision"]["revision_no"] == 1
+    assert len(generator.requests) == len(verifier.requests) == 2
 
 
 @pytest.mark.parametrize("revision_kind", ["teacher_direct", "rollback"])
@@ -1057,6 +1086,33 @@ def test_problem_literature_without_work_selection_is_400_before_job() -> None:
     }
     assert len(job_store) == 0
     assert job_store.added == 0
+    assert run_store.runs == {}
+
+
+def test_weakness_auto_is_400_before_request_job_or_run() -> None:
+    run_store, stores, _generator, _verifier = _prepare()
+    job_store = build_agent_job_store()
+    assert isinstance(job_store, InMemoryJobStore)
+    body = _body()
+    body.update(
+        {
+            "target_source": "weakness_auto",
+            "weakness_map_id": "00000000-0000-4000-8000-0000000000a0",
+        }
+    )
+    del body["manual_targets"]
+
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        response = client.post("/v1/problems", headers=_HEADERS, json=body)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_SCHEMA"
+    assert response.json()["error"]["detail"] == {
+        "reason": "weakness_auto_not_wired"
+    }
+    assert len(job_store) == 0
+    assert job_store.added == 0
+    assert vars(stores.requests)["_records"] == {}
     assert run_store.runs == {}
 
 

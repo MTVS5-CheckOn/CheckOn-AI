@@ -15,7 +15,7 @@ from ai.contracts.agents import (
     WorkerKind,
     default_priority_for_operation,
 )
-from ai.contracts.problem_generation import ProblemRequest
+from ai.contracts.problem_generation import ProblemRequest, TargetSource
 from ai.contracts.taxonomy import V1_TYPE_TAGS
 from ai.problem_generation.domain.identity import request_hash
 from ai.problem_generation.domain.policy import supports_source_procurement
@@ -25,6 +25,8 @@ from ai.runtime.errors import DomainException
 TYPE_TAG_NOT_SUPPORTED = "type_tag_not_supported"
 #: 현재 워크플로에 없는 자료 조달 방식이 필요하다 — `error_codes` §6 · 04 §3.11.
 SOURCE_PROCUREMENT_NOT_IMPLEMENTED = "source_procurement_not_implemented"
+#: weakness_auto 생산 진단 seam이 아직 조립되지 않았다 — 04 §3.11.
+WEAKNESS_AUTO_NOT_WIRED = "weakness_auto_not_wired"
 
 
 class ProblemTypeTagUnsupported(DomainException):
@@ -41,6 +43,13 @@ class ProblemTypeTagUnsupported(DomainException):
 
 class ProblemSourceProcurementUnsupported(DomainException):
     """현재 구현이 조달할 수 없는 자료가 필요한 출제 요청."""
+
+    code = "INVALID_SCHEMA"
+    http_status = 400
+
+
+class ProblemWeaknessAutoNotWired(DomainException):
+    """v1 생산 경로에 아직 없는 자동 약점 출제를 문 앞에서 거절한다."""
 
     code = "INVALID_SCHEMA"
     http_status = 400
@@ -92,6 +101,16 @@ def reject_unsupported_source_procurement(request: ProblemRequest) -> None:
         )
 
 
+def reject_unwired_weakness_auto(request: ProblemRequest) -> None:
+    """생산 진단 seam이 없는 weakness_auto 요청을 저장·잡 생성 전에 끊는다."""
+
+    if request.target_source is TargetSource.WEAKNESS_AUTO:
+        raise ProblemWeaknessAutoNotWired(
+            "weakness_auto 출제는 생산 진단 저장·조회 배선 전이라 사용할 수 없다",
+            {"reason": WEAKNESS_AUTO_NOT_WIRED},
+        )
+
+
 class ProblemRequestStore(Protocol):
     """잡 payload_ref로 문제 생성 요청을 역참조하는 저장 경계."""
 
@@ -124,6 +143,7 @@ class ProblemGenerationEnqueuer:
         #    `type_tag_not_supported`가 먼저였고, 바꾸면 사유 코드가 조용히 달라진다.
         reject_unsupported_type_tags(request)
         reject_unsupported_source_procurement(request)
+        reject_unwired_weakness_auto(request)
         payload_hash = request_hash(request)
         request_ref = await self._requests.put(request)
         operation = OperationKind.PROBLEM_SET_GENERATE
@@ -150,11 +170,14 @@ def problem_generation_priority() -> PriorityClass:
 __all__ = [
     "SOURCE_PROCUREMENT_NOT_IMPLEMENTED",
     "TYPE_TAG_NOT_SUPPORTED",
+    "WEAKNESS_AUTO_NOT_WIRED",
     "ProblemGenerationEnqueuer",
     "ProblemRequestStore",
     "ProblemSourceProcurementUnsupported",
     "ProblemTypeTagUnsupported",
+    "ProblemWeaknessAutoNotWired",
     "problem_generation_priority",
     "reject_unsupported_source_procurement",
     "reject_unsupported_type_tags",
+    "reject_unwired_weakness_auto",
 ]

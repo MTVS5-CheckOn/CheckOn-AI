@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from ai.api.app import create_app
+from ai.api.routers import diagnosis as diagnosis_router
 from ai.api.routers import problem as problem_router
 from ai.contracts.diagnosis import DiagnosisResult
 from ai.contracts.graphrag import GraphContextService
@@ -31,13 +34,14 @@ from ai.contracts.problem_generation import (
     PassageRequest,
     ProblemRequest,
     SentenceComplexity,
+    SolveResult,
     SourceMaterialDraft,
     SpeechWritingSourceKind,
     SpeechWritingSourceRequest,
     WorkSelection,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
-from ai.db.repositories.run_store import default_llm_call_collector
+from ai.db.repositories.run_store import InMemoryRunStore, default_llm_call_collector
 from ai.db.session import get_engine
 from ai.db.settings import get_db_settings
 from ai.db.store_factory import build_run_store, reset_shared_agent_runtime
@@ -64,9 +68,40 @@ from test_problem_router import (  # noqa: E402
     _solve_result_json,
 )
 
+_HTTP_FIXTURE_DIR = Path(__file__).parents[1] / "contract" / "fixtures" / "http"
+_HTTP_PLACEHOLDERS = {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "job_id": "00000000-0000-4000-8000-0000000000b0",
+    "set_id": "00000000-0000-4000-8000-000000000050",
+    "item_id": "00000000-0000-4000-8000-000000000010",
+}
+_FLOW_NODE_ID = "language.grammar.phoneme.system"
+
 
 async def _unused_diagnosis(_: ProblemRequest) -> DiagnosisResult:
     raise AssertionError("teacher_manual 요청은 진단을 호출하지 않아야 한다")
+
+
+def _normalize_http_fixture(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: (
+                _HTTP_PLACEHOLDERS[key]
+                if key in _HTTP_PLACEHOLDERS and isinstance(item, str)
+                else _normalize_http_fixture(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_normalize_http_fixture(item) for item in value]
+    return value
+
+
+def _assert_http_fixture(name: str, payload: object) -> None:
+    stored = json.loads(
+        (_HTTP_FIXTURE_DIR / f"{name}.json").read_text(encoding="utf-8")
+    )
+    assert stored == _normalize_http_fixture(payload)
 
 
 def _headers(tenant_id: str) -> dict[str, str]:
@@ -81,16 +116,21 @@ def _headers(tenant_id: str) -> dict[str, str]:
 def _prepare_pg(
     *,
     generator_steps: tuple[str, ...] | None = None,
+    verifier_steps: tuple[str, ...] | None = None,
     graph_context: GraphContextService | None = None,
-) -> None:
+) -> tuple[FakeProvider, FakeProvider]:
     reset_shared_agent_runtime()
     problem_router.reset_problem_router()
+    generator = FakeProvider(
+        generator_steps or (_generated_item_json(),), name="pg-generator"
+    )
+    verifier = FakeProvider(
+        verifier_steps or (_solve_result_json(),), name="pg-verifier"
+    )
     problem_router.set_problem_providers(
         ProblemProviders(
-            generator=FakeProvider(
-                generator_steps or (_generated_item_json(),), name="pg-generator"
-            ),
-            verifier=FakeProvider((_solve_result_json(),), name="pg-verifier"),
+            generator=generator,
+            verifier=verifier,
             has_dedicated_verifier=False,
         )
     )
@@ -101,6 +141,7 @@ def _prepare_pg(
     problem_router.set_problem_stores(problem_runtime_stores())
     problem_router.set_problem_run_store(build_run_store())
     default_llm_call_collector().reset()
+    return generator, verifier
 
 
 async def _persisted_counts(set_id: str, *, database_url: str) -> tuple[int, int]:
@@ -169,6 +210,42 @@ def _generated_source_item_json(
                 quote=quote,
             ),
         ),
+    ).model_dump_json()
+
+
+def _flow_item_json() -> str:
+    return GeneratedItem(
+        area_tag=AreaTag.LANGUAGE,
+        type_tag=TypeTag.INFER,
+        item_format=ItemFormat.MCQ,
+        skill_node_id=_FLOW_NODE_ID,
+        stem="음운 체계의 관계를 추론한 것으로 옳은 것을 고르시오.",
+        choices=tuple(
+            Choice(
+                no=no,
+                text=f"음운 체계 선택지 {no}",
+                why_wrong=None if no == 1 else f"{no}번은 승인 근거와 다르다.",
+            )
+            for no in range(1, 6)
+        ),
+        answer=Answer(correct_no=1),
+        rationale="승인된 근거와 대조하면 1번이 옳다.",
+        evidence=(
+            EvidenceAnchor(kind=EvidenceKind.GRAMMAR_RULE, ref="grammar:rule-1"),
+        ),
+    ).model_dump_json()
+
+
+def _flow_solve_json() -> str:
+    return SolveResult(
+        chosen=1,
+        reasoning="승인 근거와 선택지를 독립적으로 대조했다.",
+        confidence=0.95,
+        target_skill_node_id=_FLOW_NODE_ID,
+        measured_skill_node_id=_FLOW_NODE_ID,
+        aligned=True,
+        alignment_confidence=0.95,
+        alignment_reason="요청한 커리큘럼 노드와 일치한다.",
     ).model_dump_json()
 
 
@@ -274,6 +351,199 @@ def test_pg_post_persists_items_and_cache_miss_recovers_reads(
         get_db_settings.cache_clear()
         get_engine.cache_clear()
         reset_shared_agent_runtime()
+        problem_router.reset_problem_router()
+
+
+def test_pg_cache_loss_recovers_original_request_for_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tenant_id = f"tenant-revision-{uuid.uuid4().hex[:10]}"
+    headers = _headers(tenant_id)
+    monkeypatch.setenv("STORE_BACKEND", "pg")
+    monkeypatch.setenv("PG_DRAIN_ENABLED", "false")
+    get_db_settings.cache_clear()
+    get_engine.cache_clear()
+    _prepare_pg(
+        generator_steps=(_generated_item_json(), _generated_item_json()),
+        verifier_steps=(_solve_result_json(), _solve_result_json()),
+    )
+
+    try:
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            posted = client.post("/v1/problems", headers=headers, json=_body())
+            assert posted.status_code == 202, posted.text
+            job_id = posted.json()["data"]["job_id"]
+            job = client.get(
+                f"/v1/problems/{job_id}", headers={"X-Tenant-Id": tenant_id}
+            )
+            assert job.status_code == 200, job.text
+            set_id = job.json()["data"]["result"]["set_id"]
+
+            problem_router._views.clear()  # noqa: SLF001 — 프로세스 재시작 캐시 소실 재현
+            restored_detail = client.get(
+                f"/v1/problems/{set_id}/items/0",
+                headers={"X-Tenant-Id": tenant_id},
+            )
+            revised = client.post(
+                f"/v1/problems/{set_id}/items/0/revisions",
+                headers={
+                    **headers,
+                    "X-Request-Id": f"request-revision-{uuid.uuid4().hex}",
+                    "Idempotency-Key": f"idem-revision-{uuid.uuid4().hex}",
+                },
+                json={
+                    "base_revision_no": 0,
+                    "revision_kind": "ai_refine",
+                    "instruction": "발문을 더 명확하게 다듬어 주세요.",
+                },
+            )
+
+        assert revised.status_code == 200, revised.text
+        assert revised.json()["data"]["revision"]["revision_no"] == 1
+        assert restored_detail.status_code == 200, restored_detail.text
+        assert "job_id" not in restored_detail.json()["data"]
+        _assert_http_fixture(
+            "get_problem_items.detail.cache_lost", restored_detail.json()
+        )
+    finally:
+        monkeypatch.setenv("STORE_BACKEND", "memory")
+        get_db_settings.cache_clear()
+        get_engine.cache_clear()
+        reset_shared_agent_runtime()
+        problem_router.reset_problem_router()
+
+
+def test_step1_selection_to_step4_teacher_manual_flow_survives_cache_loss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tenant_id = f"tenant-flow-{uuid.uuid4().hex[:10]}"
+    headers = _headers(tenant_id)
+    monkeypatch.setenv("STORE_BACKEND", "pg")
+    monkeypatch.setenv("PG_DRAIN_ENABLED", "false")
+    get_db_settings.cache_clear()
+    get_engine.cache_clear()
+    diagnosis_router.reset_diagnosis_router()
+    diagnosis_router.set_diagnosis_run_store(InMemoryRunStore())
+    generator, verifier = _prepare_pg(
+        generator_steps=(_flow_item_json(), _flow_item_json(), _flow_item_json()),
+        verifier_steps=(_flow_solve_json(), _flow_solve_json(), _flow_solve_json()),
+    )
+    occurred_at = datetime(2026, 8, 14, 9, 0, tzinfo=UTC).isoformat()
+    diagnosis_body = {
+        "student_ref": "student-flow",
+        "period": {"from_date": "2026-08-01", "to_date": "2026-08-14"},
+        "as_of": occurred_at,
+        "snapshot_hash": "sha256:step1-step4-flow",
+        "events": [
+            {
+                "event_id": f"flow-{index:03d}",
+                "area_tag": "language",
+                "type_tag": "infer",
+                "correct": index < 4,
+                "occurred_at": occurred_at,
+                "tag_confirmed": True,
+                "skill_node_id": _FLOW_NODE_ID,
+            }
+            for index in range(20)
+        ],
+    }
+
+    try:
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            # 1~3. Step1 진단 → 5×4 셀과 선택 가능한 노드 회수.
+            diagnosed = client.post(
+                "/v1/diagnosis", headers=headers, json=diagnosis_body
+            )
+            assert diagnosed.status_code == 200, diagnosed.text
+            diagnosis_data = diagnosed.json()["data"]
+            assert len(diagnosis_data["grid"]["cells"]) == 20
+            diagnosed_node_ids = tuple(diagnosis_data["weakness_map"]["nodes"])
+            assert diagnosed_node_ids, "Step1 진단 응답에 Step2에서 선택할 노드가 없다"
+            selected_node_id = diagnosed_node_ids[0]
+
+            # 4~6. Step2가 고른 진단 응답 노드를 teacher_manual 요청에 싣는다.
+            problem_body = _body(target_ref="student-flow")
+            problem_body.update(
+                {
+                    "manual_targets": [selected_node_id],
+                    "snapshot_hash": diagnosis_data["weakness_map"]["snapshot_hash"],
+                }
+            )
+            posted = client.post("/v1/problems", headers=_headers(tenant_id), json=problem_body)
+            assert posted.status_code == 202, posted.text
+            job_id = posted.json()["data"]["job_id"]
+
+            # Retry-After의 비종단/종단 계약은 problem_router·HTTP fixture 전용 검사가 맡는다.
+            job = client.get(
+                f"/v1/problems/{job_id}", headers={"X-Tenant-Id": tenant_id}
+            )
+            assert job.status_code == 200, job.text
+            assert job.json()["data"]["status"] == "succeeded"
+            result = job.json()["data"]["result"]
+            set_id = result["set_id"]
+
+            # 9~10. Step3 목록·상세와 캐시 존재 job_id를 확인한다.
+            listed = client.get(
+                f"/v1/problems/{set_id}/items", headers={"X-Tenant-Id": tenant_id}
+            )
+            detailed = client.get(
+                f"/v1/problems/{set_id}/items/0",
+                headers={"X-Tenant-Id": tenant_id},
+            )
+            assert listed.status_code == detailed.status_code == 200
+            assert detailed.json()["data"]["job_id"] == job_id
+
+            # 11~12. AI 수정 뒤 Step4가 사용할 검증본을 읽어도 추가 호출은 없다.
+            first_revision = client.post(
+                f"/v1/problems/{set_id}/items/0/revisions",
+                headers=_headers(tenant_id),
+                json={
+                    "base_revision_no": 0,
+                    "revision_kind": "ai_refine",
+                    "instruction": "발문을 더 명확하게 다듬어 주세요.",
+                },
+            )
+            assert first_revision.status_code == 200, first_revision.text
+            calls_after_revision = (len(generator.requests), len(verifier.requests))
+            step4_detail = client.get(
+                f"/v1/problems/{set_id}/items/0",
+                headers={"X-Tenant-Id": tenant_id},
+            )
+            assert step4_detail.json()["data"]["verification"]["release_decision"] == "passed"
+            assert (len(generator.requests), len(verifier.requests)) == calls_after_revision
+
+            # 13. 캐시 소실 뒤 원 요청 정본으로 재진입하고 테넌트 은닉을 유지한다.
+            problem_router._views.clear()  # noqa: SLF001 — 프로세스 재시작 캐시 소실 재현
+            second_revision = client.post(
+                f"/v1/problems/{set_id}/items/0/revisions",
+                headers=_headers(tenant_id),
+                json={
+                    "base_revision_no": 1,
+                    "revision_kind": "ai_refine",
+                    "instruction": "선지 표현도 더 분명하게 다듬어 주세요.",
+                },
+            )
+            restored_detail = client.get(
+                f"/v1/problems/{set_id}/items/0",
+                headers={"X-Tenant-Id": tenant_id},
+            )
+            hidden = client.get(
+                f"/v1/problems/{set_id}/items/0",
+                headers={"X-Tenant-Id": "tenant-other"},
+            )
+
+        assert second_revision.status_code == 200, second_revision.text
+        assert second_revision.json()["data"]["revision"]["revision_no"] == 2
+        assert restored_detail.status_code == 200, restored_detail.text
+        assert "job_id" not in restored_detail.json()["data"]
+        assert restored_detail.json()["data"]["current_revision_no"] == 2
+        assert hidden.status_code == 404
+    finally:
+        monkeypatch.setenv("STORE_BACKEND", "memory")
+        get_db_settings.cache_clear()
+        get_engine.cache_clear()
+        reset_shared_agent_runtime()
+        diagnosis_router.reset_diagnosis_router()
         problem_router.reset_problem_router()
 
 

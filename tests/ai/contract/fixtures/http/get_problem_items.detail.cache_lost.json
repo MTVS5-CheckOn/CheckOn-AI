@@ -1,7 +1,6 @@
 {
   "data": {
     "set_id": "00000000-0000-4000-8000-000000000050",
-    "job_id": "00000000-0000-4000-8000-0000000000b0",
     "slot_index": 0,
     "item_id": "00000000-0000-4000-8000-000000000010",
     "status": "needs_review",
@@ -11,10 +10,10 @@
     ],
     "item": {
       "area_tag": "language",
-      "type_tag": "concept",
+      "type_tag": "infer",
       "item_format": "mcq",
       "skill_node_id": "grammar.sentence-structure",
-      "stem": "문장 성분의 개념과 종류를 설명한 것으로 옳은 것을 고르시오.",
+      "stem": "밑줄 친 절이 문장에서 담당하는 기능을 추론한 것으로 옳은 것을 고르시오.",
       "choices": [
         {
           "no": 1,

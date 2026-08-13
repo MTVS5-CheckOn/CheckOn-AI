@@ -32,6 +32,7 @@ class RestoredProblemSet:
     """PG 스냅숏에서 무손실로 복구한 API 조회 입력."""
 
     result: ProblemSetResult
+    request: ProblemRequest
     execution_id: UUID
     versions: VersionSet
 
@@ -191,6 +192,7 @@ class PgProblemSetStore:
         )
         return RestoredProblemSet(
             result=result,
+            request=request,
             execution_id=run_row.execution_id,
             versions=_versions(run_row),
         )

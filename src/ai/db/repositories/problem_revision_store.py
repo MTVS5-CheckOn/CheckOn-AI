@@ -76,10 +76,9 @@ class _PgRevisionSession:
 
 
 class PgProblemRevisionStore:
-    """세션 advisory lock을 LLM 턴 전체에 유지하는 테넌트 스코프 저장소."""
+    """트랜잭션 advisory lock을 LLM 턴 전체에 유지하는 테넌트 스코프 저장소."""
 
-    _TRY_LOCK = text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))")
-    _UNLOCK = text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))")
+    _TRY_LOCK = text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))")
 
     def __init__(
         self,
@@ -134,9 +133,6 @@ class PgProblemRevisionStore:
             except Exception:
                 await session.rollback()
                 raise
-            finally:
-                await session.execute(self._UNLOCK, {"key": lock_key})
-                await session.rollback()
 
     async def list_revisions(
         self, set_id: UUID, slot_index: int
