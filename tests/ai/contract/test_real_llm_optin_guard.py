@@ -361,13 +361,20 @@ def test_pytest_session_ignores_dotenv_optin(tmp_path: Path) -> None:
     🔴 **진짜 pytest 세션을 하나 띄워서 본다** — 핀이 「이 세션에 이미 적용돼 있다」를
     확인하는 형태로 쓰면 자기 자신을 근거로 삼게 된다. 하위 세션은 `.env`에 `=1`을 두고
     프로세스 env에서는 키를 **지운 채**(= `pre_pr_verify`가 만드는 상태) 시작한다.
+
+    ⚠ **import 경로는 ini가 아니라 `PYTHONPATH`로 넘긴다 — 윈도우 함정이다.**
+    pytest는 ini의 `paths` 타입을 `shlex.split`(posix 모드)으로 자르는데, 거기서
+    **윈도우 역슬래시가 이스케이프 문자로 먹힌다**(2026-08-14 실측 ·
+    `_pytest/config/__init__.py`). 구분자가 통째로 사라져 `C:CheckOn-AIsrc` 같은 값이 되고
+    ⇒ 핀 import 실패 ⇒ 하위 세션 `exit=1` ⇒ **이 검사만 윈도우에서 상시 red**였다.
+    🔴 그러면 `pre_pr_verify`가 **offline에서 멈춰 integration 단계가 아예 안 돈다**
+    (99 #63과 같은 모양 · 준영님 기기 실측). **경로를 ini로 되돌리지 마라.**
+    ⚠ 저장소 `pyproject.toml`은 안 걸린다 — 거기 `pythonpath`는 TOML **리스트**라
+    `shlex`를 안 탄다. 이렇게 **생성하는 ini**만 해당한다(공백 있는 경로도 같이 산다).
     """
     (tmp_path / ".env").write_text(f"{REAL_LLM_OPTIN_ENV}=1\n", encoding="utf-8")
     (tmp_path / "pytest.ini").write_text(
-        "[pytest]\n"
-        f"pythonpath = {_ROOT / 'src'} {_ROOT / 'tests' / 'ai' / 'fakes'}\n"
-        "addopts = -p real_llm_optin_pin\n",
-        encoding="utf-8",
+        "[pytest]\naddopts = -p real_llm_optin_pin\n", encoding="utf-8"
     )
     (tmp_path / "test_optin_leak.py").write_text(
         "from ai.runtime.real_llm import real_llm_optin\n\n\n"
@@ -377,6 +384,13 @@ def test_pytest_session_ignores_dotenv_optin(tmp_path: Path) -> None:
     )
     env = os.environ.copy()
     env.pop(REAL_LLM_OPTIN_ENV, None)  # ⚠ `pre_pr_verify`가 하는 것과 같은 상태
+    #: 핀은 `tests/ai/fakes`의 평면 import다(pyproject `pythonpath` 규약) — 하위 세션에도
+    #: 같은 두 뿌리를 준다. ⚠ 물려받은 값이 있으면 **뒤에 붙인다**(덮지 않는다).
+    import_roots = [str(_ROOT / "src"), str(_ROOT / "tests" / "ai" / "fakes")]
+    inherited = env.get("PYTHONPATH")
+    if inherited:
+        import_roots.append(inherited)
+    env["PYTHONPATH"] = os.pathsep.join(import_roots)
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
         cwd=tmp_path,
