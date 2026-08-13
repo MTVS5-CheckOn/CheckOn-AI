@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -34,6 +36,7 @@ from ai.contracts.llm import (
 )
 from ai.contracts.problem_generation import (
     GeneratedItem,
+    ItemResult,
     LiteratureGenre,
     MediaSourceKind,
     MediaSourceRequest,
@@ -42,6 +45,7 @@ from ai.contracts.problem_generation import (
     ProblemItemStatus,
     ProblemRequest,
     ProblemSetResult,
+    ProblemSetStatus,
     SentenceComplexity,
     SourceRequest,
     SpeechWritingSourceKind,
@@ -72,7 +76,11 @@ from ai.problem_generation.provider import (
     build_problem_providers,
     get_problem_provider_settings,
 )
-from ai.runtime.real_llm import real_llm_skip_reason
+from ai.runtime.real_llm import (
+    REAL_LLM_OPTIN_ENV,
+    real_llm_optin,
+    real_llm_skip_reason,
+)
 from ai.runtime.tracing import external_tracing_active
 
 _FAKES_DIR = Path(__file__).parents[1] / "fakes"
@@ -81,6 +89,7 @@ sys.path.insert(0, str(_FAKES_DIR))
 from fake_graph_context import (  # noqa: E402
     FakeGraphContextService,
 )
+from fake_provider import FakeProvider  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -106,6 +115,14 @@ _VALID_GATE_STATUSES = frozenset(
 _UPSTREAM_FAILURES = frozenset(
     {CallOutcome.TIMEOUT, CallOutcome.PROVIDER_ERROR}
 )
+_TRACKS = {
+    AreaTag.LANGUAGE: "T1",
+    AreaTag.READING: "T2",
+    AreaTag.LITERATURE: "T3",
+    AreaTag.SPEECH_WRITING: "T4",
+    AreaTag.MEDIA: "T5",
+}
+_UNKNOWN = "unknown"
 
 
 class RealLlmSmokeUnavailable(RuntimeError):
@@ -218,6 +235,26 @@ class RealLlmAreaSummary:
     def schema_pass_rate(self) -> float | None:
         attempts = self.generation_attempts
         return self.schema_passed / attempts if attempts else None
+
+
+@dataclass(frozen=True, slots=True)
+class SmokeReportRow:
+    area_tag: AreaTag
+    generation_attempts: int
+    schema_passed: int
+    final_status: str
+    failure_reason: str
+    stored_body_count: int
+    model: str
+
+
+@dataclass(frozen=True, slots=True)
+class SafeFailureRow:
+    area: str
+    outcome: str
+    exception_type: str
+    cause_type: str
+    http_status: str
 
 
 class _ObservingProvider:
@@ -540,6 +577,199 @@ async def run_real_llm_smoke_matrix(
     return tuple(summaries)
 
 
+def _report_row(
+    area_tag: AreaTag,
+    observations: tuple[RealLlmSmokeObservation, ...],
+) -> SmokeReportRow:
+    items = tuple(item for observation in observations for item in observation.result.items)
+    statuses = ",".join(item.status.value for item in items) or "no_item"
+    reasons = (
+        ",".join(
+            item.failure_reason.value if item.failure_reason is not None else "-"
+            for item in items
+        )
+        or "-"
+    )
+    models = sorted({observation.generator_model for observation in observations})
+    return SmokeReportRow(
+        area_tag=area_tag,
+        generation_attempts=sum(
+            len(observation.generator_completions) for observation in observations
+        ),
+        schema_passed=sum(len(observation.parsed_items) for observation in observations),
+        final_status=statuses,
+        failure_reason=reasons,
+        stored_body_count=sum(
+            len(observation.generated_items) for observation in observations
+        ),
+        model=",".join(models) or "-",
+    )
+
+
+def _safe_failure_from_reason(area: AreaTag | str, reason: str) -> SafeFailureRow:
+    fields = {
+        key: value
+        for token in reason.split()
+        if "=" in token
+        for key, value in (token.split("=", 1),)
+        if key in {"outcomes", "exceptions", "causes", "http_statuses"}
+    }
+    return SafeFailureRow(
+        area=area.value if isinstance(area, AreaTag) else area,
+        outcome=fields.get("outcomes", _UNKNOWN),
+        exception_type=fields.get("exceptions", _UNKNOWN),
+        cause_type=fields.get("causes", _UNKNOWN),
+        http_status=fields.get("http_statuses", "none"),
+    )
+
+
+def _safe_failure_from_exception(
+    area: AreaTag | str, error: Exception
+) -> SafeFailureRow:
+    deepest = error.__cause__
+    while deepest is not None and deepest.__cause__ is not None:
+        deepest = deepest.__cause__
+    status = getattr(deepest, "status_code", None)
+    return SafeFailureRow(
+        area=area.value if isinstance(area, AreaTag) else area,
+        outcome=_UNKNOWN,
+        exception_type=type(error).__name__,
+        cause_type=type(deepest).__name__ if deepest is not None else _UNKNOWN,
+        http_status=str(status) if isinstance(status, int) else "none",
+    )
+
+
+async def _run_single(
+    area_tag: AreaTag, repetitions: int
+) -> tuple[tuple[SmokeReportRow, ...], tuple[SafeFailureRow, ...]]:
+    observations: list[RealLlmSmokeObservation] = []
+    failures: list[SafeFailureRow] = []
+    for _ in range(repetitions):
+        try:
+            observations.append(await run_real_llm_smoke(area_tag))
+        except RealLlmSmokeUnavailable as error:
+            failures.append(_safe_failure_from_reason(area_tag, str(error)))
+        except Exception as error:
+            failures.append(_safe_failure_from_exception(area_tag, error))
+    rows = (_report_row(area_tag, tuple(observations)),) if observations else ()
+    return rows, tuple(failures)
+
+
+async def _run_matrix(
+    repetitions: int,
+) -> tuple[tuple[SmokeReportRow, ...], tuple[SafeFailureRow, ...]]:
+    try:
+        summaries = await run_real_llm_smoke_matrix(repetitions=repetitions)
+    except Exception as error:
+        return (), (_safe_failure_from_exception("all", error),)
+    rows: list[SmokeReportRow] = []
+    failures: list[SafeFailureRow] = []
+    for summary in summaries:
+        if summary.observations:
+            rows.append(_report_row(summary.area_tag, summary.observations))
+        failures.extend(
+            _safe_failure_from_reason(summary.area_tag, reason)
+            for reason in summary.unavailable_reasons
+        )
+    return tuple(rows), tuple(failures)
+
+
+def _render_report(rows: tuple[SmokeReportRow, ...]) -> str:
+    lines = [
+        "| 트랙 | 영역 | 생성 시도 N | 스키마 통과 M | 최종 status | "
+        "failure_reason | 저장 본문 수 | 모델명 |",
+        "| --- | --- | ---: | ---: | --- | --- | ---: | --- |",
+    ]
+    lines.extend(
+        "| "
+        + " | ".join(
+            (
+                _TRACKS[row.area_tag],
+                row.area_tag.value,
+                str(row.generation_attempts),
+                str(row.schema_passed),
+                row.final_status,
+                row.failure_reason,
+                str(row.stored_body_count),
+                row.model,
+            )
+        )
+        + " |"
+        for row in rows
+    )
+    return "\n".join(lines)
+
+
+def _render_failures(rows: tuple[SafeFailureRow, ...]) -> str:
+    lines = [
+        "| 영역 | outcome | 예외 타입 | 원인 타입 | HTTP 상태 |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    lines.extend(
+        "| "
+        + " | ".join(
+            (
+                row.area,
+                row.outcome,
+                row.exception_type,
+                row.cause_type,
+                row.http_status,
+            )
+        )
+        + " |"
+        for row in rows
+    )
+    return "\n".join(lines)
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="문제출제 T1 또는 T1~T5 실 LLM 스모크 집계"
+    )
+    parser.add_argument(
+        "--area",
+        required=True,
+        choices=("all", *(area.value for area in AreaTag)),
+        help="단일 영역 또는 all",
+    )
+    parser.add_argument(
+        "--repetitions",
+        type=int,
+        default=1,
+        help="영역별 반복 횟수(1 이상)",
+    )
+    return parser
+
+
+async def _main_async(area: str, repetitions: int) -> int:
+    if repetitions < 1:
+        print("오류: --repetitions는 1 이상이어야 한다")
+        return 2
+    if area == "all":
+        rows, failures = await _run_matrix(repetitions)
+    else:
+        rows, failures = await _run_single(AreaTag(area), repetitions)
+    print(_render_report(rows))
+    if failures:
+        print("\n비민감 provider 실패 메타")
+        print(_render_failures(failures))
+    return 1 if failures else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    if not real_llm_optin():
+        print(
+            f"실 LLM 미실행: {REAL_LLM_OPTIN_ENV}=1이 현재 프로세스에 없다. "
+            "조용한 skip 없이 종료한다."
+        )
+        return 2
+    if external_tracing_active():
+        print("실 LLM 미실행: 외부 트레이싱이 활성화돼 있다.")
+        return 2
+    return asyncio.run(_main_async(args.area, args.repetitions))
+
+
 def test_smoke_cases_use_real_curriculum_nodes_and_supported_source_shapes() -> None:
     graph = load_skill_graph(_GRAPH_PATH, expected_taxonomy_version=_TAXONOMY_VERSION)
     nodes = {node.id: node for node in graph.nodes}
@@ -610,8 +840,128 @@ def test_unavailable_reason_reports_only_categorical_failure_metadata() -> None:
     )
 
 
-def test_five_area_problem_generation_real_llm_roundtrip() -> None:
-    """실 모델이 5영역에서 스키마 응답을 내고 게이트가 정상 상태를 결정한다."""
+async def _fake_cli_observation() -> RealLlmSmokeObservation:
+    provider = FakeProvider(("RAW_COMPLETION_MUST_NOT_PRINT",), name="fake-cli")
+    completion = await provider.complete(
+        LLMRequest(
+            role=ModelRole.GENERATOR,
+            prompt="[마스킹 통과 프롬프트]",
+            prompt_id="pg.items.v1",
+            prompt_version="v4",
+        ),
+        _execution_context(),
+    )
+    placeholder = cast(GeneratedItem, object())
+    item_id = UUID("00000000-0000-4000-8000-000000000903")
+    result = ProblemSetResult(
+        set_id=UUID("00000000-0000-4000-8000-000000000902"),
+        status=ProblemSetStatus.GENERATED,
+        target_source=TargetSource.TEACHER_MANUAL,
+        personalized=False,
+        requested_count=1,
+        processed_count=1,
+        unstarted_count=0,
+        items=(
+            ItemResult(
+                item_id=item_id,
+                status=ProblemItemStatus.VERIFIED,
+                attempt_no=1,
+            ),
+        ),
+    )
+    return RealLlmSmokeObservation(
+        area_tag=AreaTag.LANGUAGE,
+        called_at=datetime.now(_KST),
+        duration_s=0.01,
+        generator_endpoint="https://secret.example/v1?api_key=hidden",
+        generator_model="fake-model",
+        verifier_endpoint="https://secret.example/v1?api_key=hidden",
+        verifier_model="fake-model",
+        dedicated_verifier=True,
+        generator_provider_name="fake-cli-generator",
+        verifier_provider_name="fake-cli-verifier",
+        result=result,
+        records=(),
+        generator_completions=(completion,),
+        verifier_completions=(),
+        parsed_items=(placeholder,),
+        generated_items=(placeholder,),
+    )
+
+
+def test_cli_optin_off_exits_before_runner(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv(REAL_LLM_OPTIN_ENV, raising=False)
+
+    def forbidden_run(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("opt-in 없이 runner를 호출했다")
+
+    monkeypatch.setattr(asyncio, "run", forbidden_run)
+
+    assert main(["--area", "language"]) == 2
+    assert "실 LLM 미실행" in capsys.readouterr().out
+
+
+def test_cli_fake_provider_renders_table_without_endpoint() -> None:
+    observation = asyncio.run(_fake_cli_observation())
+    rendered = _render_report((_report_row(AreaTag.LANGUAGE, (observation,)),))
+
+    assert "| T1 | language | 1 | 1 | verified | - | 1 | fake-model |" in rendered
+    assert "secret.example" not in rendered
+    assert "api_key" not in rendered
+    assert "RAW_COMPLETION_MUST_NOT_PRINT" not in rendered
+
+
+def test_cli_preserves_success_and_failure_from_repeated_single_area(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    observation = asyncio.run(_fake_cli_observation())
+    outcomes: list[RealLlmSmokeObservation | Exception] = [
+        observation,
+        RealLlmSmokeUnavailable(
+            "generator provider 미가용 outcomes=provider_error "
+            "exceptions=LlmError causes=BadRequestError http_statuses=400"
+        ),
+    ]
+
+    async def fake_run(_area_tag: AreaTag) -> RealLlmSmokeObservation:
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "run_real_llm_smoke",
+        fake_run,
+    )
+
+    assert asyncio.run(_main_async("language", 2)) == 1
+    output = capsys.readouterr().out
+    assert "| T1 | language | 1 | 1 | verified | - | 1 | fake-model |" in output
+    assert "| language | provider_error | LlmError | BadRequestError | 400 |" in output
+    assert "secret.example" not in output
+    assert "RAW_COMPLETION_MUST_NOT_PRINT" not in output
+
+
+def test_cli_failure_renderer_keeps_only_categorical_metadata() -> None:
+    reason = (
+        "generator provider 미가용 outcomes=provider_error exceptions=LlmError "
+        "causes=BadRequestError http_statuses=400 "
+        "https://secret.example/v1?api_key=hidden"
+    )
+    rendered = _render_failures(
+        (_safe_failure_from_reason(AreaTag.LANGUAGE, reason),)
+    )
+
+    assert "| language | provider_error | LlmError | BadRequestError | 400 |" in rendered
+    assert "secret.example" not in rendered
+    assert "api_key" not in rendered
+
+
+def test_t1_problem_generation_real_llm_roundtrip() -> None:
+    """정본 게이트의 보호된 실 호출은 실 근거 서비스가 있는 T1만 검사한다."""
 
     settings = get_llm_settings()
     # 🔴 **opt-in 없이는 안 부른다**(99 #32) — 종전 조건은 `.env`가 덮으면 열렸다.
@@ -622,28 +972,23 @@ def test_five_area_problem_generation_real_llm_roundtrip() -> None:
         pytest.skip("B-14 P2 전 외부 트레이싱 비활성 전제 — 스모크 skip")
 
     try:
-        summaries = asyncio.run(run_real_llm_smoke_matrix(repetitions=1))
+        observation = asyncio.run(run_real_llm_smoke(AreaTag.LANGUAGE))
     except RealLlmSmokeUnavailable as exc:
         pytest.skip(str(exc))
     except LlmError as exc:
         pytest.skip(f"OpenAI 미가용 — {type(exc).__name__}")
 
-    assert len(summaries) == len(AreaTag)
-    for summary in summaries:
-        assert not summary.unavailable_reasons
-        assert len(summary.observations) == 1
-        observation = summary.observations[0]
-        assert observation.generator_provider_name != observation.verifier_provider_name
-        assert len(observation.result.items) == 1
-        assert observation.result.items[0].status in _VALID_GATE_STATUSES
-        assert observation.parsed_items, (
-            f"{summary.area_tag.value} generator 응답이 GeneratedItem 스키마로 파싱되지 않았다"
-        )
-        item = observation.parsed_items[-1]
-        assert len(item.choices) == 5
-        assert 1 <= item.answer.correct_no <= 5
-        assert observation.generated_items
-        assert observation.generated_items[0].evidence[0].quote is not None
+    assert observation.generator_provider_name != observation.verifier_provider_name
+    assert len(observation.result.items) == 1
+    assert observation.result.items[0].status in _VALID_GATE_STATUSES
+    assert observation.parsed_items, (
+        "language generator 응답이 GeneratedItem 스키마로 파싱되지 않았다"
+    )
+    item = observation.parsed_items[-1]
+    assert len(item.choices) == 5
+    assert 1 <= item.answer.correct_no <= 5
+    assert observation.generated_items
+    assert observation.generated_items[0].evidence[0].quote is not None
 
 
 __all__ = [
@@ -653,3 +998,7 @@ __all__ = [
     "run_real_llm_smoke",
     "run_real_llm_smoke_matrix",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
