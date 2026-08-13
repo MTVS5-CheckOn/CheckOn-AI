@@ -214,3 +214,46 @@ def test_real_client_creation_has_one_production_gate() -> None:
 
     assert gate_calls == [adapter], gate_calls
     assert not direct_provider_calls, direct_provider_calls
+
+
+def test_no_production_code_constructs_async_openai_directly() -> None:
+    """새 진입점도 ``AsyncOpenAI``를 중앙 opt-in 관문 밖에서 직접 만들지 않는다."""
+    source_root = _ROOT / "src" / "ai"
+    direct_calls: list[str] = []
+    for path in source_root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported_names: set[str] = set()
+        imported_modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "openai":
+                imported_names.update(
+                    alias.asname or alias.name
+                    for alias in node.names
+                    if alias.name == "AsyncOpenAI"
+                )
+            elif isinstance(node, ast.Import):
+                imported_modules.update(
+                    alias.asname or alias.name
+                    for alias in node.names
+                    if alias.name == "openai"
+                )
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            direct_name_call = (
+                isinstance(node.func, ast.Name) and node.func.id in imported_names
+            )
+            module_attribute_call = (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "AsyncOpenAI"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in imported_modules
+            )
+            if direct_name_call or module_attribute_call:
+                direct_calls.append(f"{path.relative_to(_ROOT)}:{node.lineno}")
+
+    assert not direct_calls, (
+        "AsyncOpenAI 직접 생성은 중앙 opt-in 관문을 우회한다: "
+        f"{direct_calls} — 생성자를 build_real_openai_client에 전달하라"
+    )
