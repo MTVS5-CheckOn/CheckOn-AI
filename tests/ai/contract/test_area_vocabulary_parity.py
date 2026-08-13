@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 from typing import Final
 
@@ -57,6 +58,33 @@ _PENDING_CHART_ROW: Final = {
         "(#179 · part_b/09 §1도 그 줄에만 「제품 확인 필요」를 달았다)"
     ),
 }
+#: 🔴 **A 소유가 아닌 문서** — `docs/part_a/` 안에 있지만 **우리가 쓴 것이 아니라** 남에게
+#: 넘긴 산출물을 **그대로** 보관한 것이다. 고칠 권한이 없으므로 훑지 않는다.
+#: ⚠ 이 파일 docstring 이 *"범위는 **A 소유** `docs/part_a/`뿐"* 이라 적는데, 종전에는
+#:   part_a 안이면 전부 A 소유라는 전제가 참이었다 — 2026-08-14 에 거짓이 됐다.
+#: 🔴 **위 `_PENDING_CHART_ROW`(행 단위 면제)와 성질이 다르다.** 거기는 *"우리 문서인데
+#:   지금 안 고친다"* 라 파일 면제가 위험했다(같은 문서의 다른 낡은 표기가 조용히 통과한다).
+#:   여기는 *"우리 문서가 아니다"* 라 **파일 단위가 맞다** — 그 안의 어떤 표기도 우리 책임이 아니다.
+#: ⚠ 실측(2026-08-14): `README_시드.md` 는 6영역을 **두 줄에 나눠** 적어(`reading · literature`
+#:   / `speech_writing · language · media`) 줄 단위 휴리스틱에 걸렸다. **문서는 옳다.**
+_NOT_OURS: Final = frozenset({"README_시드.md"})
+
+
+def _part_a_docs() -> list[Path]:
+    """훑을 문서 — 🔴 **A 소유만**. 남의 산출물 보관본은 뺀다(`_NOT_OURS`).
+
+    🔴 **파일명을 NFC 로 정규화하고 비교한다.** macOS(APFS)는 한글 파일명을 **분해형(NFD)**
+    으로 돌려주고 파이썬 소스의 리터럴은 **결합형(NFC)** 이라, 그냥 비교하면 **눈으로는
+    같은데 `!=` 가 나온다**(2026-08-14 실측: 면제가 안 먹어 red 가 그대로 남았다).
+    ⚠ 리눅스·CI 에서는 NFC 로 와서 **맥에서만 갈린다** — 그래서 더 안 보인다.
+    """
+    return [
+        p
+        for p in sorted(_PART_A.rglob("*.md"))
+        if unicodedata.normalize("NFC", p.name) not in _NOT_OURS
+    ]
+
+
 #: 갈림을 공개하는 문면의 앵커.
 _DISCLOSURE: Final = "영역 정본은"
 #: 차트 ① 행 — `| ① | … |`.
@@ -122,7 +150,7 @@ def _counts_outside(text: str, *, exempt_row: str | None) -> list[tuple[int, int
 def _area_count_sites() -> list[tuple[str, int, int]]:
     """`part_a`의 「N영역」 자리 — `(파일, 행번호, 수)`. **면제 행은 뺀다.**"""
     found: list[tuple[str, int, int]] = []
-    for path in sorted(_PART_A.rglob("*.md")):
+    for path in _part_a_docs():
         text = path.read_text(encoding="utf-8")
         exempt = _chart_one_row(text) if path.name in _PENDING_CHART_ROW else None
         found += [
@@ -136,7 +164,7 @@ def _area_value_lists() -> list[tuple[str, int, frozenset[str]]]:
     """part_a 문서에서 **영역 값을 열거하는 줄**과 그 줄이 쓴 어휘를 돌려준다."""
     vocabulary = _CANONICAL_VALUES | _RETIRED_VALUES
     found: list[tuple[str, int, frozenset[str]]] = []
-    for path in sorted(_PART_A.rglob("*.md")):
+    for path in _part_a_docs():
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             used = frozenset(w for w in _WORD.findall(line) if w in vocabulary)
             if len(used) >= _LIST_ARITY:

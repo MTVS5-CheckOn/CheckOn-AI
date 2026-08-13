@@ -57,3 +57,9 @@ local_data/
 .codex-doc-update/
 ppt/
 .codex_tmp/
+# 🔴 백엔드 검증 시드 — 저장소에 두지 않는다 (99 #68 재조정 · 2026-08-14)
+#    정본은 2026-08-13 승우님께 넘긴 전달분이다. 여기 사본을 두면 정본이 둘이 된다.
+#    ⚠ students.csv 는 예외다 — 검사가 읽는 「시나리오 명세」라 추적한다.
+docs/part_a/examples/seed/learning_records.csv
+docs/part_a/examples/seed/detection_assignment_week_summaries.csv
+docs/part_a/examples/seed/checkon_seed.sql
