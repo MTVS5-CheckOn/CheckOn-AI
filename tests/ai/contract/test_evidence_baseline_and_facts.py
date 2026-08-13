@@ -151,3 +151,31 @@ def test_r5_is_empty_on_purpose_and_says_so() -> None:
     source = inspect.getsource(rules_module)
     marker = source[: source.index("def _r5(")]
     assert "R5는 비교값을 비워 둔다" in marker, "R5를 비워 둔 사유가 코드에 없다"
+
+
+def test_the_baseline_rows_never_reach_the_briefing_prompt() -> None:
+    """🔴 **기준선 행은 브리핑 프롬프트에 안 들어간다** — 실측 회귀에서 나온 검사.
+
+    처음 구현에서 `evidence` 전량의 `summary`를 프롬프트 재료로 실었더니 기준선 숫자가
+    새어 나갔다. 두 가지가 깨진다::
+
+        ① LLM 이 비교 기준을 「이번 주 값」으로 오독한다
+        ② 🔴 EXACT 게이트의 `allowed_numbers` 가 넓어져 그 숫자를 아무 자리에나 써도 통과한다
+
+    ⚠ 실제로 `test_r3_prompt_carries_the_authoritative_activity_not_the_learning_events`가
+    잡았는데, **기준선 값(20건)이 그 검사가 막으려던 값과 우연히 같아서** 잡혔다.
+    값이 달랐으면 조용히 지나갔다 ⇒ **역할로 직접 잠근다.**
+    """
+    from ai.composition.briefing_context import _trigger_summaries
+
+    by_rule = _signals_by_rule()
+    signals = by_rule.get(RuleId.R3)
+    assert signals, "R3 신호가 없다 — 이 검사가 눈이 멀었다"
+    for signal in signals:
+        baselines = [i for i in signal.evidence if i.role is EvidenceRole.BASELINE]
+        assert baselines, "기준선 행이 없다 — 재려는 것이 없다"
+        summaries = _trigger_summaries(signal)
+        for item in baselines:
+            assert item.summary not in summaries, (
+                f"기준선 문면이 프롬프트 재료에 실렸다: {item.summary!r}"
+            )

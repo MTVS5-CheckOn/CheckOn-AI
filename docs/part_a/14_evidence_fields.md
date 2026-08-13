@@ -85,6 +85,24 @@ Evidence    role · observed · sample_size · occurred_on    ← "어느 기록
 > ⚠ **백엔드가 *"baseline 행은 항상 온다"* 로 가정하면 R3 외 전 규칙에서 화면이 빈다.**
 > R1의 *"평소 대비"* 는 `Signal.baseline`에서 읽어야 한다.
 
+### 3-4′. 🔴 기준선 행은 **브리핑 프롬프트에 안 들어간다**
+
+`briefing_context`가 근거 문면을 프롬프트 재료로 싣는다. 처음 구현에서 **evidence 전량**을
+실었더니 기준선 숫자가 새어 나갔다. 두 가지가 깨진다:
+
+| | |
+| --- | --- |
+| ① | LLM이 비교 기준을 **「이번 주 값」으로 오독**한다 — 브리핑은 *"지금 이렇다"* 를 전한다 |
+| ② | 🔴 **EXACT 게이트가 느슨해진다** — `allowed_numbers`에 기준선 숫자가 들어가 **아무 자리에나 써도 통과**한다 |
+
+⇒ `_trigger_summaries()`가 **`trigger` 행만** 넘긴다. 기준선 행은 **백엔드 표시용**이고
+(강사가 *"평소 대비"* 를 보는 재료) 브리핑 문장의 재료가 아니다. 비교값 자체는
+`Signal.metric`·`observed`·`baseline`이 든다.
+
+⚠ 이 회귀는 `test_r3_prompt_carries_the_authoritative_activity_not_the_learning_events`가
+잡았는데 — **기준선 값(20건)이 그 검사가 막으려던 값과 우연히 같아서** 잡혔다. 값이 달랐으면
+조용히 지나갔다. ⇒ `test_the_baseline_rows_never_reach_the_briefing_prompt`가 **역할로 직접** 잠근다.
+
 ### 3-4. 개수 상한 — 역할별로 가른다
 
 ```
