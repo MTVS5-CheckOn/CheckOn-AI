@@ -584,11 +584,50 @@ def test_all_paths_share_one_seed() -> None:
 
     종전에는 분류만 seed가 있고 브리핑·초안은 없었다(㊼) — 브리핑은 temperature조차
     미지정이라 어댑터 기본 0.7로 나갔다.
+
+    🔴 **(8/13) `temperature` 단정을 뒤집었다.** 종전 줄은 `params.temperature == 0.0`으로
+    *"세 경로가 같은 결정론 온도를 싣는다"* 를 지키고 있었다. `gpt-5.6-luna`가 기본값 외
+    온도를 400으로 거부해(99 #51) 어댑터가 「값이 없으면 안 보낸다」로 흡수했고, 정본
+    `deterministic_params()`가 더는 온도를 주지 않는다. **재현 축은 seed 하나다** —
+    지키려던 것(경로별로 갈리지 않는다)은 아래 `is None` 단정이 그대로 지킨다.
+    ⚠ 전선까지의 대응은 `tests/ai/llm/test_openai_compat.py`의
+      `test_ledger_params_never_claim_a_value_the_wire_did_not_carry`가 잠근다 —
+      원장에 남는 값과 실제로 나간 값이 갈리면 그쪽이 red다.
     """
     for params in (BRIEF_GEN_PARAMS, COUNSEL_GEN_PARAMS, CLASSIFY_GEN_PARAMS):
         assert params.seed == LLM_SEED
-        assert params.temperature == 0.0
+        assert params.temperature is None
     assert deterministic_params().seed == LLM_SEED
+
+
+def test_classify_is_the_only_capped_path() -> None:
+    """토큰 천장을 거는 경로는 **분류 하나뿐**이다 (2026-08-13 · 99 #54·#55).
+
+    ⚠ **값을 단언하지 않는다** — `== 256` 류는 동어반복이고 브리핑이 128이던 때도
+    통과했을 검사다. 이 사고를 하나도 못 막는다. 무는 것은 **어느 경로가 천장을 거는가**다.
+
+    브리핑·상담·문항생성은 `max_tokens=None`(벤더 키 미전송)이다. 브리핑은 2026-08-13
+    절단 사고로 천장을 **뗐다** — `gpt-5.6-luna` 같은 추론 모델에서 그 값은 출력이 아니라
+    **추론+출력 합계**를 묶어서, 128이 추론에 전부 소진되면 `content=""`가 된다(99 #54).
+
+    🔴 **분류(256)만 남았고 이 모델로 실측되지 않았다**(99 #55). 남은 시한폭탄이 여기
+    이름으로 박혀 있다 — JSON 출력이라 출력 토큰이 브리핑(관측 41)보다 크고 판단이라
+    추론도 더 쓸 수 있어, 256이 128보다 안전하다는 근거가 없다.
+
+    이 집합이 바뀌면 — 특히 **브리핑이 다시 들어오면** — 그 사고를 먼저 읽어라.
+    """
+    capped = {
+        name
+        for name, params in (
+            ("BRIEF", BRIEF_GEN_PARAMS),
+            ("COUNSEL", COUNSEL_GEN_PARAMS),
+            ("CLASSIFY", CLASSIFY_GEN_PARAMS),
+        )
+        if params.max_tokens is not None
+    }
+    assert capped == {"CLASSIFY"}, (
+        f"천장을 거는 경로가 바뀌었다: {sorted(capped)} — 99 #54·#55를 먼저 읽어라"
+    )
 
 
 def test_identical_input_produces_a_byte_identical_request() -> None:

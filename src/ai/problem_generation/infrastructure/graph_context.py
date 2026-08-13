@@ -15,6 +15,7 @@ from ai.contracts.graphrag import (
     GraphContextOperation,
     GraphContextRequest,
 )
+from ai.contracts.taxonomy import AreaTag
 from ai.problem_generation.infrastructure.grammar_norm import (
     GrammarNormCorpus,
     GrammarNormRow,
@@ -40,6 +41,18 @@ class GrammarNormGraphContextService:
     async def resolve_generation_context(
         self, request: GraphContextRequest
     ) -> ContextPack:
+        return self._resolve(request, GraphContextOperation.GENERATE)
+
+    async def resolve_revision_context(self, request: GraphContextRequest) -> ContextPack:
+        if request.current_item_snapshot is None or request.redacted_instruction is None:
+            raise ValueError("문항 수정 컨텍스트에는 현재 문항과 마스킹된 지시가 필요하다")
+        if request.locked_fields.area_tag is not AreaTag.LANGUAGE:
+            raise NotImplementedError("어문규범 수정 컨텍스트는 language만 지원한다")
+        return self._resolve(request, GraphContextOperation.REFINE)
+
+    def _resolve(
+        self, request: GraphContextRequest, operation: GraphContextOperation
+    ) -> ContextPack:
         rows = select_node_rows(self._corpus, request.locked_fields.skill_node_id)
         anchors = tuple(_anchor(row, self._corpus.version) for row in rows)
         trace = {
@@ -56,7 +69,7 @@ class GrammarNormGraphContextService:
         }
         canonical = _canonical(
             {
-                "operation": GraphContextOperation.GENERATE.value,
+                "operation": operation.value,
                 "request": request.model_dump(mode="json"),
                 "trace": trace,
             }
@@ -64,7 +77,7 @@ class GrammarNormGraphContextService:
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         return ContextPack(
             context_pack_id=uuid5(NAMESPACE_URL, f"context:{digest}"),
-            operation=GraphContextOperation.GENERATE,
+            operation=operation,
             tenant_id=request.tenant_id,
             target_source=request.target_source,
             weakness_map_id=request.weakness_map_id,
@@ -78,10 +91,6 @@ class GrammarNormGraphContextService:
             retrieval_trace=trace,
             context_pack_hash=f"sha256:{digest}",
         )
-
-    async def resolve_revision_context(self, request: GraphContextRequest) -> ContextPack:
-        del request
-        raise NotImplementedError("MVP는 문항 수정 근거 조회를 지원하지 않는다")
 
     async def resolve_verification_context(
         self, request: GraphContextRequest

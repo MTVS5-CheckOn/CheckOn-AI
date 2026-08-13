@@ -32,6 +32,7 @@ from first_sql_barrier import (
     barrier_sessionmaker,
     wait_until_parked,
 )
+from pg_hint import pg_unavailable
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -44,9 +45,11 @@ from ai.contracts.problem_generation import (
     EvidenceKind,
     GeneratedItem,
     ItemResult,
+    ItemRevision,
     ProblemFailureReason,
     ProblemItemStatus,
     ReviewReason,
+    RevisionKind,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.problem_generation.domain.identity import problem_item_id
@@ -88,7 +91,7 @@ async def _with_pg(scenario: _Scenario) -> str:
 
 def _run(scenario: _Scenario) -> None:
     if asyncio.run(_with_pg(scenario)) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose -f compose.dev.yml up (99 ⑫)")
+        pytest.skip(pg_unavailable("(99 ⑫)"))
 
 
 async def _make_problem_set(
@@ -162,6 +165,66 @@ def _result(item_id: UUID) -> ItemResult:
         difficulty_band=DifficultyBand.HIGH,
         review_reason=ReviewReason.DIFFICULTY_BAND_MISMATCH,
     )
+
+
+def test_revision_roundtrip_advances_current_number_and_keeps_verified_body() -> None:
+    """통과·차단 턴을 모두 저장하되 현재 본문은 마지막 통과본을 유지한다."""
+
+    tenant = f"t_{uuid.uuid4().hex[:8]}"
+
+    async def scenario(sm: async_sessionmaker[AsyncSession]) -> None:
+        from ai.contracts.gates import BlockedReason
+        from ai.db.repositories.problem_revision_store import PgProblemRevisionStore
+        from ai.db.repositories.problem_store import PgProblemItemStore
+
+        set_id = await _make_problem_set(sm, tenant=tenant)
+        item_store = PgProblemItemStore(sessionmaker=sm, tenant_id=tenant)
+        await item_store.save(
+            set_id=set_id,
+            slot_index=0,
+            result=_result(problem_item_id(set_id, 0)),
+            candidate_ref=f"item-candidate:{set_id}:0:1",
+            item=_item(),
+        )
+        revisions = PgProblemRevisionStore(sessionmaker=sm, tenant_id=tenant)
+        revised = _item().model_copy(update={"stem": "수정 후 검증된 발문"})
+        async with revisions.reserve(
+            set_id=set_id, slot_index=0, base_revision_no=0
+        ) as session:
+            await session.append(
+                ItemRevision(
+                    revision_no=1,
+                    revision_kind=RevisionKind.AI_REFINE,
+                    instruction="발문을 명확하게 바꿔 주세요.",
+                    result_snapshot=revised,
+                    verifications_passed=True,
+                )
+            )
+        async with revisions.reserve(
+            set_id=set_id, slot_index=0, base_revision_no=1
+        ) as session:
+            assert session.current_item == revised
+            await session.append(
+                ItemRevision(
+                    revision_no=2,
+                    revision_kind=RevisionKind.AI_REFINE,
+                    instruction="정답을 둘로 바꿔 주세요.",
+                    verifications_passed=False,
+                    blocked_reason=BlockedReason.ANSWER_INTEGRITY,
+                )
+            )
+
+        assert await item_store.current_revision_no(set_id, 0) == 2
+        history = await revisions.list_revisions(set_id, 0)
+        assert [row.revision_no for row in history] == [1, 2]
+        assert history[0].result_snapshot == revised
+        assert history[1].blocked_reason is BlockedReason.ANSWER_INTEGRITY
+        async with revisions.reserve(
+            set_id=set_id, slot_index=0, base_revision_no=2
+        ) as session:
+            assert session.current_item == revised
+
+    _run(scenario)
 
 
 def test_save_get_roundtrip_keeps_every_axis_the_columns_could_not() -> None:

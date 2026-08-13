@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from typing import Final
 
 import pytest
+from pg_hint import pg_unavailable
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -66,7 +67,7 @@ async def _with_pg(scenario: _Scenario) -> str:
 
 def _run(scenario: _Scenario) -> None:
     if asyncio.run(_with_pg(scenario)) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose -f compose.dev.yml up (99 ⑫)")
+        pytest.skip(pg_unavailable("(99 ⑫)"))
 
 
 def _record(*, tenant_id: str = "t-a") -> CounselPackResultRecord:

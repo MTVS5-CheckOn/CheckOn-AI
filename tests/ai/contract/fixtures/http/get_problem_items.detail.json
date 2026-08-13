@@ -1,0 +1,92 @@
+{
+  "data": {
+    "set_id": "00000000-0000-4000-8000-000000000050",
+    "slot_index": 0,
+    "item_id": "00000000-0000-4000-8000-000000000010",
+    "status": "needs_review",
+    "current_revision_no": 0,
+    "available_actions": [
+      "refine"
+    ],
+    "item": {
+      "area_tag": "language",
+      "type_tag": "concept",
+      "item_format": "mcq",
+      "skill_node_id": "grammar.sentence-structure",
+      "stem": "문장 성분의 개념과 종류를 설명한 것으로 옳은 것을 고르시오.",
+      "choices": [
+        {
+          "no": 1,
+          "text": "문장 구조 선택지 1",
+          "why_wrong": null
+        },
+        {
+          "no": 2,
+          "text": "문장 구조 선택지 2",
+          "why_wrong": "2번은 문법 근거와 다르다."
+        },
+        {
+          "no": 3,
+          "text": "문장 구조 선택지 3",
+          "why_wrong": "3번은 문법 근거와 다르다."
+        },
+        {
+          "no": 4,
+          "text": "문장 구조 선택지 4",
+          "why_wrong": "4번은 문법 근거와 다르다."
+        },
+        {
+          "no": 5,
+          "text": "문장 구조 선택지 5",
+          "why_wrong": "5번은 문법 근거와 다르다."
+        }
+      ],
+      "answer": {
+        "correct_no": 1
+      },
+      "rationale": "승인된 문법 근거에 따르면 1번이 옳다.",
+      "evidence": [
+        {
+          "kind": "grammar_rule",
+          "ref": "grammar:rule-1",
+          "quote": null
+        }
+      ]
+    },
+    "cross_solve": {
+      "chosen": 1,
+      "reasoning": "문법 근거를 독립적으로 확인했다.",
+      "confidence": 0.95,
+      "multiple_answers_possible": false,
+      "target_skill_node_id": "grammar.sentence-structure",
+      "measured_skill_node_id": "grammar.sentence-structure",
+      "aligned": true,
+      "alignment_confidence": 0.95,
+      "alignment_reason": "목표 문법 노드와 일치한다."
+    },
+    "verification": {
+      "rule_validation": "passed",
+      "blind_cross_solve": "passed",
+      "release_decision": "needs_review"
+    },
+    "revisions": [],
+    "review_reason": "manual_target_first",
+    "failure_reason": null
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "v4",
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": "v1",
+      "verify_config": "verify-config.v1",
+      "difficulty_calib": null
+    }
+  }
+}

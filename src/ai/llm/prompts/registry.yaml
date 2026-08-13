@@ -10,23 +10,28 @@ prompts:
     role: generator
     template: problem_generation/source_material.txt
     response_schema_name: SourceMaterialDraft
-  # v3(2026-08-09) — 영역별 출제 규격 주입 + 발문 정형·오답 설계·부정 발문·난이도 규율.
+  # v4(2026-08-12) — GeneratedItem 계약 유도 JSON Schema + 필드별 재시도 사유 환류.
   # 🔴 프롬프트 문면이 바뀌면 버전이 바뀐다(불변식 8) — 같은 버전으로 다른 문면을 보내면
   # AI_RUN의 prompt_version이 재현 근거가 못 된다.
   - prompt_id: pg.items.v1
-    version: v3
+    version: v4
     role: generator
     template: problem_generation/items.txt
     response_schema_name: GeneratedItem
   # 🔴 **생성자와 같은 버전을 쓴다 — 짝이다.** `ProblemGenerationWorkflow`가
   # `generator.prompt_version != cross_solver.prompt_version`을 기동에서 거부한다.
   # 교차 풀이는 **그 생성물**을 검증하므로 한쪽 문면만 바뀌면 "무엇을 검증한 결과인가"가
-  # 원장에서 갈린다(불변식 8). 문면 무변경이어도 짝을 따라 v3로 올린다.
+  # 원장에서 갈린다(불변식 8). 문면 무변경이어도 짝을 따라 v4로 올린다.
   - prompt_id: pg.cross_solve.v1
-    version: v3
+    version: v4
     role: verifier
     template: problem_generation/cross_solve.txt
     response_schema_name: SolveResult
+  - prompt_id: pg.refine.v1
+    version: v4
+    role: generator
+    template: problem_generation/refine.txt
+    response_schema_name: GeneratedItem
   # 문의 분류(ⓑ) — 04 §3.5 · part_a/01 §4-ⓑ.
   # role=classifier는 `contracts/llm.py`의 `ModelRole.CLASSIFIER`("문의 분류·태깅 제안")다 —
   # 초기 커밋부터 있던 값이다. 종전 generator였고 "CLASSIFIER가 없어서"라는 주석이 붙어

@@ -15,6 +15,15 @@ from ai.contracts.problem_generation import (
 )
 
 
+class SchemaValidationIssue(BaseModel):
+    """LLM에 되돌려도 되는 Pydantic 검증 실패의 최소 표현."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    path: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
 class RetryContext(BaseModel):
     """다음 생성 시도에 전달하는 비민감 실패 요약."""
 
@@ -22,6 +31,7 @@ class RetryContext(BaseModel):
 
     attempt_no: int = Field(ge=1, le=3)
     failed_checks: tuple[str, ...] = ()
+    schema_issues: tuple[SchemaValidationIssue, ...] = ()
     previous_stem_hash: str | None = Field(
         default=None,
         pattern=r"^sha256:[0-9a-f]{64}$",
@@ -63,16 +73,20 @@ class StoredProblemItem(BaseModel):
             ProblemItemStatus.VERIFIED,
             ProblemItemStatus.NEEDS_REVIEW,
         }
-        if self.result.item_id != self.item_id:
+        if (
+            self.result.status is not ProblemItemStatus.DROPPED
+            and self.result.item_id != self.item_id
+        ):
             raise ValueError("저장 문항 ID와 ItemResult.item_id가 다르다")
         if self.result.status in verified_statuses and (
             self.item is None or self.candidate_ref is None
         ):
             raise ValueError("검증 완료 최종본에는 item과 candidate_ref가 필요하다")
-        if self.result.status not in verified_statuses | {
-            ProblemItemStatus.VERIFICATION_UNAVAILABLE
-        }:
-            raise ValueError("최종본 저장소에는 dropped 상태를 저장하지 않는다")
+        if self.result.status is ProblemItemStatus.DROPPED:
+            if self.result.item_id is not None:
+                raise ValueError("dropped 슬롯의 도메인 item_id는 비어 있어야 한다")
+            if self.item is not None or self.candidate_ref is not None:
+                raise ValueError("dropped 슬롯에는 본문과 후보 참조를 저장하지 않는다")
         return self
 
     @property

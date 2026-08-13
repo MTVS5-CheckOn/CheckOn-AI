@@ -24,6 +24,7 @@ from ai.contracts.graphrag import (
     GraphContextService,
 )
 from ai.contracts.llm import (
+    FieldMissing,
     LlmError,
     ParseFailed,
     RedactionBlocked,
@@ -53,6 +54,7 @@ from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.problem_generation.application.generator import (
     ProblemGenerator,
     build_candidate_snapshot,
+    schema_issues_from_field_missing,
 )
 from ai.problem_generation.application.literature_selector import (
     LiteratureSelectionUnavailable,
@@ -67,7 +69,11 @@ from ai.problem_generation.application.passage_generator import (
     attach_passage_draft,
     attach_source_material_draft,
 )
-from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
+from ai.problem_generation.application.ports import (
+    CandidateStore,
+    ProblemItemStore,
+    ProblemSetStore,
+)
 from ai.problem_generation.domain.cross_solve import validate_cross_solve
 from ai.problem_generation.domain.difficulty import (
     classify_t1_difficulty,
@@ -83,6 +89,7 @@ from ai.problem_generation.domain.identity import (
 from ai.problem_generation.domain.models import (
     CandidateSnapshot,
     RetryContext,
+    SchemaValidationIssue,
     TargetPlan,
 )
 from ai.problem_generation.domain.policy import (
@@ -180,6 +187,7 @@ class GraphContextReferenceInsufficient(GraphContextError):
 @dataclass(frozen=True, slots=True)
 class _AttemptFeedback:
     failed_checks: tuple[str, ...]
+    schema_issues: tuple[SchemaValidationIssue, ...] = ()
     previous_stem_hash: str | None = None
 
 
@@ -198,6 +206,7 @@ class ProblemGenerationWorkflow:
         cross_solver: BlindCrossSolver,
         candidate_store: CandidateStore,
         item_store: ProblemItemStore,
+        set_store: ProblemSetStore,
         checkpointer: BaseCheckpointSaver[Any],
         verify_config: VerifyConfig,
         banned_topics: BannedTopicsConfig,
@@ -211,6 +220,7 @@ class ProblemGenerationWorkflow:
         self._cross_solver = cross_solver
         self._candidate_store = candidate_store
         self._item_store = item_store
+        self._set_store = set_store
         self._checkpointer = checkpointer
         self._verify_config = verify_config
         self._rule_validator = RuleValidator(
@@ -260,6 +270,12 @@ class ProblemGenerationWorkflow:
             execution_context.execution_id,
             f"{request.tenant_id}:{request.request_id}:{request.idempotency_key}",
         )
+        await self._set_store.create(
+            set_id=set_id,
+            request=request,
+            execution_context=execution_context,
+            diagnostic_purpose=any(target.diagnostic_purpose for target in prepared),
+        )
         initial = ProblemGenerationState(
             request_ref=f"problem-request:{request.request_id}",
             request_hash=request_hash(request),
@@ -299,7 +315,9 @@ class ProblemGenerationWorkflow:
                 status_reason="요청 조건에 맞는 저작권 만료 문학 원문을 선택할 수 없다"
             )
         final_state = ProblemGenerationState.model_validate(result)
-        return final_state.to_result()
+        outcome = final_state.to_result()
+        await self._set_store.finalize(outcome)
+        return outcome
 
     def build_graph(
         self,
@@ -456,7 +474,12 @@ class ProblemGenerationWorkflow:
                 )
             except LlmError as error:
                 feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
-                    failed_checks=(f"generator:{type(error).__name__}",)
+                    failed_checks=(f"generator:{type(error).__name__}",),
+                    schema_issues=(
+                        schema_issues_from_field_missing(error)
+                        if isinstance(error, FieldMissing)
+                        else ()
+                    ),
                 )
                 if state.fallback_ref is not None:
                     return await self._restore_fallback(state)
@@ -806,6 +829,7 @@ class ProblemGenerationWorkflow:
         return RetryContext(
             attempt_no=state.item_attempt,
             failed_checks=previous.failed_checks if previous is not None else (),
+            schema_issues=previous.schema_issues if previous is not None else (),
             previous_stem_hash=(
                 previous.previous_stem_hash if previous is not None else None
             ),
@@ -823,10 +847,15 @@ class ProblemGenerationWorkflow:
         if state.fallback_ref is not None:
             return await self._restore_fallback(state)
         if not result.verification_available:
+            detail = (
+                "R-1 어휘 대조 구현 안 됨 — LexiconLookup 미배선"
+                if "R-1:어휘_대조_미구현" in result.failed_checks
+                else "R-1 기준 자료를 검증할 수 없음"
+            )
             return await self._finalize_verification_unavailable(
                 state,
                 item=item,
-                detail="R-1 기준 자료를 검증할 수 없음",
+                detail=detail,
                 failure_reason=ProblemFailureReason.SOURCE_UNVERIFIED,
             )
         if result.banned_topic:
@@ -1043,15 +1072,20 @@ class ProblemGenerationWorkflow:
         reason: ProblemFailureReason,
         detail: str,
     ) -> dict[str, object]:
-        return self._complete_slot(
-            state,
-            ItemResult(
-                status=ProblemItemStatus.DROPPED,
-                attempt_no=state.item_attempt,
-                failure_reason=reason,
-                failure_detail=detail,
-            ),
+        item_result = ItemResult(
+            status=ProblemItemStatus.DROPPED,
+            attempt_no=state.item_attempt,
+            failure_reason=reason,
+            failure_detail=detail,
         )
+        await self._item_store.save(
+            set_id=state.set_id,
+            slot_index=state.cursor,
+            result=item_result,
+            candidate_ref=None,
+            item=None,
+        )
+        return self._complete_slot(state, item_result)
 
     def _complete_slot(
         self,

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from math import isclose
+from typing import Final
 
 from ai.contracts.detection import (
     RULE_SIGNAL_MAP,
@@ -24,6 +26,7 @@ from ai.detection.evidence import (
     MAX_ABSENCE_LOOKBACK_WEEKS,
     SKIP_AUTHORITATIVE_EVIDENCE_MISSING,
     StudentEvidence,
+    resolve_weekly_activity_window,
 )
 from ai.detection.features import StudentFeatures, WeekFeatures
 from ai.detection.segments import Segment, is_rule_active, threshold_multiplier
@@ -50,6 +53,14 @@ class RuleSkip:
 
     rule_id: RuleId
     reason: str
+
+
+#: 🔴 **포함 경계 판정에만 쓰는 허용오차**(79-R §2). 이진 부동소수점이 `0.05`·`1.5`를
+#: 정확히 표현하지 못해 **계약이 허용하는 경계가 배제되는** 것을 막는다.
+#: ⚠ **실제 임계 간격보다 훨씬 작다** — R4의 두 임계는 `5.0`·`1.5`이고 이 값은 `1e-9`라
+#: 「경계를 넓히는 것」이 아니라 「같은 값을 같다고 보는 것」이다.
+#: ⚠ **여러 함수에 복제하지 않는다** — 반례가 나온 R4의 두 비교만 쓴다(§4 감사 결과).
+_FLOAT_ABS_TOL: Final = 1e-9
 
 
 def _clamp01(value: float) -> float:
@@ -146,7 +157,19 @@ def _r1(
             if week.accuracy is None:
                 return None, None
             drop_pp = (baseline.accuracy - week.accuracy) * 100
-        if drop_pp < drop_threshold:
+        # 🔴 **포함 경계를 float 오차가 배제하지 못하게 한다**(79-R2 · R4와 같은 결함).
+        #    계약은 *"하락폭이 임계값과 같으면 발화"* 인데, **수학적으로 같은 15.0pp가**
+        #    정수 조합에 따라 갈렸다(2026-08-12 실측 · 반례 223건):
+        #
+        #        base 18/20 → week 15/20   15.0              → 발화
+        #        base 14/20 → week 11/20   14.999999999999991 → 🔴 미발화
+        #        base 12/20 → week  9/20   14.999999999999996 → 🔴 미발화
+        #
+        #    ⚠ **R4가 쓰는 `_FLOAT_ABS_TOL` 정본을 그대로 재사용한다** — R1 전용 epsilon을
+        #      새로 두면 같은 판정이 두 값에 살고, 하나만 고쳐지는 날 규칙끼리 갈린다.
+        if drop_pp < drop_threshold and not isclose(
+            drop_pp, drop_threshold, rel_tol=0.0, abs_tol=_FLOAT_ABS_TOL
+        ):
             return None, None
         drops.append(drop_pp)
     score = _normalize(max(drops), p.drop_pp, p.saturation_drop_pp)
@@ -233,33 +256,24 @@ def _r3(
     p = config.r3
     if not is_rule_active(RuleId.R3, segment):
         return None, None
-    analysis_week = evidence.analysis_week
-    if analysis_week is None:
-        return None, RuleSkip(
-            rule_id=RuleId.R3, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
-        )
-    activity = evidence.weekly_activity.get(analysis_week)
     #: 🔴 **기준창은 설정이 정본이다**(`config.baseline_window_weeks`) — 종전에는 이 모듈에
     #: `R3_BASELINE_WEEKS = 8` 상수를 따로 뒀다. 그러면 **값이 두 곳에 살고**, 설정을 2주로
     #: 낮춘 테넌트·테스트에서 **여전히 8주를 요구해** 영영 skip된다(값이 바뀌면 코드 diff가
     #: 생기면 위치가 틀린 것 · 03 §1).
-    baseline_weeks = config.baseline_window_weeks
-    prior = [
-        evidence.weekly_activity.get(analysis_week - timedelta(weeks=back))
-        for back in range(1, baseline_weeks + 1)
-    ]
-    if activity is None or any(row is None for row in prior):
+    #: 🔴 **해소는 `resolve_weekly_activity_window()` 하나가 한다** — 브리핑 facts도 같은
+    #:   함수를 쓴다. 판정과 문면이 각자 계산하면 갈린다(2026-08-13 실측 · 이 안건의 원인).
+    window = resolve_weekly_activity_window(
+        evidence, baseline_window_weeks=config.baseline_window_weeks
+    )
+    if window is None:
         return None, RuleSkip(
             rule_id=RuleId.R3, reason=SKIP_AUTHORITATIVE_EVIDENCE_MISSING
         )
-    baseline_volume = sum(row.activity_count for row in prior if row is not None) / len(
-        prior
-    )
-    if baseline_volume < p.min_baseline_events:
+    if window.baseline_volume < p.min_baseline_events:
         return None, None
     mult = threshold_multiplier(RuleId.R3, segment, config.segments)
     ratio_threshold = p.volume_ratio * mult
-    actual_ratio = activity.activity_count / baseline_volume
+    actual_ratio = window.current.activity_count / window.baseline_volume
     if actual_ratio >= ratio_threshold:
         return None, None
     # deficit 방향: threshold에서 0, 완전 공백(0)에서 1
@@ -269,7 +283,8 @@ def _r3(
             rule_id=RuleId.R3,
             signal_type=RULE_SIGNAL_MAP[RuleId.R3],
             score=score,
-            evidence_weeks=(analysis_week,),
+            #: ⚠ 판정에 쓴 그 레코드의 주다 — `analysis_week`과 같고, 인용도 여기서 나온다.
+            evidence_weeks=(window.current.week_start,),
         ),
         None,
     )
@@ -295,10 +310,25 @@ def _r4(
     ratios: list[float] = []
     for week in assess:
         assert week.accuracy is not None and week.norm_time is not None
-        if abs(week.accuracy - baseline.accuracy) * 100 > p.acc_stable_band_pp:
+        # 🔴 **포함 경계를 float 오차가 배제하지 못하게 한다**(79-R §2 · 2026-08-12 실측).
+        #    계약은 *"정답률 차이가 정확히 5.0pp면 허용"* · *"시간 배율이 정확히 1.5배면
+        #    발화"* 인데, 도메인 입력이 정수여도 **계산 표면은 float**다:
+        #
+        #        80/100 → 75/100   diff_pp = 5.000000000000004  > 5.0  → 초과로 오판
+        #        200/1000 → 300/1000  ratio = 1.4999999999999998 < 1.5 → 미달로 오판
+        #
+        #    ⚠ threshold를 반올림하거나 `round(v, 2)`로 비교하지 않는다 — 그러면 **경계가
+        #      아니라 정밀도가 계약이 된다**. 설정 전체를 `Decimal`로 바꾸지도 않는다
+        #      (계약 표면이 넓어지고 score 계산까지 끌려온다).
+        accuracy_diff_pp = abs(week.accuracy - baseline.accuracy) * 100
+        if accuracy_diff_pp > p.acc_stable_band_pp and not isclose(
+            accuracy_diff_pp, p.acc_stable_band_pp, rel_tol=0.0, abs_tol=_FLOAT_ABS_TOL
+        ):
             return None, None  # 정답률 유지 조건 위반
         time_ratio = week.norm_time / baseline.norm_time
-        if time_ratio < time_threshold:
+        if time_ratio < time_threshold and not isclose(
+            time_ratio, time_threshold, rel_tol=0.0, abs_tol=_FLOAT_ABS_TOL
+        ):
             return None, None
         ratios.append(time_ratio)
     score = _normalize(max(ratios), p.time_ratio, p.saturation_time_ratio)

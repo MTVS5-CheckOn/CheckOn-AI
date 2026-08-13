@@ -50,7 +50,7 @@
 | --- | --- |
 | Base URL | `http://checkon-ai.internal/v1` — 내부 전용, 외부 미노출 `[Open-5]` |
 | 포맷 | JSON (UTF-8) · 네이밍 `snake_case` `[Open-6]` |
-| 필수 헤더 | `X-Tenant-Id`(강사 alias) · `X-Request-Id`(상호 추적) · 쓰기 요청은 `Idempotency-Key` |
+| 필수 헤더 | 도메인 API는 `X-Tenant-Id`(강사 alias) · `X-Request-Id`(상호 추적), 쓰기 요청은 `Idempotency-Key`. 운영 프로브는 §3.10의 예외 규약을 따른다 |
 | 시간 | ISO-8601 + 오프셋 (`2026-07-14T02:00:00+09:00`) |
 
 ### 2.2 응답 envelope `[제안]`
@@ -262,7 +262,7 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 | `POST /imports` → `GET` → `/confirm` | 202 | 타사 엑셀 업로드 | 매핑 미리보기 → 확정 후 표준 스키마 산출 |
 | `POST /counsel/drafts` → `GET` → `/refine` | 202 | **문의 도착 즉시** | 초안 1건 자동 생성 · 근거 인용 ≥1 · 다듬기(동기) — §3.9 |
 | `POST /problems` → `GET /problems/{job_id}` | 202 | 강사가 출제를 요청할 때 | 세트 생성 잡 → 문항 **요약** 목록(본문·evidence 아님) — §3.11. 🔴 **v1은 `area_tag=language` + `passage` 없음만** · `type_tags`에 `apply` 금지 |
-| `GET /health` · `GET /meta/versions` | 동기 | 상시 | 헬스 · 버전 |
+| `GET /health` · `GET /ready` · `GET /meta/versions` | 동기 | 상시 | 프로세스 liveness · DB readiness · capability별 선언 버전 — §3.10 |
 
 ---
 
@@ -843,7 +843,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 | `area_tag`가 `language`가 아니다 (독서·문학·화법·작문·매체) | 400 `INVALID_SCHEMA` + `detail.reason=source_procurement_not_implemented` | **같다 — 구현됨** ✅ ⚠ **다만 잡을 만든 뒤에 난다.** 문 앞 검사가 없고(`enqueue.py`·`routers/problem.py`에 `area_tag`·`passage` 참조 **0건**) 판정이 `workflow.py:541`, 즉 **잡 실행 안**에서 난다 ⇒ **`job_id`가 응답에 없는 실패 잡이 남는다**(원장에 `failed` 1건이 생기고 **조회할 수 없다**). 🔴 **아래 `apply` 행과 같은 형태다** — 그쪽은 500이고 여기는 400인 것이 다를 뿐, **고아 잡이 남는 것은 같다**(99 #01) |
 | `passage`가 있다 | 위와 같다 | **같다 — 구현됨** ✅ ⚠ **다만 잡을 만든 뒤에 난다.** 문 앞 검사가 없고(`enqueue.py`·`routers/problem.py`에 `area_tag`·`passage` 참조 **0건**) 판정이 `workflow.py:541`, 즉 **잡 실행 안**에서 난다 ⇒ **`job_id`가 응답에 없는 실패 잡이 남는다**(원장에 `failed` 1건이 생기고 **조회할 수 없다**). 🔴 **아래 `apply` 행과 같은 형태다** — 그쪽은 500이고 여기는 400인 것이 다를 뿐, **고아 잡이 남는 것은 같다**(99 #01) |
 | `type_tags`에 **`apply`** | 400 `type_tag_not_supported` | **같다 — 구현됨** ✅ (8/9 · B 구현). 🔴 **이 경로는 잡을 만들지 않는다** — 거절이 `enqueue.py::reject_unsupported_type_tags()`, 즉 요청 레코드·`WorkerJob` 생성보다 **앞**이다. ⇒ **고아 잡이 남지 않는다**(실측 8/9: HTTP **400** · `잡 0건` · `AI_RUN 0건`). ⚠ **위 두 행과 갈리는 지점이 여기다** — 그쪽은 `workflow.py`, 즉 **잡 실행 안**에서 거절해 실패 잡이 남는다(99 #01 · B의 `part_b/09` §2-19.4 「잡을 만드는가」 표와 **같은 분할**). `detail` = `{reason: "type_tag_not_supported", type_tags: [...], supported: ["concept","critic","fact","infer"]}` |
-| 프로세스 재시작 후 이전 `job_id` 조회 | — | **`STORE_BACKEND=memory`: 404 `NOT_FOUND`.** 잡 원장·요청·결과·문항·라우터 조회 캐시가 프로세스 메모리라 모두 사라진다. **`STORE_BACKEND=pg`: 현재 API도 404 `NOT_FOUND`.** 다만 이유가 다르다. `AGENT_RUN` 잡 원장·멱등·`AI_RUN`과 `PgProblemItemStore`의 문항 스냅숏은 PG에 남고 직접 왕복된다. 그러나 `problem.py`의 `_views`와 `assembly.py`의 요청·`ProblemGenerationOutcome` 결과 저장소는 아직 인메모리라, 재시작한 GET은 캐시 관문에서 404다. 즉 **문항 스냅숏 영속 ≠ 이전 job GET 복구**다. 근거: `problem_store.py`·`test_problem_store_pg_roundtrip.py`(PG 문항 저장·PR #197의 최초 저장 직렬화), `problem.py`·`assembly.py`(현재 조회 경로). ⚠ PR #182는 `COUNSEL_DRAFT_VIEW` 변경이므로 PG 재시작 조회의 근거로 쓰지 않는다. `store_backend` 기본값은 이 변경에서 손대지 않는다. |
+| 프로세스 재시작 후 이전 `job_id`·`set_id` 조회 | — | **`STORE_BACKEND=memory`: 404 `NOT_FOUND`.** 잡 원장·요청·결과·문항·라우터 조회 캐시가 프로세스 메모리라 모두 사라진다. **`STORE_BACKEND=pg`: 종단에 도달한 세트는 200으로 복구한다.** `AI_RUN → problem_set → problem_item` 순서로 부모와 슬롯 스냅숏을 저장하고, `_views` 캐시가 없으면 `problem_set_store.py`가 요청·결과·버전 세트를 재조립한다. 따라서 이전 `job_id` GET과 `set_id`의 items 목록·상세 GET이 프로세스 캐시에 기대지 않는다. dropped 슬롯도 본문 없는 `problem_item.snapshot`으로 남아 `dropped_reasons`가 복구된다. **단, 재시작 시점에 queued·running이던 잡의 실행 재개는 v1 범위 밖이다.** `ProblemRequest`가 아직 인메모리라 워커가 원 요청을 다시 읽을 수 없으며, “종단 결과 조회 가능”을 “미완료 실행 재개 가능”으로 해석하면 안 된다. 근거: `problem_set_store.py`·`problem_store.py`·`problem.py`·`workflow.py` 및 `test_problem_pg_persistence.py`. `store_backend` 기본값은 이 변경에서 바꾸지 않는다. |
 
 > **배경 드레인 근거(99 #21 해소):** `api/routers/problem.py`가 router startup/shutdown에
 > 드레인을 붙이고, `problem_generation/application/drain.py`가 사이클별 잡 수 상한·유휴 대기·
@@ -863,15 +863,17 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 | 09 절 | 무엇 | 왜 04에 없나 |
 | --- | --- | --- |
-| §2-19.5 | `GET /v1/problems/{set_id}/items` — Step3 검토 목록 | `[v1 스펙 확정 · 구현 후속]` — 라우터에 없다 |
-| §2-19.6 | `GET …/items/{slot_index}` — 문항 상세 | 같음. **문항 본문·evidence는 이 표면으로만 나간다** |
-| §2-19.7 | `POST …/revisions` — 수정·롤백 | 같음 |
+| §2-19.5 | `GET /v1/problems/{set_id}/items` — Step3 검토 목록 | **구현됨** — 상태 카운터·슬롯·현재 리비전 번호 반환 (`problem.py`, 2026-08-12) |
+| §2-19.6 | `GET …/items/{slot_index}` — 문항 상세 | **구현됨** — 현재 검증본·evidence·검증 상태·리비전 이력 반환 (`problem.py`, 2026-08-12) |
+| §2-19.7 | `POST …/revisions` — 수정·롤백 | **부분 구현** — `language`의 `ai_refine`만 200 동기 처리. `teacher_direct`·`rollback`·다른 4영역 수정은 미구현 (`problem.py`·`refiner.py`, 2026-08-12) |
 | §2-19.8 | 교체·삭제 | 같음 + `[경로 제안 · BE 합의 대기]` |
 | §2-19.9 | evidence `quote=null`과 "출처 확인됨" 배지 | 🔴 **구현된 표면에 evidence가 없다** — `ItemResult`는 `item_id`·`status`·난이도 등 **요약 9필드뿐**이고 `evidence`를 싣지 않는다(실측 8/7). evidence는 `GeneratedItem`에 있고 §2-19.6으로만 나간다 ⇒ 배지 규약은 **지금 도달 불가**다 |
 | §2-19.10 | 완료 알림 최소 payload | `[구현 후속]` + Kafka 토픽 미확정(§8) |
 | §2-19.11 | 약점 진단(Step1) 응답 요구 | `[구현 후속]` |
 
-🔴 **BE는 3~6번 표면이 현행 라우터에 존재한다고 해석하면 안 된다.** 09가 그것을 적어 둔 이유는 **화면 계약을 먼저 맞추기 위해서**이지 호출 가능해서가 아니다.
+🔴 **BE는 위 표의 구현 상태를 종류별로 따라야 한다.** Step3 목록·상세는 호출 가능하고,
+리비전은 `language`의 `ai_refine`만 가능하다. 교체·삭제·직접 수정·롤백과 다른 4영역 수정은
+아직 화면 계약일 뿐 호출 가능하다고 해석하면 안 된다.
 
 #### 🔴 `type_tag` 화면 라벨 — AI 근거와 화면 표시는 **소유가 다르다**
 
@@ -892,9 +894,88 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 ⚠ **`_TYPE_KO`의 짧은 형은 유지한다** — `f"{area}·{type_}"` 조립에서 `"적용·창의"` 를 그대로 쓰면 `"문학·적용·창의"` 가 되어 **구분자가 모호**해진다(기존 넷이 전부 2글자인 것도 같은 이유로 보인다).
 ⚠ **짧은 형이 프롬프트에 실제로 더 나은지는 미실측**이다 — 골든셋(`part_a/08`) 축으로 등재만 해 둔다.
 
-### 3.10 운영
+### 3.10 운영 `[확정 · 구현 대기]`
 
-`GET /v1/health` — liveness/readiness · `GET /v1/meta/versions` — 엔진·임계값·프롬프트·계약 버전(백엔드가 브리핑 메타에 표시 가능).
+> **현재 구현 상태(2026-08-12):** 아래 세 라우트는 아직 등록되지 않아 Starlette 기본
+> `404 {"detail":"Not Found"}`를 반환한다. `/openapi.json`은 네트워크 접근 확인에는 쓸 수
+> 있지만 liveness·readiness 판정이 아니다. 구현 전까지 이 절의 응답을 실제 동작으로 보고
+> 연동하면 안 된다.
+
+운영 API는 도메인 실행이 아니므로 `X-Tenant-Id`와 `Idempotency-Key`를 요구하지 않는다.
+`X-Request-Id`가 있으면 응답에 돌려주되, 없다는 이유로 운영 프로브를 거부하지 않는다.
+세 경로 모두 공통 envelope를 사용하고 `meta.execution_id=null`이다.
+
+#### 3.10.1 `GET /v1/health` — liveness
+
+프로세스와 ASGI 라우터가 응답 가능한지만 확인한다. DB·체크포인터·LLM·외부 API를 호출하지
+않으며, 핸들러에 도달하면 `200`이다. DB 장애를 liveness 실패로 올려 살아 있는 프로세스를
+반복 재시작하게 만들지 않는다.
+
+```json
+{
+  "data": { "status": "alive" },
+  "error": null,
+  "meta": { "execution_id": null, "versions": { "...": "ops_versions" } }
+}
+```
+
+#### 3.10.2 `GET /v1/ready` — DB readiness
+
+주 DB에 제한시간이 있는 경량 질의를 수행한다. 체크포인터가 별도 DB URL을 쓰면 그 연결도
+확인한다. migration·테이블 생성·실 LLM·외부 API 호출은 하지 않는다.
+
+- 전부 준비됨: `200` + `data.status="ready"`.
+- 하나라도 미준비·제한시간 초과: `503 SERVICE_NOT_READY`.
+- 실패 `detail`에는 `unavailable_components`의 논리 이름만 싣는다. DB URL·계정·SQL·드라이버
+  예외 원문은 응답하지 않는다.
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "SERVICE_NOT_READY",
+    "message": "서비스 준비가 완료되지 않았습니다",
+    "detail": { "unavailable_components": ["database"] }
+  },
+  "meta": { "execution_id": null, "versions": { "...": "ops_versions" } }
+}
+```
+
+`503 LLM_UPSTREAM_DOWN`은 LLM 벤더 장애 전용이므로 readiness에 재사용하지 않는다.
+`SERVICE_NOT_READY`의 공용 오류 사전 편입과 표시 문구는 운영 라우터 구현 PR에서 함께
+동기화한다.
+
+#### 3.10.3 `GET /v1/meta/versions` — capability별 선언 버전
+
+버전은 단일 전역값으로 합치지 않는다. 각 capability의 기존 버전 팩토리가 내는
+`VersionSet`을 `data.capabilities` 아래에 따로 싣는다. 서로 다른 engine·prompt·threshold를
+한 객체로 합치면 실제로 존재하지 않는 실행 조합이 되기 때문이다.
+
+```json
+{
+  "data": {
+    "app_version": "0.1.0",
+    "capabilities": {
+      "detection": { "...": "detection_versions()" },
+      "classification": { "...": "classify_versions()" },
+      "counsel": { "...": "counsel_versions()" },
+      "imports": { "...": "import_versions()" },
+      "problem_generation": { "...": "problem_failure_versions()" }
+    }
+  },
+  "error": null,
+  "meta": { "execution_id": null, "versions": { "...": "ops_versions" } }
+}
+```
+
+- ops 라우터에 기존 버전 문자열을 복제하지 않고 각 팩토리 결과를 사용한다.
+- 구현돼 버전 팩토리가 등록된 capability만 싣는다. 없는 축을 임의 값으로 채우지 않는다.
+- `data.capabilities.*`는 조회 대상의 버전이고, 최상위 `meta.versions`는 이 운영 API 자체의
+  버전이다.
+- DB·LLM·외부 API를 호출하지 않는 정적 선언 조회다.
+
+운영 라우터는 `/v1/health`·`/v1/ready`·`/v1/meta`의 좁은 version scope를 각각 등록한다.
+`/v1` 전체를 운영 scope로 잡아 다른 capability의 실패 응답을 가로채면 안 된다.
 
 ---
 
@@ -1001,6 +1082,7 @@ canonical_json = 키 정렬 · 공백 제거 · UTF-8. **동일 구현 검증용
 | `assignment_window` + `weekly_activity` | `sha256:42bf93a71cdaecc0b3d6e4348ba8eddaf0f556894a81869285fade630c4e265d` |
 | `enrollment_transition` | `sha256:103fd498b6bc7e09f0bc981acf8cde9a839981b81e398761d37af1a5a1ffb732` |
 
+- 🔴 **`passage_ref`는 해시 대상이 아니다** — 백엔드 요청 계약(`AiDetectionRequest.LearningEventSnapshot`)에 **없는 AI 전용 필드**라, 넣으면 `learning_events`가 있는 모든 실요청에서 Java와 값이 갈린다(2026-08-13 대조 · 99 #50). ⚠ 위 벡터 3종은 `learning_events`가 비어 있어 **값이 바뀌지 않는다**.
 - `source_table`은 **kind마다 값이 하나**다(`assignment_window`→`assignment_week_summary` · `weekly_activity`→`student_week_activity` · `enrollment_transition`→`student_status_history`). ⚠ **JSON 타입은 문자열 그대로** — 허용값만 닫았다(BE DTO 무변경). 교차 조합은 **400**.
 - `at` = 집계는 `week_start`, 상태 전환은 `occurred_at`. 배열 **입력 순서가 달라도 같은 해시**.
 - 값 하나가 바뀌면 해시가 달라진다 — **같은 멱등키에 근거만 다른 요청은 409 `IDEMPOTENCY_CONFLICT`**.

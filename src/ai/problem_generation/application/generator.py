@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.graphrag import ContextPack
 from ai.contracts.llm import (
@@ -29,11 +31,63 @@ from ai.llm.gateway import LlmGateway
 from ai.llm.prompts.loader import LoadedPromptTemplate, load_prompt_template
 from ai.llm.structured import parse
 from ai.problem_generation.domain.identity import canonical_json, sha256_hex
-from ai.problem_generation.domain.models import CandidateSnapshot, RetryContext
+from ai.problem_generation.domain.models import (
+    CandidateSnapshot,
+    RetryContext,
+    SchemaValidationIssue,
+)
 from ai.problem_generation.domain.policy import AreaSpec, AreaSpecs
 from ai.runtime.redaction import redact
 
 _ITEM_PROMPT_ID = "pg.items.v1"
+
+
+def _prompt_schema(value: object) -> object:
+    """제약과 필드 설명은 보존하고 표시용 제목·enum 장문 설명만 제거한다."""
+
+    if isinstance(value, list):
+        return [_prompt_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    is_enum = "enum" in value
+    return {
+        key: _prompt_schema(item)
+        for key, item in value.items()
+        if key != "title" and not (key == "description" and is_enum)
+    }
+
+
+def generated_item_schema_json() -> str:
+    """GeneratedItem 계약에서 직접 유도한 프롬프트용 JSON Schema."""
+
+    return canonical_json(_prompt_schema(GeneratedItem.model_json_schema()))
+
+
+def schema_issues_from_field_missing(
+    error: FieldMissing,
+) -> tuple[SchemaValidationIssue, ...]:
+    """입력값·예외 원문을 제외한 필드 경로와 Pydantic 사유 코드만 반환한다."""
+
+    cause = error.__cause__
+    if not isinstance(cause, ValidationError):
+        return ()
+
+    issues: list[SchemaValidationIssue] = []
+    seen: set[tuple[str, str]] = set()
+    for detail in cause.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    ):
+        path = "$"
+        for part in detail["loc"]:
+            path += f"[{part}]" if isinstance(part, int) else f".{part}"
+        key = (path, detail["type"])
+        if key in seen:
+            continue
+        seen.add(key)
+        issues.append(SchemaValidationIssue(path=path, reason=detail["type"]))
+    return tuple(issues)
 
 
 def render_area_spec(spec: AreaSpec) -> str:
@@ -119,6 +173,7 @@ class ProblemGenerator:
                 "retry_context_json": canonical_json(
                     retry_context.model_dump(mode="json")
                 ),
+                "response_schema_json": generated_item_schema_json(),
             }
         )
         redacted = redact(prompt_text)

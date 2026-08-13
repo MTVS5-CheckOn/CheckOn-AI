@@ -29,7 +29,7 @@ from ai.contracts.problem_generation import (
     TargetSource,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
-from ai.llm.determinism import DETERMINISTIC_TEMPERATURE, LLM_SEED
+from ai.llm.determinism import LLM_SEED
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application.passage_generator import (
     PassageDraftRejected,
@@ -171,7 +171,11 @@ def test_passage_generator_renders_prompt_and_parses_draft() -> None:
     assert "pg-banned-v1" in request.prompt
     assert "금칙어 우회" in request.prompt
     assert request.generation_params is not None
-    assert request.generation_params.temperature == DETERMINISTIC_TEMPERATURE
+    #: 🔴 **(8/13) `temperature`는 안 실린다** — `gpt-5.6-luna`가 기본값 외 값을 400으로
+    #:   거부해 어댑터가 「값이 없으면 안 보낸다」로 흡수했다(99 #51). 종전 이 줄은
+    #:   `== DETERMINISTIC_TEMPERATURE`로 **결정론 온도가 실린다**를 지키고 있었다.
+    #:   재현 축은 이제 `seed` 하나다(8/4 실측 — 재현을 만든 것은 seed였다).
+    assert request.generation_params.temperature is None
     assert request.generation_params.seed == LLM_SEED
 
 

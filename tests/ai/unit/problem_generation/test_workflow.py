@@ -50,11 +50,14 @@ from ai.contracts.problem_generation import (
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.evaluation.fake_snapshot import fixture_stable
-from ai.llm.determinism import DETERMINISTIC_TEMPERATURE, LLM_SEED
+from ai.llm.determinism import LLM_SEED
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application import workflow as workflow_module
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
-from ai.problem_generation.application.generator import ProblemGenerator
+from ai.problem_generation.application.generator import (
+    ProblemGenerator,
+    generated_item_schema_json,
+)
 from ai.problem_generation.application.literature_selector import LiteratureSelector
 from ai.problem_generation.application.passage_generator import (
     PassageGenerator,
@@ -69,7 +72,7 @@ from ai.problem_generation.application.workflow import (
     ProblemWorkflowConfigurationError,
     graph_recursion_limit,
 )
-from ai.problem_generation.domain.identity import problem_item_id
+from ai.problem_generation.domain.identity import canonical_json, problem_item_id
 from ai.problem_generation.domain.models import TargetPlan
 from ai.problem_generation.domain.policy import (
     DifficultyRange,
@@ -88,6 +91,7 @@ from ai.problem_generation.infrastructure.literature_pool import load_literature
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
+    InMemoryProblemSetStore,
 )
 
 _GRAPH_VERSION = "curriculum-graph.v1"
@@ -136,6 +140,7 @@ class _WorkflowHarness:
         self.graph = FakeGraphContextService(graph_steps)
         self.candidates = InMemoryCandidateStore()
         self.items = InMemoryProblemItemStore()
+        self.sets = InMemoryProblemSetStore()
         config = (verify_config or load_verify_config()).model_copy(
             update={
                 "difficulty_regen_enabled": difficulty_regen_enabled,
@@ -171,6 +176,7 @@ class _WorkflowHarness:
             cross_solver=self.cross_solver,
             candidate_store=self.candidates,
             item_store=self.items,
+            set_store=self.sets,
             checkpointer=InMemorySaver(),
             verify_config=self.verify_config,
             banned_topics=self.banned_topics,
@@ -216,7 +222,7 @@ class _WorkflowHarness:
                 engine_version="engine-v1",
                 schema_version="schema-v1",
                 contract_version="contract-v1",
-                prompt_version="v3",
+                prompt_version="v4",
                 graph_version=_GRAPH_VERSION,
                 taxonomy_version=_TAXONOMY_VERSION,
                 verify_config_version="verify-config.v1",
@@ -368,7 +374,11 @@ def test_fake_snapshot_to_generation_store_result_vertical_slice() -> None:
     assert len(asyncio.run(harness.candidates.list_all())) == 1
     generation_params = harness.generator_provider.requests[0].generation_params
     assert generation_params is not None
-    assert generation_params.temperature == DETERMINISTIC_TEMPERATURE
+    #: 🔴 **(8/13) `temperature`는 안 실린다** — `gpt-5.6-luna`가 기본값 외 값을 400으로
+    #:   거부해 어댑터가 「값이 없으면 안 보낸다」로 흡수했다(99 #51). 종전 이 줄은
+    #:   `== DETERMINISTIC_TEMPERATURE`로 **결정론 온도가 실린다**를 지키고 있었다.
+    #:   재현 축은 이제 `seed` 하나다(8/4 실측 — 재현을 만든 것은 seed였다).
+    assert generation_params.temperature is None
     assert generation_params.seed == LLM_SEED
     stored = asyncio.run(harness.items.list_all())
     assert len(stored) == 1
@@ -458,6 +468,62 @@ def test_generation_failures_stop_at_three_attempts_without_fourth_call() -> Non
     assert not harness.verifier_provider.requests
 
 
+def test_field_missing_retry_returns_sanitized_path_and_reason_to_generator() -> None:
+    invalid = GeneratedItem.model_validate_json(_item_json("첫시도")).model_dump(mode="json")
+    invalid.pop("rationale")
+    harness = _WorkflowHarness(
+        generator_steps=(canonical_json(invalid), _item_json("교정")),
+        verifier_steps=(_solve_json(),),
+    )
+
+    result = _run(harness, harness.request())
+
+    assert result.items[0].status is ProblemItemStatus.VERIFIED
+    assert len(harness.generator_provider.requests) == 2
+    first_prompt = harness.generator_provider.requests[0].prompt
+    retry_prompt = harness.generator_provider.requests[1].prompt
+    assert '"schema_issues":[]' in first_prompt
+    assert '"schema_issues":[{"path":"$.rationale","reason":"missing"}]' in retry_prompt
+    assert "LLM 구조화 출력이 응답 스키마를 충족하지 않는다" not in retry_prompt
+
+
+def test_generator_prompt_uses_schema_derived_from_generated_item_contract() -> None:
+    harness = _WorkflowHarness(
+        generator_steps=(_item_json("스키마"),),
+        verifier_steps=(_solve_json(),),
+    )
+
+    _run(harness, harness.request())
+
+    prompt = harness.generator_provider.requests[0].prompt
+    schema_json = generated_item_schema_json()
+    assert schema_json in prompt
+    assert '"required":["area_tag","type_tag","item_format","stem","choices",' in schema_json
+    assert '"answer","rationale","evidence"]' in schema_json
+    assert '"additionalProperties":false' in schema_json
+    assert '"minItems":5' in schema_json
+    assert '"maxItems":5' in schema_json
+    assert '"enum":["fact","infer","critic","concept","apply"]' in schema_json
+    assert "⟪확인필요⟫" not in schema_json
+
+
+def test_generated_item_schema_is_derived_instead_of_copied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract_schema = {
+        "type": "object",
+        "properties": {"contract_marker": {"type": "string"}},
+        "required": ["contract_marker"],
+    }
+    monkeypatch.setattr(
+        GeneratedItem,
+        "model_json_schema",
+        classmethod(lambda _model: contract_schema),
+    )
+
+    assert generated_item_schema_json() == canonical_json(contract_schema)
+
+
 @pytest.mark.parametrize(
     ("error_type", "expected_attempts", "expected_detail"),
     _route_params(_GENERATION_LLM_ERROR_ROUTES),
@@ -484,6 +550,21 @@ def test_all_llm_error_types_during_generation_follow_declared_route(
     assert expected_detail in result.items[0].failure_detail
     assert len(harness.generator_provider.requests) == expected_attempts
     assert not harness.verifier_provider.requests
+
+
+def test_dropped_slot_is_saved_as_a_bodyless_final_record() -> None:
+    harness = _WorkflowHarness(
+        generator_steps=("not-json", "not-json", "not-json"),
+        verifier_steps=(),
+    )
+
+    result = _run(harness, harness.request())
+    stored = asyncio.run(harness.items.get(result.set_id, 0))
+
+    assert result.items[0].status is ProblemItemStatus.DROPPED
+    assert stored.result == result.items[0]
+    assert stored.item is None
+    assert stored.candidate_ref is None
 
 
 def test_same_set_duplicate_stem_is_rejected_within_shared_attempt_budget() -> None:
@@ -770,6 +851,33 @@ def test_attempt_is_checkpointed_before_external_generation_call() -> None:
     assert len(harness.generator_provider.requests) == 1
 
 
+def test_dict_entry_evidence_stops_as_explicit_unimplemented_verification() -> None:
+    evidence_ref = "표준국어대사전:484613"
+    harness = _WorkflowHarness(
+        generator_steps=(
+            _item_json(
+                "어휘 대조",
+                evidence_refs=(evidence_ref,),
+                evidence_kind=EvidenceKind.DICT_ENTRY,
+            ),
+        ),
+        verifier_steps=(),
+        graph_steps=((evidence_ref,),),
+    )
+
+    result = _run(
+        harness,
+        harness.request(target_source=TargetSource.TEACHER_MANUAL),
+    )
+
+    item_result = result.items[0]
+    assert item_result.status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
+    assert item_result.failure_reason is ProblemFailureReason.SOURCE_UNVERIFIED
+    assert item_result.failure_detail == "R-1 어휘 대조 구현 안 됨 — LexiconLookup 미배선"
+    assert len(harness.generator_provider.requests) == 1
+    assert not harness.verifier_provider.requests
+
+
 def test_saved_slot_result_is_reconnected_without_repeating_llm_call() -> None:
     harness = _WorkflowHarness(
         generator_steps=(),
@@ -842,6 +950,7 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,
         item_store=harness.items,
+        set_store=harness.sets,
         checkpointer=InMemorySaver(),
         verify_config=harness.verify_config,
         banned_topics=harness.banned_topics,
@@ -892,6 +1001,7 @@ def test_unmapped_reference_node_converges_to_rejected_insufficient() -> None:
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,
         item_store=harness.items,
+        set_store=harness.sets,
         checkpointer=InMemorySaver(),
         verify_config=harness.verify_config,
         banned_topics=harness.banned_topics,

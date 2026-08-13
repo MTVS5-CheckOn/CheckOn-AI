@@ -30,7 +30,7 @@
 | --- | --- | --- |
 | Kafka terminal outbox·실연동 | 슈퍼바이저 실행 계약과 영속 Job은 확정·구현됐으나 토픽 운영값·백엔드 `result_ref` 조회 방식은 공동 확정 전 | `docs/08_kafka_events.md` 인터페이스와 `(job_id, terminal phase)` 멱등 규약까지만 준수 |
 | `item_format`의 short·essay 분기 코드 | 7/15 확정: **v1은 mcq만 사용** | enum엔 예약값만 두고 처리 로직 만들지 말 것 (area 6영역은 확정 — TODO 제거 가능) |
-| ~~LLM 벤더 SDK 설치·직접 호출~~ **해제(7/23 B-5 확정)** | 팀 로컬 OpenAI 호환 서버(Gemma 계열)로 확정 | `openai` SDK는 **`llm/providers/` 안에서만** import 허용 — capability·contracts에서 직접 import 금지(벤더 독립 유지). provider 어댑터는 A 초안 + B 승인(llm/ 소유). 접속정보(URL·키·모델)는 env 주입 |
+| ~~LLM 벤더 SDK 설치·직접 호출~~ **해제(8/6 B-5 재확정)** | **OpenAI 단일 백엔드** | `openai` SDK는 **`llm/providers/` 안에서만** import 허용 — capability·contracts에서 직접 import 금지(벤더 독립 유지). provider 어댑터는 A 초안 + B 승인(llm/ 소유). 접속정보(URL·키·모델)는 `OPENAI_*` env로 주입 |
 | 백엔드 실연동 | 계약 리뷰는 완료(7/15) — **v1.0 승격 커밋 + Kafka 토픽 스키마 확정 전** | FakeSnapshot 픽스처 (`docs/05_request_json.md` 형태) + Kafka는 뼈대만 |
 | F17(지면 시험 OCR) 구현 | Phase 2 | 스키마 선반영만(`docs/policies/f17_paper_exam.md` §4) |
 

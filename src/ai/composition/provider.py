@@ -91,7 +91,7 @@ class FakeBriefProvider:
 
 
 def build_brief_provider(settings: BriefingSettings | None = None) -> LLMProvider:
-    """settings로 provider 선택. 기본 fake(CI·데모) — "openai_compat"이면 실 로컬 LLM.
+    """settings로 provider 선택. 기본 fake(CI·데모) — "openai_compat"이면 OpenAI API.
 
     벤더 독립 유지: openai import는 어댑터(llm/providers/openai_compat) 안에만 있고,
     여기선 그 구현을 선택만 한다(지연 import — fake 경로는 openai를 건드리지 않는다).

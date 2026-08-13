@@ -15,6 +15,7 @@ from typing import Any, Final
 from uuid import UUID
 
 import pytest
+from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -68,7 +69,7 @@ def _run(scenario: _Scenario, *, tenant: str) -> None:
         return "ok"
 
     if asyncio.run(go()) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose up -d")
+        pytest.skip(PG_UNAVAILABLE)
 
 
 async def _parent_job(

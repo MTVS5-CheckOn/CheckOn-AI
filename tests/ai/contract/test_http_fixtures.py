@@ -27,7 +27,6 @@ from fastapi.testclient import TestClient
 from ai.api.app import create_app
 from ai.api.routers import diagnosis as diagnosis_router
 from ai.api.routers import problem as problem_router
-from ai.api.routers.problem import ProblemItemsView, ProblemItemView
 from ai.contracts.agents import JobPhase
 from ai.contracts.diagnosis import DiagnosisResult
 from ai.contracts.problem_generation import (
@@ -38,7 +37,6 @@ from ai.contracts.problem_generation import (
     GeneratedItem,
     ProblemItemStatus,
     ProblemRequest,
-    ProblemSetStatus,
     SolveResult,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
@@ -325,80 +323,95 @@ def test_pending_status_tells_the_adapter_when_to_come_back() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_items_fixture_from_a_real_run() -> None:
+def test_items_fixtures_from_a_real_run() -> None:
+    """🔴 **목록과 상세가 별개 엔드포인트다** — 그리고 키가 `set_id`다(`job_id`가 아니다).
+
+    adapter 호출 순서: POST → `GET {job_id}` → `data.result.set_id` 회수 →
+    `GET {set_id}/items` → 문항 수만큼 `GET {set_id}/items/{slot_index}`.
+    목록에는 발문·선지가 **없다.**
+    """
     _prepare()
 
     with TestClient(create_app()) as client:
         posted = client.post("/v1/problems", headers=_HEADERS, json=_post_body())
         job_id = posted.json()["data"]["job_id"]
+        fetched = client.get(f"/v1/problems/{job_id}", headers={"X-Tenant-Id": _TENANT})
+        set_id = fetched.json()["data"]["result"]["set_id"]
         listed = client.get(
-            f"/v1/problems/{job_id}/items", headers={"X-Tenant-Id": _TENANT}
+            f"/v1/problems/{set_id}/items", headers={"X-Tenant-Id": _TENANT}
+        )
+        detail = client.get(
+            f"/v1/problems/{set_id}/items/0", headers={"X-Tenant-Id": _TENANT}
         )
 
     assert listed.status_code == 200
-    _fixture("get_problem_items.generated", listed.json())
+    assert detail.status_code == 200
+    listed_item = listed.json()["data"]["items"][0]
+    assert "stem" not in listed_item, (
+        "목록이 본문을 갖게 됐다면 adapter의 N+1 호출 전제가 바뀐 것이다 — BE 통보가 선행이다"
+    )
+
+    _fixture("get_problem_items.list", listed.json())
+    _fixture("get_problem_items.detail", detail.json())
 
 
-def test_items_partial_success_and_empty_fixtures() -> None:
-    """부분 성공·0건은 실행으로 만들기 어려워 **응답 모델에서 직접** 만든다.
+def test_items_partial_success_fixture() -> None:
+    """부분 성공은 실행으로 만들기 어려워 **목록 응답 형태를 직접** 조립한다.
 
-    모델이 바뀌면 이 픽스처도 바뀌므로 형태 드리프트는 여전히 잡힌다.
+    ⚠ 실측이 아니라 **형태 예시**다 — 상태 4종이 한 응답에 모두 나오는 모습을 adapter가
+    보게 하는 것이 목적이고, 실측 픽스처는 `get_problem_items.list`다.
     """
     from ai.api.envelope import success_envelope
 
-    partial = ProblemItemsView(
-        job_id=_PLACEHOLDER["job_id"],
-        job_status=JobPhase.SUCCEEDED,
-        set_id=_PLACEHOLDER["set_id"],
-        set_status=ProblemSetStatus.PARTIAL_SUCCESS,
-        stop_reason="drop_ratio_exceeded",
-        requested_count=3,
-        counts={
-            "verified": 1,
-            "needs_review": 0,
-            "verification_unavailable": 0,
-            "dropped": 1,
-        },
-        items=(
-            ProblemItemView(
-                slot_index=0,
-                item_id=_PLACEHOLDER["item_id"],
-                status=ProblemItemStatus.VERIFIED,
-                attempt_no=1,
-                difficulty_band="medium",
-                item=GeneratedItem.model_validate_json(_generated_item_json()),
-            ),
-            ProblemItemView(
-                slot_index=1,
-                item_id=None,
-                status=ProblemItemStatus.DROPPED,
-                attempt_no=3,
-                failure_reason="generation_exhausted",
-            ),
-        ),
-    )
-    empty = ProblemItemsView(
-        job_id=_PLACEHOLDER["job_id"],
-        job_status=JobPhase.SUCCEEDED,
-    )
-
-    versions = problem_router.problem_failure_versions()
     _fixture(
         "get_problem_items.partial_success",
         success_envelope(
-            data=partial.model_dump(mode="json"),
+            data={
+                "set_id": _PLACEHOLDER["set_id"],
+                "status_counts": {
+                    "verified": 1,
+                    "needs_review": 1,
+                    "dropped": 1,
+                    "verification_unavailable": 1,
+                },
+                "items": [
+                    {
+                        "slot_index": 0,
+                        "item_id": _PLACEHOLDER["item_id"],
+                        "status": ProblemItemStatus.VERIFIED.value,
+                        "current_revision_no": 0,
+                        "review_reason": None,
+                        "failure_reason": None,
+                    },
+                    {
+                        "slot_index": 1,
+                        "item_id": _PLACEHOLDER["item_id"],
+                        "status": ProblemItemStatus.NEEDS_REVIEW.value,
+                        "current_revision_no": 1,
+                        "review_reason": "manual_target_first",
+                        "failure_reason": None,
+                    },
+                    {
+                        "slot_index": 2,
+                        "item_id": _PLACEHOLDER["item_id"],
+                        "status": ProblemItemStatus.VERIFICATION_UNAVAILABLE.value,
+                        "current_revision_no": 0,
+                        "review_reason": None,
+                        "failure_reason": None,
+                    },
+                    # 🔴 폐기 문항은 `item_id`가 없다 — 저장소에 애초에 안 앉는다.
+                    {
+                        "slot_index": 3,
+                        "item_id": None,
+                        "status": ProblemItemStatus.DROPPED.value,
+                        "current_revision_no": 0,
+                        "review_reason": None,
+                        "failure_reason": "generation_exhausted",
+                    },
+                ],
+            },
             execution_id=_PLACEHOLDER["execution_id"],
-            versions=versions,
-        ),
-    )
-    # 🔴 `rejected_insufficient`·아직 안 끝난 잡이 이 형태다 — **404가 아니다.**
-    #    잡은 실재하고 "문항이 0개"가 사실이다.
-    _fixture(
-        "get_problem_items.no_items",
-        success_envelope(
-            data=empty.model_dump(mode="json"),
-            execution_id=_PLACEHOLDER["execution_id"],
-            versions=versions,
+            versions=problem_router.problem_failure_versions(),
         ),
     )
 

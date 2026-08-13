@@ -20,7 +20,7 @@ REGISTRY_PATH = PROMPTS_ROOT / "registry.yaml"
 TEMPLATES_ROOT = PROMPTS_ROOT / "templates"
 
 
-def test_problem_generation_registry_has_four_versioned_prompts() -> None:
+def test_problem_generation_registry_has_five_versioned_prompts() -> None:
     registry = load_prompt_registry(REGISTRY_PATH)
 
     # ⚠ registry에는 pg 외 프롬프트도 산다(classify 등) — **pg.* 만** 본다.
@@ -33,8 +33,10 @@ def test_problem_generation_registry_has_four_versioned_prompts() -> None:
         "pg.source_material.v1",
         "pg.items.v1",
         "pg.cross_solve.v1",
+        "pg.refine.v1",
     }
     assert registry.get("pg.cross_solve.v1").role is ModelRole.VERIFIER
+    assert registry.get("pg.refine.v1").role is ModelRole.GENERATOR
 
 
 def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
@@ -43,13 +45,13 @@ def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
 
     assert "사람 이름을 쓰지 않고 학생 A·갑·을 같은 비인명 표기" in template.content
     assert "교차 풀이가 fail-closed로 차단" in template.content
-    # 🔴 v3(2026-08-09) — 영역별 출제 규격 주입 + 발문 정형·오답 설계·부정 발문 규율.
+    # 🔴 v4(2026-08-12) — 계약 유도 JSON Schema + 필드별 재시도 사유 환류.
     #    프롬프트 문면이 바뀌면 버전이 바뀐다(불변식 8).
-    assert template.version == "v3"
+    assert template.version == "v4"
     assert "영역 출제 규격" in template.content
     assert "발문 정형 중 하나를 따른다" in template.content
     # 짝이다 — workflow가 두 버전이 다르면 기동에서 거부한다.
-    assert registry.get("pg.cross_solve.v1").version == "v3"
+    assert registry.get("pg.cross_solve.v1").version == "v4"
 
 
 @pytest.mark.parametrize(
@@ -75,11 +77,22 @@ def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
                 "context_pack_json",
                 "generation_input_json",
                 "retry_context_json",
+                "response_schema_json",
             },
         ),
         (
             "pg.cross_solve.v1",
             {"blind_item_json", "target_metadata_json"},
+        ),
+        (
+            "pg.refine.v1",
+            {
+                "area_spec_block",
+                "context_pack_json",
+                "current_item_json",
+                "instruction_json",
+                "response_schema_json",
+            },
         ),
     ],
 )

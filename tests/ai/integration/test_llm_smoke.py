@@ -1,4 +1,4 @@
-"""실 로컬 LLM 스모크 — 어댑터가 실서버와 1회 왕복하는가 (B-5 어댑터 · integration).
+"""실 OpenAI 스모크 — 어댑터가 OpenAI API와 1회 왕복하는가.
 
 PG 왕복(test_pg_store_roundtrip)과 같은 패턴: `integration` 마커라 기본 실행에서 제외
 (pyproject addopts `-m 'not integration'`). env에 `OPENAI_*`가 잡혀 있고 서버가
@@ -38,8 +38,8 @@ def _context() -> ExecutionContext:
     )
 
 
-def test_local_server_single_roundtrip() -> None:
-    """실서버가 있으면 OK + 비어있지 않은 한국어 응답. 없으면 skip."""
+def test_openai_single_roundtrip() -> None:
+    """명시적으로 허용된 OpenAI 호출이 OK와 한국어 응답을 내는지 확인한다."""
     settings = get_llm_settings()
     # 🔴 **opt-in 없이는 안 부른다**(99 #32) — 종전 조건은 `.env`가 덮으면 열렸다.
     reason = real_llm_skip_reason(settings.openai_base_url)
@@ -56,7 +56,7 @@ def test_local_server_single_roundtrip() -> None:
     try:
         result = asyncio.run(provider.complete(request, _context()))
     except LlmError as exc:
-        pytest.skip(f"로컬 LLM 미가용 — {type(exc).__name__}")
+        pytest.skip(f"OpenAI 미가용 — {type(exc).__name__}")
 
     assert result.outcome is CallOutcome.OK
     assert result.text is not None and result.text.strip()

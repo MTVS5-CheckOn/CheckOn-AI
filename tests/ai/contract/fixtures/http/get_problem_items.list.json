@@ -1,0 +1,37 @@
+{
+  "data": {
+    "set_id": "00000000-0000-4000-8000-000000000050",
+    "status_counts": {
+      "verified": 0,
+      "needs_review": 1,
+      "dropped": 0,
+      "verification_unavailable": 0
+    },
+    "items": [
+      {
+        "slot_index": 0,
+        "item_id": "00000000-0000-4000-8000-000000000010",
+        "status": "needs_review",
+        "current_revision_no": 0,
+        "review_reason": "manual_target_first",
+        "failure_reason": null
+      }
+    ]
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "v4",
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": "v1",
+      "verify_config": "verify-config.v1",
+      "difficulty_calib": null
+    }
+  }
+}

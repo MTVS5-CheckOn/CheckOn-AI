@@ -21,6 +21,7 @@ from typing import Any, Final
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
+from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -157,7 +158,7 @@ def _run(scenario: _Scenario, *, tenant: str) -> None:
         return "ok"
 
     if asyncio.run(go()) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose up -d")
+        pytest.skip(PG_UNAVAILABLE)
 
 
 async def _agent_runs(
@@ -400,7 +401,7 @@ async def _run_problem_generation(
         run_store=PgRunStore(sessionmaker=sessions, clock=lambda: _NOW),
         call_log=LlmCallCollector(),
         verify_config_version="verify-config.v1",
-        prompt_version="v3",
+        prompt_version="v4",
         lease_owner="worker-g3-pg",
         now=lambda: _NOW,
     )

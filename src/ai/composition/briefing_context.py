@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -31,6 +32,12 @@ from ai.contracts.detection import (
 )
 from ai.contracts.taxonomy import AreaTag, TypeTag
 from ai.detection.baseline import Baseline, compute_baseline
+from ai.detection.evidence import (
+    EMPTY_EVIDENCE,
+    StudentEvidence,
+    build_student_evidence,
+    resolve_weekly_activity_window,
+)
 from ai.detection.features import (
     StudentFeatures,
     WeekFeatures,
@@ -40,6 +47,8 @@ from ai.detection.features import (
 from ai.detection.lifecycle import has_return_care_history
 from ai.detection.segments import Segment, resolve_segment
 from ai.detection.thresholds import ThresholdConfig, default_threshold_config
+
+logger = logging.getLogger(__name__)
 
 _NUMBER_RE = re.compile(r"\d+")
 
@@ -177,15 +186,42 @@ def _r2_facts(sf: StudentFeatures, baseline: Baseline) -> tuple[EvidenceFact, ..
     return tuple(facts)
 
 
-def _r3_facts(sf: StudentFeatures, baseline: Baseline) -> tuple[EvidenceFact, ...]:
-    """R3 학습 공백 — 이번 주 학습량·평소 대비 비율."""
-    week = sf.weeks[-1]
+def _r3_facts(
+    evidence: StudentEvidence, config: ThresholdConfig
+) -> tuple[EvidenceFact, ...]:
+    """R3 학습 공백 — 🔴 **판정과 같은 정본**(`detection_evidence.weekly_activity`)만 읽는다.
+
+    🔴 **종전에는 `sf.weeks[-1].event_count`와 `baseline.volume`을 읽었다** — 즉
+    `learning_events`에서 복원한 값이다. R3의 판정은 주간 활동량 집계로 하는데 문면은 다른
+    축을 인용해, 두 입력이 갈린 요청에서 **「학습 공백」 신호 옆에 「활동 20건 · 평소 대비
+    100%」** 가 실렸다(2026-08-13 실측). 그 숫자는 facts 안에 있으므로 **근거 밖 숫자
+    게이트가 못 잡는다** — 게이트를 고칠 일이 아니라 조립을 고칠 일이다.
+
+    ⚠ **두 입력을 같은 지표로 선언한 것이 아니다.** `learning_events`는 R1·R4·R6의 정본으로
+    그대로 남는다. R3만 자기 정본을 끝까지 든다.
+    ⚠ **fail-closed** — 창이 안 서면 `learning_event`로 대신하지 않고 **수치를 비운다**
+    (§13). 임의로 `0건`을 만들지도 않는다.
+    """
+    window = resolve_weekly_activity_window(
+        evidence, baseline_window_weeks=config.baseline_window_weeks
+    )
+    if window is None:
+        #: 🔴 R3가 발화했으면 창은 반드시 선다 — 여기 오면 조립 경계가 어긋난 것이다.
+        #:   숫자를 지어내지 않고 비운 채 관측 가능하게 남긴다(폴백 문장은 그대로 나간다).
+        logger.warning(
+            "R3 브리핑 facts를 비운다 — 주간 활동량 정본 창이 서지 않았다"
+            "(learning_event로 대신하지 않는다)"
+        )
+        return ()
     facts: list[EvidenceFact] = [
-        EvidenceFact("이번 주 학습 활동", f"{week.event_count}건")
+        EvidenceFact("이번 주 학습 활동", f"{window.current.activity_count}건")
     ]
-    if baseline.volume:
+    if window.baseline_volume:
         facts.append(
-            EvidenceFact("평소 대비", _pct(week.event_count / baseline.volume))
+            EvidenceFact(
+                "평소 대비",
+                _pct(window.current.activity_count / window.baseline_volume),
+            )
         )
     return tuple(facts)
 
@@ -228,12 +264,14 @@ def _r6_facts(sf: StudentFeatures, baseline: Baseline) -> tuple[EvidenceFact, ..
     return tuple(facts)
 
 
+#: 🔴 **R3은 이 표에 없다** — 인자 축이 다르기 때문이다(`StudentEvidence`+설정).
+#: ⚠ 표에 남겨 두면 잘못된 `StudentFeatures`를 **다시 받게 되고**, 그게 이 안건의 형태였다.
+#: 나머지 다섯의 인자를 억지로 맞추지 않는다 — 그 규칙들의 정본은 그대로 `learning_events`다.
 _FACT_BUILDERS: dict[
     RuleId, Callable[[StudentFeatures, Baseline], tuple[EvidenceFact, ...]]
 ] = {
     RuleId.R1: _r1_facts,
     RuleId.R2: _r2_facts,
-    RuleId.R3: _r3_facts,
     RuleId.R4: _r4_facts,
     RuleId.R5: _r5_facts,
     RuleId.R6: _r6_facts,
@@ -241,8 +279,17 @@ _FACT_BUILDERS: dict[
 
 
 def _build_facts(
-    signal: Signal, sf: StudentFeatures, baseline: Baseline
+    signal: Signal,
+    sf: StudentFeatures,
+    baseline: Baseline,
+    evidence: StudentEvidence,
+    config: ThresholdConfig,
 ) -> tuple[EvidenceFact, ...]:
+    #: 🔴 **R3만 정본 축이 다르다** — 주간 활동량 집계는 `learning_events`와 별개 입력이다.
+    #:   ⚠ `sf.weeks`가 비어도 R3는 판정될 수 있다(완전 공백 주는 그 목록에 아예 없다) —
+    #:     그래서 아래 `sf.weeks` 가드보다 **먼저** 갈린다.
+    if signal.rule_id is RuleId.R3:
+        return _r3_facts(evidence, config)
     if not sf.weeks:
         return ()
     builder = _FACT_BUILDERS.get(signal.rule_id)
@@ -250,16 +297,27 @@ def _build_facts(
 
 
 def build_briefing_context(
-    signal: Signal, sf: StudentFeatures, baseline: Baseline, segment: Segment
+    signal: Signal,
+    sf: StudentFeatures,
+    baseline: Baseline,
+    segment: Segment,
+    *,
+    evidence: StudentEvidence = EMPTY_EVIDENCE,
+    config: ThresholdConfig | None = None,
 ) -> BriefingContext:
-    """신호 + 그 학생의 피처·기준선·세그먼트 → 근거 패키지. rule 판정식 미접근."""
+    """신호 + 그 학생의 피처·기준선·세그먼트·**정본 근거** → 근거 패키지. rule 판정식 미접근.
+
+    ⚠ `evidence`·`config`는 **R3 전용**이다 — 나머지 규칙의 facts 의미는 바뀌지 않는다.
+    """
     summaries = tuple(dict.fromkeys(e.summary for e in signal.evidence))
     return BriefingContext(
         signal_type=signal.signal_type,
         display_label=signal.display_label,
         lifecycle=signal.lifecycle,
         segment=segment,
-        facts=_build_facts(signal, sf, baseline),
+        facts=_build_facts(
+            signal, sf, baseline, evidence, config or default_threshold_config()
+        ),
         evidence_summaries=summaries,
         fallback_text=signal.brief.text,
     )
@@ -295,6 +353,9 @@ def build_contexts(
     features = extract_features(request)
     students = {s.student_ref: s for s in request.students}
     term = request.snapshot_meta.term_context
+    #: 🔴 **정본 근거를 요청당 한 번만 색인한다** — 엔진 `detect()`가 쓰는 그 함수다.
+    #:   R3 facts가 판정과 같은 레코드를 보게 하는 자리이고, 신호마다 다시 만들지 않는다.
+    evidence_by_student = build_student_evidence(request)
 
     cache: dict[str, tuple[StudentFeatures, Baseline, Segment] | None] = {}
     contexts: dict[str, BriefingContext] = {}
@@ -306,11 +367,14 @@ def build_contexts(
             )
 
         entry = cache[ref]
+        evidence = evidence_by_student.get(ref, EMPTY_EVIDENCE)
         if entry is None:
             contexts[signal.signal_id] = _minimal_context(signal)
         else:
             sf, baseline, segment = entry
-            contexts[signal.signal_id] = build_briefing_context(signal, sf, baseline, segment)
+            contexts[signal.signal_id] = build_briefing_context(
+                signal, sf, baseline, segment, evidence=evidence, config=config
+            )
     return contexts
 
 

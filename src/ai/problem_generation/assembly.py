@@ -25,6 +25,7 @@ from ai.contracts.problem_generation import (
     ProblemGenerationOutcome,
     ProblemRequest,
 )
+from ai.db.repositories.problem_revision_store import PgProblemRevisionStore
 from ai.db.repositories.problem_store import PgProblemItemStore
 from ai.db.repositories.run_store import (
     LlmCallCollector,
@@ -35,7 +36,12 @@ from ai.db.session import get_sessionmaker
 from ai.db.settings import DbSettings, get_db_settings
 from ai.llm.determinism import deterministic_params
 from ai.llm.prompts.loader import load_prompt_template
-from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
+from ai.problem_generation.application.ports import (
+    CandidateStore,
+    ProblemItemStore,
+    ProblemRevisionStore,
+    ProblemSetStore,
+)
 from ai.problem_generation.application.workflow import DiagnosisCallable
 from ai.problem_generation.bootstrap import build_problem_workflow
 from ai.problem_generation.enqueue import ProblemRequestStore
@@ -43,6 +49,7 @@ from ai.problem_generation.infrastructure.config import load_verify_config
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
+    InMemoryProblemSetStore,
 )
 from ai.problem_generation.provider import ProblemProviders, build_problem_gateway
 from ai.runtime.errors import (
@@ -141,6 +148,7 @@ class ProblemRuntimeStores:
     results: ProblemResultStore
     candidates: CandidateStore
     items: ProblemItemStore
+    sets: ProblemSetStore
 
 
 @lru_cache
@@ -152,6 +160,7 @@ def default_problem_runtime_stores() -> ProblemRuntimeStores:
         results=_InMemoryProblemResultStore(),
         candidates=InMemoryCandidateStore(),
         items=InMemoryProblemItemStore(),
+        sets=InMemoryProblemSetStore(),
     )
 
 
@@ -179,12 +188,26 @@ def build_tenant_scoped_item_store(
     return PgProblemItemStore(sessionmaker=get_sessionmaker(), tenant_id=tenant_id)
 
 
+def build_tenant_scoped_revision_store(
+    *, tenant_id: str, settings: DbSettings | None = None
+) -> ProblemRevisionStore | None:
+    """`store_backend=pg`면 테넌트 스코프 리비전 저장소를 만든다."""
+
+    settings = settings or get_db_settings()
+    if settings.store_backend != _PG:
+        return None
+    return PgProblemRevisionStore(
+        sessionmaker=get_sessionmaker(), tenant_id=tenant_id
+    )
+
+
 def problem_runtime_stores(
     *,
     request_store: ProblemRequestStore | None = None,
     result_store: ProblemResultStore | None = None,
     candidate_store: CandidateStore | None = None,
     item_store: ProblemItemStore | None = None,
+    set_store: ProblemSetStore | None = None,
 ) -> ProblemRuntimeStores:
     """저장 포트 교체 seam — PG 저장소 승인 뒤 이 조립 지점만 바꾼다."""
 
@@ -194,6 +217,7 @@ def problem_runtime_stores(
         results=result_store or defaults.results,
         candidates=candidate_store or defaults.candidates,
         items=item_store or defaults.items,
+        sets=set_store or defaults.sets,
     )
 
 
@@ -295,6 +319,7 @@ class ProblemGenerationRunner:
             checkpoint_ref=str(job.job_id),
         )
         context = self._execution_context(job, request)
+        await self._begin_execution(context)
         failed = True
         try:
             try:
@@ -305,7 +330,7 @@ class ProblemGenerationRunner:
                 raise domain_error_for(exc) from exc
             failed = False
         finally:
-            await self._record_execution(context, swallow_errors=failed)
+            await self._finalize_execution(context, swallow_errors=failed)
 
         result_ref = await self._results.put(
             tenant_id=job.tenant_id,
@@ -335,13 +360,23 @@ class ProblemGenerationRunner:
             ),
         )
 
-    async def _record_execution(
+    async def _begin_execution(self, context: ExecutionContext) -> None:
+        await self._runs.begin_run(
+            context.to_run_metadata(
+                created_at=self._now(),
+                model_provider=None,
+                model_name=None,
+                generation_params=None,
+            )
+        )
+
+    async def _finalize_execution(
         self, context: ExecutionContext, *, swallow_errors: bool
     ) -> None:
         calls = self._call_log.take(context.execution_id)
         last = calls[-1].record if calls else None
         try:
-            await self._runs.record_run(
+            await self._runs.finalize_run(
                 context.to_run_metadata(
                     created_at=self._now(),
                     model_provider=last.provider if last is not None else None,
@@ -359,7 +394,7 @@ class ProblemGenerationRunner:
         except Exception:
             if not swallow_errors:
                 raise
-            logger.exception("실패 경로의 PG 실행 원장 적재 실패 — 원인 예외를 유지한다")
+            logger.exception("실패 경로의 PG 실행 원장 최종화 실패 — 원인 예외를 유지한다")
 
     async def result_of(
         self, result_ref: str, *, tenant_id: str
@@ -425,6 +460,7 @@ async def open_problem_generation_runner(
             diagnosis=diagnosis,
             candidate_store=stores.candidates,
             item_store=stores.items,
+            set_store=stores.sets,
             checkpointer=checkpointer,
             verify_config=verify_config,
         )
@@ -446,6 +482,7 @@ __all__ = [
     "ProblemResultStore",
     "ProblemRuntimeStores",
     "build_tenant_scoped_item_store",
+    "build_tenant_scoped_revision_store",
     "default_problem_runtime_stores",
     "open_problem_generation_runner",
     "problem_runtime_stores",

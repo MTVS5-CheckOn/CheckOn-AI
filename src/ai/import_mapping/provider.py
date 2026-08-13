@@ -71,7 +71,7 @@ class FakeMappingProvider:
 class FailingMappingProvider:
     """항상 실패하는 provider — LLM 미가용 폴백(§3.2) 분기 검증용."""
 
-    def __init__(self, message: str = "로컬 LLM 미가용") -> None:
+    def __init__(self, message: str = "LLM provider 미가용") -> None:
         self._message = message
 
     async def infer(self, profile: SourceProfile) -> tuple[MappingColumn, ...]:

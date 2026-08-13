@@ -55,15 +55,25 @@ MAX_REGEN = 3
 PROMPT_ID = "composition/briefing"
 PROMPT_VERSION = "0.2"
 
-#: 브리핑은 한 문장(≤MAX_BRIEF_LENGTH자)이라 생성 토큰 상한을 좁게 준다 — 서버 기본값의
-#: 과생성·지연을 막는다(v2 프리뷰 지연 개선). 게이트 길이 상한과 별개의 성능 제어.
-_BRIEF_MAX_TOKENS = 128
-
 #: 🔴 종전에는 `max_tokens`만 있어 **temperature·seed가 둘 다 미지정**이었다 — 어댑터
 #: 기본 temperature(0.7)로 나가 같은 신호가 매번 다른 문장을 냈다(99 ㊼).
 #: 재현 축의 **정본은 `llm/determinism.py`**(B 소유)이고
 #: `composition/determinism.py`는 재수출이다(99 ⓨ).
-BRIEF_GEN_PARAMS = deterministic_params(max_tokens=_BRIEF_MAX_TOKENS)
+#:
+#: 🔴 **브리핑은 의도적으로 토큰 천장을 걸지 않는다 — 상담·문항생성과 동일하다.**
+#:   **다시 걸지 마라.** 2026-08-13에 걸려 있어서 사고가 났다(99 #54).
+#:   `gpt-5.6-luna`는 추론 모델이고, 추론 모델에서 `max_completion_tokens`는 출력이 아니라
+#:   **추론 + 출력**을 함께 묶는다. 128이 추론에 전부 소진돼 `content=""` ·
+#:   `finish_reason="length"` → 브리핑이 **상시 템플릿 폴백**이 됐다.
+#:   실측: reasoning 89·96 / 출력 41·40 / 합계 130·136.
+#:   🔴 **숫자를 키우는 것으로는 안 닫힌다** — 추론량에 상한이 없다.
+#:   ⚠ 128의 원래 도입 사유는 **폐기된 로컬 서버(팀 Gemma)의 지연 개선**이었다
+#:     (`4a4f1b1` 2026-07-26 · "v3 — 지연 개선"). 비용·쿼터·벤더 제약이 아니었고,
+#:     그 서버는 없어졌다(99 ⓟ).
+#:   폭주는 여기가 아니라 두 군데서 막힌다: **HTTP 총 15초 타임아웃**
+#:   (`OpenAiSettings.openai_timeout_s` · `asyncio.timeout`으로 전체 상한 강제 ·
+#:   `max_retries=0`)과 **게이트 `MAX_BRIEF_LENGTH`자 상한**.
+BRIEF_GEN_PARAMS = deterministic_params()
 
 
 @lru_cache

@@ -1085,6 +1085,34 @@ provider는 실패를 **예외로 올린다.** 반환값의 `outcome`은 `OK` �
 소비자의 outcome 분기는 **도달 불가 방어**로 남긴다(#129). 이 규약을 바꾸면 재시도
 계약도 함께 바뀌므로 게이트웨이 소유자(B)에게 먼저 통보해야 한다.
 
+##### 구조화 출력 스키마 본문 전달 제안 `[A+B 양자 승인 필요 · 미구현]`
+
+2026-08-12 실 LLM 스모크(`gpt-5.4-mini` · language · count=1)에서 생성 응답의
+`GeneratedItem` 스키마 통과가 회차별 `1/3 · 3/3 · 0/3`으로 흔들렸고, 두 회차는
+`FieldMissing`으로 생성 상한 3회를 소진했다. 현 `LLMRequest`는
+`response_schema_name="GeneratedItem"`이라는 이름만 싣고 JSON Schema 본문은 싣지
+않으므로 provider가 OpenAI 호환 `response_format.type=json_schema`를 만들 근거가 없다.
+
+양자 승인 뒤 `contracts/llm.py::LLMRequest`에 다음 선택 필드를 추가하는 안을 제안한다.
+
+```python
+response_schema: dict[str, object] | None = None
+```
+
+값은 capability 호출자가 자신의 Pydantic 계약 모델에서 `model_json_schema()`로 만들어
+넘긴 JSON Schema 본문이다. `response_schema_name`은 관측·registry 대조용 이름으로 유지하고,
+본문이 있으면 provider는 이름과 본문으로 strict `json_schema` response format을 조립한다.
+본문이 없으면 기존 자유 텍스트 호출과 파싱 경로를 유지해 점진적으로 이관한다.
+
+🔴 provider가 `ai.contracts.problem_generation`·`ai.contracts.classify` 같은 capability 계약을
+직접 import해 이름별 모델 표를 갖는 형태는 금지한다. 그렇게 하면 벤더 어댑터가 도메인을
+알게 되고 새 capability가 추가될 때마다 공통 provider를 고쳐야 한다. 스키마는 호출자가
+만들어 넘기고 provider는 전달받은 표준 JSON Schema만 해석해야 벤더 독립 경계가 유지된다.
+
+이 변경은 양자 파일 `contracts/llm.py`의 공통 요청 계약을 넓히므로 A+B 승인이 필요하다.
+이번 변경에서는 구현하지 않았으며, provider·게이트·재시도 상한과 기존 스키마 제약도
+변경하지 않았다.
+
 | 예외 | wire 결과 |
 | --- | --- |
 | `ProblemWorkflowConfigurationError` | 400 `INVALID_SCHEMA` |
@@ -1241,6 +1269,16 @@ verification_unavailable | dropped`와 1:1 대응한다. BE가 목록을 다시 
 수정 폭과 종류에 관계없이 매 턴 게이트 ① 스키마·규칙 검증, ② blind 교차 풀이,
 ③ 근거·금칙어·노출 판정을 **전부 다시 실행**한다. 강사 직접 수정과 rollback도 예외가
 아니며 일부 필드만 검사하고 이전 통과 상태를 재사용하지 않는다(`07_refine_policy.md` §4).
+
+**구현 상태(2026-08-12 · B):** 위 한 경로 중 `ai_refine`만 먼저 열었다. 응답은 200이며
+`revision`·`current_revision_no`와 규칙/교차 풀이/release 재판정 결과를 반환한다. 같은
+멱등키+같은 바디는 같은 200을 재반환하고, stale·진행 중 충돌은 LLM 호출 전에 위 409로
+끝난다. 통과·차단 턴 모두 이력을 남기되 현재 본문은 마지막 전체 검증 통과본을 유지한다.
+현재 근거 재조회가 가능한 `language` 문항만 `available_actions=["refine"]`이며,
+`teacher_direct`·`rollback`과 다른 4영역의 수정은 아직 열지 않았다. 다른 4영역은 생성 당시
+자료 원문/EvidencePack 영속 재조회가 선행돼야 하며, 그 전에는 API가 임의로 근거를 복원하지
+않는다. 근거: `api/routers/problem.py`·`application/refiner.py`·
+`db/repositories/problem_revision_store.py`와 해당 테스트.
 
 #### 2-19.8 교체·삭제 경로 `[v1 스펙 확정 · 구현 후속]` `[경로 제안 · BE 합의 대기]`
 
@@ -1442,6 +1480,13 @@ A 소유 파일을 리팩터링하거나 이 PR에 공용 헬퍼를 만들지 �
 축이므로 B 테스트만 다르게 고치지 않고 A와 함께 프록시를 실제로 통과하는 가드로 올릴지
 판정한다. 다만 이번 브랜치에서는 자문 잠금 제거 시 동시성 테스트가 **5/5 결정론으로 red**가
 되어 프록시가 실제 경합을 만들고 있다는 실증은 이미 있다.
+
+✅ **해소(#198 · #200).** #198에서 counsel·problem_item 두 절단 가드를 공용 프록시
+`tests/ai/fakes/first_sql_barrier.py`로 합쳤고, 이제 `asyncio.Barrier` 자체가 아니라 실제
+세션 프록시를 지난다. #200은 party 1 배리어가 두 번째 `wait()`도 즉시 통과시켜 프록시가
+**첫 SQL에서만** 서는지를 놓치던 미탐을 party 부족으로 잡았다. 제안 당시 5/5 red는
+프록시가 **동작했다**는 실증이고, 두 후속은 그 동작을 회귀 테스트가 **단정하게** 만든다.
+두 PR 모두 test-only 해소이며 프로덕션 코드 변경은 없다.
 
 ---
 
@@ -1682,6 +1727,17 @@ config에 안 실으면 **선언만 있고 소비가 0**인 상태(㊺)가 되�
 여전히 0건이다. 따라서 지문 생성이 어휘 표제어 실존 대조까지 해결했다고 간주하면 안 된다.
 어휘 대조가 필요한 문항을 지원한다고 선언하기 전에 이 포트를 R-1 경로에 배선해야 하며,
 그 전에는 생성 노드만으로 대조 근거를 대신하거나 게이트를 완화하지 않는다.
+
+#### 2-23.1 v1 잠금 상태 `[B 구현 · 2026-08-12]`
+
+프로덕션 전수 확인에서 `DICT_ENTRY` 근거를 생산해 워크플로에 넣는 경로는 여전히 0건이다.
+따라서 생성 문항이 `DICT_ENTRY` 근거를 요구하면 조용히 통과하거나 폐기하지 않고
+`verification_unavailable + source_unverified`로 끝내며, 상세에
+`LexiconLookup 미배선`을 명시한다. 이는 게이트 완화가 아니라 미구현 축의 fail-closed 잠금이다.
+
+`LexiconLookup` 포트와 `stdict.py` 어댑터는 삭제하지 않는다. 어휘 문항을 v1 지원 범위로
+열려면 R-1이 표제어·의미 코드를 조회하고 승인된 `DICT_ENTRY` 앵커를 생산하는 경로를 먼저
+배선해야 하며, 그때 이 잠금을 실제 사전 대조 판정으로 교체한다.
 
 ---
 
@@ -1972,7 +2028,7 @@ adapter다. 백엔드가 정규화 이벤트에 문항 본문을 실을지는 **
 | B-3 잔여 | taxonomy 경계 사례 7건 판정 | 태깅 골든셋 시드와 동시 확정 | A+B | 04·06 §5 |
 | Open-12 | F17 OCR 실명→alias·OCR 소유 (P2) | 스캔·매칭·마스킹=BE 유지, 판독 소유는 벤더 선정과 함께 | BE(+A·B) | 02 §1-C |
 | B-2 | 공용 계약 리뷰·구현·14항목 승인 완료 — **문서 동기화 3/7 완료, 4건 잔여(§2-10)** | 잔여 4건 소유자 반영 요청 | A+B | 02 §5 |
-| B-5 / D-06 | ✅ PR #15로 로컬 OpenAI 호환·Gemma 계열 공급자와 어댑터 확정 — verifier 폴백 패밀리만 잔여. **B-5 정리 PR 할 일 2건** `[2026-07-28]`: ① `gateway.py`의 `TODO(B-5)` 제거(provider 1개일 때 패밀리 강제가 우회되는 현행 동작) ② **`problem_generation/provider.py` 조립부 가드 + `test_provider.py`**(§1-10 "가드 위치") | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제. 두 항목 모두 role 키 설정 구조를 공유하므로 같은 PR에서 처리 | A+B | 06 §2·§3 · §1-10 |
+| B-5 / D-06 | ✅ **8/6 갱신: OpenAI 단일 백엔드.** 7/28의 로컬 OpenAI 호환·Gemma 계열 공급자 확정은 폐기됐고 결정 이력은 99 B-5·ⓟ에 보존한다. verifier 폴백 패밀리만 잔여. **B-5 정리 PR 할 일 2건** `[2026-07-28]`: ① `gateway.py`의 `TODO(B-5)` 제거(provider 1개일 때 패밀리 강제가 우회되는 현행 동작) ② **`problem_generation/provider.py` 조립부 가드 + `test_provider.py`**(§1-10 "가드 위치") | 폴백 패밀리 확보 후 generator/verifier 패밀리 분리 강제. 두 항목 모두 role 키 설정 구조를 공유하므로 같은 PR에서 처리 | A+B | 06 §2·§3 · §1-10 |
 | B-7 | ✅ **해소** — evidence resolver 시그니처 A 승인·**PR #37 구현 완료** · B 사후 검증 완료(조건 5개 전량 충족) | 경계 3단 확정: 그래프 내부 검증(B)·근거 해소(A)·R-1 이중 통과. 잔여는 R-1 연동 구현 시 B-13 | A+B | §2-12-② · `11` §5 |
 | **B-8ⓑ** | **GraphRAG `VersionSet` 3필드 확장** — `content_graph_version`·`graph_index_version`·`retrieval_config_version`. **`graph_version` 재사용 금지** | B-8ⓐ capability별 validator와 병합. ⓐ·ⓑ 모두 `contracts/execution.py`(양자) + `04_api_contract.md` §2.2 + `06_erd.md` AI_RUN 동시 개정이 필요해 PR 단위가 같다. A-5→B-7 병합과 대칭 | A+B | §2-12-① · `10` §4.2 |
 | **B-12** | ✅ **해소 — A 승인·반영 완료(PR #49 · `02_ownership` v5 + `CLAUDE.md`, 12→13곳).** 반영처는 A가 추가로 찾아낸 :7의 v3→v4 이력 정정까지 포함한 5곳 | `graphrag.py` 공용 계약 등록과 생산(B)·소비(A) 분리 사유까지 정본에 반영 완료 | A+B | §2-14 · `11` §0 |
@@ -2097,6 +2153,32 @@ reading·literature의 기존 출제 경로도 수동 목표로만 도달 가능
 `_SOURCE_REQUEST_SHAPES` allow-list에 두 영역의 명시적 행을 추가했으며 조건식으로 바꾸지
 않았다. 자료 생성은 `area_specs.yaml` 규격 블록을 프롬프트에 싣고 승인 evidence가 없거나
 미승인 ref를 쓰면 문항 생성 전에 실패 닫힘한다.
+
+### 실 LLM matrix의 GraphContext 대체 한계 `[판정 기록]`
+
+`tests/ai/integration/test_pg_real_llm_smoke.py::_graph_context()`는 `language`만
+`GrammarNormGraphContextService`를 쓰고 T2~T5에는 `FakeGraphContextService`가 만든
+`curriculum:<skill_node_id>` 승인 ref를 넣는다. 반면 운영 기동부
+`api/routers/problem.py::bootstrap_problem_services()`는 전 영역에 어문규범 서비스 하나만
+주입한다.
+
+| 트랙 | 실제 운영 ContextPack | 실 서비스 여부 | matrix를 운영 경로로 바꾸는 비용·위험 |
+| --- | --- | --- | --- |
+| T2 독서 | 어문규범 서비스가 비언어 노드에 빈 ref를 반환해 `PassageGenerator` 호출 전에 `rejected_insufficient` | 없음 | 단순 교체 불가. 독서 승인 자료를 조회해 ref·hash·license를 구성하는 실 서비스가 선행돼야 한다 |
+| T3 문학 | 빈 기본 pack에 동봉 만료 작품 풀의 `WorkExcerpt`·`work_span` 앵커를 결정론 결합 | 있음 | 스모크의 base를 어문규범 서비스로 바꾸는 비용은 작고 LLM 호출 수도 늘지 않는다. 다만 빈 어문규범 pack을 비언어 공통 껍데기로 쓰는 결합을 고착할 위험이 있다 |
+| T4 화법과작문 | 어문규범 서비스의 빈 ref 때문에 `SourceMaterialGenerator` 호출 전에 `rejected_insufficient` | 없음 | 단순 교체 불가. 화작 승인 기준 자료용 실 ContextPack 생산자가 필요하다 |
+| T5 매체 | 어문규범 서비스의 빈 ref 때문에 `SourceMaterialGenerator` 호출 전에 `rejected_insufficient` | 없음 | 단순 교체 불가. 매체 승인 기준 자료용 실 ContextPack 생산자가 필요하다 |
+
+따라서 현 matrix의 T2~T5 초록은 **LLM 자료·문항 스키마, 게이트, 저장 경로가 Fake 승인 ref
+위에서 연결된다**는 증거일 뿐이다. 근거 원문의 실존, 권리, 버전, hash를 운영 경로로
+검증했다는 뜻이 아니며 이를 근거로 “T5까지 운영 검증 완료”라고 보고하면 안 된다. 이번
+판정에서는 코드를 바꾸지 않는다. T3의 실 경로 정합과 T2·T4·T5 실 ContextPack 생산자
+도입 범위는 사람 결정 뒤 별도 작업으로 분리한다.
+
+특히 T2·T4·T5는 현재 운영 배선으로 실측을 시작해도 빈 anchor가
+`GraphContextReferenceInsufficient`로 실패 닫히므로 자료 생성 LLM까지 도달하지 않는다.
+따라서 운영 배선 기반 실 LLM 측정 표본은 **0회**이며, 실 ContextPack 생산자 없이 단순히
+측정을 반복해서 해소할 수 있는 결손이 아니다.
 
 실제 57노드 그래프와 결정론 진단기로 `speech_writing.writing.material` 및
 `media.reception.credibility`를 `weak_confirmed`로 산출한 뒤, 그 노드가 자료 생성 → 문항

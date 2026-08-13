@@ -118,3 +118,221 @@ def test_the_shared_step_record_item_is_still_open() -> None:
     """⑱은 함께 닫지 않았다 — 같이 닫혔다고 적혔으면 red."""
     cell = _status_cell("⑱")
     assert "✅" not in cell, f"⑱이 닫혔다고 적혔다: {cell}"
+
+
+# ───────── 브리핑 매트릭스 문서의 **현재 결과 표** (79-R3 §3) ─────────
+#
+# 🔴 **문서 전체에서 `14.999`를 금지하면 과거 반례 기록까지 잡는다** — 그 절은 과거형·해소
+#    표시가 붙어 **보존 대상**이다(§1). 그래서 **현재 결과 표만** 잘라서 본다.
+
+_MATRIX: Final = _DOCS / "handoff" / "2026-08-12_detect_briefing_scenario_matrix.md"
+
+#: 현재 결과를 말하는 두 절 — 상단 상태표와 `## 3. S01~S22 결과`의 표.
+_STATUS_TABLE_HEAD: Final = "| 구간 | 상태 |"
+_RESULT_SECTION: Final = "## 3. S01~S22 결과"
+
+
+def _matrix_text() -> str:
+    return _MATRIX.read_text(encoding="utf-8")
+
+
+def _section(heading: str) -> str:
+    """그 제목 아래부터 다음 `## ` 전까지 — 다른 절의 과거 기록을 끌어오지 않는다."""
+    text = _matrix_text()
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    end = rest.find("\n## ")
+    return rest if end < 0 else rest[:end]
+
+
+def _result_row(label: str) -> str:
+    for line in _section(_RESULT_SECTION).splitlines():
+        if line.startswith("|") and label in line:
+            return line
+    raise AssertionError(f"현재 결과 표에 «{label}» 행이 없다 — 이 검사의 전제가 깨졌다")
+
+
+def test_the_s15_row_states_the_fixed_verdict_not_the_old_defect() -> None:
+    """🔴 **S15 현재 행에 `14.999…pp 미발화`가 남으면 안 된다** — 그건 고친 결함이다.
+
+    ⚠ 그 문장은 *"버그를 기대값으로 적은 것"* 이었다(#230). 현재 결과에 남기면 다음 사람이
+    **없는 계약**을 믿는다.
+    """
+    row = _result_row("S15 R1 경계")
+    assert "14.999" not in row, f"현재 결과에 옛 결함이 남았다: {row}"
+    assert "정확한 15.0pp" in row and "전부 발화" in row, row
+    assert "14.5pp" in row and "미발화" in row, "실제 미달 사례가 없다"
+    assert "20.0pp" in row, "실제 초과 사례가 없다"
+
+
+def test_the_status_table_pins_both_boundary_fix_prs() -> None:
+    """🔴 R4·R1 교정이 **어느 PR인지** 현재 표에 적혀 있다."""
+    table = _section(_STATUS_TABLE_HEAD)
+    for label, pr in (("R4 정확 경계 교정", "#229"), ("R1 정확 경계 교정", "#230")):
+        row = next(
+            line for line in table.splitlines() if line.startswith("|") and label in line
+        )
+        assert "✅" in row, row
+        assert pr in row, f"{label} 행에 {pr}이 없다: {row}"
+
+
+#: ⚠ **종전 가드는 여기 있었다** — *"B단계 두 줄은 ☐여야 한다"*(79-R3).
+#: 🔴 **B단계가 #231에서 완료되면서 그 가드가 「지난 상태」를 고정하게 됐다.** S15가 결함을
+#: 계약으로 굳혔던 것과 같은 형태라, **현재 판정을 고정하는 가드로 교체**했다 —
+#: 아래 `test_the_b_stage_status_row_states_the_current_verdict`가 그 자리다
+#: (B단계 ✅ · 프롬프트 현행 유지 ✅ · **R3만 ☐**).
+
+
+def test_the_past_defect_record_is_preserved() -> None:
+    """🔴 **반대편** — 과거 결함 설명과 실제 계산값은 **지워지지 않았다**.
+
+    ⚠ 위 검사만 두면 *"S15 행에서 `14.999`를 뺐다"* 를 「문서에서 지웠다」로도 만족시킬 수
+    있다. 발견 기록이 사라지면 다음 사람이 *"R1은 왜 R4와 다르게 갔나"* 를 다시 판단한다.
+    """
+    text = _matrix_text()
+    assert "14.999999999999991" in text, "R1 반례의 실제 계산값이 사라졌다"
+    assert "5.000000000000004" in text, "R4 반례의 실제 계산값이 사라졌다"
+    assert "결함을 계약으로 굳혀" in text, "초판 S15가 왜 틀렸는지가 사라졌다"
+
+
+# ───────── B단계 기록의 **현재 표면** (지시서 81 §6) ─────────
+#
+# 🔴 **문서 전체에서 「Windows에서 실행」을 금지하지 않는다** — 과거 기록에는 정당하게
+#    남는다(실행 전 계획을 보존한 절). 현재를 말하는 셋만 잘라서 본다:
+#      ⓐ B단계 상태표 ⓑ 「현재 남은 작업」 절 ⓒ 원장·호출 범위 절.
+
+_B_STATUS_HEAD: Final = "### B단계 (지시서 80"
+_REMAINING_HEAD: Final = "### 현재 남은 작업"
+
+
+def _matrix_block(heading: str, *, stop: str = "\n#") -> str:
+    text = _matrix_text()
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    end = rest.find(stop)
+    return rest if end < 0 else rest[:end]
+
+
+def _b_status_row(label: str) -> str:
+    for line in _matrix_block(_B_STATUS_HEAD).splitlines():
+        if line.startswith("|") and label in line:
+            return line
+    raise AssertionError(f"B단계 상태표에 «{label}» 행이 없다 — 전제가 깨졌다")
+
+
+@pytest.mark.parametrize(
+    ("label", "mark"),
+    [
+        ("Windows 실제 OpenAI 실행", "✅"),
+        ("프롬프트 고도화 판정", "✅"),
+        ("R3 판정 근거 ↔ 브리핑 facts 정합", "✅"),
+    ],
+)
+def test_the_b_stage_status_row_states_the_current_verdict(
+    label: str, mark: str
+) -> None:
+    """🔴 **B단계·프롬프트·R3 정합은 완료됐다** — 남은 것은 백엔드 입력 의미 계약이다.
+
+    ⚠ **R3 행은 두 번 낡았다.** 처음엔 ☐(발견) → #233 구현 → #234 실제 OpenAI 확인.
+    가드가 지난 상태를 고정하면 **고친 사실이 문서에서 사라진다**(S15와 같은 형태).
+    """
+    row = _b_status_row(label)
+    assert mark in row, row
+    if mark == "☐":
+        assert "✅" not in row, f"미해소 축이 해소로 적혔다: {row}"
+
+
+def test_the_remaining_work_is_only_the_backend_input_contract() -> None:
+    """🔴 **남은 것은 백엔드 입력 계약뿐이다** — R3 코드·실 OpenAI 작업은 끝났다.
+
+    ⚠ 이미 끝난 일을 현재 작업으로 적으면 다시 시키게 되고, 실 OpenAI는 **비용이 또 든다.**
+    """
+    block = _matrix_block(_REMAINING_HEAD)
+    for required in (
+        "activity_count",
+        "learning_events",
+        "API validation",
+        "정의 확정 전에는",
+    ):
+        assert required in block, f"현재 작업에 «{required}»가 없다:\n{block}"
+    for forbidden in (
+        "R3 판정 근거와 브리핑 facts를 같은 정본으로 맞춘다",
+        "R3 두 사례만 Windows 실제 OpenAI로 재확인한다",
+        "대표 14건",
+        "전체 재실행",
+    ):
+        assert forbidden not in block, f"끝난 일이 현재 작업에 있다: «{forbidden}»"
+
+
+def test_the_past_windows_plan_is_marked_as_a_record() -> None:
+    """⚠ 실행 전 지침은 **지우지 않고** 「당시 기록·완료된 지침」으로 가려져 있다."""
+    text = _matrix_text()
+    assert "## 8. B단계 실행 환경 판정 — **당시 기록**" in text
+    assert "## 9. B단계 실행 전 순서 — **완료된 지침**" in text
+    assert "이 순서는 #231에서 실행 완료됐다" in text
+    #: 🔴 반대편 — 과거 판정 근거가 사라지지 않았다.
+    assert "Missing scopes: api.model.read" in text, "당시 환경 판정 근거가 지워졌다"
+
+
+def test_the_r3_resolution_heading_says_it_is_complete() -> None:
+    """🔴 **R3 해소 절 머리말이 「전체 완료가 아니다」로 남으면 안 된다** — #234로 끝났다."""
+    text = _matrix_text()
+    assert "# R3 정본 통일 — ✅ 구현·Fake 종단·실제 OpenAI 완료" in text
+    heading_block = _matrix_block("# R3 정본 통일 — ✅", stop="\n## ")
+    assert "#233" in heading_block and "#234" in heading_block, heading_block
+    #: 🔴 현재형으로 「남아 있다」고 적으면 red — 과거형(#233 머지 시점) 서술만 허용한다.
+    assert "재확인하는 일이 남아 있다" not in heading_block, heading_block
+
+
+def test_the_past_r3_defect_evidence_is_preserved() -> None:
+    """🔴 **반대편** — 수정 전 반례와 판정 근거가 **지워지지 않았다**.
+
+    ⚠ 완료로 바꾸면서 발견 기록까지 지우면 다음 사람이 *"왜 정본을 바꿨나"* 를 다시 판단한다.
+
+    🔴 **문서 전체에서 `20건`을 찾으면 안 된다**(첫 판이 그래서 뒤집기에 안 물었다) —
+    그 문자열은 §7-7의 *"`20건`·`100%` 없음"* 같은 **다른 맥락**에도 있어, 발견 블록을
+    통째로 지워도 통과한다. ⇒ **§6-5의 재현 블록**만 잘라서 본다(로그 85).
+    """
+    discovery = _matrix_block("## 6-5.", stop="\n## ")
+    for evidence in ("20건", "100%", "weekly_activity", "픽스처"):
+        assert evidence in discovery, f"발견 기록에서 «{evidence}»가 사라졌다"
+    #: 🔴 결함 문면 그대로가 남아 있다 — 요약만 남기면 «무엇이 틀렸나»를 못 읽는다.
+    assert "이번 주 학습 활동이 20건으로 나타났고" in discovery, discovery[:400]
+
+    text = _matrix_text()
+    assert "#233" in text and "#234" in text, "해소 PR 표기가 사라졌다"
+
+
+def test_the_current_r3_verdict_cites_the_zero_count_result() -> None:
+    """🔴 **수정 후 최종 문면에 `20건`·`100%`가 없고 `0건`이 있다.**
+
+    ⚠ **§7-7 전체를 보면 안 된다**(첫 판이 그래서 red였다) — 그 절은 *"종전 문면의
+    `20건 · 평소 대비 100%`가 사라졌다"* 를 **정당하게 인용**한다. 재려는 것은 **최종
+    문면 블록**이므로 그 코드 펜스만 잘라서 본다(로그 85).
+    """
+    section = _matrix_block("## 7-7.", stop="\n## ")
+    marker = "**최종 문면**"
+    assert marker in section, "최종 문면 블록이 없다 — 전제가 깨졌다"
+    fence = section[section.index(marker) :]
+    body = fence[fence.index("```") + 3 : fence.index("```", fence.index("```") + 3)]
+
+    assert "0건" in body, body
+    for stale in ("20건", "100%"):
+        assert stale not in body, f"최종 문면에 «{stale}»가 있다:\n{body}"
+
+
+def test_the_call_total_and_the_ledger_are_not_one_population() -> None:
+    """🔴 **28회(실행기 카운터)와 원장 14행(한 논리 회차)을 같은 합계로 적지 않는다.**
+
+    ⚠ 확인하지 못한 칸은 **0이 아니라 미확정**이다 — 0으로 쓰면 «중복 회차가 원장을 안
+    남겼다»는 **없는 사실**이 된다.
+    """
+    text = _matrix_text()
+    assert "채점에 사용한 논리 회차 1세트" in text
+    assert "같은 모집단이 아니다" in text
+    assert "미확정" in text, "확인 못 한 범위가 미확정으로 남지 않았다"
+    assert "사후 확정 불가" in text
+    #: 🔴 그 표에 `0`으로 채운 칸이 없어야 한다.
+    for line in _matrix_block("| 범위 | `AI_RUN` |").splitlines():
+        if line.startswith("|") and "중복 실행 회차" in line:
+            assert "0" not in line.replace("`", ""), f"미확정을 0으로 적었다: {line}"

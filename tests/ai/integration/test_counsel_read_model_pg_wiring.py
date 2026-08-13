@@ -22,6 +22,7 @@ from typing import Final
 
 import pytest
 from counsel_read_model_fixtures import draft_snapshot, view_snapshot
+from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -59,7 +60,7 @@ async def _with_pg(scenario: _Scenario) -> str:
 
 def _run(scenario: _Scenario) -> None:
     if asyncio.run(_with_pg(scenario)) == "skip":
-        pytest.skip("실 PG 미가용 — docker compose up -d")
+        pytest.skip(PG_UNAVAILABLE)
 
 
 async def _clean(sessions: async_sessionmaker[AsyncSession]) -> None:

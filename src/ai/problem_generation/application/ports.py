@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 from uuid import UUID
 
-from ai.contracts.problem_generation import GeneratedItem, ItemResult
+from ai.contracts.execution import ExecutionContext
+from ai.contracts.problem_generation import (
+    GeneratedItem,
+    ItemResult,
+    ItemRevision,
+    ProblemRequest,
+    ProblemSetResult,
+)
 from ai.problem_generation.domain.lexicon import LexiconEntry
 from ai.problem_generation.domain.models import CandidateSnapshot, StoredProblemItem
 
@@ -21,6 +29,53 @@ class LexiconUnavailable(RuntimeError):
     R-1이 대조 없이 통과한다(불변식 2). 호출부는 이 예외를
     `verification_unavailable`로 올리고 문항을 발행하지 않는다.
     """
+
+
+class RevisionConflict(RuntimeError):
+    """문항 리비전의 낙관적 잠금 또는 진행 중 예약 충돌."""
+
+    def __init__(self, *, reason: str, current_revision_no: int) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.current_revision_no = current_revision_no
+
+
+class ProblemRevisionSession(Protocol):
+    """문항 하나를 독점한 수정 턴의 저장 세션."""
+
+    @property
+    def current_item(self) -> GeneratedItem:
+        """마지막으로 전체 검증을 통과한 현재 문항."""
+        ...
+
+    @property
+    def current_revision_no(self) -> int:
+        """예약 시점의 낙관적 잠금 번호."""
+        ...
+
+    async def append(self, revision: ItemRevision) -> None:
+        """턴 결과를 한 번 저장하고 현재 리비전 번호를 올린다."""
+        ...
+
+
+class ProblemRevisionStore(Protocol):
+    """수정 턴을 문항 단위로 직렬화하는 리비전 저장 경계."""
+
+    def reserve(
+        self,
+        *,
+        set_id: UUID,
+        slot_index: int,
+        base_revision_no: int,
+    ) -> AbstractAsyncContextManager[ProblemRevisionSession]:
+        """진행 중이면 즉시 충돌시키고, 성공하면 append까지 독점한다."""
+        ...
+
+    async def list_revisions(
+        self, set_id: UUID, slot_index: int
+    ) -> tuple[ItemRevision, ...]:
+        """턴 번호 순으로 리비전 이력을 읽는다."""
+        ...
 
 
 class CandidateStore(Protocol):
@@ -52,6 +107,29 @@ class ProblemItemStore(Protocol):
 
     async def get(self, set_id: UUID, slot_index: int) -> StoredProblemItem:
         """세트와 슬롯으로 최종본을 읽는다."""
+        ...
+
+    async def current_revision_no(self, set_id: UUID, slot_index: int) -> int:
+        """슬롯의 현재 낙관적 잠금 번호를 읽는다."""
+        ...
+
+
+class ProblemSetStore(Protocol):
+    """AI_RUN과 슬롯 사이의 문제 세트 부모 저장 경계."""
+
+    async def create(
+        self,
+        *,
+        set_id: UUID,
+        request: ProblemRequest,
+        execution_context: ExecutionContext,
+        diagnostic_purpose: bool,
+    ) -> None:
+        """문항 저장 전에 생성 중인 부모 세트를 멱등 보장한다."""
+        ...
+
+    async def finalize(self, result: ProblemSetResult) -> None:
+        """종료 결과의 상태·요약·중단 사유를 부모 세트에 투영한다."""
         ...
 
 
