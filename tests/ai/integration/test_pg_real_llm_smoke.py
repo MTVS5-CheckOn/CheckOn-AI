@@ -841,7 +841,7 @@ def test_unavailable_reason_reports_only_categorical_failure_metadata() -> None:
 
 
 async def _fake_cli_observation() -> RealLlmSmokeObservation:
-    provider = FakeProvider(("결정론 응답",), name="fake-cli")
+    provider = FakeProvider(("RAW_COMPLETION_MUST_NOT_PRINT",), name="fake-cli")
     completion = await provider.complete(
         LLMRequest(
             role=ModelRole.GENERATOR,
@@ -910,6 +910,39 @@ def test_cli_fake_provider_renders_table_without_endpoint() -> None:
     assert "| T1 | language | 1 | 1 | verified | - | 1 | fake-model |" in rendered
     assert "secret.example" not in rendered
     assert "api_key" not in rendered
+    assert "RAW_COMPLETION_MUST_NOT_PRINT" not in rendered
+
+
+def test_cli_preserves_success_and_failure_from_repeated_single_area(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    observation = asyncio.run(_fake_cli_observation())
+    outcomes: list[RealLlmSmokeObservation | Exception] = [
+        observation,
+        RealLlmSmokeUnavailable(
+            "generator provider 미가용 outcomes=provider_error "
+            "exceptions=LlmError causes=BadRequestError http_statuses=400"
+        ),
+    ]
+
+    async def fake_run(_area_tag: AreaTag) -> RealLlmSmokeObservation:
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "run_real_llm_smoke",
+        fake_run,
+    )
+
+    assert asyncio.run(_main_async("language", 2)) == 1
+    output = capsys.readouterr().out
+    assert "| T1 | language | 1 | 1 | verified | - | 1 | fake-model |" in output
+    assert "| language | provider_error | LlmError | BadRequestError | 400 |" in output
+    assert "secret.example" not in output
+    assert "RAW_COMPLETION_MUST_NOT_PRINT" not in output
 
 
 def test_cli_failure_renderer_keeps_only_categorical_metadata() -> None:
