@@ -54,6 +54,8 @@ from typing import Final
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ai.runtime.env_files import ENV_FILES
+
 #: 전용 로거 — 루트/uvicorn 레벨과 독립한다(모듈 docstring 마지막 절).
 LOGGER_NAME: Final = "ai.console"
 
@@ -75,13 +77,18 @@ MISSING_54: Final = "⟨미수집 · 99 #54⟩"
 class ConsoleSettings(BaseSettings):
     """콘솔 관측 플래그 — `.env` 또는 환경 변수로 주입한다.
 
-    🔴 **셸 전용이 아니다.** `env_file=".env"`라 `.env`에 적어두면 어떤 기동 방식으로도
-    산다 — 셸에서만 export하면 IDE·서비스 기동에서 조용히 꺼진다(8/13 두 번 당했다).
+    🔴 **셸 전용이 아니다.** `.env`에 적어두면 어떤 기동 방식으로도 산다 — 셸에서만
+    export하면 IDE·서비스 기동에서 조용히 꺼진다(8/13 두 번 당했다).
+
+    ⚠ **이 문장은 2026-08-14까지 거짓이었다** — `env_file=".env"`는 상대경로라 실제로는
+    *"**작업 디렉터리**에서 읽는다"* 였고, 저장소 루트가 아닌 데서 기동하면 **못 찾고
+    조용히 기본값으로 떨어졌다.** ⇒ `ENV_FILES`(저장소 루트 앵커 + CWD)로 바꿔 참으로
+    만들었다. 근거·실측은 `runtime/env_files.py` (99 #73).
 
     🔴 세 플래그 전부 **기본 False**다. 아무것도 안 하면 아무것도 출력되지 않는다.
     """
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     console_error_log: bool = False
     """A — 4xx 거부 사유 + 5xx 요약."""

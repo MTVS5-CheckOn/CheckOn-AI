@@ -11,11 +11,13 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ai.runtime.env_files import ENV_FILES
+
 
 class ImportSettings(BaseSettings):
     """Import 결정론 파라미터 — env `IMPORT_*`로 주입."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     import_confidence_review: float = Field(default=0.9, ge=0.0, le=1.0)
     """이 값 미만이면 needs_review 플래그 + probing 기동 대상(§3.4)."""

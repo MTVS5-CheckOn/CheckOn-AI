@@ -37,6 +37,9 @@
 ━━ 실 LLM을 켜는 법 ━━
 
     운영   `.env`에 `CHECKON_ALLOW_REAL_LLM=1`          ✅ 어떤 기동 방식으로도 산다
+           ⚠ **2026-08-14까지 거짓이었다** — 상대경로라 저장소 루트가 아닌 데서 기동하면
+             못 찾고 **조용히 꺼졌다**(브리핑 전건 폴백의 나머지 절반 · 99 #73).
+             지금은 `ENV_FILES` 앵커가 그 문장을 참으로 만든다(`runtime/env_files.py`).
     테스트 🔴 **셸에서 그 명령에만** —
            `CHECKON_ALLOW_REAL_LLM=1 uv run --frozen pytest tests/…`
            (`.env` 값은 세션 핀이 무시한다 · 프로세스 env > `.env`라 셸이 이긴다)
@@ -58,6 +61,8 @@ from typing import Final
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ai.runtime.env_files import ENV_FILES
+
 #: 🔴 **실 LLM 호출의 유일한 허용 스위치의 정본 이름.** 이 이름을 바꾸면 문서·명령서·
 #: `pre_pr_verify`(하위 프로세스 env 제거)·세션 핀이 **같이 낡는다.**
 #: ⚠ 상수를 지우지 마라 — 설정 필드의 `alias`이자 `pre_pr_verify`가 쓰는 키다.
@@ -76,15 +81,22 @@ class RealLlmOptInRequired(RuntimeError):
 class RealLlmSettings(BaseSettings):
     """실 LLM 허용 스위치 — `.env` 또는 환경 변수로 주입한다 (03 §1).
 
-    🔴 **셸 전용이 아니다.** `env_file=".env"`라 `.env`에 적어두면 어떤 기동 방식으로도
-    산다. 종전에는 `os.environ`만 봐서 **운영 서버의 `.env`가 안 먹었다**(8/14 사고).
+    🔴 **셸 전용이 아니다.** `.env`에 적어두면 어떤 기동 방식으로도 산다. 종전에는
+    `os.environ`만 봐서 **운영 서버의 `.env`가 안 먹었다**(8/14 사고).
 
-    ⚠ 우선순위는 **init 인자 > 프로세스 env > `.env` > 선언 기본값**이다.
-    ⇒ 셸에서 켜는 기존 사용법(`CHECKON_ALLOW_REAL_LLM=1 uv run …`)이 **안 깨진다.**
+    🔴 **그 처방(#267)이 절반이었다** — `env_file=".env"`는 상대경로라 *"**작업 디렉터리**
+    에서 읽는다"* 였고, 저장소 루트가 아닌 데서 기동하면 **못 찾고 조용히 `False`로**
+    떨어졌다. **증상이 8/14 사고와 똑같고 원인만 다르다** ⇒ 브리핑 전건 템플릿 폴백.
+    ⚠ 윈도우 서비스·작업 스케줄러는 작업 디렉터리가 저장소 루트가 아니다 — 맥·리눅스에서
+    `cd` 해서 띄우면 **평생 안 보인다.** ⇒ `ENV_FILES` 앵커로 막았다(99 #73).
+
+    ⚠ 우선순위는 **init 인자 > 프로세스 env > `.env`(CWD > 앵커) > 선언 기본값**이다.
+    ⇒ 셸에서 켜는 기존 사용법(`CHECKON_ALLOW_REAL_LLM=1 uv run …`)이 **안 깨지고**,
+    `monkeypatch.chdir` + 임시 `.env`로 값을 만드는 검사·세션 핀도 **그대로 산다.**
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env", extra="ignore", populate_by_name=True
+        env_file=ENV_FILES, extra="ignore", populate_by_name=True
     )
 
     allow_real_llm: bool = Field(default=False, alias=REAL_LLM_OPTIN_ENV)

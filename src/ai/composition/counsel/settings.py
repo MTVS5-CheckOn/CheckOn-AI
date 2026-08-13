@@ -7,11 +7,13 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ai.runtime.env_files import ENV_FILES
+
 
 class CounselSettings(BaseSettings):
     """상담팩 운영 파라미터 — env 주입."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     counsel_llm_failure_circuit: int = 3
     """연속 LLM 실패 학생 수 임계 → paused. 기본 3은 `langgraph_state.md` §1.3

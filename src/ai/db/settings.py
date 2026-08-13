@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ai.runtime.env_files import ENV_FILES
+
 #: 지원하는 저장소 백엔드 — 🔴 **허용 값의 정본**이다(99 #38).
 type StoreBackend = Literal["memory", "pg"]
 
@@ -17,7 +19,7 @@ type StoreBackend = Literal["memory", "pg"]
 class DbSettings(BaseSettings):
     """DB 설정. `.env` 또는 환경 변수로 접속정보와 저장소 종류를 주입한다."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     database_url: str = "postgresql+asyncpg://localhost/checkon_ai"
     """async 드라이버(asyncpg) URL. 실배포는 .env로 주입."""

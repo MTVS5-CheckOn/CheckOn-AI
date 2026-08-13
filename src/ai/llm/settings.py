@@ -4,11 +4,13 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ai.runtime.env_files import ENV_FILES
+
 
 class LlmSettings(BaseSettings):
     """LLM 플랫폼 설정. `.env` 또는 환경 변수에서 추적 활성 여부를 읽는다."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     #: ``.env``의 추적 설정을 스키마에 표기하기 위한 필드. **기동 가드는 이 값을 보지
     #: 않는다** — 판정 정본은 ``ai.runtime.tracing.external_tracing_active()`` 단일이며

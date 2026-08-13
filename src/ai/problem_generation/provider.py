@@ -18,6 +18,7 @@ from ai.llm.providers.openai_compat import (
 )
 from ai.llm.settings import LlmSettings
 from ai.problem_generation.domain.policy import VerifyConfig
+from ai.runtime.env_files import ENV_FILES
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
 
 LOCAL_GENERATOR_PROVIDER_NAME = "pg-local-generator"
@@ -28,7 +29,7 @@ EXTERNAL_VERIFIER_PROVIDER_NAME = "pg-openai-verifier"
 class ProblemProviderSettings(BaseSettings):
     """문제출제 verifier 전용 OpenAI 호환 접속 설정."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     openai_base_url: str | None = None
     openai_api_key: SecretStr | None = None

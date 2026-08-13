@@ -32,6 +32,7 @@ from ai.db.repositories.llm_payload import capture_payloads
 from ai.db.repositories.run_store import default_llm_call_collector
 from ai.detection.brief import build_brief
 from ai.llm.gateway import LlmCallRecorder, LlmGateway
+from ai.runtime.env_files import ENV_FILES
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
 
 #: 브리핑 전송 재시도 = 0 — LLM 실패 시 결정론 템플릿으로 즉시 폴백(재시도 없음).
@@ -52,7 +53,7 @@ _FAKE_DEFAULT = "확인이 필요한 학습 신호가 있어요."
 class BriefingSettings(BaseSettings):
     """브리핑 provider 설정 — env `LLM_PROVIDER`로 주입(기본 fake)."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     llm_provider: str = _FAKE
     """"fake"(기본·CI·데모) | "openai_compat"(실 벤더 — 어댑터 PR 머지 후 활성)."""
