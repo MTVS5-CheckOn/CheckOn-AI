@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import sys
 import time
+from collections.abc import Coroutine
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -767,7 +768,10 @@ def main(argv: list[str] | None = None) -> int:
     if external_tracing_active():
         print("실 LLM 미실행: 외부 트레이싱이 활성화돼 있다.")
         return 2
-    return asyncio.run(_main_async(args.area, args.repetitions))
+    try:
+        return asyncio.run(_main_async(args.area, args.repetitions))
+    except KeyboardInterrupt:
+        return 130
 
 
 def test_smoke_cases_use_real_curriculum_nodes_and_supported_source_shapes() -> None:
@@ -901,6 +905,57 @@ def test_cli_optin_off_exits_before_runner(
 
     assert main(["--area", "language"]) == 2
     assert "실 LLM 미실행" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("runner_exit_code", [0, 1])
+def test_cli_preserves_runner_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+    runner_exit_code: int,
+) -> None:
+    monkeypatch.setattr(sys.modules[__name__], "real_llm_optin", lambda: True)
+    monkeypatch.setattr(
+        sys.modules[__name__], "external_tracing_active", lambda: False
+    )
+    def completed(coro: Coroutine[object, object, int]) -> int:
+        coro.close()
+        return runner_exit_code
+
+    monkeypatch.setattr(asyncio, "run", completed)
+
+    assert main(["--area", "language"]) == runner_exit_code
+
+
+def test_cli_keyboard_interrupt_returns_130(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys.modules[__name__], "real_llm_optin", lambda: True)
+    monkeypatch.setattr(
+        sys.modules[__name__], "external_tracing_active", lambda: False
+    )
+
+    def interrupted(coro: Coroutine[object, object, int]) -> int:
+        coro.close()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(asyncio, "run", interrupted)
+
+    assert main(["--area", "language"]) == 130
+
+
+def test_cli_does_not_map_provider_error_to_130(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys.modules[__name__], "real_llm_optin", lambda: True)
+    monkeypatch.setattr(
+        sys.modules[__name__], "external_tracing_active", lambda: False
+    )
+
+    def provider_error(coro: Coroutine[object, object, int]) -> int:
+        coro.close()
+        raise RuntimeError("provider error")
+
+    monkeypatch.setattr(asyncio, "run", provider_error)
+
+    with pytest.raises(RuntimeError, match="provider error"):
+        main(["--area", "language"])
 
 
 def test_cli_fake_provider_renders_table_without_endpoint() -> None:
