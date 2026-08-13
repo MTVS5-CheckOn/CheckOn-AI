@@ -6,11 +6,15 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from ai.contracts.graphrag import ContextLockedFields, GraphContextRequest
 from ai.contracts.problem_generation import TargetSource
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.problem_generation.infrastructure.build_lexicon_index import (
     build_index,
+    load_node_map,
     normalize_headword,
     write_index,
 )
@@ -20,6 +24,7 @@ from ai.problem_generation.infrastructure.graph_context import (
 from ai.problem_generation.infrastructure.lexicon_index import (
     LexiconNodeMap,
     LexiconNodeRule,
+    load_lexicon_index,
 )
 
 
@@ -114,6 +119,27 @@ def _write_missing_pos_xml(path: Path) -> None:
 def test_headword_normalization_contract() -> None:
     assert normalize_headword("대-명사01") == "대명사"
     assert normalize_headword("문장^성분") == "문장성분"
+
+
+def test_node_rule_rejects_empty_allowed_pos_at_model_boundary() -> None:
+    with pytest.raises(ValidationError):
+        LexiconNodeRule(
+            label="빈 품사 규칙",
+            headwords=("형태소",),
+            allowed_pos=(),
+        )
+
+
+def test_committed_index_source_revision_matches_map_and_every_entry() -> None:
+    mapping = load_node_map()
+    index = load_lexicon_index()
+
+    assert index.source_revision == mapping.source_revision
+    assert {
+        entry.source_revision
+        for entries in index.nodes.values()
+        for entry in entries
+    } == {mapping.source_revision}
 
 
 def test_index_filters_cat_and_pos_then_sorts_and_caps_senses(tmp_path: Path) -> None:
