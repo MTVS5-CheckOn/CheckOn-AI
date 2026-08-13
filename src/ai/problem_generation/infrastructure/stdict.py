@@ -30,6 +30,7 @@ from ai.problem_generation.domain.lexicon import (
     LexiconEntry,
     LexiconSense,
 )
+from ai.runtime.env_files import ENV_FILES
 
 #: 조회 1회당 상세를 채울 표제어 상한(불변식 6 — 모든 루프에 상한).
 #: 동형어가 아무리 많아도 호출 수가 발산하지 않게 막는다.
@@ -39,7 +40,7 @@ DEFAULT_MAX_ENTRIES: Final = 10
 class StdictSettings(BaseSettings):
     """표준국어대사전 오픈 API 접속 설정 — 값은 env 주입."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     stdict_api_key: SecretStr | None = None
     stdict_base_url: str = "https://stdict.korean.go.kr/api"

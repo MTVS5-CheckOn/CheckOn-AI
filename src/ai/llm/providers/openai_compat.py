@@ -57,6 +57,7 @@ from ai.contracts.llm import (
     ParseFailed,
     TokenUsage,
 )
+from ai.runtime.env_files import ENV_FILES
 from ai.runtime.real_llm import RealLlmOptInRequired, build_real_openai_client
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ _RATE_LIMITED = 429
 class OpenAiSettings(BaseSettings):
     """OpenAI API 접속 설정 — `OPENAI_*` env로 주입. 하드코딩 금지(§1)."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     openai_api_key: str = "missing"
     """OpenAI API 키. 실호출은 명시적 opt-in과 유효한 scope를 모두 요구한다."""

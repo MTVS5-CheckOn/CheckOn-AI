@@ -81,6 +81,7 @@ from ai.problem_generation.provider import (
     build_problem_gateway,
     build_problem_providers,
 )
+from ai.runtime.env_files import ENV_FILES
 from ai.runtime.errors import (
     DomainException,
     IdempotencyConflict,
@@ -130,7 +131,7 @@ class ProblemRouterSettings(BaseSettings):
     """PG 슈퍼바이저 운영 파라미터."""
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_prefix="PG_", extra="ignore"
+        env_file=ENV_FILES, env_prefix="PG_", extra="ignore"
     )
 
     lease_seconds: int = 300

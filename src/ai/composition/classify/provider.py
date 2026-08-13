@@ -24,6 +24,7 @@ from ai.contracts.llm import (
 from ai.db.repositories.llm_payload import capture_payloads
 from ai.db.repositories.run_store import default_llm_call_collector
 from ai.llm.gateway import LlmCallRecorder, LlmGateway
+from ai.runtime.env_files import ENV_FILES
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
 
 _FAKE: Final = "fake"
@@ -42,7 +43,7 @@ _FAKE_OUTPUT: Final = (
 class ClassifySettings(BaseSettings):
     """분류 provider 설정 — env `LLM_PROVIDER`로 주입(기본 fake)."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
     llm_provider: str = _FAKE
 
