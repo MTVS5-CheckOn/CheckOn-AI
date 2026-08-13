@@ -69,7 +69,11 @@ from ai.problem_generation.application.passage_generator import (
     attach_passage_draft,
     attach_source_material_draft,
 )
-from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
+from ai.problem_generation.application.ports import (
+    CandidateStore,
+    ProblemItemStore,
+    ProblemSetStore,
+)
 from ai.problem_generation.domain.cross_solve import validate_cross_solve
 from ai.problem_generation.domain.difficulty import (
     classify_t1_difficulty,
@@ -202,6 +206,7 @@ class ProblemGenerationWorkflow:
         cross_solver: BlindCrossSolver,
         candidate_store: CandidateStore,
         item_store: ProblemItemStore,
+        set_store: ProblemSetStore,
         checkpointer: BaseCheckpointSaver[Any],
         verify_config: VerifyConfig,
         banned_topics: BannedTopicsConfig,
@@ -215,6 +220,7 @@ class ProblemGenerationWorkflow:
         self._cross_solver = cross_solver
         self._candidate_store = candidate_store
         self._item_store = item_store
+        self._set_store = set_store
         self._checkpointer = checkpointer
         self._verify_config = verify_config
         self._rule_validator = RuleValidator(
@@ -264,6 +270,12 @@ class ProblemGenerationWorkflow:
             execution_context.execution_id,
             f"{request.tenant_id}:{request.request_id}:{request.idempotency_key}",
         )
+        await self._set_store.create(
+            set_id=set_id,
+            request=request,
+            execution_context=execution_context,
+            diagnostic_purpose=any(target.diagnostic_purpose for target in prepared),
+        )
         initial = ProblemGenerationState(
             request_ref=f"problem-request:{request.request_id}",
             request_hash=request_hash(request),
@@ -303,7 +315,9 @@ class ProblemGenerationWorkflow:
                 status_reason="요청 조건에 맞는 저작권 만료 문학 원문을 선택할 수 없다"
             )
         final_state = ProblemGenerationState.model_validate(result)
-        return final_state.to_result()
+        outcome = final_state.to_result()
+        await self._set_store.finalize(outcome)
+        return outcome
 
     def build_graph(
         self,
@@ -1058,15 +1072,20 @@ class ProblemGenerationWorkflow:
         reason: ProblemFailureReason,
         detail: str,
     ) -> dict[str, object]:
-        return self._complete_slot(
-            state,
-            ItemResult(
-                status=ProblemItemStatus.DROPPED,
-                attempt_no=state.item_attempt,
-                failure_reason=reason,
-                failure_detail=detail,
-            ),
+        item_result = ItemResult(
+            status=ProblemItemStatus.DROPPED,
+            attempt_no=state.item_attempt,
+            failure_reason=reason,
+            failure_detail=detail,
         )
+        await self._item_store.save(
+            set_id=state.set_id,
+            slot_index=state.cursor,
+            result=item_result,
+            candidate_ref=None,
+            item=None,
+        )
+        return self._complete_slot(state, item_result)
 
     def _complete_slot(
         self,

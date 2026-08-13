@@ -15,7 +15,11 @@ from ai.problem_generation.application.passage_generator import (
     PassageGenerator,
     SourceMaterialGenerator,
 )
-from ai.problem_generation.application.ports import CandidateStore, ProblemItemStore
+from ai.problem_generation.application.ports import (
+    CandidateStore,
+    ProblemItemStore,
+    ProblemSetStore,
+)
 from ai.problem_generation.application.workflow import (
     DiagnosisCallable,
     ProblemGenerationWorkflow,
@@ -27,6 +31,7 @@ from ai.problem_generation.infrastructure.config import (
     load_verify_config,
 )
 from ai.problem_generation.infrastructure.literature_pool import load_literature_pool
+from ai.problem_generation.infrastructure.memory_store import InMemoryProblemSetStore
 
 
 def build_problem_workflow(
@@ -37,6 +42,7 @@ def build_problem_workflow(
     candidate_store: CandidateStore,
     item_store: ProblemItemStore,
     checkpointer: BaseCheckpointSaver[Any],
+    set_store: ProblemSetStore | None = None,
     verify_config: VerifyConfig | None = None,
     banned_topics: BannedTopicsConfig | None = None,
 ) -> ProblemGenerationWorkflow:
@@ -62,6 +68,7 @@ def build_problem_workflow(
         cross_solver=BlindCrossSolver(gateway),
         candidate_store=candidate_store,
         item_store=item_store,
+        set_store=set_store or InMemoryProblemSetStore(),
         checkpointer=checkpointer,
         verify_config=resolved_verify_config,
         banned_topics=resolved_banned_topics,

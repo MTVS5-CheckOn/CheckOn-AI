@@ -6,7 +6,14 @@ from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 from uuid import UUID
 
-from ai.contracts.problem_generation import GeneratedItem, ItemResult, ItemRevision
+from ai.contracts.execution import ExecutionContext
+from ai.contracts.problem_generation import (
+    GeneratedItem,
+    ItemResult,
+    ItemRevision,
+    ProblemRequest,
+    ProblemSetResult,
+)
 from ai.problem_generation.domain.lexicon import LexiconEntry
 from ai.problem_generation.domain.models import CandidateSnapshot, StoredProblemItem
 
@@ -104,6 +111,25 @@ class ProblemItemStore(Protocol):
 
     async def current_revision_no(self, set_id: UUID, slot_index: int) -> int:
         """슬롯의 현재 낙관적 잠금 번호를 읽는다."""
+        ...
+
+
+class ProblemSetStore(Protocol):
+    """AI_RUN과 슬롯 사이의 문제 세트 부모 저장 경계."""
+
+    async def create(
+        self,
+        *,
+        set_id: UUID,
+        request: ProblemRequest,
+        execution_context: ExecutionContext,
+        diagnostic_purpose: bool,
+    ) -> None:
+        """문항 저장 전에 생성 중인 부모 세트를 멱등 보장한다."""
+        ...
+
+    async def finalize(self, result: ProblemSetResult) -> None:
+        """종료 결과의 상태·요약·중단 사유를 부모 세트에 투영한다."""
         ...
 
 
