@@ -10,6 +10,7 @@ import re
 
 from ai.composition.briefing_context import BriefingContext, build_contexts
 from ai.contracts.detection import RuleId
+from ai.contracts.taxonomy import AreaTag, TypeTag
 from ai.detection.engine import detect
 from ai.evaluation.demo_snapshot import build_demo_request
 
@@ -28,8 +29,12 @@ def test_r6_uses_korean_area_type_labels() -> None:
     """R6 셀 영역·유형은 확정 한글 어휘로(영어 원태그 유출 없음)."""
     ctx = _ctx_for(RuleId.R6)
     cell = next(f for f in ctx.facts if f.label == "오답이 몰린 영역·유형")
-    assert cell.value == "문학·추론"  # literature·infer → 09 §2 확정 어휘
-    assert "literature" not in cell.value and "infer" not in cell.value
+    #: ⚠ **값을 리터럴로 박지 않는다** — 데모의 bias 셀이 바뀌면(2026-08-14에 시드와
+    #:   맞추면서 `language·concept` 학생이 앞에 왔다) 이 검사가 **어휘 문제가 아닌
+    #:   이유로** red가 된다. 지키려는 것은 «영어 원태그가 안 샌다»이지 특정 셀이 아니다.
+    assert "·" in cell.value, cell.value
+    assert not any(tag.value in cell.value for tag in AreaTag), cell.value
+    assert not any(tag.value in cell.value for tag in TypeTag), cell.value
 
 
 def test_r4_ratio_uses_bae_unit_not_percent() -> None:
