@@ -172,6 +172,25 @@ class Signal(Base):
     lifecycle: Mapped[str] = mapped_column(String)
     score: Mapped[Decimal] = mapped_column(Numeric)
     rank: Mapped[int] = mapped_column(Integer)
+
+    #: ━━ 비교값 (99 #59·#60 · 안 D) — 2026-08-14 준영님 양자 승인 ━━
+    #:
+    #: 🔴 **응답에는 나가는데 원장에 없어서**, 강사가 이의를 제기해도 *"그때 평소값이
+    #: 얼마였나"* 를 우리 원장으로 답할 수 없었다. 재현이 반쪽이었다.
+    #:
+    #: 🔴 **전부 nullable 이다** — 규칙마다 채울 수 있는 것이 다르고 **값의 부재가 정상**이다:
+    #:   `return_care` 는 넷 다 `None`(사건형 — 잴 지표도 비교 대상도 없다) ·
+    #:   `submit_drop`·`type_bias` 는 `baseline` 이 `None`(**평소가 아니라 임계값**과
+    #:   비교한다 — 임계를 baseline 에 적으면 *"평소 대비"* 로 읽혀 거짓이 된다).
+    #: ⚠ **`observed` 의 단위가 규칙마다 다르다** — `submit_drop` 은 «주 수»다.
+    #:   정본 표는 `docs/part_a/14_evidence_fields.md` §3-2′ (여기 복제하지 않는다).
+    #: ⚠ **`evidence_item` 은 같이 안 열었다** — 그 테이블은 **쓰는 코드가 0건**이다
+    #:   (아래 `EvidenceItem` docstring).
+    metric: Mapped[str | None] = mapped_column(String, nullable=True)
+    observed: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    baseline: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    sample_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(_TZ)
 
 
@@ -201,6 +220,23 @@ class RuleFeedback(Base):
 
 
 class EvidenceItem(Base):
+    """🔴 **쓰는 코드가 0건이다** (2026-08-14 · A·B 각자 전수 확인).
+
+    ⚠ **«미사용» 이 아니다** — 그 표현은 *"지금은 안 쓰지만 배선돼 있다"* 로 읽힌다.
+    실제로는 **INSERT 경로 자체가 없다**: 이 클래스를 import 하는 코드 0건, 이 테이블에
+    쓰는 코드 0건(정의 + `0001` 초기 마이그레이션이 전부).
+
+    ⚠ `detection/evidence.py` 의 `EvidenceItem` 은 **동명이인**이다 — 응답 계약의 값 객체
+    (`role`·`occurred_on` 을 갖는다)이지 이 ORM 행이 아니다.
+    ⚠ B 의 문항 근거는 `problem_item.snapshot`(JSONB) 안에 앵커로 들어간다
+    (`part_b/09` §2-20 「스냅숏 정본 + 파생 투영」). 그래서 SQL 로 질의할 수 없다 —
+    *"이 조항을 근거로 쓴 문항 전부"* 같은 질의가 필요해지면 이 테이블을 다시 볼 자리다.
+
+    ⇒ 응답 evidence 의 `role`·`observed`·`sample_size`·`occurred_on` 을 **여기 안 넣었다.**
+    **쓰는 코드가 0건인 테이블에 컬럼만 늘리는 것은 값이 없다**(99 #60 · 준영님 판단 일치).
+    여는 조건: 이 테이블에 **실제로 적재하는 경로**가 생길 때.
+    """
+
     __tablename__ = "evidence_item"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)

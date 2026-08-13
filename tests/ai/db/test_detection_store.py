@@ -11,10 +11,23 @@ import asyncio
 import uuid
 from collections.abc import Coroutine
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 
-from ai.contracts.detection import EventSource, EventType, LearningEvent
+from ai.contracts.detection import (
+    DISPLAY_LABELS,
+    Brief,
+    EventSource,
+    EventType,
+    EvidenceItem,
+    EvidenceRole,
+    LearningEvent,
+    Lifecycle,
+    RuleId,
+    Signal,
+    SignalType,
+)
 from ai.contracts.execution import Capability, RunMetadata
 from ai.db.repositories.detection_store import (
     DetectionStore,
@@ -22,6 +35,7 @@ from ai.db.repositories.detection_store import (
     InMemoryDetectionStore,
     LedgerWrite,
     PgDetectionStore,
+    _signal_orm,
     dedupe_learning_events,
 )
 from ai.runtime.errors import LedgerWriteFailed
@@ -185,3 +199,107 @@ def test_pg_persist_failure_is_fail_closed() -> None:
         _run(_pg_store().persist_ledger(ledger))
     assert exc.value.http_status == 500
     assert exc.value.code == "INTERNAL"
+
+
+# ── 비교값 적재 — 🔴 `0.0` 이 `None` 으로 접히지 않는다 (99 #59·#60) ──
+
+
+def _signal_with(observed: float | None, baseline: float | None) -> Signal:
+    """비교값만 다른 최소 Signal — 나머지는 계약을 만족하는 아무 값."""
+    return Signal(
+        signal_id="sig_1",
+        student_ref="st_1",
+        class_ref="cl_a1",
+        rule_id=RuleId.R1,
+        signal_type=SignalType.ACC_DROP,
+        display_label=DISPLAY_LABELS[SignalType.ACC_DROP],
+        score=0.5,
+        rank=1,
+        lifecycle=Lifecycle.NEW,
+        brief=Brief(text="x", gate_passed=True, fallback_used=False),
+        evidence=(
+            EvidenceItem(
+                source_table="learning_event",
+                record_id="le_1",
+                summary="x",
+                role=EvidenceRole.TRIGGER,
+            ),
+        ),
+        metric="accuracy",
+        observed=observed,
+        baseline=baseline,
+        sample_size=0,
+    )
+
+
+def _comparison_run() -> RunMetadata:
+    """이 절 전용 실행 메타 — 위쪽 `_run`(코루틴 러너)과 이름이 겹치지 않게 한다."""
+    return RunMetadata(
+        execution_id=uuid.uuid4(),
+        tenant_id="t1",
+        capability=Capability.DETECTION,
+        input_snapshot_hash="sha256:x",
+        pipeline_version="v1",
+        engine_version="rules-1.0",
+        schema_version="0.1",
+        contract_version="0.1",
+        created_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+
+def test_a_zero_observation_is_stored_as_zero_not_as_missing() -> None:
+    """🔴 **`observed=0.0` 을 `None` 으로 접지 마라** — 「0이었다」와 「모른다」는 다른 사실이다.
+
+    `0.0` 은 실제로 나온다: 정답률 0%(전부 오답) · 활동 0건 · 제출 0건.
+    `if value` 로 가르면 그 셋이 전부 «안 쟀다» 로 원장에 남는다 — 강사가 이의를 제기했을 때
+    *"그때 0이었는데 기록이 없다"* 가 된다. 이 저장소가 반복해 겪은 실패 형태다(99 #43·#54).
+
+    ⚠ `sample_size=0` 도 같은 축이다 — 정수라 `_decimal_or_none` 을 안 타지만, 누가
+    «비었으면 None» 으로 바꾸면 같은 사고가 난다.
+    """
+    row = _signal_orm(
+        _signal_with(observed=0.0, baseline=0.0),
+        _comparison_run(),
+        uuid.uuid4(),
+        datetime.now(UTC),
+    )
+
+    assert row.observed == Decimal("0"), row.observed
+    assert row.observed is not None
+    assert row.baseline == Decimal("0"), row.baseline
+    assert row.baseline is not None
+    assert row.sample_size == 0
+
+
+def test_a_missing_comparison_stays_missing() -> None:
+    """반대 방향 — 비교하지 않는 규칙의 `None` 이 `0` 으로 바뀌지 않는다.
+
+    `submit_drop`·`type_bias` 는 **임계값**과 비교하고 `return_care` 는 비교 자체가 없다.
+    그 자리에 `0` 이 들어가면 *"평소가 0이었다"* 로 읽혀 **거짓**이 된다.
+    """
+    row = _signal_orm(
+        _signal_with(observed=3.0, baseline=None),
+        _comparison_run(),
+        uuid.uuid4(),
+        datetime.now(UTC),
+    )
+
+    assert row.observed == Decimal("3.0")
+    assert row.baseline is None
+
+
+def test_the_float_goes_through_str_not_binary() -> None:
+    """⚠ `Decimal(str(x))` 관례 — `Decimal(x)` 는 이진 부동소수 오차를 그대로 옮긴다.
+
+    `0.1` 이 `0.1000000000000000055511151231257827021181583404541015625` 로 적히면
+    원장 값이 응답 값과 **눈으로 달라 보인다**.
+    """
+    row = _signal_orm(
+        _signal_with(observed=0.1, baseline=None),
+        _comparison_run(),
+        uuid.uuid4(),
+        datetime.now(UTC),
+    )
+
+    assert row.observed == Decimal("0.1")
+    assert str(row.observed) == "0.1"

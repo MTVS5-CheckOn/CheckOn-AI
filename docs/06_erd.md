@@ -193,10 +193,13 @@ erDiagram
     varchar lifecycle "new|ongoing|follow_up — AI 경보 생애 판정, 09 §4"
     numeric score
     int rank "반 내 최종 표시 순번 — new·follow_up 통과분 뒤 ongoing·R5, 5 초과 가능"
+    varchar metric "무엇을 잰 값인가 — accuracy·consecutive_missing_weeks 등"
+    numeric observed "판정 창의 관측값 — 단위가 규칙마다 다르다(part_a/14 §3-2′)"
+    numeric baseline "비교 기준값 — 임계 비교형(submit_drop·type_bias)·사건형(return_care)은 null"
+    int sample_size "분모 — 문항 수 또는 기준선 주 수"
     timestamptz created_at
   }
-  %% 🔴 (2026-08-14) `SIGNAL` 도 같다 — 응답에 `metric`·`observed`·`baseline`·`sample_size`
-  %%    가 나가지만 이 표에는 없다(저장 안 함). 사유는 아래 EVIDENCE_ITEM 주석과 동일.
+  %% (2026-08-14) 비교값 4컬럼은 99 #60 으로 열렸다 — 준영님 양자 승인. evidence_item 은 아직이다.
   SIGNAL_BRIEF {
     uuid id PK
     varchar tenant_id
@@ -226,7 +229,10 @@ erDiagram
   %% 🔴 (2026-08-14) **응답 계약에는 있는데 이 표에는 없는 필드가 넷 있다** — 의도된 상태다.
   %%    signals[].evidence[] 에 `role`·`observed`·`sample_size`·`occurred_on` 이 나가지만
   %%    (04 §2 [A 확정 통보 2026-08-14] · part_a/09) **AI PG 에는 저장하지 않는다.**
-  %%    ⚠ `db/models.py` 는 **양자 승인 파일**이라 컬럼 추가에 준영님 승인이 필요하다.
+  %%    🔴 **B 도 안 쓴다**(2026-08-14 준영님 전수: import 0건 · INSERT 0건).
+  %%    B 의 문항 근거는 problem_item.snapshot(JSONB) 안에 있다(part_b/09 §2-20).
+  %%    ⇒ **쓰는 코드가 0건인 테이블에 컬럼만 늘리는 것은 값이 없어** 열지 않았다.
+  %%    여는 조건: 이 테이블에 **실제로 적재하는 경로**가 생길 때.
   %%    ⇒ 이 ERD 는 **DB 현실**을 그린다. 없는 컬럼을 그리면 ERD 가 거짓이 되고
   %%      `test_erd_model_parity` 가 red 가 된다(컬럼 단위로 대조한다).
   %%    **여는 조건: 원장에도 남길지 결정 → 승인 → 모델·마이그레이션·ERD 동시 갱신** (99 #60)
