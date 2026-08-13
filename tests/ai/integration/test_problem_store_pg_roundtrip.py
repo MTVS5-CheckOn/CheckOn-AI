@@ -227,6 +227,70 @@ def test_revision_roundtrip_advances_current_number_and_keeps_verified_body() ->
     _run(scenario)
 
 
+def test_pg_revision_lock_rejects_concurrent_turn_then_allows_next_turn() -> None:
+    """동시 수정은 막고 첫 트랜잭션 종료 뒤 같은 문항의 다음 수정을 허용한다."""
+
+    tenant = f"t_{uuid.uuid4().hex[:8]}"
+
+    async def scenario(_sm: async_sessionmaker[AsyncSession]) -> None:
+        from ai.db.repositories.problem_revision_store import PgProblemRevisionStore
+        from ai.db.repositories.problem_store import PgProblemItemStore
+        from ai.db.settings import get_db_settings
+        from ai.problem_generation.application.ports import RevisionConflict
+
+        engine = create_async_engine(
+            get_db_settings().database_url,
+            pool_size=2,
+            max_overflow=0,
+            pool_use_lifo=False,
+        )
+        try:
+            sm = async_sessionmaker(engine, expire_on_commit=False)
+            set_id = await _make_problem_set(sm, tenant=tenant)
+            await PgProblemItemStore(sessionmaker=sm, tenant_id=tenant).save(
+                set_id=set_id,
+                slot_index=0,
+                result=_result(problem_item_id(set_id, 0)),
+                candidate_ref=f"item-candidate:{set_id}:0:1",
+                item=_item(),
+            )
+            revisions = PgProblemRevisionStore(sessionmaker=sm, tenant_id=tenant)
+            entered = asyncio.Event()
+            release = asyncio.Event()
+
+            async def first_turn() -> None:
+                async with revisions.reserve(
+                    set_id=set_id, slot_index=0, base_revision_no=0
+                ):
+                    entered.set()
+                    await release.wait()
+
+            first = asyncio.create_task(first_turn())
+            await asyncio.wait_for(
+                entered.wait(), timeout=_CONCURRENT_SAVE_TIMEOUT_SECONDS
+            )
+            try:
+                with pytest.raises(RevisionConflict) as caught:
+                    async with revisions.reserve(
+                        set_id=set_id, slot_index=0, base_revision_no=0
+                    ):
+                        raise AssertionError("동시 수정 본문은 실행되면 안 된다")
+                assert caught.value.reason == "revision_in_progress"
+                assert caught.value.current_revision_no == 0
+            finally:
+                release.set()
+                await asyncio.wait_for(first, timeout=_CONCURRENT_SAVE_TIMEOUT_SECONDS)
+
+            async with revisions.reserve(
+                set_id=set_id, slot_index=0, base_revision_no=0
+            ) as next_turn:
+                assert next_turn.current_revision_no == 0
+        finally:
+            await engine.dispose()
+
+    _run(scenario)
+
+
 def test_save_get_roundtrip_keeps_every_axis_the_columns_could_not() -> None:
     """무손실 왕복 — 결손 12건이 스냅숏으로 돌아온다."""
     tenant = f"t_{uuid.uuid4().hex[:8]}"
