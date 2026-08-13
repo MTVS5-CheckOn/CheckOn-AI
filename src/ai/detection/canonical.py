@@ -73,8 +73,12 @@ def canonical_snapshot_payload(request: DetectRequest) -> dict[str, Any]:
             student.model_dump(mode="json")
             for student in sorted(request.students, key=lambda s: s.student_ref)
         ],
+        #: ⚠ `passage_ref`는 **백엔드 요청 계약에 없는 AI 전용 필드**다(2026-08-13 대조).
+        #:   백엔드 `AiDetectionRequest.LearningEventSnapshot`에는 그 필드 자체가 없어
+        #:   canonical에 넣으면 learning_events가 있는 **모든 실요청에서** Java와 갈린다.
+        #:   기존 고정 벡터 3종은 `learning_events`가 비어 있어 값이 바뀌지 않는다(99 #50).
         "learning_events": [
-            event.model_dump(mode="json")
+            event.model_dump(mode="json", exclude={"passage_ref"})
             for event in sorted(request.learning_events, key=lambda e: e.record_id)
         ],
         "alert_context": [
