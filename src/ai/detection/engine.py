@@ -31,6 +31,7 @@ from ai.contracts.detection import (
     DetectResponse,
     DetectStats,
     EvidenceItem,
+    EvidenceRole,
     Lifecycle,
     RuleId,
     RuleSkipped,
@@ -68,8 +69,20 @@ _SIGNAL_NS = uuid.UUID("00000000-0000-5000-8000-0000000d0e70")
 
 logger = logging.getLogger(__name__)
 
-#: 근거로 첨부할 최대 이벤트 수.
-_MAX_EVIDENCE = 3
+#: 근거로 첨부할 **역할별** 최대 항목 수.
+#:
+#: 🔴 **역할별로 가른 이유 — 전체 상한 하나면 종전 응답이 바뀐다.** 상한을 3→6으로만 올리면
+#: R1이 `learning_event` **trigger 행을 3건에서 6건으로** 내기 시작한다. 이 PR은 *"기준선을
+#: 추가한다"* 지 *"기존 근거를 바꾼다"* 가 아니다 — 늘어난 행은 **전부 `baseline`** 이어야
+#: 백엔드가 diff를 읽고 표시 로직을 안전하게 고칠 수 있다(2026-08-13 실측으로 갈렸다).
+#:
+#: ⚠ **무한정 늘리지 않는다** — 알림 하나에 근거 열 몇 건은 못 읽는다. R3의 기준창은 8주라
+#: 그대로 두면 baseline만 8건이 된다. 승우님께 보낸 명세가 *"3건 → 5~6건"* 으로 알린
+#: 상한이 이 둘의 합(최대 6)이다.
+#: 🔴 **무엇을 왜 잘랐는지가 보여야 한다** — 조용한 절단은 이 저장소가 이미 당했다(99 #54).
+#:   기준선은 **최근 주부터** 남긴다(오래된 주가 먼저 잘린다).
+_MAX_TRIGGER_EVIDENCE = 3
+_MAX_BASELINE_EVIDENCE = 3
 
 #: 근거 전무로 신호를 만들지 못한 경우의 스킵 사유(09 §3 ②) — stats.rules_skipped.reason.
 #: ⚠ **정본 근거 부재(`authoritative_evidence_missing`)와 다른 값이다** — 이쪽은
@@ -309,13 +322,22 @@ def _evidence_items(
                     evidence_weeks=finding.evidence_weeks,
                     learning_events=evidence_index,
                     student_evidence=bundle,
+                    baseline_weeks=finding.baseline_weeks,
                 ),
             )
         )
     unique: dict[tuple[str, str], EvidenceItem] = {}
     for item in items:
         unique.setdefault((item.source_table, item.record_id), item)
-    return tuple(unique.values())[:_MAX_EVIDENCE]
+    #: 🔴 **역할별로 자른다** — trigger는 종전 3건 그대로, baseline은 그 뒤에 최대 3건.
+    #:   전체 상한 하나로 자르면 trigger 수가 바뀌어 **기존 응답이 흔들린다**.
+    triggers = [i for i in unique.values() if i.role is EvidenceRole.TRIGGER]
+    baselines = [i for i in unique.values() if i.role is EvidenceRole.BASELINE]
+    #: ⚠ 기준선은 **최근 주부터** 남긴다 — 오래된 주가 먼저 잘리는 것이 읽는 쪽에 자연스럽다.
+    baselines.sort(key=lambda i: i.occurred_on or date.min, reverse=True)
+    return tuple(
+        triggers[:_MAX_TRIGGER_EVIDENCE] + baselines[:_MAX_BASELINE_EVIDENCE]
+    )
 
 
 def _drop_findings_without_evidence(
@@ -343,6 +365,7 @@ def _drop_findings_without_evidence(
                     evidence_weeks=finding.evidence_weeks,
                     learning_events=evidence_index,
                     student_evidence=bundle,
+                    baseline_weeks=finding.baseline_weeks,
                 ),
             )
         )
@@ -401,6 +424,12 @@ def _build_signal(
         lifecycle=lifecycle,
         brief=build_brief(signal_type, primary.detail),
         evidence=evidence,
+        #: 🔴 **primary가 정본이다** — 병합된 경보에서 응답이 주장하는 규칙은 primary이고,
+        #:   비교값이 다른 규칙 것이면 brief와 숫자가 갈린다(99 #60 · 안 D).
+        metric=primary.metric,
+        observed=primary.observed,
+        baseline=primary.baseline,
+        sample_size=primary.sample_size,
     )
 
 

@@ -10,7 +10,7 @@ from typing import Any, Final
 
 import pytest
 
-from ai.contracts.detection import DetectRequest, DetectResponse, RuleId
+from ai.contracts.detection import DetectRequest, DetectResponse, EvidenceRole, RuleId
 from ai.detection.engine import detect
 from ai.detection.evidence import SKIP_AUTHORITATIVE_EVIDENCE_MISSING
 from ai.evaluation.fake_snapshot import StudentPlan, build_detect_request
@@ -131,7 +131,10 @@ def test_r3_fires_from_the_weekly_aggregate_and_cites_it() -> None:
     evidence = signals[0].evidence
     assert {item.source_table for item in evidence} == {"student_week_activity"}
     #: 🔴 **판정에 쓴 count와 문면 숫자가 같다.**
-    assert len(evidence) == 1
+    #: ⚠ **`trigger`만 센다**(99 #60) — 기준선 행이 같은 테이블로 함께 실리므로 전체 개수를
+    #:   세면 *"판정 근거가 하나"* 라는 이 검사의 취지가 기준선 개수에 흔들린다.
+    triggers = [item for item in evidence if item.role is EvidenceRole.TRIGGER]
+    assert len(triggers) == 1
     assert evidence[0].summary.startswith("해당 주 학습 활동 ")
     assert evidence[0].summary.endswith("건")
 
@@ -162,7 +165,7 @@ def test_a_zero_count_aggregate_is_still_evidence() -> None:
     """
     from datetime import date  # noqa: PLC0415
 
-    from ai.contracts.detection import (  # noqa: PLC0415
+    from ai.contracts.detection import (
         EvidenceKind,
         WeeklyActivityEvidence,
     )

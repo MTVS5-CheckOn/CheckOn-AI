@@ -120,7 +120,9 @@ def test_r3_judgment_uses_the_authoritative_weekly_activity() -> None:
     response = detect(_conflicting().build(), _CONFIG)
     signal = response.signals[0]
     assert signal.rule_id is RuleId.R3
-    assert [item.source_table for item in signal.evidence] == ["student_week_activity"]
+    #: ⚠ 기준선 행도 같은 테이블이라 **집합**으로 본다 — 이 검사의 취지는 *"learning_event를
+    #:   인용하지 않는다"* 이지 개수가 아니다(99 #60).
+    assert {item.source_table for item in signal.evidence} == {"student_week_activity"}
     assert any(f"{_ACTIVITY_COUNT}건" in item.summary for item in signal.evidence), [
         item.summary for item in signal.evidence
     ]

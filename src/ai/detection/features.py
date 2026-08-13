@@ -37,6 +37,7 @@ class WeekFeatures:
     accuracy: float | None
     """정답률 — solve가 없으면 None."""
 
+
     submitted: bool
     """그 주 submit 이벤트가 하나라도 있었는지 (R2 연속 미제출)."""
 
@@ -51,6 +52,26 @@ class WeekFeatures:
 
     cells: tuple[CellStat, ...]
     """태깅된 solve의 area×type 셀별 집계 (R6)."""
+
+    timed_count: int | None
+    """`norm_time`의 **표본 수** — 정규화 시간을 낼 수 있었던 solve 수 (99 #60 · R4).
+
+    🔴 `n_solves`와 다르다 — `duration_sec`이 0이거나 `passage_word_count`가 없으면 제외된다.
+    🔴 적재분에서 복원한 주는 `None`(= 모른다). `graded_count`와 같은 규약이다.
+    """
+
+    graded_count: int | None
+    """정답률의 **분모** — `correct`가 채워진 solve 수 (99 #60).
+
+    🔴 **`n_solves`와 다르다.** 채점이 안 된 solve는 정답률에 안 들어간다. 화면에
+    *"0/5문항"* 을 쓰려면 이 값이어야 하고, `n_solves`를 쓰면 **분모가 부풀어** 같은
+    정답률이 다른 표본으로 보인다.
+    🔴 **적재분에서 복원한 주는 `None`이다** — `FEATURE_WEEK.metrics`에 이 키가 없어서
+    **모르는 것**이고, `0`으로 적으면 화면에 *"0/0문항"* 이 떠 **표본이 없다는 거짓**이 된다.
+    ⚠ **기본값을 두지 않았다** — 새 주 피처를 만들면서 빠뜨리면 조용히 통과한다.
+    ⚠ `FEATURE_WEEK.metrics`에는 안 넣었다 — 적재 키가 바뀌면 `_FEATURE_VERSION`이
+    올라가고 축적분이 갈린다(`api/routers/detect.py` 주석).
+    """
 
     expected_accuracy: float | None = None
     """그 주 푼 문항들의 **기대 정답률**(지문×유형 실측 · 폴백 포함 가중 평균).
@@ -117,11 +138,13 @@ def _week_features(week_monday: date, events: list[LearningEvent]) -> WeekFeatur
         week_monday=week_monday,
         n_solves=len(solves),
         accuracy=accuracy,
+        graded_count=len(graded),
         submitted=len(submits) > 0,
         norm_time=norm_time,
         event_count=len(events),
         tagging_rate=tagging_rate,
         cells=cells,
+        timed_count=len(ratios),
     )
 
 
@@ -190,6 +213,10 @@ def week_features_from_metrics(week_monday: date, metrics: Mapping[str, object])
         event_count=_as_int(metrics["event_count"]),
         tagging_rate=_as_float(metrics["tagging_rate"]),
         cells=(),
+        timed_count=None,
+        #: 🔴 **적재분에는 없다** — `_week_metrics`의 여섯 키에 안 넣었기 때문이고(적재 키가
+        #:   바뀌면 `_FEATURE_VERSION`이 올라간다), 없는 것을 0으로 적지 않는다.
+        graded_count=None,
     )
 
 
