@@ -383,3 +383,32 @@ def test_submit_drop_also_cites_the_most_recent_missing_week() -> None:
     assert max(missing_weeks) in cited, (
         f"최신 미제출 주({max(missing_weeks)})가 근거에 없다 — 인용 {sorted(cited)}"
     )
+
+
+def test_the_response_field_sets_are_pinned_so_the_docs_get_updated() -> None:
+    """🔴 응답 모델의 **필드 집합**을 리터럴로 고정한다 — 문서가 따라오게 만드는 장치다.
+
+    문서(`04_api_contract.md` §2 · `part_a/09_detect_spec.md`)가 **BE의 DTO 설계 근거**다.
+    코드에 필드가 늘었는데 문서가 안 따라오면 **BE는 없는 계약을 보고 만든다** —
+    2026-08-13에 실제로 그 상태였다(`role`·`occurred_on`·`sample_size`가 저장소 문서에 0건).
+
+    🔴 **문서 본문을 파싱하지 않는다.** 마크다운 대조는 깨지기 쉽고 그 자체가 유지보수
+    대상이 된다. 여기서 하는 것은 **필드가 늘거나 줄면 red를 내서 «문서도 봐라»를
+    상기시키는 것**까지다.
+    ⚠ **이 검사는 「문서가 갱신됐는가」를 보증하지 않는다** — red를 보고 문서를 고치는 것은
+    **사람**이다. 그 한계를 모르면 «테스트가 다 잡아준다»고 믿게 된다.
+    """
+    from ai.contracts.detection import EvidenceItem
+
+    assert set(Signal.model_fields) == {
+        "signal_id", "student_ref", "class_ref", "rule_id", "signal_type",
+        "display_label", "score", "rank", "advisory", "lifecycle", "brief", "evidence",
+        #: 2026-08-14 신설 — 04 §2 [A 확정 통보 — 2026-08-14]
+        "metric", "observed", "baseline", "sample_size",
+    }
+    assert set(EvidenceItem.model_fields) == {
+        #: 🔴 기존 셋 — 삭제·개명 금지(BE가 읽고 있다). `summary`는 deprecated지만 남긴다
+        "source_table", "record_id", "summary",
+        #: 2026-08-14 신설
+        "role", "observed", "sample_size", "occurred_on",
+    }
