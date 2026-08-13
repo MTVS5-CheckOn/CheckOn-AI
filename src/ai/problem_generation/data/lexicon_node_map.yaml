@@ -1,0 +1,53 @@
+version: stdict-t1-map-v1
+source_revision: stdict-20260805
+required_cat: 언어
+max_evidence_count: 8
+nodes:
+  language.grammar.morpheme.concept:
+    label: 형태소
+    headwords: [형태소]
+    allowed_pos: [명사]
+  language.grammar.word.formation:
+    label: 단어 형성
+    headwords: [파생어, 합성어]
+    allowed_pos: [명사]
+  language.grammar.parts_of_speech:
+    label: 품사 체계
+    headwords: [품사]
+    allowed_pos: [명사]
+  language.grammar.noun:
+    label: 명사
+    headwords: [명사]
+    allowed_pos: [명사]
+  language.grammar.pronoun:
+    label: 대명사
+    headwords: [대-명사01, 대-명사02]
+    allowed_pos: [명사]
+  language.grammar.numeral:
+    label: 수사
+    headwords: [수사]
+    allowed_pos: [명사]
+  language.grammar.predicate:
+    label: 용언
+    headwords: [용언]
+    allowed_pos: [명사]
+  language.grammar.modifier:
+    label: 관형사
+    headwords: [관형사]
+    allowed_pos: [명사]
+  language.grammar.adverb:
+    label: 부사
+    headwords: [부사]
+    allowed_pos: [명사]
+  language.grammar.interjection:
+    label: 감탄사
+    headwords: [감탄사]
+    allowed_pos: [명사]
+  language.grammar.particle:
+    label: 조사
+    headwords: [조사]
+    allowed_pos: [명사]
+  language.grammar.ending:
+    label: 어미
+    headwords: [어미]
+    allowed_pos: [명사]

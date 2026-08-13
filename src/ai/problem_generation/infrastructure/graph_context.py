@@ -26,20 +26,39 @@ from ai.problem_generation.infrastructure.grammar_norm import (
     load_grammar_norm_corpus,
     select_node_rows,
 )
+from ai.problem_generation.infrastructure.lexicon_index import (
+    LexiconIndex,
+    LexiconIndexEntry,
+    load_lexicon_index,
+    select_node_entries,
+)
 
 _SOURCE_ID = "nikl-kornorms"
 _LICENSE_REF = "KOGL-1"
+_LEXICON_SOURCE_ID = "stdict"
+_LEXICON_LICENSE_REF = "CC BY-SA 2.0 KR"
+_LEXICON_ATTRIBUTION = "국립국어원 표준국어대사전"
 
 
 class GrammarNormGraphContextService:
     """벡터 검색 없이 승인된 어문규범 행만 제공하는 MVP 근거 서비스."""
 
-    def __init__(self, corpus: GrammarNormCorpus | None = None) -> None:
+    def __init__(
+        self,
+        corpus: GrammarNormCorpus | None = None,
+        lexicon_index: LexiconIndex | None = None,
+    ) -> None:
         self._corpus = corpus or load_grammar_norm_corpus()
-        self._known_refs = frozenset(
+        self._lexicon_index = lexicon_index or load_lexicon_index()
+        self._known_grammar_refs = frozenset(
             _reference(row)
             for node_id in self._corpus.mapping.nodes
             for row in select_node_rows(self._corpus, node_id)
+        )
+        self._known_lexicon_refs = frozenset(
+            _lexicon_reference(entry)
+            for entries in self._lexicon_index.nodes.values()
+            for entry in entries
         )
 
     async def resolve_generation_context(
@@ -58,19 +77,43 @@ class GrammarNormGraphContextService:
         self, request: GraphContextRequest, operation: GraphContextOperation
     ) -> ContextPack:
         rows = select_node_rows(self._corpus, request.locked_fields.skill_node_id)
-        anchors = tuple(_anchor(row, self._corpus.version) for row in rows)
-        trace = {
-            "allowed_evidence_refs": [anchor.ref for anchor in anchors],
-            "evidence_anchors": [
-                {
-                    **anchor.model_dump(mode="json"),
-                    "title": row.title,
-                }
-                for anchor, row in zip(anchors, rows, strict=True)
-            ],
-            "attribution": self._corpus.attribution,
-            "mapping_version": self._corpus.mapping.version,
-        }
+        if rows:
+            anchors = tuple(_anchor(row, self._corpus.version) for row in rows)
+            trace = {
+                "allowed_evidence_refs": [anchor.ref for anchor in anchors],
+                "evidence_anchors": [
+                    {
+                        **anchor.model_dump(mode="json"),
+                        "title": row.title,
+                    }
+                    for anchor, row in zip(anchors, rows, strict=True)
+                ],
+                "attribution": self._corpus.attribution,
+                "mapping_version": self._corpus.mapping.version,
+            }
+        else:
+            entries = select_node_entries(
+                self._lexicon_index,
+                request.locked_fields.skill_node_id,
+            )
+            anchors = tuple(_lexicon_anchor(entry) for entry in entries)
+            trace = {
+                "allowed_evidence_refs": [anchor.ref for anchor in anchors],
+                "evidence_anchors": [
+                    {
+                        **anchor.model_dump(mode="json"),
+                        "word": entry.word,
+                        "pos": entry.pos,
+                        "cat": entry.cat,
+                        "word_type": entry.word_type,
+                        "sense_code": entry.sense_code,
+                        "source_revision": entry.source_revision,
+                    }
+                    for anchor, entry in zip(anchors, entries, strict=True)
+                ],
+                "attribution": _LEXICON_ATTRIBUTION,
+                "mapping_version": self._lexicon_index.version,
+            }
         canonical = _canonical(
             {
                 "operation": operation.value,
@@ -115,8 +158,16 @@ class GrammarNormGraphContextService:
         invalid = tuple(
             anchor.anchor_id
             for anchor in evidence_pack.anchors
-            if anchor.kind is not EvidencePackAnchorKind.GRAMMAR_RULE
-            or anchor.ref not in self._known_refs
+            if not (
+                (
+                    anchor.kind is EvidencePackAnchorKind.GRAMMAR_RULE
+                    and anchor.ref in self._known_grammar_refs
+                )
+                or (
+                    anchor.kind is EvidencePackAnchorKind.DICT_ENTRY
+                    and anchor.ref in self._known_lexicon_refs
+                )
+            )
         )
         return EvidencePathResult(
             valid=not invalid,
@@ -216,6 +267,26 @@ def _anchor(row: GrammarNormRow, version: str) -> EvidencePackAnchor:
 
 def _reference(row: GrammarNormRow) -> str:
     return f"kornorms:{row.regulation_code}:{row.regulation_no}"
+
+
+def _lexicon_anchor(entry: LexiconIndexEntry) -> EvidencePackAnchor:
+    ref = _lexicon_reference(entry)
+    quote_hash = _sha256(entry.word)
+    return EvidencePackAnchor(
+        anchor_id=ref,
+        kind=EvidencePackAnchorKind.DICT_ENTRY,
+        ref=ref,
+        source_id=_LEXICON_SOURCE_ID,
+        source_version=entry.source_revision,
+        source_content_hash=entry.content_hash,
+        quote=entry.word,
+        quote_hash=quote_hash,
+        license_ref=_LEXICON_LICENSE_REF,
+    )
+
+
+def _lexicon_reference(entry: LexiconIndexEntry) -> str:
+    return f"stdict:{entry.sense_code}"
 
 
 def _sha256(value: str) -> str:
