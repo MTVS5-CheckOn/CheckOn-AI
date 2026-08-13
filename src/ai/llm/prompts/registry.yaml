@@ -1,12 +1,12 @@
 schema_version: prompt-registry.v1
 prompts:
   - prompt_id: pg.passage.v1
-    version: v1
+    version: v2
     role: generator
     template: problem_generation/passage.txt
     response_schema_name: PassageDraft
   - prompt_id: pg.source_material.v1
-    version: v1
+    version: v2
     role: generator
     template: problem_generation/source_material.txt
     response_schema_name: SourceMaterialDraft

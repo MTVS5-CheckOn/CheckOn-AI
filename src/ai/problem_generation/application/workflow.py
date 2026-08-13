@@ -62,8 +62,10 @@ from ai.problem_generation.application.literature_selector import (
     attach_work_excerpt,
 )
 from ai.problem_generation.application.passage_generator import (
+    PassageDraftRejected,
     PassageGenerationUnavailable,
     PassageGenerator,
+    SourceMaterialDraftRejected,
     SourceMaterialGenerationUnavailable,
     SourceMaterialGenerator,
     attach_passage_draft,
@@ -95,6 +97,7 @@ from ai.problem_generation.domain.models import (
 from ai.problem_generation.domain.policy import (
     BannedTopicsConfig,
     VerifyConfig,
+    requires_reference_before_source_procurement,
     supports_source_procurement,
 )
 from ai.problem_generation.domain.rules import (
@@ -310,6 +313,18 @@ class ProblemGenerationWorkflow:
             return RejectedInsufficientOutcome(
                 status_reason="승인된 기준 자료로 화법과작문·매체 자료를 생성할 수 없다"
             )
+        except PassageDraftRejected:
+            return RejectedInsufficientOutcome(
+                status_reason="T2 생성 자료를 승인 근거로 고정할 수 없다"
+            )
+        except SourceMaterialDraftRejected:
+            return RejectedInsufficientOutcome(
+                status_reason="화법과작문·매체 생성 자료를 승인 근거로 고정할 수 없다"
+            )
+        except LlmError:
+            return RejectedInsufficientOutcome(
+                status_reason="자료 생성 서비스를 사용할 수 없다"
+            )
         except LiteratureSelectionUnavailable:
             return RejectedInsufficientOutcome(
                 status_reason="요청 조건에 맞는 저작권 만료 문학 원문을 선택할 수 없다"
@@ -348,7 +363,9 @@ class ProblemGenerationWorkflow:
                     type_tag=type_tag,
                     target=target,
                 )
-                if not has_reference_data(context_pack):
+                if requires_reference_before_source_procurement(
+                    request.area_tag
+                ) and not has_reference_data(context_pack):
                     raise GraphContextReferenceInsufficient
                 if isinstance(passage_request, PassageRequest):
                     draft = await self._passage_generator.generate(
@@ -755,8 +772,19 @@ class ProblemGenerationWorkflow:
             ),
             policy_constraints={
                 "banned_topics_version": self._rule_validator.banned_topics_version,
+                "taxonomy_version": request.taxonomy_version,
                 "verify_config_version": self._verify_config.version,
                 "evidence_required": True,
+                "source_request": (
+                    request.passage.model_dump(mode="json")
+                    if request.passage is not None
+                    else None
+                ),
+                "work_selection": (
+                    request.work_selection.model_dump(mode="json")
+                    if request.work_selection is not None
+                    else None
+                ),
             },
         )
         context_pack = await self._graph_context.resolve_generation_context(

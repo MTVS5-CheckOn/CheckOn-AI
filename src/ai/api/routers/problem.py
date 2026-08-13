@@ -71,7 +71,7 @@ from ai.problem_generation.infrastructure.config import (
     load_verify_config,
 )
 from ai.problem_generation.infrastructure.graph_context import (
-    GrammarNormGraphContextService,
+    AreaDelegatingGraphContextService,
 )
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryProblemRevisionStore,
@@ -268,12 +268,12 @@ async def _diagnosis_not_wired(_request: ProblemRequest) -> DiagnosisResult:
 
 
 def bootstrap_problem_services() -> None:
-    """기동 시 실 어문규범 GraphContext를 멱등 조립한다."""
+    """기동 시 영역별 GraphContext 위임 경계를 멱등 조립한다."""
 
     if _graph_context is not None:
         return
     set_problem_services(
-        graph_context=GrammarNormGraphContextService(),
+        graph_context=AreaDelegatingGraphContextService(),
         diagnosis=_diagnosis or _diagnosis_not_wired,
     )
 

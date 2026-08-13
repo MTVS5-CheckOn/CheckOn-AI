@@ -30,6 +30,7 @@ from ai.problem_generation.infrastructure.grammar_norm import (
     select_node_rows,
 )
 from ai.problem_generation.infrastructure.graph_context import (
+    AreaDelegatingGraphContextService,
     GrammarNormGraphContextService,
 )
 
@@ -89,6 +90,76 @@ def test_t1_smoke_node_is_mapped_before_real_llm_call() -> None:
     refs = context.retrieval_trace["allowed_evidence_refs"]
 
     assert isinstance(refs, list) and refs
+
+
+@pytest.mark.parametrize(
+    ("area_tag", "skill_node_id"),
+    [
+        (AreaTag.READING, "reading.comprehension.main_idea"),
+        (AreaTag.SPEECH_WRITING, "speech_writing.writing.material"),
+        (AreaTag.MEDIA, "media.reception.credibility"),
+    ],
+)
+def test_area_delegate_keeps_generated_source_base_empty(
+    area_tag: AreaTag,
+    skill_node_id: str,
+) -> None:
+    request = _request(skill_node_id).model_copy(
+        update={
+            "locked_fields": _request(skill_node_id).locked_fields.model_copy(
+                update={"area_tag": area_tag}
+            ),
+            "policy_constraints": {
+                "evidence_required": True,
+                "taxonomy_version": "v1",
+                "verify_config_version": "verify-config.v1",
+                "source_request": {"area_tag": area_tag.value},
+            },
+        }
+    )
+
+    context = asyncio.run(
+        AreaDelegatingGraphContextService().resolve_generation_context(request)
+    )
+
+    assert not has_reference_data(context)
+    assert context.retrieval_trace["allowed_evidence_refs"] == []
+    assert context.retrieval_trace["evidence_anchors"] == []
+    assert context.policy_constraints == request.policy_constraints
+
+
+def test_area_delegate_preserves_t1_grammar_context() -> None:
+    context = asyncio.run(
+        AreaDelegatingGraphContextService().resolve_generation_context(_request())
+    )
+
+    assert has_reference_data(context)
+
+
+def test_area_delegate_uses_neutral_base_for_literature() -> None:
+    skill_node_id = "literature.structure.composition"
+    request = _request(skill_node_id).model_copy(
+        update={
+            "locked_fields": _request(skill_node_id).locked_fields.model_copy(
+                update={"area_tag": AreaTag.LITERATURE}
+            ),
+            "policy_constraints": {
+                "evidence_required": True,
+                "taxonomy_version": "v1",
+                "verify_config_version": "verify-config.v1",
+                "work_selection": {"genre": "modern_novel"},
+            },
+        }
+    )
+
+    context = asyncio.run(
+        AreaDelegatingGraphContextService().resolve_generation_context(request)
+    )
+
+    assert context.retrieval_trace == {
+        "allowed_evidence_refs": [],
+        "evidence_anchors": [],
+    }
 
 
 def test_unmapped_node_returns_context_without_reference_data() -> None:

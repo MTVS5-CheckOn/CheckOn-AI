@@ -16,6 +16,10 @@ from ai.contracts.graphrag import (
     GraphContextRequest,
 )
 from ai.contracts.taxonomy import AreaTag
+from ai.problem_generation.domain.policy import (
+    uses_generated_source_base,
+    uses_selected_work_source_base,
+)
 from ai.problem_generation.infrastructure.grammar_norm import (
     GrammarNormCorpus,
     GrammarNormRow,
@@ -119,6 +123,79 @@ class GrammarNormGraphContextService:
             checked_anchor_ids=checked,
             invalid_anchor_ids=invalid,
         )
+
+
+class AreaDelegatingGraphContextService:
+    """T1 정본과 생성·저작물 트랙의 빈 base ContextPack을 한 경계에서 위임한다."""
+
+    def __init__(
+        self,
+        grammar: GrammarNormGraphContextService | None = None,
+    ) -> None:
+        self._grammar = grammar or GrammarNormGraphContextService()
+
+    async def resolve_generation_context(
+        self,
+        request: GraphContextRequest,
+    ) -> ContextPack:
+        area_tag = request.locked_fields.area_tag
+        if uses_generated_source_base(area_tag) or uses_selected_work_source_base(
+            area_tag
+        ):
+            return _empty_base_context(request)
+        return await self._grammar.resolve_generation_context(request)
+
+    async def resolve_revision_context(self, request: GraphContextRequest) -> ContextPack:
+        return await self._grammar.resolve_revision_context(request)
+
+    async def resolve_verification_context(
+        self,
+        request: GraphContextRequest,
+    ) -> ContextPack:
+        return await self._grammar.resolve_verification_context(request)
+
+    async def resolve_replacement_context(
+        self,
+        request: GraphContextRequest,
+    ) -> ContextPack:
+        return await self._grammar.resolve_replacement_context(request)
+
+    async def verify_evidence_paths(
+        self,
+        evidence_pack: EvidencePack,
+    ) -> EvidencePathResult:
+        return await self._grammar.verify_evidence_paths(evidence_pack)
+
+
+def _empty_base_context(request: GraphContextRequest) -> ContextPack:
+    trace: dict[str, object] = {
+        "allowed_evidence_refs": [],
+        "evidence_anchors": [],
+    }
+    canonical = _canonical(
+        {
+            "operation": GraphContextOperation.GENERATE.value,
+            "request": request.model_dump(mode="json"),
+            "trace": trace,
+        }
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return ContextPack(
+        context_pack_id=uuid5(NAMESPACE_URL, f"context:{digest}"),
+        operation=GraphContextOperation.GENERATE,
+        tenant_id=request.tenant_id,
+        target_source=request.target_source,
+        weakness_map_id=request.weakness_map_id,
+        target_skill_node_ids=request.target_skill_node_ids,
+        locked_fields=request.locked_fields,
+        pedagogy_paths=(f"skill:{request.locked_fields.skill_node_id}",),
+        evidence_pack_id=uuid5(NAMESPACE_URL, f"evidence:{digest}"),
+        current_item_snapshot=request.current_item_snapshot,
+        redacted_instruction=request.redacted_instruction,
+        policy_constraints=request.policy_constraints,
+        retrieval_trace=trace,
+        context_pack_hash=f"sha256:{digest}",
+    )
 
 
 def _anchor(row: GrammarNormRow, version: str) -> EvidencePackAnchor:

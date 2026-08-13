@@ -13,7 +13,8 @@ $passage_request_json
 $banned_topics_json
 
 규칙:
-1. 승인된 ContextPack과 EvidencePack 범위 밖의 사실을 만들지 않는다.
+1. PassageRequest 범위의 자체 완결 지문만 만든다. 생성 본문은 응답 뒤 passage_span 근거로 고정된다.
 2. 금칙 소재를 사용하지 않는다.
 3. passage_text, paragraph_count, evidence_anchor_ids를 갖는 PassageDraft JSON 객체만 반환한다.
-4. 근거를 확보할 수 없으면 내용을 추측하지 말고 generation_unavailable을 반환한다.
+4. evidence_anchor_ids에는 ["generated_source"]를 넣는다. 시스템이 본문 hash 기반 ref로 교체한다.
+5. 요청 범위에서 자체 완결 지문을 만들 수 없으면 generation_unavailable을 반환한다.
