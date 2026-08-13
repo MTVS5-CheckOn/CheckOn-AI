@@ -16,7 +16,10 @@ import pytest
 
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import CallOutcome, LlmError, LLMRequest, ModelRole
-from ai.llm.providers.openai_compat import OpenAICompatProvider, get_llm_settings
+from ai.llm.providers.openai_compat import (
+    build_openai_compat_provider,
+    get_llm_settings,
+)
 from ai.runtime.real_llm import real_llm_skip_reason
 
 pytestmark = pytest.mark.integration
@@ -46,7 +49,7 @@ def test_openai_single_roundtrip() -> None:
     if reason is not None:
         pytest.skip(reason)
 
-    provider = OpenAICompatProvider(settings=settings)
+    provider = build_openai_compat_provider(settings=settings)
     request = LLMRequest(
         role=ModelRole.GENERATOR,
         prompt="한 문장으로 짧게 인사해 주세요.",

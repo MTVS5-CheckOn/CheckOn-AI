@@ -99,9 +99,9 @@ def build_brief_provider(settings: BriefingSettings | None = None) -> LLMProvide
     """
     settings = settings or get_briefing_settings()
     if settings.llm_provider == _OPENAI_COMPAT:
-        from ai.llm.providers.openai_compat import OpenAICompatProvider
+        from ai.llm.providers.openai_compat import build_openai_compat_provider
 
-        return OpenAICompatProvider()
+        return build_openai_compat_provider()
     return FakeBriefProvider()
 
 

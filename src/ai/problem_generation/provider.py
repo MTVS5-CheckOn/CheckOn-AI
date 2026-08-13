@@ -12,8 +12,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ai.contracts.llm import LLMProvider, ModelRole
 from ai.llm.gateway import LlmCallRecorder, LlmGateway
 from ai.llm.providers.openai_compat import (
-    OpenAICompatProvider,
     OpenAiSettings,
+    build_openai_compat_provider,
     get_llm_settings,
 )
 from ai.llm.settings import LlmSettings
@@ -94,14 +94,14 @@ def build_problem_providers(
 
     resolved = settings or get_problem_provider_settings()
     local = local_settings or get_llm_settings()
-    generator = OpenAICompatProvider(
+    generator = build_openai_compat_provider(
         name=LOCAL_GENERATOR_PROVIDER_NAME,
         settings=local,
     )
     if not resolved.has_dedicated_verifier:
         return ProblemProviders(
             generator=generator,
-            verifier=OpenAICompatProvider(
+            verifier=build_openai_compat_provider(
                 name=LOCAL_VERIFIER_PROVIDER_NAME,
                 settings=local,
             ),
@@ -120,7 +120,7 @@ def build_problem_providers(
     )
     return ProblemProviders(
         generator=generator,
-        verifier=OpenAICompatProvider(
+        verifier=build_openai_compat_provider(
             name=EXTERNAL_VERIFIER_PROVIDER_NAME,
             settings=verifier_settings,
         ),

@@ -64,7 +64,10 @@ from ai.db.store_factory import (
 from ai.detection.engine import detect
 from ai.detection.thresholds import default_threshold_config
 from ai.evaluation.demo_snapshot import build_demo_request
-from ai.llm.providers.openai_compat import OpenAICompatProvider, get_llm_settings
+from ai.llm.providers.openai_compat import (
+    build_openai_compat_provider,
+    get_llm_settings,
+)
 from ai.runtime.errors import RedactionUncertain
 from ai.runtime.real_llm import real_llm_skip_reason
 from ai.runtime.redaction import redact
@@ -362,7 +365,7 @@ async def _run_s1(observers: list[_CountingProvider]) -> dict[str, Any]:
     request = build_demo_request()
     response = detect(request)
     contexts = build_contexts(request, response.signals)  # signal_id → BriefingContext
-    provider = _CountingProvider(OpenAICompatProvider())
+    provider = _CountingProvider(build_openai_compat_provider())
     observers.append(provider)
     gateway = build_brief_gateway(provider)  # 프로덕션 조립부(훅·재시도 규약 그대로)
 
@@ -567,7 +570,7 @@ def _run_s2(observers: list[_CountingProvider], *, repeat_first: bool = False) -
         set_counsel_run_store,
     )
 
-    provider = _CountingProvider(OpenAICompatProvider())
+    provider = _CountingProvider(build_openai_compat_provider())
     observers.append(provider)
     # 프로덕션 조립 루트를 그대로 쓴다 — env 층은 건너뛴다(관측 래퍼를 이미 들고 있다).
     real = build_counsel_provider(provider)
@@ -683,7 +686,7 @@ async def _run_s3(observers: list[_CountingProvider]) -> dict[str, Any]:
     static_attacks = golden._STATIC_ATTACKS  # A2·A3·A5·A6·A7 — 08 §5 표 정본
     draft_context = golden._context
 
-    provider = _CountingProvider(OpenAICompatProvider())
+    provider = _CountingProvider(build_openai_compat_provider())
     observers.append(provider)
     writer = GatewayDraftWriter(build_counsel_gateway(provider))
 

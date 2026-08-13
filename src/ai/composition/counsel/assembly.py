@@ -203,7 +203,7 @@ def build_gateway_writer(
 #   `classify.build_classify_provider` env(`LLM_PROVIDER`)로 fake↔실 구현을 고른다
 #
 # 가르는 기준은 **테스트·러너가 무엇을 주입하는가**다. 평가 러너는 자기 관측 래퍼
-# (`_CountingProvider(OpenAICompatProvider())`)를 감싼 provider를 이미 들고 있으므로
+# (`_CountingProvider(build_openai_compat_provider())`)를 감싼 provider를 이미 들고 있으므로
 # env 선택이 끼면 안 된다 — 순수 조립(`build_counsel_provider`)을 부른다. 프로덕션 기동은
 # 반대로 아무것도 안 들고 있으므로 env 층(`build_counsel_llm_provider`)이 필요하다.
 # 한 함수로 합치면 러너가 env를 우회하려고 내부를 다시 뜯게 된다.
@@ -233,9 +233,11 @@ def build_counsel_llm_provider(settings: CounselSettings | None = None) -> LLMPr
     """
     settings = settings or get_counsel_settings()
     if settings.llm_provider == _OPENAI_COMPAT:
-        from ai.llm.providers.openai_compat import OpenAICompatProvider  # noqa: PLC0415
+        from ai.llm.providers.openai_compat import (  # noqa: PLC0415
+            build_openai_compat_provider,
+        )
 
-        return OpenAICompatProvider()
+        return build_openai_compat_provider()
     logger.warning(
         "counsel provider=fake — LLM_PROVIDER=%r이라 결정론 Fake로 조립한다. "
         "실 LLM 호출은 0건이고 산출물에는 provider=%r가 남는다(사후 구분용). "

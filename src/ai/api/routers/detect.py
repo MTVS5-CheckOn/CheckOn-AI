@@ -122,8 +122,8 @@ _run_store: RunStore = build_run_store()
 
 #: 브리핑 문장화(ⓐ) — provider는 settings로 fake↔openai_compat(기본 fake). 총 예산 45s.
 #: LLM 호출은 gateway(role=narrator, 전송 재시도 0) 경유 — 어댑터 직결 종료(03_coding_rules §2).
-_brief_provider: LLMProvider = build_brief_provider()
-_brief_gateway: LlmGateway = build_brief_gateway(_brief_provider)
+_brief_provider: LLMProvider | None = None
+_brief_gateway: LlmGateway | None = None
 _BRIEFING_BUDGET_S = 45.0
 #: 신호별 브리핑 LLM 호출 동시 실행 상한 — 세마포어(v3 병렬화).
 #: ⚠ 원래 근거는 "팀 로컬 서버 부하 배려"였는데 그 서버는 폐기됐다(99 ⓟ). 값은 그대로
@@ -143,8 +143,19 @@ def set_brief_provider(provider: LLMProvider) -> None:
 
 
 def reset_brief_provider() -> None:
-    """테스트 격리용 — 브리핑 provider·게이트웨이를 재빌드한다(기본 fake)."""
-    set_brief_provider(build_brief_provider())
+    """브리핑 조립을 초기화한다. 다음 요청에서 설정을 읽어 지연 생성한다."""
+    global _brief_provider, _brief_gateway
+    _brief_provider = None
+    _brief_gateway = None
+
+
+def _get_brief_gateway() -> LlmGateway:
+    """첫 브리핑 요청에서만 provider와 gateway를 조립한다."""
+    global _brief_provider, _brief_gateway
+    if _brief_gateway is None:
+        _brief_provider = build_brief_provider()
+        _brief_gateway = build_brief_gateway(_brief_provider)
+    return _brief_gateway
 
 
 def set_idempotency_store(store: IdempotencyStore) -> None:
@@ -370,7 +381,7 @@ async def _apply_briefing(
         async with semaphore:
             return await make_brief(
                 contexts[signal.signal_id],
-                _brief_gateway,
+                _get_brief_gateway(),
                 context=context,
                 now=time.monotonic,
                 deadline=deadline,
