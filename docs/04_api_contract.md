@@ -942,6 +942,8 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 ```
 
 `503 LLM_UPSTREAM_DOWN`은 LLM 벤더 장애 전용이므로 readiness에 재사용하지 않는다.
+🔴 503은 status가 아니라 code로 분기한다 — SERVICE_NOT_READY(준비 미완)와
+LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
 `SERVICE_NOT_READY`의 공용 오류 사전 편입과 표시 문구는 운영 라우터 구현 PR에서 함께
 동기화한다.
 

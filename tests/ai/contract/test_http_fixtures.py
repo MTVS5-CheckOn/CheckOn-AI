@@ -11,6 +11,9 @@
 **재생성:** 계약이 정당하게 바뀌었으면 `WRITE_HTTP_FIXTURES=1 uv run pytest
 tests/ai/contract/test_http_fixtures.py`로 다시 쓰고 **diff를 리뷰**한다. 무심코 돌리면
 계약 변경이 조용히 통과하므로 기본값은 항상 대조다.
+
+🔴 503은 status가 아니라 code로 분기한다 — SERVICE_NOT_READY(준비 미완)와
+LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
 """
 
 from __future__ import annotations
