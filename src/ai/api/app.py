@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from ai.api.console import install_console_handlers
 from ai.api.envelope import error_envelope
 from ai.api.routers.classify import VERSION_SCOPE as _classify_scope
 from ai.api.routers.classify import router as classify_router
@@ -109,6 +110,8 @@ def create_app() -> FastAPI:
                 versions=resolve_versions(request.url.path, ROUTER_VERSION_SCOPES),
             ),
         )
+
+    install_console_handlers(app)  # 콘솔 관측(PR-ψ) — 기본 전부 꺼짐, 본문은 api/console.py
 
     return app
 
