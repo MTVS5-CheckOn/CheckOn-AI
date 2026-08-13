@@ -1082,6 +1082,7 @@ canonical_json = 키 정렬 · 공백 제거 · UTF-8. **동일 구현 검증용
 | `assignment_window` + `weekly_activity` | `sha256:42bf93a71cdaecc0b3d6e4348ba8eddaf0f556894a81869285fade630c4e265d` |
 | `enrollment_transition` | `sha256:103fd498b6bc7e09f0bc981acf8cde9a839981b81e398761d37af1a5a1ffb732` |
 
+- 🔴 **`passage_ref`는 해시 대상이 아니다** — 백엔드 요청 계약(`AiDetectionRequest.LearningEventSnapshot`)에 **없는 AI 전용 필드**라, 넣으면 `learning_events`가 있는 모든 실요청에서 Java와 값이 갈린다(2026-08-13 대조 · 99 #50). ⚠ 위 벡터 3종은 `learning_events`가 비어 있어 **값이 바뀌지 않는다**.
 - `source_table`은 **kind마다 값이 하나**다(`assignment_window`→`assignment_week_summary` · `weekly_activity`→`student_week_activity` · `enrollment_transition`→`student_status_history`). ⚠ **JSON 타입은 문자열 그대로** — 허용값만 닫았다(BE DTO 무변경). 교차 조합은 **400**.
 - `at` = 집계는 `week_start`, 상태 전환은 `occurred_at`. 배열 **입력 순서가 달라도 같은 해시**.
 - 값 하나가 바뀌면 해시가 달라진다 — **같은 멱등키에 근거만 다른 요청은 409 `IDEMPOTENCY_CONFLICT`**.
