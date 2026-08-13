@@ -21,6 +21,12 @@ composition 코드는 계속 `ai.composition.determinism`을 부른다 — 소�
 `AI_RUN.generation_params`에서 읽는다.
 ⚠ **서버가 seed를 존중하는지는 미확정이다**(99 ㊼ ◐ · 추적 중단). 여기까지는 "요청에
 seed가 실린다"의 보증이고, 동일 입력 → 동일 출력의 보증이 아니다.
+
+🔴 **(8/13) 그 단서가 이제 더 크게 작용한다 — 재현 축이 `seed` 하나로 줄었다.**
+`gpt-5.6-luna`가 기본값 외 `temperature`를 400으로 거부해(99 #51) 어댑터가
+「값이 없으면 안 보낸다」로 흡수했고, 정본 `deterministic_params()`가 온도를 주지 않는다.
+**위 8/4 기록이 그 판단의 근거다** — 재현을 만든 것은 seed였지 temperature가 아니었다.
+⚠ 이 모듈은 재수출이라 값·구조를 여기서 바꾸지 않는다. 정본은 `ai.llm.determinism`이다.
 """
 
 from __future__ import annotations

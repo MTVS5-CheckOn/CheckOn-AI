@@ -232,7 +232,12 @@ def test_prompt_version_is_recorded() -> None:
 
 
 def test_generation_params_are_deterministic() -> None:
-    """temperature 0.0 + seed 고정 — 서버가 seed를 존중하는지는 별개다(99 ㊼).
+    """seed 고정 — 서버가 seed를 존중하는지는 별개다(99 ㊼).
+
+    🔴 **(8/13) 제목과 단정을 뒤집었다.** 종전은 *"temperature 0.0 + seed 고정"* 이었고
+    `CLASSIFY_GEN_PARAMS.temperature == 0.0`으로 **결정론 온도가 실린다**를 지켰다.
+    `gpt-5.6-luna`가 기본값 외 온도를 400으로 거부해(99 #51) 어댑터가 흡수했고, 정본
+    `deterministic_params()`가 온도를 안 준다. **재현 축은 seed 하나다.**
 
     seed 리터럴의 **정본은 `llm/determinism.py`**(B 소유)이고
     `composition/determinism.py`는 재수출이다(8/5 신설 → 8/7 전환) — 경로별로 상수를
@@ -242,7 +247,7 @@ def test_generation_params_are_deterministic() -> None:
     from ai.composition.classify.classifier import CLASSIFY_GEN_PARAMS
     from ai.composition.determinism import LLM_SEED
 
-    assert CLASSIFY_GEN_PARAMS.temperature == 0.0
+    assert CLASSIFY_GEN_PARAMS.temperature is None
     assert CLASSIFY_GEN_PARAMS.seed == LLM_SEED
 
 

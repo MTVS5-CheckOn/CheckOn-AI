@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Coroutine
 from types import SimpleNamespace
+from typing import Final
 from uuid import UUID
 
 import httpx
@@ -22,6 +23,9 @@ from openai import (
     AuthenticationError,
 )
 
+from ai.composition.briefing import BRIEF_GEN_PARAMS
+from ai.composition.classify.classifier import CLASSIFY_GEN_PARAMS
+from ai.composition.counsel.provider import COUNSEL_GEN_PARAMS
 from ai.contracts.execution import Capability, ExecutionContext, GenerationParams, VersionSet
 from ai.contracts.llm import (
     CallOutcome,
@@ -33,6 +37,7 @@ from ai.contracts.llm import (
     ModelRole,
     ParseFailed,
 )
+from ai.llm.determinism import LLM_SEED, deterministic_params
 from ai.llm.providers.openai_compat import (
     PROVIDER_NAME,
     OpenAICompatProvider,
@@ -300,13 +305,157 @@ def test_no_token_cap_sends_neither_key() -> None:
     assert "max_tokens" not in kwargs
 
 
-def test_default_temperature_when_params_absent() -> None:
+def test_absent_params_send_no_sampling_keys() -> None:
+    """🔴 **(8/13) 뒤집은 검사다** — 종전 이름은 `test_default_temperature_when_params_absent`.
+
+    **무엇을 지키려던 검사였나:** *"`GenerationParams` 없이 호출해도 온도는 정해진다"* —
+    어댑터가 `_DEFAULT_TEMPERATURE = 0.7`로 미지정을 메워, 호출자가 잊어도 샘플링이
+    서버 기본에 흔들리지 않는다는 보장이었다.
+
+    **왜 뒤집었나:** 그 폴백 때문에 **temperature만 뺄 수가 없었다.** `gpt-5.6-luna`가
+    기본값 외 값을 400으로 거부하자(99 #51) 흡수할 자리가 없어졌다 — 보장이 그대로
+    막다른 길이 됐다. 이제 미지정은 **서버 기본값에 맡긴다**(`top_p`가 원래 그랬듯이).
+
+    ⚠ **되돌리지 마라.** "원래 0.7이었는데 왜 없지"로 폴백을 되살리면 전 경로가 다시 400이다.
+    """
+    kwargs = _sent_kwargs(None)
+    assert "temperature" not in kwargs, "폴백 상수가 되살아났다 — 전 경로가 400이 된다"
+    assert "top_p" not in kwargs  # 미지정은 서버 기본값에 맡김
+    assert "seed" not in kwargs
+    assert "max_completion_tokens" not in kwargs
+
+
+# ── nullable 파라미터의 「값이 없으면 안 보낸다」 규칙 ────────────────────
+
+
+#: 계약 필드 → 벤더 파라미터 키. **1:1이 아니다** — 이름 흡수가 어댑터의 일이다
+#: (`max_tokens` → `max_completion_tokens`, 8/6).
+_VENDOR_KEY: Final[dict[str, str]] = {
+    "temperature": "temperature",
+    "top_p": "top_p",
+    "max_tokens": "max_completion_tokens",
+    "seed": "seed",
+}
+
+#: 각 필드에 넣어 볼 유효값 — 계약의 제약(ge/le/gt)을 통과하는 값이어야 한다.
+_A_VALUE: Final[dict[str, float | int]] = {
+    "temperature": 0.2,
+    "top_p": 0.9,
+    "max_tokens": 256,
+    "seed": 7,
+}
+
+
+#: 🔴 라우터가 `to_run_metadata(generation_params=...)`로 **원장에 넘기는** 상수들
+#: (`api/routers/detect.py`·`classify.py`·`counsel.py` 실측 2026-08-13).
+_LEDGER_RECORDED_PARAMS: Final[tuple[tuple[str, GenerationParams], ...]] = (
+    ("BRIEF_GEN_PARAMS", BRIEF_GEN_PARAMS),
+    ("COUNSEL_GEN_PARAMS", COUNSEL_GEN_PARAMS),
+    ("CLASSIFY_GEN_PARAMS", CLASSIFY_GEN_PARAMS),
+)
+
+
+def _sent_kwargs(params: GenerationParams | None) -> dict[str, object]:
+    """어댑터를 **실제로 태워** 전선에 나가는 kwargs를 얻는다."""
     provider = _provider(result=_ok_response("ok"))
-    _run(provider.complete(_request(), _context()))
+    _run(provider.complete(_request(params), _context()))
     kwargs = _fake_client(provider).fake_completions.last_kwargs
     assert kwargs is not None
-    assert kwargs["temperature"] == 0.7  # provider 기본값 상수
-    assert "top_p" not in kwargs  # 미지정은 서버 기본값에 맡김
+    return dict(kwargs)
+
+
+def test_every_nullable_param_follows_the_same_omit_when_unset_rule() -> None:
+    """🔴 **네 파라미터가 같은 규칙인가** — 「값이 없으면 키를 안 만든다」.
+
+    ⚠ **「temperature가 kwargs에 없나」를 묻는 검사가 아니다.** 그건 수정의 동어반복이고,
+    다음에 벤더가 **다른** 파라미터를 좁히면 또 못 잡는다. 이 검사가 무는 것은
+    *"계약의 nullable 필드 전부가 하나의 규칙을 따르는가"* 다.
+
+    🔴 **8/13 이전에는 red다** — `temperature`만 `_DEFAULT_TEMPERATURE = 0.7` 폴백이 있어
+    값이 없어도 전선에 나갔다. 폴백 상수가 있으면 **그 파라미터는 영영 뺄 수 없고**,
+    벤더가 허용값을 좁히는 날(`gpt-5.6-luna`의 `temperature` 400) 흡수할 방법이 없다.
+
+    ⚠ **이 검사는 시간으로 만료하지 않는다.** `GenerationParams`에 nullable 필드가 늘면
+    아래 절단 가드가 red를 내고, **사람이 `_VENDOR_KEY`에 손으로 더해야** green이 돌아온다.
+    안 더하면 그 파라미터만 규칙이 어긋난 채 통과한다 — 그게 이 안건의 재발 경로다.
+    """
+    fields = tuple(GenerationParams.model_fields)
+
+    # ── 절단 가드 ──
+    assert fields, "🔴 규칙 축을 잃었다 — 검사 대상이 0건이면 이 검사는 아무것도 안 문다"
+    assert set(_VENDOR_KEY) == set(fields), (
+        "🔴 계약과 검사 목록이 갈렸다 — `GenerationParams`에 필드가 늘거나 줄었다. "
+        f"계약={sorted(fields)} 검사={sorted(_VENDOR_KEY)}. "
+        "목록을 리터럴로 박아 두면 새 파라미터만 규칙이 어긋난 채 통과한다."
+    )
+    assert set(_A_VALUE) == set(fields), "유효값 표가 계약과 갈렸다"
+
+    # ① 전부 미지정 → 벤더 키가 **하나도** 안 나간다.
+    unset = _sent_kwargs(GenerationParams())
+    for name in fields:
+        assert _VENDOR_KEY[name] not in unset, (
+            f"{name}: 값이 없는데 전선에 나갔다 — 폴백 상수가 있으면 뺄 수 없다"
+        )
+
+    # ② 하나만 지정 → **그 키만** 나간다(명시 지정은 그대로 실린다).
+    for name in fields:
+        sent = _sent_kwargs(GenerationParams(**{name: _A_VALUE[name]}))
+        assert sent[_VENDOR_KEY[name]] == _A_VALUE[name], f"{name}: 명시 지정이 사라졌다"
+        for other in fields:
+            if other != name:
+                assert _VENDOR_KEY[other] not in sent, (
+                    f"{name}만 지정했는데 {other}가 따라 나갔다"
+                )
+
+
+def test_deterministic_params_sends_seed_but_not_temperature() -> None:
+    """🔴 재현 축의 정본은 **seed**다 — 어댑터까지 태워서 묻는다.
+
+    ⚠ `deterministic_params()`의 **필드만** 보면 어댑터의 폴백을 못 본다 — 필드가 None이어도
+    어댑터가 0.7을 채우면 전선에는 `temperature`가 실린다. 그래서 조립 결과를 본다.
+
+    근거는 8/4 실측이다(`composition/determinism.py` 머리말) — `temperature=0.0`인데 같은
+    입력이 **다른 출력**을 냈고 원인은 `seed` 미전달이었다. **재현을 만든 것은 seed였다.**
+    """
+    sent = _sent_kwargs(deterministic_params(max_tokens=128))
+
+    assert sent["seed"] == LLM_SEED
+    assert sent["max_completion_tokens"] == 128
+    assert "temperature" not in sent, (
+        "🔴 gpt-5.6-luna가 400을 낸다 — Only the default (1) value is supported"
+    )
+
+
+def test_ledger_params_never_claim_a_value_the_wire_did_not_carry() -> None:
+    """🔴 **원장이 거짓말하지 않는가** — 작업 C(8/13).
+
+    `AI_RUN.generation_params`에 남는 것은 **요청값**이다 — 라우터가 `BRIEF_GEN_PARAMS`
+    같은 상수를 `to_run_metadata()`에 그대로 넘긴다(실측 2026-08-13 · `api/routers/detect.py`·
+    `classify.py`). **전송값(`_build_kwargs` 결과)이 아니다.** 두 축이 갈리면 원장은
+    *"그 파라미터로 돌렸다"* 고 말하는데 전선은 다른 값을 나른다.
+
+    🔴 **8/13 이전이 정확히 그랬다** — `params=None`인 실행에서 어댑터는 `0.7`을 보냈는데
+    원장에는 아무것도 안 남았다. #48과 같은 형태다: 「없다」와 「이 값이다」가 뒤바뀌면
+    관측이 무력화된다. **끄는 것보다 거짓말하는 것이 나쁘다.**
+
+    ⇒ 이 검사가 두 축을 묶는다: 원장에 **null이면 전선에 없어야** 하고, 원장에 **값이 있으면
+    전선에 같은 값이 있어야** 한다. 어댑터에 폴백 상수를 다시 두면 여기서 red가 난다.
+    """
+    for name, params in _LEDGER_RECORDED_PARAMS:
+        recorded = params.model_dump(mode="json")
+        sent = _sent_kwargs(params)
+        assert set(recorded) == set(_VENDOR_KEY), f"{name}: 계약 필드와 갈렸다"
+        for field, value in recorded.items():
+            key = _VENDOR_KEY[field]
+            if value is None:
+                assert key not in sent, (
+                    f"{name}: 원장은 {field}=null인데 전선은 {sent.get(key)!r}을 날랐다"
+                    " — 원장이 거짓말한다"
+                )
+            else:
+                assert sent[key] == value, (
+                    f"{name}: 원장은 {field}={value!r}인데 전선은 {sent.get(key)!r}이다"
+                )
 
 
 def test_vendor_extra_body_is_not_sent_by_default() -> None:
