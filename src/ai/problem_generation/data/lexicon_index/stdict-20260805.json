@@ -1,5 +1,5 @@
 {
-  "version": "stdict-t1-map-v1",
+  "version": "stdict-t1-map-v2",
   "source_revision": "stdict-20260805",
   "max_evidence_count": 8,
   "nodes": {
@@ -205,6 +205,266 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:5c95c2ac0b2944ca84795d261d14c51c19dfcd3224cb5a5c4257adb42e72f819"
+      }
+    ],
+    "language.grammar.sentence.constituent": [
+      {
+        "node_id": "language.grammar.sentence.constituent",
+        "target_code": "301213",
+        "sense_code": "54140",
+        "word": "주-성분",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:9519e92ae04b9415961752775a72ab166ef5afe4524eff3348f6ca805194cfa1"
+      },
+      {
+        "node_id": "language.grammar.sentence.constituent",
+        "target_code": "159473",
+        "sense_code": "175047",
+        "word": "부속^성분",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:c36c66de9cf446579681ca6c3ab5385c14c2c80774027a35749ddf0568e13a9d"
+      },
+      {
+        "node_id": "language.grammar.sentence.constituent",
+        "target_code": "127778",
+        "sense_code": "348075",
+        "word": "문장^성분",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:c61d2372db06bf98e349edc1d4538af9aed317a6c9e41a99291361b98eb45847"
+      },
+      {
+        "node_id": "language.grammar.sentence.constituent",
+        "target_code": "85966",
+        "sense_code": "492297",
+        "word": "독립^성분",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:f9becd8d8ff13a64c62c9c1c4975868ccd23db89fa086f217d08d92fd5a0e465"
+      }
+    ],
+    "language.grammar.sentence.structure": [
+      {
+        "node_id": "language.grammar.sentence.structure",
+        "target_code": "376721",
+        "sense_code": "323528",
+        "word": "홑-문장",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:56c5db9c9eabd6b06d96757e287d75467666e5b01051463dbd40fe611669837d"
+      },
+      {
+        "node_id": "language.grammar.sentence.structure",
+        "target_code": "18810",
+        "sense_code": "340204",
+        "word": "겹-문장",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:efa520f7c3af7f4e83d6cde50c1b5921bf7fa9bcefd935a9ec781691e8fe338a"
+      }
+    ],
+    "language.grammar.sentence.embedded": [
+      {
+        "node_id": "language.grammar.sentence.embedded",
+        "target_code": "217537",
+        "sense_code": "465006",
+        "word": "안은-문장",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:b9a2411b48d088da45a84801dccceec9fe96a8e958ea7301c7fcea2b7106d4ca"
+      }
+    ],
+    "language.grammar.sentence.connected": [
+      {
+        "node_id": "language.grammar.sentence.connected",
+        "target_code": "467737",
+        "sense_code": "250546",
+        "word": "이어진-문장",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:33f3172d46497dfe0fbcaaf758a060dfa9787cd5d499757088c1776311b66bf2"
+      }
+    ],
+    "language.grammar.honorific": [
+      {
+        "node_id": "language.grammar.honorific",
+        "target_code": "479627",
+        "sense_code": "276535",
+        "word": "주체^높임법",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:51830a3ffaf9451f27bf8df5b41c6d34af0b37883f24493e179fce7706502255"
+      },
+      {
+        "node_id": "language.grammar.honorific",
+        "target_code": "392606",
+        "sense_code": "376255",
+        "word": "객체^높임법",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:3c9d585d1ffaafd3341ee2f8ae35e20bc87c512b6e108e0c22088bc7e71611f9"
+      },
+      {
+        "node_id": "language.grammar.honorific",
+        "target_code": "443850",
+        "sense_code": "535453",
+        "word": "상대^높임법",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:4989108e77d1d921876a91a6654443a46cf1a639181ab345fc675d084fb45f73"
+      }
+    ],
+    "language.grammar.tense_aspect": [
+      {
+        "node_id": "language.grammar.tense_aspect",
+        "target_code": "451209",
+        "sense_code": "206360",
+        "word": "시제03",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:c1ef9f0f2a8e857fcfa9eaf1086b978ef0e86c8a3b29bd75be58b4977e5c380e"
+      },
+      {
+        "node_id": "language.grammar.tense_aspect",
+        "target_code": "90692",
+        "sense_code": "455762",
+        "word": "동작-상",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:3e96acd93719d719d553d5174e20e3674ad9f0331d3ab9591d41d3495e46d692"
+      }
+    ],
+    "language.grammar.quotation": [
+      {
+        "node_id": "language.grammar.quotation",
+        "target_code": "314656",
+        "sense_code": "283749",
+        "word": "직접^화법02",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:1f9c2d101acbd0cf07951638cde3544c28b1f418f3bfbf79d84286f148d949c5"
+      },
+      {
+        "node_id": "language.grammar.quotation",
+        "target_code": "7491",
+        "sense_code": "412317",
+        "word": "간접^화법",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:c4d61ddd4c7827e814c61d77cc23ab3d985a3128d0bd0b2c480eb88e147f4eb6"
+      }
+    ],
+    "language.grammar.negation": [
+      {
+        "node_id": "language.grammar.negation",
+        "target_code": "158424",
+        "sense_code": "176380",
+        "word": "부정-문",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:2978f151f3ec25ad58ad615376c9d8b9907e5ea1d5ec2a508d52b9385bd8f78a"
+      },
+      {
+        "node_id": "language.grammar.negation",
+        "target_code": "158427",
+        "sense_code": "570871",
+        "word": "부정-법02",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:8838435d101d405951039a03edc1d0231e0724bd93713c667bf4b99362cea800"
+      }
+    ],
+    "language.grammar.causative_passive": [
+      {
+        "node_id": "language.grammar.causative_passive",
+        "target_code": "363191",
+        "sense_code": "58445",
+        "word": "피동",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:7f0e7ca0c2110ca91a2e55b8a122b615d1efee13fc87051bc2a3347bb904efcb"
+      },
+      {
+        "node_id": "language.grammar.causative_passive",
+        "target_code": "172133",
+        "sense_code": "184714",
+        "word": "사동02",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:4d8618e7245b3468bfb0fd95c7284a73fc0833259d251768acbb159518d6855e"
+      }
+    ],
+    "language.grammar.speech_level": [
+      {
+        "node_id": "language.grammar.speech_level",
+        "target_code": "481571",
+        "sense_code": "471274",
+        "word": "종결^어미",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:6b939340145e8c7a32f993d13e79b5355ab6b886cad2af141d8ca338b0e7e673"
       }
     ]
   }
