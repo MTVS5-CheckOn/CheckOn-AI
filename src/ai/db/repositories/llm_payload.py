@@ -59,6 +59,7 @@ from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LLMProvider, LLMRequest, LLMResult
 from ai.db.models import LlmPayload
 from ai.db.settings import DbSettings, get_db_settings
+from ai.runtime.console import emit_llm_call
 from ai.runtime.redaction import redact
 
 logger = logging.getLogger(__name__)
@@ -154,11 +155,44 @@ class PayloadCapturingProvider:
     ) -> LLMResult:
         try:
             result = await self._inner.complete(request, context)
-        except Exception:
-            _CAPTURED.set(self._body(request.prompt, None))
+        except Exception as exc:
+            body = self._body(request.prompt, None)
+            _CAPTURED.set(body)
+            self._echo(request, body, None, type(exc).__name__)
             raise
-        _CAPTURED.set(self._body(request.prompt, result.text))
+        body = self._body(request.prompt, result.text)
+        _CAPTURED.set(body)
+        self._echo(request, body, result, result.outcome.value)
         return result
+
+    def _echo(
+        self,
+        request: LLMRequest,
+        body: CapturedBody,
+        result: LLMResult | None,
+        outcome: str,
+    ) -> None:
+        """콘솔 싱크 — 🔴 **추가 싱크일 뿐 원장 동작을 바꾸지 않는다**(PR-ψ).
+
+        인계 슬롯도, 저장 경로도, 마스킹 판정도 건드리지 않는다. 여기서 넘기는 것은
+        **이미 `_body`가 가린 통과본**이라 콘솔이 원문을 보는 경로는 존재하지 않는다.
+
+        `emit_llm_call`이 `@guarded`라 이 호출은 예외를 올리지 않는다 — 관측이 LLM
+        호출을 죽이면 안 된다. 기본은 꺼짐이고 `CONSOLE_LLM_LOG=1`에서만 출력된다.
+        """
+        params = request.generation_params
+        emit_llm_call(
+            role=request.role.value,
+            model=result.model if result is not None else "?",
+            prompt_masked=body.request_masked,
+            response_masked=body.response_masked,
+            tokens_in=result.usage.tokens_in if result is not None else None,
+            tokens_out=result.usage.tokens_out if result is not None else None,
+            latency_ms=result.latency_ms if result is not None else None,
+            outcome=outcome,
+            seed=params.seed if params is not None else None,
+            oversized=body.oversized,
+        )
 
     def _body(self, prompt: str, response: str | None) -> CapturedBody:
         """포착 시점 마스킹 — 원문 응답이 영속 버퍼에 들어가지 않게 여기서 가린다."""
