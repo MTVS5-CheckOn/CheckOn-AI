@@ -263,7 +263,15 @@ def _r2(
             rule_id=RuleId.R2,
             signal_type=RULE_SIGNAL_MAP[RuleId.R2],
             score=score,
-            evidence_weeks=tuple(reversed(streak)),
+            #: 🔴 **`streak`는 이미 최신부터 쌓인다**(`analysis_week - back주`) — `reversed`가
+            #:   그걸 뒤집어 **오래된 주를 앞으로** 보내고 있었다. 절단(`triggers[:3]`)이
+            #:   앞에서 자르므로 **최신 미제출 주가 통째로 잘려 나갔다.**
+            #:   실측(2026-08-13): 5주 연속 미제출인데 근거가 `6/22·6/29·7/6` —
+            #:   `observed`는 «5주 연속»인데 **분석 주(7/20)가 근거에 없었다.**
+            #: ⚠ **R1·R4와 같은 결함이었다.** 「R2는 이미 최신 우선이라 맞다」가 전제였는데
+            #:   `streak` 생성 순서를 안 보고 `reversed`만 보고 판단한 것이었다.
+            #:   **골든에서는 연속이 3주라 상한에 안 걸려 안 보였다**(4주 이상에서만 드러난다).
+            evidence_weeks=tuple(streak),
             metric="consecutive_missing_weeks",
             observed=float(len(streak)),
             #: 🔴 `baseline`을 안 싣는다 — R2는 **임계값**과 비교하지 기준선과 비교하지
@@ -495,7 +503,13 @@ def _finding(
         rule_id=rule_id,
         signal_type=RULE_SIGNAL_MAP[rule_id],
         score=score,
-        evidence_weeks=tuple(w.week_monday for w in weeks),
+        #: 🔴 **최신 주부터** — `engine._evidence_items`가 `triggers[:3]`으로 자르므로
+        #:   **오래된 주가 앞에 오면 이번 주 근거가 통째로 잘린다.** 실측(2026-08-13):
+        #:   분석 주가 `07-20`인데 R1 근거가 전부 `07-13`~`15`(지난 주)로 나갔다 —
+        #:   `observed`는 **판정 창 마지막 주**의 값인데 근거는 그 전 주였다.
+        #: ⚠ **R2는 이미 `reversed(streak)`로 최신 우선이다** — 최신 우선이 원래 의도였고
+        #:   `_finding`을 쓰는 R1·R4만 빠져 있었다(R3·R5·R6는 주가 하나라 해당 없음).
+        evidence_weeks=tuple(w.week_monday for w in reversed(weeks)),
         metric=metric,
         observed=observed,
         baseline=baseline,

@@ -7,12 +7,12 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Final
 
 from ai.contracts.detection import RuleId, SignalType
 from ai.detection.engine import _drop_findings_without_evidence
-from ai.detection.evidence import EMPTY_EVIDENCE, StudentEvidence
+from ai.detection.evidence import EMPTY_EVIDENCE, EventRef, StudentEvidence
 from ai.detection.ranking import StudentAlert
 from ai.detection.rules import RuleFinding
 
@@ -39,8 +39,18 @@ def _alert(*findings: RuleFinding) -> StudentAlert:
     )
 
 
-def _learning_events() -> dict[tuple[str, date], list[str]]:
-    return {(_STUDENT, _WEEK): ["le_1", "le_2"]}
+def _learning_events() -> dict[tuple[str, date], list[EventRef]]:
+    """🔴 **날짜를 주 월요일과 다르게 준다**(99 #60 보강).
+
+    같게 주면 «인용이 그 기록의 날짜를 쓴다»와 «주 월요일을 쓴다»가 **구분되지 않는다** —
+    픽스처가 값을 안 바꾸면 바뀌어야 하는 것을 관측할 수 없다(99 로그 62).
+    """
+    return {
+        (_STUDENT, _WEEK): [
+            EventRef(record_id="le_1", occurred_on=_WEEK + timedelta(days=1)),
+            EventRef(record_id="le_2", occurred_on=_WEEK + timedelta(days=3)),
+        ]
+    }
 
 
 def _trim(

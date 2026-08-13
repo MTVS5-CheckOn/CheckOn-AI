@@ -69,6 +69,36 @@ Evidence    role · observed · sample_size · occurred_on    ← "어느 기록
 `Signal.baseline`이 *"평소 대비"* 를 든다. evidence 행에는 **`baseline` 필드를 두지 않았다** —
 둘 곳이 없어서가 아니라 **거짓이 되기 때문**이다.
 
+### 3-2′. 🔴 단위 정본 — 규칙마다 `observed`가 재는 것이 다르다
+
+> **이 표는 백엔드가 화면 단위를 고르는 근거다.** `observed`를 그냥 `%`로 찍으면
+> `submit_drop`이 **300%**로 나간다(`consecutive_missing_weeks`는 **주 수**다).
+
+`src/ai/detection/rules.py` 실측에서 옮겼다 — 외워 쓰지 않는다.
+
+| `signal_type` | `metric` | `observed` 단위 | `baseline` | `sample_size`의 뜻 |
+| --- | --- | --- | --- | --- |
+| `acc_drop` | `accuracy` | **0~1 비율** | 0~1 비율 | 채점 문항 수 |
+| `hidden_risk` | `norm_time` | 정규화 풀이시간 | 정규화 풀이시간 | 시간 측정 문항 수 |
+| `volume_gap` | `activity_count` | **건수** | 평균 건수 | 🔴 **기준선 주 수** |
+| `submit_drop` | `consecutive_missing_weeks` | 🔴 **주 수** | `None` | `None` |
+| `type_bias` | `error_share` | **0~1 비율** | `None` | 해당 셀 문항 수 |
+| `return_care` | `None` | `None` | `None` | `None` |
+
+🔴 **`baseline = None`의 뜻**은 *"못 구했다"* 가 아니라 **"평소와 비교하는 규칙이 아니다"** 다.
+`rules.py`가 정본이다:
+
+> R2는 연속 **횟수**를, R6는 셀 점유율을 **임계값과** 비교한다.
+> 임계를 baseline으로 적으면 *"평소 대비"* 로 읽혀 거짓이 된다.
+
+⚠ **`sample_size`도 규칙마다 뜻이 다르다** — `acc_drop`은 **문항 수**, `volume_gap`은
+**주 수**다. 같은 이름이 같은 것을 뜻한다고 가정하면 `volume_gap`에서 *"8문항"* 으로 읽힌다.
+
+🔴 **테스트가 잠그는 것과 못 잠그는 것**
+`test_signal_metric_units_match_the_documented_table`이 **`metric` 문자열**과
+**`baseline`이 `None`인 규칙 집합**을 잠근다. ⚠ **단위(«0~1 비율» 같은 말)는 문자열로
+단언할 수 없다 — 그건 이 표가 든다.** 표와 코드가 갈리면 테스트가 아니라 **사람이** 잡아야 한다.
+
 ### 3-3. 🔴 규칙별 baseline 행 여부 (2026-08-13 확정 · §4-B 산출물)
 
 | 규칙 | 신호 | `Signal.baseline` | evidence `baseline` 행 | 기준선의 성격 |

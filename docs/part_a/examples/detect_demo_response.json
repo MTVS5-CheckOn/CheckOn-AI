@@ -20,30 +20,30 @@
         "evidence": [
           {
             "source_table": "learning_event",
-            "record_id": "le_163",
+            "record_id": "le_172",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_164",
+            "record_id": "le_173",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-21"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_165",
+            "record_id": "le_174",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-22"
           }
         ],
         "metric": "accuracy",
@@ -70,12 +70,12 @@
         "evidence": [
           {
             "source_table": "assignment_week_summary",
-            "record_id": "aws_2026-07-06_st_04",
+            "record_id": "aws_2026-07-20_st_04",
             "summary": "예정 과제 1건 중 제출 0건",
             "role": "trigger",
             "observed": 0.0,
             "sample_size": 1,
-            "occurred_on": "2026-07-06"
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "assignment_week_summary",
@@ -88,12 +88,12 @@
           },
           {
             "source_table": "assignment_week_summary",
-            "record_id": "aws_2026-07-20_st_04",
+            "record_id": "aws_2026-07-06_st_04",
             "summary": "예정 과제 1건 중 제출 0건",
             "role": "trigger",
             "observed": 0.0,
             "sample_size": 1,
-            "occurred_on": "2026-07-20"
+            "occurred_on": "2026-07-06"
           }
         ],
         "metric": "consecutive_missing_weeks",
@@ -120,30 +120,30 @@
         "evidence": [
           {
             "source_table": "learning_event",
-            "record_id": "le_253",
+            "record_id": "le_262",
             "summary": "hidden_risk 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_254",
+            "record_id": "le_263",
             "summary": "hidden_risk 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-21"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_255",
+            "record_id": "le_264",
             "summary": "hidden_risk 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-22"
           }
         ],
         "metric": "norm_time",
@@ -184,7 +184,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-20"
+            "occurred_on": "2026-07-21"
           },
           {
             "source_table": "learning_event",
@@ -193,7 +193,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-20"
+            "occurred_on": "2026-07-22"
           }
         ],
         "metric": "error_share",
@@ -311,30 +311,30 @@
         "evidence": [
           {
             "source_table": "learning_event",
-            "record_id": "le_1053",
+            "record_id": "le_1062",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_1054",
+            "record_id": "le_1063",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-21"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_1055",
+            "record_id": "le_1064",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-22"
           }
         ],
         "metric": "accuracy",
@@ -356,7 +356,7 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "e1823112-72df-46d4-8afa-c8ab1e58ffff",
+    "execution_id": "85c63573-a89c-4eba-b7ce-51cd43097d97",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.3",
