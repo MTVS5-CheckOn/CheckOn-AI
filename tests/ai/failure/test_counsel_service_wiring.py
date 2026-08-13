@@ -357,9 +357,16 @@ def test_fake_output_is_distinguishable_after_the_fact(unwired: None) -> None:
 
 
 def test_ci_default_makes_no_real_llm_call() -> None:
-    """⚠ B-3 — CI 기본은 fake다. 이 PR이 그걸 바꾸지 않는다."""
-    assert CounselSettings().llm_provider == "fake"
-    assert build_counsel_llm_provider(CounselSettings()).name == "fake-counsel"
+    """⚠ B-3 — CI 기본은 fake다. 이 PR이 그걸 바꾸지 않는다.
+
+    🔴 **선언 기본값을 본다 — 환경이 아니라**(99 #57). 종전 `CounselSettings()`는 `.env`를
+    읽어서, 개발자 `.env`의 `LLM_PROVIDER` 하나로 **이 가드가 상시 red**였다. *"실물을 안
+    부른다"* 를 지키는 테스트가 빨간불이면 그 보장은 없는 것이다. 그리고 `llm_provider_pin`
+    을 깐 지금 환경을 읽으면 **핀 때문에** 통과해 선언 기본값이 바뀌어도 못 잡는다.
+    """
+    default = CounselSettings.model_fields["llm_provider"].default
+    assert default == "fake"
+    assert build_counsel_llm_provider(CounselSettings(llm_provider=default)).name == "fake-counsel"
 
 
 # ── A-1 승격본이 하나뿐인지 ───────────────────────────────────────
