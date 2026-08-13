@@ -51,6 +51,8 @@ VERSION_SCOPE: Final = (
 
 
 def _success(data: dict[str, Any]) -> dict[str, Any]:
+    """실행 없는 ops용 공통 shape — meta 확장 시 envelope 계약과 함께 갱신한다."""
+
     return {
         "data": data,
         "error": None,
@@ -70,7 +72,11 @@ async def health() -> dict[str, Any]:
 
 @router.get("/v1/ready", response_model=None)
 async def ready() -> dict[str, Any] | JSONResponse:
-    """제한시간 안에 PostgreSQL 경량 질의가 가능한지 확인한다."""
+    """제한시간 안에 PostgreSQL 경량 질의가 가능한지 확인한다.
+
+    DomainException 경로를 타지 않는 첫 엔드포인트다. 공개 논리 상태인 503 detail이
+    5xx 기본 미노출 정책으로 지워지지 않도록 error_envelope와 JSONResponse를 직접 쓴다.
+    """
 
     try:
         async with asyncio.timeout(_READY_TIMEOUT_SECONDS):

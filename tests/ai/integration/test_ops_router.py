@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.metadata import version
@@ -12,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ai.api.envelope import versions_dict
+from ai.api.envelope import success_envelope, versions_dict
 from ai.api.routers import ops
 from ai.api.routers.detect import detection_versions
 from ai.api.routers.diagnosis import diagnosis_versions
@@ -20,6 +22,7 @@ from ai.api.routers.problem import problem_failure_versions
 from ai.api.version_scope import FALLBACK_VERSIONS, resolve_versions
 from ai.composition.classify.classifier import classify_versions
 from ai.composition.counsel.versions import counsel_versions
+from ai.db import session as db_session
 from ai.import_mapping.versions import import_versions
 
 
@@ -72,6 +75,38 @@ def test_health_is_liveness_only(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.json()["meta"]["execution_id"] is None
     assert response.json()["meta"]["versions"] == versions_dict(ops.ops_versions())
     assert response.json()["meta"]["versions"]["engine"] == "ops-0.1"
+
+
+def test_ops_success_envelope_keeps_the_common_key_shape() -> None:
+    common = success_envelope(
+        data={"status": "alive"},
+        execution_id="execution-placeholder",
+        versions=ops.ops_versions(),
+    )
+    operations = ops._success({"status": "alive"})
+
+    assert set(operations) == set(common) == {"data", "error", "meta"}
+    assert set(operations["meta"]) == set(common["meta"]) == {
+        "execution_id",
+        "versions",
+    }
+
+
+def test_importing_ops_does_not_create_a_database_sessionmaker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def counted_sessionmaker() -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(db_session, "get_sessionmaker", counted_sessionmaker)
+    monkeypatch.delitem(sys.modules, "ai.api.routers.ops")
+
+    importlib.import_module("ai.api.routers.ops")
+
+    assert calls == 0
 
 
 def test_ready_executes_one_bounded_database_probe(monkeypatch: pytest.MonkeyPatch) -> None:
