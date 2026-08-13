@@ -22,9 +22,17 @@ from typing import Final
 
 import pytest
 
-from ai.contracts.detection import EvidenceRole, RuleId, Signal
+from ai.contracts.detection import (
+    AssignmentWindowEvidence,
+    DetectRequest,
+    EvidenceRole,
+    RuleId,
+    Signal,
+)
+from ai.detection import engine as engine_module
 from ai.detection import rules as rules_module
 from ai.detection.engine import detect
+from ai.evaluation.fake_snapshot import StudentPlan, build_detect_request
 from ai.evaluation.golden.detection.scenarios import all_scenarios
 
 #: 🔴 **기록 단위 기준선을 가진 규칙** — 현재 R3뿐이다.
@@ -38,6 +46,24 @@ _RULES_WITH_RECORD_BASELINE: Final[frozenset[RuleId]] = frozenset({RuleId.R3})
 _RULES_WITHOUT_COMPARISON: Final[frozenset[RuleId]] = frozenset({RuleId.R5})
 
 _DESIGN_DOC: Final = Path("docs/part_a/14_evidence_fields.md")
+
+
+def _monday(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _signals_with_request(rule_id: RuleId) -> list[tuple[Signal, DetectRequest]]:
+    """그 규칙의 신호와 **그 신호를 낸 요청**을 함께 — 요청의 학습 기록을 봐야
+    «판정 창 마지막 주에 문항이 있었나»를 가릴 수 있다."""
+    found: list[tuple[Signal, DetectRequest]] = []
+    for scenario in all_scenarios():
+        response = detect(scenario.request)
+        found.extend(
+            (signal, scenario.request)
+            for signal in response.signals
+            if signal.rule_id is rule_id
+        )
+    return found
 
 
 def _signals_by_rule() -> dict[RuleId, list[Signal]]:
@@ -270,25 +296,90 @@ def test_the_cited_records_come_from_the_week_that_observed_reports() -> None:
     assert checked, "R1·R4 신호가 없다 — 이 검사가 눈이 멀었다"
 
 
-def test_the_newest_week_survives_the_trigger_cap() -> None:
-    """🔴 상한에 걸려 잘리는 것은 **오래된 주**여야 한다.
+def test_the_assessed_week_survives_the_trigger_cap() -> None:
+    """🔴 절단 뒤에도 **판정 창 마지막 주**가 근거에 남는다.
 
-    판정 창 2주 × 주당 10~20문항이면 상한 3건은 **한 주로도 다 찬다.** 오래된 주가 앞에
-    오면 이번 주가 **한 건도 안 남는다** — 그게 이 회귀의 형태였다.
+    신호의 `observed`는 판정 창 **마지막 주**의 값이다(`rules.py :: _r1`의 `latest`).
+    근거가 오래된 주부터 실리면 `triggers[:3]`이 앞에서 자르므로 — 주당 10~20문항이면
+    **상한 3건이 지난 주로 다 찬다** — 화면에 *"이번 주 51%"* 옆에 **지난 주 날짜만** 붙는다.
+
+    🔴 **순서 자체를 단언하지 않는다.** `evidence[0].occurred_on == …` 로 쓰면 절단 방식이
+    바뀔 때 **결함이 없는데도 red**가 된다. 여기서 지키는 것은 **«마지막 주가 남아 있다»** 다.
+
+    ⚠ **판정 창 마지막 주에 문항이 하나도 없는 학생은 제외한다** — 그런 학생은 인용할
+    기록 자체가 없어 단언하면 거짓 red다(활동 0건 주는 실제로 생긴다 · 99 #43).
     """
-    from ai.detection.features import WeekFeatures
-    from ai.detection.rules import RuleFinding, _finding
+    by_rule = _signals_by_rule()
+    checked = 0
+    for rule_id in (RuleId.R1, RuleId.R4):
+        for signal, request in _signals_with_request(rule_id):
+            weeks_with_events = {
+                _monday(event.occurred_at.date())
+                for event in request.learning_events
+                if event.student_ref == signal.student_ref
+            }
+            dates = [i.occurred_on for i in signal.evidence if i.occurred_on is not None]
+            assert dates, f"{rule_id.value}: 근거에 날짜가 없다"
+            assessed = max(weeks_with_events)
+            if assessed not in weeks_with_events:  # 방어 — 위 집합에서 뽑았으니 도달 안 한다
+                continue
+            cited_weeks = {_monday(d) for d in dates}
+            assert assessed in cited_weeks, (
+                f"{rule_id.value} {signal.student_ref}: 판정 창 마지막 주({assessed})가 "
+                f"근거에 없다 — 인용된 주 {sorted(cited_weeks)}"
+            )
+            checked += 1
+    assert checked, "R1·R4 신호가 없다 — 이 검사가 눈이 멀었다"
+    assert by_rule, "골든에 신호가 없다"
 
-    weeks = tuple(
-        WeekFeatures(
-            week_monday=date(2026, 7, 13) + timedelta(weeks=i),
-            n_solves=10, accuracy=0.8, submitted=True, norm_time=0.2,
-            event_count=10, tagging_rate=1.0, cells=(), graded_count=10, timed_count=10,
-        )
-        for i in range(2)
+
+def test_submit_drop_also_cites_the_most_recent_missing_week() -> None:
+    """🔴 R2도 **최신 미제출 주**를 인용한다 — R1·R4와 같은 규율.
+
+    R2는 처음부터 `evidence_weeks=tuple(reversed(streak))`로 최신 우선이었고 **그게 원래
+    의도였다** — `_finding`을 쓰는 R1·R4만 안 따라왔던 것이다(2026-08-13 실측).
+
+    ⚠ **그런데 그 순서를 지키는 검사가 없었다.** 고의 파괴(`reversed` 제거)에서 red를 낸
+    것은 **골든 스냅숏**이었다 — 값이 우연히 달라져 걸린 것이지 규율을 겨눈 검사가 아니다.
+
+    🔴 **골든으로는 못 잡는다 — 실측으로 갈렸다.** 골든의 미제출 연속이 **3주**라
+    `_MAX_TRIGGER_EVIDENCE`(3)에 안 걸리고, 그러면 **순서를 뒤집어도 3건 전부 남아** 검사가
+    통과한다(고의 파괴 exit=0으로 확인). ⇒ **연속을 상한 너머로 만들어** 절단이 실제로
+    일어나는 자리에서 잰다. **red를 못 내는 검사는 검사가 아니다.**
+    """
+    from ai.detection.thresholds import default_threshold_config
+
+    cap = engine_module._MAX_TRIGGER_EVIDENCE
+    weeks_missing = cap + 2  # 🔴 상한을 넘겨야 순서가 결과를 바꾼다
+    plan = StudentPlan(
+        student_ref="st_miss",
+        class_ref="cl_a1",
+        weeks=10,
+        submit_ok=(True,) * (10 - weeks_missing) + (False,) * weeks_missing,
+        assignment_expected=1,
     )
-    finding: RuleFinding = _finding(RuleId.R1, 0.5, weeks)
+    assert weeks_missing >= default_threshold_config().r2.consecutive_missing
 
-    assert finding.evidence_weeks[0] == date(2026, 7, 20), (
-        f"판정 창이 오래된 주부터 실린다 {finding.evidence_weeks}"
+    request = build_detect_request(week_start="2026-07-20", seed=21, students=[plan])
+    signals = [s for s in detect(request).signals if s.rule_id is RuleId.R2]
+    assert signals, "R2가 발화하지 않았다 — 이 검사가 눈이 멀었다"
+
+    signal = signals[0]
+    assert len(signal.evidence) == cap, (
+        f"절단이 안 일어났다 — 순서가 결과를 안 바꾸는 조건이다 {len(signal.evidence)}"
+    )
+    #: ⚠ `isinstance`로 좁힌다 — `detection_evidence`는 세 종류 union 이라
+    #:   `getattr` 로 읽으면 타입 검사가 못 잡고 오타가 조용히 «0건» 이 된다.
+    missing_weeks = {
+        item.week_start
+        for item in request.detection_evidence
+        if isinstance(item, AssignmentWindowEvidence)
+        and item.student_ref == "st_miss"
+        and item.expected_count > 0
+        and item.submitted_count == 0
+    }
+    cited = {i.occurred_on for i in signal.evidence if i.occurred_on is not None}
+
+    assert max(missing_weeks) in cited, (
+        f"최신 미제출 주({max(missing_weeks)})가 근거에 없다 — 인용 {sorted(cited)}"
     )

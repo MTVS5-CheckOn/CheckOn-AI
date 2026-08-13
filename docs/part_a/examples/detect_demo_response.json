@@ -70,12 +70,12 @@
         "evidence": [
           {
             "source_table": "assignment_week_summary",
-            "record_id": "aws_2026-07-06_st_04",
+            "record_id": "aws_2026-07-20_st_04",
             "summary": "예정 과제 1건 중 제출 0건",
             "role": "trigger",
             "observed": 0.0,
             "sample_size": 1,
-            "occurred_on": "2026-07-06"
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "assignment_week_summary",
@@ -88,12 +88,12 @@
           },
           {
             "source_table": "assignment_week_summary",
-            "record_id": "aws_2026-07-20_st_04",
+            "record_id": "aws_2026-07-06_st_04",
             "summary": "예정 과제 1건 중 제출 0건",
             "role": "trigger",
             "observed": 0.0,
             "sample_size": 1,
-            "occurred_on": "2026-07-20"
+            "occurred_on": "2026-07-06"
           }
         ],
         "metric": "consecutive_missing_weeks",
@@ -356,7 +356,7 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "fedacec1-29ea-4ceb-befe-915c58534543",
+    "execution_id": "85c63573-a89c-4eba-b7ce-51cd43097d97",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.3",
