@@ -2028,6 +2028,11 @@ reading·literature의 기존 출제 경로도 수동 목표로만 도달 가능
 판정에서는 코드를 바꾸지 않는다. T3의 실 경로 정합과 T2·T4·T5 실 ContextPack 생산자
 도입 범위는 사람 결정 뒤 별도 작업으로 분리한다.
 
+특히 T2·T4·T5는 현재 운영 배선으로 실측을 시작해도 빈 anchor가
+`GraphContextReferenceInsufficient`로 실패 닫히므로 자료 생성 LLM까지 도달하지 않는다.
+따라서 운영 배선 기반 실 LLM 측정 표본은 **0회**이며, 실 ContextPack 생산자 없이 단순히
+측정을 반복해서 해소할 수 있는 결손이 아니다.
+
 실제 57노드 그래프와 결정론 진단기로 `speech_writing.writing.material` 및
 `media.reception.credibility`를 `weak_confirmed`로 산출한 뒤, 그 노드가 자료 생성 → 문항
 생성 → 규칙 게이트 → blind 교차 풀이 → 저장을 완주하는 FakeProvider E2E를 고정했다.
