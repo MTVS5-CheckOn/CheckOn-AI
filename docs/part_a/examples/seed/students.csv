@@ -1,0 +1,18 @@
+student_alias,class_alias,relationship_started_weeks_ago,status,consent,겨냥
+st_01,cl_a1,14,ENROLLED,granted,R1 정답률 하락(급락)
+st_02,cl_a1,14,ENROLLED,granted,R1 정답률 하락(완만)
+st_03,cl_a1,14,ENROLLED,granted,R3 학습 공백
+st_04,cl_a1,14,ENROLLED,granted,R6 유형 편중
+st_05,cl_a1,14,ENROLLED,granted,R4 숨은 위기(advisory 단독)
+st_06,cl_a1,14,ENROLLED,granted,🔴 복합 R1+R3
+st_07,cl_a1,14,ENROLLED,granted,R1 정답률 하락(경계)
+st_08,cl_a1,14,ENROLLED,granted,정상(대조군)
+st_09,cl_a1,1,ENROLLED,granted,신규생 — 재원 1주라 판정 제외
+st_10,cl_b2,14,RETURNED,granted,R5 복귀 관리(returned)
+st_11,cl_b2,14,ENROLLED,granted,R1 하락 — 2회차에 ongoing 확인용
+st_12,cl_b2,14,ENROLLED,denied,🔴 미동의 — 응답 어디에도 안 나와야 함
+st_13,cl_b2,14,ENROLLED,granted,R4 skip — duration_missing
+st_14,cl_b2,14,ENROLLED,granted,R6 skip — tagging_below_60pct
+st_15,cl_b2,14,ENROLLED,granted,정상(대조군)
+st_17,cl_b2,14,ENROLLED,granted,R2 제출 저하 — 3주 연속 미제출(백엔드 작업 후)
+st_16,(미배정),14,ENROLLED,granted,🔴 반 미배정 — cl_unassigned 경로
