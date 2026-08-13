@@ -22,6 +22,9 @@ from openai import (
     AuthenticationError,
 )
 
+from ai.composition.briefing import BRIEF_GEN_PARAMS
+from ai.composition.classify.classifier import CLASSIFY_GEN_PARAMS
+from ai.composition.counsel.provider import COUNSEL_GEN_PARAMS
 from ai.contracts.execution import Capability, ExecutionContext, GenerationParams, VersionSet
 from ai.contracts.llm import (
     CallOutcome,
@@ -33,9 +36,6 @@ from ai.contracts.llm import (
     ModelRole,
     ParseFailed,
 )
-from ai.composition.briefing import BRIEF_GEN_PARAMS
-from ai.composition.classify.classifier import CLASSIFY_GEN_PARAMS
-from ai.composition.counsel.provider import COUNSEL_GEN_PARAMS
 from ai.llm.determinism import LLM_SEED, deterministic_params
 from ai.llm.providers.openai_compat import (
     PROVIDER_NAME,
@@ -291,13 +291,24 @@ def test_no_token_cap_sends_neither_key() -> None:
     assert "max_tokens" not in kwargs
 
 
-def test_default_temperature_when_params_absent() -> None:
-    provider = _provider(result=_ok_response("ok"))
-    _run(provider.complete(_request(), _context()))
-    kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
-    assert kwargs is not None
-    assert kwargs["temperature"] == 0.7  # provider 기본값 상수
+def test_absent_params_send_no_sampling_keys() -> None:
+    """🔴 **(8/13) 뒤집은 검사다** — 종전 이름은 `test_default_temperature_when_params_absent`.
+
+    **무엇을 지키려던 검사였나:** *"`GenerationParams` 없이 호출해도 온도는 정해진다"* —
+    어댑터가 `_DEFAULT_TEMPERATURE = 0.7`로 미지정을 메워, 호출자가 잊어도 샘플링이
+    서버 기본에 흔들리지 않는다는 보장이었다.
+
+    **왜 뒤집었나:** 그 폴백 때문에 **temperature만 뺄 수가 없었다.** `gpt-5.6-luna`가
+    기본값 외 값을 400으로 거부하자(99 #51) 흡수할 자리가 없어졌다 — 보장이 그대로
+    막다른 길이 됐다. 이제 미지정은 **서버 기본값에 맡긴다**(`top_p`가 원래 그랬듯이).
+
+    ⚠ **되돌리지 마라.** "원래 0.7이었는데 왜 없지"로 폴백을 되살리면 전 경로가 다시 400이다.
+    """
+    kwargs = _sent_kwargs(None)
+    assert "temperature" not in kwargs, "폴백 상수가 되살아났다 — 전 경로가 400이 된다"
     assert "top_p" not in kwargs  # 미지정은 서버 기본값에 맡김
+    assert "seed" not in kwargs
+    assert "max_completion_tokens" not in kwargs
 
 
 # ── nullable 파라미터의 「값이 없으면 안 보낸다」 규칙 ────────────────────
@@ -424,7 +435,8 @@ def test_ledger_params_never_claim_a_value_the_wire_did_not_carry() -> None:
             key = _VENDOR_KEY[field]
             if value is None:
                 assert key not in sent, (
-                    f"{name}: 원장은 {field}=null인데 전선은 {sent.get(key)!r}을 날랐다 — 원장이 거짓말한다"
+                    f"{name}: 원장은 {field}=null인데 전선은 {sent.get(key)!r}을 날랐다"
+                    " — 원장이 거짓말한다"
                 )
             else:
                 assert sent[key] == value, (

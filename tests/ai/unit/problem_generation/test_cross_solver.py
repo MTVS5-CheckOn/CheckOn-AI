@@ -16,7 +16,7 @@ from ai.contracts.problem_generation import (
     SolveResult,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
-from ai.llm.determinism import DETERMINISTIC_TEMPERATURE, LLM_SEED
+from ai.llm.determinism import LLM_SEED
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
 from ai.runtime.redaction import RedactionResult, redact
@@ -97,7 +97,11 @@ def test_cross_solver_sends_only_blind_item() -> None:
     assert "grammar:rule-1" not in prompt
     generation_params = provider.requests[0].generation_params
     assert generation_params is not None
-    assert generation_params.temperature == DETERMINISTIC_TEMPERATURE
+    #: 🔴 **(8/13) `temperature`는 안 실린다** — `gpt-5.6-luna`가 기본값 외 값을 400으로
+    #:   거부해 어댑터가 「값이 없으면 안 보낸다」로 흡수했다(99 #51). 종전 이 줄은
+    #:   `== DETERMINISTIC_TEMPERATURE`로 **결정론 온도가 실린다**를 지키고 있었다.
+    #:   재현 축은 이제 `seed` 하나다(8/4 실측 — 재현을 만든 것은 seed였다).
+    assert generation_params.temperature is None
     assert generation_params.seed == LLM_SEED
 
 

@@ -584,10 +584,19 @@ def test_all_paths_share_one_seed() -> None:
 
     종전에는 분류만 seed가 있고 브리핑·초안은 없었다(㊼) — 브리핑은 temperature조차
     미지정이라 어댑터 기본 0.7로 나갔다.
+
+    🔴 **(8/13) `temperature` 단정을 뒤집었다.** 종전 줄은 `params.temperature == 0.0`으로
+    *"세 경로가 같은 결정론 온도를 싣는다"* 를 지키고 있었다. `gpt-5.6-luna`가 기본값 외
+    온도를 400으로 거부해(99 #51) 어댑터가 「값이 없으면 안 보낸다」로 흡수했고, 정본
+    `deterministic_params()`가 더는 온도를 주지 않는다. **재현 축은 seed 하나다** —
+    지키려던 것(경로별로 갈리지 않는다)은 아래 `is None` 단정이 그대로 지킨다.
+    ⚠ 전선까지의 대응은 `tests/ai/llm/test_openai_compat.py`의
+      `test_ledger_params_never_claim_a_value_the_wire_did_not_carry`가 잠근다 —
+      원장에 남는 값과 실제로 나간 값이 갈리면 그쪽이 red다.
     """
     for params in (BRIEF_GEN_PARAMS, COUNSEL_GEN_PARAMS, CLASSIFY_GEN_PARAMS):
         assert params.seed == LLM_SEED
-        assert params.temperature == 0.0
+        assert params.temperature is None
     assert deterministic_params().seed == LLM_SEED
 
 

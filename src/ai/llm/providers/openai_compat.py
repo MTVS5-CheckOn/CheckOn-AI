@@ -62,10 +62,6 @@ logger = logging.getLogger(__name__)
 #: provider 식별자 — LLM_CALL.provider에 기록된다.
 PROVIDER_NAME = "openai-compat"
 
-#: GenerationParams가 temperature를 주지 않을 때(None) 쓰는 provider 기본값.
-#: (인터페이스에 없는 값이 아니라 "미지정"일 때의 기본 — docstring 명시가 규약)
-_DEFAULT_TEMPERATURE = 0.7
-
 #: rate limit — **일시 실패**로 본다(재시도 대상). 아래 `complete()` 참조.
 _RATE_LIMITED = 429
 
@@ -158,13 +154,20 @@ class OpenAICompatProvider:
         kwargs: dict[str, Any] = {
             "model": self._settings.openai_model,
             "messages": [{"role": "user", "content": request.prompt}],
-            "temperature": (
-                params.temperature
-                if params is not None and params.temperature is not None
-                else _DEFAULT_TEMPERATURE
-            ),
         }
         if params is not None:
+            # 🔴 (8/13) **temperature도 「값이 없으면 안 보낸다」로 통일한다.**
+            #   종전에는 이 자리에 폴백 상수(0.7)가 있어 **네 파라미터 중 temperature만
+            #   뺄 수가 없었다.** 폴백이 있으면 벤더가 허용값을 좁히는 날 흡수할 방법이 없다.
+            #   `gpt-5.6-luna` 400 원문(2026-08-13 직접 curl · param="temperature"):
+            #     Unsupported value: 'temperature' does not support 0 with this
+            #     model. Only the default (1) value is supported.
+            #   ⚠ **모델별 분기를 만들지 않았다** — 8/6 max_tokens **교체**와 같은 처방이다.
+            #     설정 플래그로 나누면 99 ⓢ의 죽은 분기가 된다.
+            #   🔴 **폴백 상수를 다시 두지 마라** — 그게 이 안건의 원인이다. 재도입하면
+            #     `test_every_nullable_param_follows_the_same_omit_when_unset_rule`이 red다.
+            if params.temperature is not None:
+                kwargs["temperature"] = params.temperature
             if params.top_p is not None:
                 kwargs["top_p"] = params.top_p
             if params.max_tokens is not None:
