@@ -1,0 +1,593 @@
+{
+  "graph_version": "curriculum-five-area-v1",
+  "taxonomy_version": "v1",
+  "config_version": "b-defaults-v1",
+  "node_count": 57,
+  "areas": [
+    "language",
+    "media",
+    "literature",
+    "reading",
+    "speech_writing"
+  ],
+  "types": [
+    "fact",
+    "infer",
+    "critic",
+    "concept"
+  ],
+  "nodes": [
+    {
+      "id": "language.grammar.addition",
+      "label": "음운 첨가",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.adverb",
+      "label": "부사",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.alternation",
+      "label": "음운 교체",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.causative_passive",
+      "label": "사동과 피동",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "critic",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.contraction",
+      "label": "음운 축약",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.deletion",
+      "label": "음운 탈락",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.ending",
+      "label": "어미",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.fortition",
+      "label": "된소리되기",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.honorific",
+      "label": "높임 표현",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "critic",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.interjection",
+      "label": "감탄사",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.liquidization",
+      "label": "유음화",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.modifier",
+      "label": "관형사",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.morpheme.concept",
+      "label": "형태소",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 1
+    },
+    {
+      "id": "language.grammar.nasalization",
+      "label": "비음화",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.negation",
+      "label": "부정 표현",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "critic",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.noun",
+      "label": "명사",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.numeral",
+      "label": "수사",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.palatalization",
+      "label": "구개음화",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.particle",
+      "label": "조사",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.parts_of_speech",
+      "label": "품사 체계",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 1
+    },
+    {
+      "id": "language.grammar.phoneme.system",
+      "label": "음운 체계",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 1
+    },
+    {
+      "id": "language.grammar.phonological_change",
+      "label": "음운 변동",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.predicate",
+      "label": "동사와 형용사",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.pronoun",
+      "label": "대명사",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.quotation",
+      "label": "인용 표현",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "critic",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.sentence.connected",
+      "label": "이어진문장",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "critic",
+        "infer"
+      ],
+      "level": 4
+    },
+    {
+      "id": "language.grammar.sentence.constituent",
+      "label": "문장 성분",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "language.grammar.sentence.embedded",
+      "label": "안은문장",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "critic",
+        "infer"
+      ],
+      "level": 4
+    },
+    {
+      "id": "language.grammar.sentence.structure",
+      "label": "문장 구조",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.speech_level",
+      "label": "종결 표현",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "critic",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.syllable.structure",
+      "label": "음절 구조",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 1
+    },
+    {
+      "id": "language.grammar.tense_aspect",
+      "label": "시간 표현",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "critic",
+        "infer"
+      ],
+      "level": 3
+    },
+    {
+      "id": "language.grammar.word.formation",
+      "label": "단어 형성",
+      "area_tag": "language",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "literature.context.external_reference",
+      "label": "외적 준거 감상",
+      "area_tag": "literature",
+      "type_affinity": [
+        "critic",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "literature.emotion.theme",
+      "label": "정서와 주제",
+      "area_tag": "literature",
+      "type_affinity": [
+        "critic",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "literature.expression.technique",
+      "label": "표현 방식",
+      "area_tag": "literature",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 1
+    },
+    {
+      "id": "literature.narrator.perspective",
+      "label": "서술자의 관점",
+      "area_tag": "literature",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "literature.speaker.attitude",
+      "label": "화자의 태도",
+      "area_tag": "literature",
+      "type_affinity": [
+        "critic",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "literature.structure.composition",
+      "label": "작품 구성",
+      "area_tag": "literature",
+      "type_affinity": [
+        "fact",
+        "infer"
+      ],
+      "level": 1
+    },
+    {
+      "id": "media.production.audience",
+      "label": "수용자 고려",
+      "area_tag": "media",
+      "type_affinity": [
+        "critic",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "media.production.expression",
+      "label": "표현 수단 선택",
+      "area_tag": "media",
+      "type_affinity": [
+        "concept",
+        "critic"
+      ],
+      "level": 2
+    },
+    {
+      "id": "media.production.structure",
+      "label": "매체 자료 구성",
+      "area_tag": "media",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 1
+    },
+    {
+      "id": "media.reception.credibility",
+      "label": "정보 신뢰성 판단",
+      "area_tag": "media",
+      "type_affinity": [
+        "critic"
+      ],
+      "level": 2
+    },
+    {
+      "id": "media.reception.information",
+      "label": "매체 정보 파악",
+      "area_tag": "media",
+      "type_affinity": [
+        "fact"
+      ],
+      "level": 1
+    },
+    {
+      "id": "media.reception.intent",
+      "label": "생산 의도 추론",
+      "area_tag": "media",
+      "type_affinity": [
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "reading.evaluation.argument",
+      "label": "논지 비판",
+      "area_tag": "reading",
+      "type_affinity": [
+        "critic"
+      ],
+      "level": 2
+    },
+    {
+      "id": "reading.information.explicit",
+      "label": "명시 정보 확인",
+      "area_tag": "reading",
+      "type_affinity": [
+        "fact"
+      ],
+      "level": 1
+    },
+    {
+      "id": "reading.information.relation",
+      "label": "정보 관계 파악",
+      "area_tag": "reading",
+      "type_affinity": [
+        "fact",
+        "infer"
+      ],
+      "level": 1
+    },
+    {
+      "id": "reading.reasoning.application",
+      "label": "보기 적용",
+      "area_tag": "reading",
+      "type_affinity": [
+        "critic",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "reading.reasoning.inference",
+      "label": "내용 추론",
+      "area_tag": "reading",
+      "type_affinity": [
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "reading.structure.organization",
+      "label": "글의 구조 파악",
+      "area_tag": "reading",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 1
+    },
+    {
+      "id": "speech_writing.speech.audience",
+      "label": "청중 고려",
+      "area_tag": "speech_writing",
+      "type_affinity": [
+        "critic",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "speech_writing.speech.interaction",
+      "label": "담화 상호작용",
+      "area_tag": "speech_writing",
+      "type_affinity": [
+        "fact",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "speech_writing.speech.strategy",
+      "label": "말하기 전략",
+      "area_tag": "speech_writing",
+      "type_affinity": [
+        "concept",
+        "fact"
+      ],
+      "level": 1
+    },
+    {
+      "id": "speech_writing.writing.material",
+      "label": "자료 활용",
+      "area_tag": "speech_writing",
+      "type_affinity": [
+        "critic",
+        "infer"
+      ],
+      "level": 2
+    },
+    {
+      "id": "speech_writing.writing.plan",
+      "label": "글쓰기 계획",
+      "area_tag": "speech_writing",
+      "type_affinity": [
+        "concept",
+        "infer"
+      ],
+      "level": 1
+    },
+    {
+      "id": "speech_writing.writing.revision",
+      "label": "고쳐쓰기",
+      "area_tag": "speech_writing",
+      "type_affinity": [
+        "concept",
+        "critic"
+      ],
+      "level": 2
+    }
+  ]
+}
