@@ -28,7 +28,7 @@ from pathlib import Path
 from uuid import UUID
 
 from ai.composition.briefing import (
-    _BRIEF_MAX_TOKENS,
+    BRIEF_GEN_PARAMS,
     MAX_REGEN,
     PROMPT_ID,
     PROMPT_VERSION,
@@ -260,7 +260,10 @@ def run() -> int:
                 ctx.fallback_text,
                 context,
                 v2_totals,
-                max_tokens=_BRIEF_MAX_TOKENS,  # 프로덕션 v3와 동일(지연 실측 반영)
+                #: 🔴 값을 복제하지 않고 **프로덕션 파라미터에서 읽는다**(99 #02) —
+                #:   복제하면 프로덕션만 바뀌었을 때 프리뷰가 낡은 채로 초록이다.
+                #:   2026-08-13 현재 None(천장 없음 · 99 #54).
+                max_tokens=BRIEF_GEN_PARAMS.max_tokens,
             )
         )
         body.extend(_render_signal(signal, ctx, v1, v2))

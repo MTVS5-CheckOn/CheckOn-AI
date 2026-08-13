@@ -600,6 +600,36 @@ def test_all_paths_share_one_seed() -> None:
     assert deterministic_params().seed == LLM_SEED
 
 
+def test_classify_is_the_only_capped_path() -> None:
+    """토큰 천장을 거는 경로는 **분류 하나뿐**이다 (2026-08-13 · 99 #54·#55).
+
+    ⚠ **값을 단언하지 않는다** — `== 256` 류는 동어반복이고 브리핑이 128이던 때도
+    통과했을 검사다. 이 사고를 하나도 못 막는다. 무는 것은 **어느 경로가 천장을 거는가**다.
+
+    브리핑·상담·문항생성은 `max_tokens=None`(벤더 키 미전송)이다. 브리핑은 2026-08-13
+    절단 사고로 천장을 **뗐다** — `gpt-5.6-luna` 같은 추론 모델에서 그 값은 출력이 아니라
+    **추론+출력 합계**를 묶어서, 128이 추론에 전부 소진되면 `content=""`가 된다(99 #54).
+
+    🔴 **분류(256)만 남았고 이 모델로 실측되지 않았다**(99 #55). 남은 시한폭탄이 여기
+    이름으로 박혀 있다 — JSON 출력이라 출력 토큰이 브리핑(관측 41)보다 크고 판단이라
+    추론도 더 쓸 수 있어, 256이 128보다 안전하다는 근거가 없다.
+
+    이 집합이 바뀌면 — 특히 **브리핑이 다시 들어오면** — 그 사고를 먼저 읽어라.
+    """
+    capped = {
+        name
+        for name, params in (
+            ("BRIEF", BRIEF_GEN_PARAMS),
+            ("COUNSEL", COUNSEL_GEN_PARAMS),
+            ("CLASSIFY", CLASSIFY_GEN_PARAMS),
+        )
+        if params.max_tokens is not None
+    }
+    assert capped == {"CLASSIFY"}, (
+        f"천장을 거는 경로가 바뀌었다: {sorted(capped)} — 99 #54·#55를 먼저 읽어라"
+    )
+
+
 def test_identical_input_produces_a_byte_identical_request() -> None:
     """같은 입력 → 같은 요청(프롬프트 + 생성 파라미터). 결정론은 여기까지가 AI 책임이다.
 
