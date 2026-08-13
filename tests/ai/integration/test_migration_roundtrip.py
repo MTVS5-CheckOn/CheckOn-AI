@@ -283,3 +283,71 @@ def test_the_0010_step_adds_exactly_the_bundle_and_the_body(
     command.upgrade(config, _TARGET)
     assert _BUNDLE_TABLE in _tables()
     assert asyncio.run(_columns("draft"))["content"] is False
+
+
+#: 🔴 **0010 테스트의 `_PREVIOUS`·`_TARGET`을 재사용하지 않는다** — 그쪽이 쓰고 있다.
+_SIGNAL_PREVIOUS: Final = "0010_counsel_ctx_draft_body"
+_SIGNAL_TARGET: Final = "0011_signal_comparison"
+
+#: 0011이 더하는 것 — 이 넷 말고는 아무것도 안 바뀌어야 한다.
+_SIGNAL_ADDED: Final = frozenset({"metric", "observed", "baseline", "sample_size"})
+
+#: 🔴 **0010 시점 `signal` 컬럼 전량** — 이름을 적어 두지 않으면 *"넷이 늘었다"* 만 보고
+#: **없어진 것을 못 본다**(0010 선례의 `_DRAFT_COLUMNS_0009`와 같은 이유).
+_SIGNAL_COLUMNS_0010: Final = frozenset(
+    {
+        "id",
+        "run_id",
+        "tenant_id",
+        "student_ref",
+        "rule_id",
+        "signal_type",
+        "display_label",
+        "lifecycle",
+        "score",
+        "rank",
+        "created_at",
+    }
+)
+
+
+@pytest.mark.integration
+def test_the_0011_step_adds_exactly_the_four_nullable_comparison_columns(
+    clean_database: None,
+) -> None:
+    """🔴 **0010 → 0011 → 0010 → 0011** 을 단계마다 직접 센다 (99 #59·#60).
+
+    🔴 **이 검사가 마이그레이션의 유일한 방어다.** `test_migration_parity`는
+    `op.create_table`·`op.drop_table`만 정규식으로 센다 — **`op.add_column`은 아무도 안
+    본다.** ⇒ 마이그레이션을 통째로 빼먹어도 **오프라인은 전부 초록이다**(실측).
+
+    ⚠ **넷이 nullable인지 반드시 본다.** `NOT NULL`로 조용히 올라가면 **기존 행이 있는
+    DB에서 업그레이드가 실패한다** — 이 저장소의 실 PG는 비어 있어 그 사고가 여기서는
+    안 보이고 배포에서만 터진다.
+    """
+    config = _alembic_config()
+
+    #: ── 0010: 넷 다 없다 ──
+    command.upgrade(config, _SIGNAL_PREVIOUS)
+    signal_0010 = asyncio.run(_columns("signal"))
+    assert not (_SIGNAL_ADDED & set(signal_0010)), set(signal_0010)
+    assert set(signal_0010) == _SIGNAL_COLUMNS_0010, set(signal_0010)
+
+    #: ── 0011: 넷이 생기고 나머지는 그대로 ──
+    command.upgrade(config, _SIGNAL_TARGET)
+    signal_0011 = asyncio.run(_columns("signal"))
+    assert _SIGNAL_ADDED <= set(signal_0011), set(signal_0011)
+    #: 🔴 **넷 다 nullable** — 값의 부재가 정상이고, 기존 행에 채울 참값이 없다
+    assert all(signal_0011[name] for name in _SIGNAL_ADDED), signal_0011
+    #: 🔴 **나머지가 그대로다** — 넷을 빼면 0010과 같은 집합이어야 한다
+    assert set(signal_0011) - _SIGNAL_ADDED == _SIGNAL_COLUMNS_0010, set(signal_0011)
+    assert asyncio.run(_version_rows()) == [_SIGNAL_TARGET]
+    assert len(_SIGNAL_TARGET) <= 32
+
+    #: ── downgrade 0010: 자기가 만든 것만 사라진다 ──
+    command.downgrade(config, _SIGNAL_PREVIOUS)
+    assert set(asyncio.run(_columns("signal"))) == _SIGNAL_COLUMNS_0010
+
+    #: ── 다시 0011: 같은 모습으로 돌아온다 ──
+    command.upgrade(config, _SIGNAL_TARGET)
+    assert set(asyncio.run(_columns("signal"))) - _SIGNAL_ADDED == _SIGNAL_COLUMNS_0010

@@ -262,8 +262,12 @@ def _feature_week_row_from_orm(orm: FeatureWeek) -> FeatureWeekRow:
 def _signal_orm(
     signal: Signal, run: RunMetadata, row_id: uuid.UUID, created_at: datetime
 ) -> SignalRow:
-    """Signal(계약) → SIGNAL 행. brief·evidence는 별 테이블(SIGNAL_BRIEF·EVIDENCE_ITEM)
-    소관 — 이 커밋은 SIGNAL 코어만 적재한다(후속 확장)."""
+    """Signal(계약) → SIGNAL 행 — 코어 + **비교값 4필드**(99 #59·#60).
+
+    🔴 **`evidence`는 여전히 안 남긴다.** `evidence_item` 테이블은 **쓰는 코드가 0건**이고
+    (`db/models.py`의 `EvidenceItem` docstring) 컬럼도 안 열었다. `brief`는 `SIGNAL_BRIEF`
+    소관이다.
+    """
     return SignalRow(
         id=row_id,
         run_id=run.execution_id,
@@ -275,8 +279,25 @@ def _signal_orm(
         lifecycle=signal.lifecycle.value,
         score=Decimal(str(signal.score)),
         rank=signal.rank,
+        metric=signal.metric,
+        observed=_decimal_or_none(signal.observed),
+        baseline=_decimal_or_none(signal.baseline),
+        sample_size=signal.sample_size,
         created_at=created_at,
     )
+
+
+def _decimal_or_none(value: float | None) -> Decimal | None:
+    """`float | None` → `Numeric` 값. 🔴 **`if value`로 가르지 마라 — `0.0`이 접힌다.**
+
+    `observed=0.0`은 **실제로 나온다**: 정답률 0%(전부 오답) · 활동 0건 · 제출 0건.
+    그 값을 `None`으로 적으면 원장이 *"안 쟀다"* 로 읽혀 **「0이었다」와 「모른다」가
+    합쳐진다** — 이 저장소가 반복해서 겪은 실패 형태다(99 #43·#54 계열).
+
+    ⚠ `float` → `Numeric`은 **`Decimal(str(x))`가 이 파일의 관례**다(`score` 선례).
+    `Decimal(x)`는 이진 부동소수 오차를 그대로 옮긴다.
+    """
+    return None if value is None else Decimal(str(value))
 
 
 def _feature_week_upsert(
