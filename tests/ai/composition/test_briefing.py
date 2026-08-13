@@ -116,8 +116,21 @@ def _make(
 
 
 def test_default_provider_is_fake() -> None:
-    assert BriefingSettings().llm_provider == "fake"
-    assert isinstance(build_brief_provider(), FakeBriefProvider)
+    """🔴 **선언 기본값**을 본다 — 환경이 아니라.
+
+    종전에는 `BriefingSettings().llm_provider`를 봤는데 그건 `.env`·프로세스 env를 **읽는**
+    값이라, 개발자 `.env`의 `LLM_PROVIDER` 하나로 **상시 red**였다(99 #57). 그리고
+    `llm_provider_pin`을 깐 지금은 반대 방향으로 무의미해진다 — **핀 때문에** 통과하므로
+    선언 기본값이 `openai_compat`로 바뀌어도 초록이다.
+
+    ⇒ `model_fields[...].default`를 직접 본다. 환경을 안 읽으므로 **핀에 면역**이고,
+    이 테스트가 지키려던 *"기본값은 fake다"* 를 실제로 지킨다(99 #38이 `store_backend_pin`
+    에서 같은 이유로 택한 형태).
+    """
+    default = BriefingSettings.model_fields["llm_provider"].default
+    assert default == "fake"
+    provider = build_brief_provider(BriefingSettings(llm_provider=default))
+    assert isinstance(provider, FakeBriefProvider)
 
 
 def test_openai_compat_wired() -> None:

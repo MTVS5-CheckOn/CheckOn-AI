@@ -75,4 +75,7 @@ markers = [
 #: 🔴 `store_backend_pin`을 **플러그인으로** 싣는다(99 #39) — 기본값이 `pg`로 뒤집혀서
 #: 오프라인 회귀는 `STORE_BACKEND=memory`를 **명시로** 골라야 한다(안 걸면 151건 red · 실측).
 #: ⚠ conftest로 두면 mypy가 `conftest` 모듈 중복으로 막는다(위 주석과 같은 함정).
-addopts = "-m 'not integration and not external' -p store_backend_pin"
+#: 🔴 `llm_provider_pin`도 같은 이유다(99 #57) — 개발자 `.env`의 `LLM_PROVIDER`가
+#: 선언 기본값 `fake`를 덮어 **상시 6건 red**였고, 그 중 둘이 하필 「실물을 안 부른다」를
+#: 지키는 가드였다. 가드가 빨간불이면 가드가 아니다.
+addopts = "-m 'not integration and not external' -p store_backend_pin -p llm_provider_pin"
