@@ -13,9 +13,20 @@ skip 조건이 `"localhost" in openai_base_url`이었고 `.env`의 `OPENAI_BASE_
     지금:  localhost가 아니면      → 부른다    🔴 fail-open
     바꿔:  명시적 opt-in이 없으면  → 안 부른다  ✅ fail-closed
 
-🔴 **opt-in은 `.env`를 읽지 않는다 — 프로세스 env만 본다.** `.env`는 한 번 넣으면 남고
-**이 사고가 정확히 그 형태**였다. 셸 env는 그 명령에만 붙는다(선례: `runtime/tracing.py`가
-`os.environ`을 직접 본다).
+🔴 **(2026-08-14 재설계) 지키는 것은 「`.env`를 안 읽는다」가 아니라
+「테스트가 실수로 실 LLM을 부르지 않는다」다.**
+
+종전 처방은 `real_llm_optin()`이 `.env`를 아예 안 읽는 것이었다. 그게 **운영도 같이
+막았다** — 8/14 윈도우에서 브리핑 11건이 전건 `provider_error`(`.env`에 스위치가 있는데
+코드가 안 봤다). 03 §1 「`os.environ` 직접 접근 금지」 위반이기도 했다.
+
+    설정은 `.env`를 읽는다                       ✅ 운영에서 먹는다
+    막는 자리는 **테스트 진입점**으로 옮겼다        ✅ 99 #32 사고는 여기서 막는다
+      tests/ai/fakes/real_llm_optin_pin.py       pytest 세션 전체
+      src/ai/evaluation/pre_pr_verify.py         PR 전 검증
+
+⚠ **막아야 할 것은 테스트지 설정이었던 적이 없다** — 99 #32는 `pytest -m integration`이
+실 API를 부른 사고다. 이 파일은 그 **세 축**을 다 잠근다(§3 계열 검사).
 
 ⚠ **이 파일은 실 API를 부르지 않는다** — 순수 함수와 소스 텍스트만 본다.
 """
@@ -27,6 +38,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Final
 
@@ -34,6 +46,7 @@ import pytest
 
 from ai.runtime.real_llm import (
     REAL_LLM_OPTIN_ENV,
+    RealLlmSettings,
     build_real_openai_client,
     real_llm_optin,
     real_llm_skip_reason,
@@ -81,17 +94,27 @@ def test_the_site_census_is_not_empty() -> None:
     assert len(_CALL_SITES) >= 4, _CALL_SITES
 
 
-def test_the_optin_reads_process_env_not_dotenv(
+def test_the_optin_is_off_unless_explicitly_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """🔴 **`.env`가 아니라 프로세스 env만 본다** — `.env`는 한 번 넣으면 남는다."""
+    """🔴 **fail-closed** — 명시적으로 켠 값이 아니면 전부 꺼짐이다.
+
+    ⚠ **이 검사는 종전 `test_the_optin_reads_process_env_not_dotenv`의 후신이다.**
+    종전 이름이 지키던 것은 *"`.env`를 안 읽는다"* 라는 **수단**이었고, 진짜 목적은
+    **"테스트가 실수로 실 LLM을 부르지 않는다"** 였다(모듈 docstring). 수단은 운영을
+    같이 막아 버려서 폐기했고(8/14), 목적은 여기와 아래 세 축이 이어받는다.
+
+    🔴 **오타로 열리지 않는다** — `"0"`·`"false"`·`"yep"`·빈 값 전부 꺼짐이다.
+    ⚠ `"yep"`이 **예외가 아니라 꺼짐**인 것도 중요하다. `ValidationError`가 나면
+    오타 하나가 브리핑을 500으로 만든다.
+    """
     monkeypatch.delenv(REAL_LLM_OPTIN_ENV, raising=False)
     assert real_llm_optin() is False
     monkeypatch.setenv(REAL_LLM_OPTIN_ENV, "1")
     assert real_llm_optin() is True
-    #: ⚠ 아무 값이나 켜지지 않는다 — 오타로 열리면 fail-closed가 아니다.
-    monkeypatch.setenv(REAL_LLM_OPTIN_ENV, "0")
-    assert real_llm_optin() is False
+    for typo in ("0", "false", "yep", "", "  "):
+        monkeypatch.setenv(REAL_LLM_OPTIN_ENV, typo)
+        assert real_llm_optin() is False, f"오타 {typo!r}로 열렸다 — fail-closed가 아니다"
 
 
 def test_a_real_server_url_is_still_skipped_without_optin(
@@ -256,4 +279,114 @@ def test_no_production_code_constructs_async_openai_directly() -> None:
     assert not direct_calls, (
         "AsyncOpenAI 직접 생성은 중앙 opt-in 관문을 우회한다: "
         f"{direct_calls} — 생성자를 build_real_openai_client에 전달하라"
+    )
+
+
+# ══ 🔴 세 축 — 「운영에서 먹는다」·「셸이 이긴다」·「테스트는 무시한다」 (2026-08-14) ══
+#
+# ⚠ 셋이 한 벌이다. 하나만 빼면 나머지가 거짓말이 된다:
+#   첫째만 있으면  → 테스트가 실 API를 부른다 (99 #32 사고 재발)
+#   셋째만 있으면  → 운영에서 안 먹는다        (8/14 브리핑 11건 사고 재발)
+
+
+def _write_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """`tmp_path`에 임시 `.env`를 쓰고 설정이 **그쪽을** 보게 한다.
+
+    🔴 **저장소의 진짜 `.env`는 건드리지 않는다** — 개인 설정이고, 읽기만 해도 검사가
+    개발자 기기에 따라 흔들린다(99 #57·#63이 그 병이었다).
+
+    ⚠ `real_llm_optin_pin`이 세션 내내 `env_file`을 `None`으로 끊어 뒀으므로(그게 셋째
+    축이다) 여기서 **명시로 되돌린다.** `monkeypatch`라 이 검사가 끝나면 다시 끊긴다.
+    """
+    monkeypatch.setitem(RealLlmSettings.model_config, "env_file", ".env")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(f"{REAL_LLM_OPTIN_ENV}={value}\n", encoding="utf-8")
+
+
+def test_dotenv_opts_in_for_the_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🔴 `.env`의 값이 **읽힌다** — 2026-08-14 사고의 반대 방향.
+
+    윈도우 AI 서버는 `.env`로 설정한다(셸 export는 IDE·서비스 기동에서 죽는다).
+    종전 구현은 `os.environ`만 봐서 **그 `.env`가 안 먹었고** 브리핑 11건이 전건
+    `provider_error`로 나갔다. 이 검사가 그 회귀를 막는다.
+    """
+    monkeypatch.delenv(REAL_LLM_OPTIN_ENV, raising=False)
+    _write_dotenv(tmp_path, monkeypatch, "1")
+    assert real_llm_optin() is True, (
+        "`.env`의 opt-in이 안 읽힌다 — 이 상태가 2026-08-14 브리핑 11건 실패였다"
+    )
+
+
+def test_process_env_beats_dotenv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """셸에서 켜는 기존 사용법이 안 깨진다 (프로세스 env > `.env`).
+
+    ⚠ **양방향으로 본다.** 한쪽만 보면 `.env`를 아예 안 읽는 구현도 통과한다.
+    """
+    _write_dotenv(tmp_path, monkeypatch, "1")
+    monkeypatch.setenv(REAL_LLM_OPTIN_ENV, "0")
+    assert real_llm_optin() is False, "프로세스 env의 `0`이 `.env`의 `1`을 못 이긴다"
+    #: 대조군 — `.env`는 살아 있었다(위가 「`.env`를 안 읽음」으로 통과한 게 아니다).
+    monkeypatch.delenv(REAL_LLM_OPTIN_ENV)
+    assert real_llm_optin() is True
+
+    _write_dotenv(tmp_path, monkeypatch, "0")
+    monkeypatch.setenv(REAL_LLM_OPTIN_ENV, "1")
+    assert real_llm_optin() is True, "셸에서 켜는 기존 사용법이 깨졌다"
+
+
+def test_the_session_pin_is_registered() -> None:
+    """🔴 핀이 `addopts`에 실려 있다 — **없으면 이 PR이 게이트를 약화시킨 것**이다.
+
+    ⚠ **`pyproject.toml`을 직접 읽는다.** 핀 모듈을 import해서 확인하면 그 import가
+    핀을 실행해 **검사가 스스로 통과한다**(99 #57에서 그 자충수를 한 번 썼다).
+    """
+    config = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    addopts = config["tool"]["pytest"]["ini_options"]["addopts"]
+    assert "-p real_llm_optin_pin" in addopts, (
+        f"세션 핀이 addopts에 없다: {addopts!r} — `.env`가 테스트의 판정을 쥔다 (99 #32)"
+    )
+
+
+def test_pytest_session_ignores_dotenv_optin(tmp_path: Path) -> None:
+    """🔴 `.env`에만 있으면 **테스트에서는 안 켜진다** (99 #32).
+
+    ⚠ 이 검사가 없으면 이 PR은 게이트를 약화시킨다 — `pre_pr_verify`의
+    `env.pop(REAL_LLM_OPTIN_ENV)`는 **프로세스 env만** 지워서, `.env`를 읽는 지금은
+    그 직후 `.env`가 다시 올라오기 때문이다.
+
+    🔴 **진짜 pytest 세션을 하나 띄워서 본다** — 핀이 「이 세션에 이미 적용돼 있다」를
+    확인하는 형태로 쓰면 자기 자신을 근거로 삼게 된다. 하위 세션은 `.env`에 `=1`을 두고
+    프로세스 env에서는 키를 **지운 채**(= `pre_pr_verify`가 만드는 상태) 시작한다.
+    """
+    (tmp_path / ".env").write_text(f"{REAL_LLM_OPTIN_ENV}=1\n", encoding="utf-8")
+    (tmp_path / "pytest.ini").write_text(
+        "[pytest]\n"
+        f"pythonpath = {_ROOT / 'src'} {_ROOT / 'tests' / 'ai' / 'fakes'}\n"
+        "addopts = -p real_llm_optin_pin\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "test_optin_leak.py").write_text(
+        "from ai.runtime.real_llm import real_llm_optin\n\n\n"
+        "def test_session_is_off() -> None:\n"
+        "    assert real_llm_optin() is False\n",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env.pop(REAL_LLM_OPTIN_ENV, None)  # ⚠ `pre_pr_verify`가 하는 것과 같은 상태
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        "pytest 세션이 `.env`의 opt-in을 켰다 — 99 #32 사고 경로가 열려 있다\n"
+        f"{result.stdout}\n{result.stderr}"
     )
