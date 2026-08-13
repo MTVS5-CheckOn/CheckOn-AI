@@ -35,11 +35,15 @@ from ai.contracts.problem_generation import (
     EvidenceKind,
     GeneratedItem,
     ItemResult,
+    LiteratureGenre,
+    PassageDraft,
     ProblemRequest,
+    ProblemSetResult,
     SolveResult,
     SourceMaterialDraft,
+    WorkSelection,
 )
-from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
+from ai.contracts.taxonomy import V1_TYPE_TAGS, AreaTag, ItemFormat, TypeTag
 from ai.db.repositories.run_store import (
     CollectedCall,
     InMemoryRunStore,
@@ -47,7 +51,10 @@ from ai.db.repositories.run_store import (
     default_llm_call_collector,
 )
 from ai.db.store_factory import build_agent_job_store, reset_shared_agent_runtime
+from ai.diagnosis.skill_graph import GraphNode, load_skill_graph
 from ai.llm.gateway import LlmCallRecord
+from ai.problem_generation.application.literature_selector import LiteratureSelector
+from ai.problem_generation.application.passage_generator import generated_material_ref
 from ai.problem_generation.assembly import (
     ProblemGenerationRunner,
     ProblemRuntimeStores,
@@ -55,11 +62,22 @@ from ai.problem_generation.assembly import (
 )
 from ai.problem_generation.domain.models import StoredProblemItem
 from ai.problem_generation.enqueue import ProblemGenerationEnqueuer
+from ai.problem_generation.infrastructure.build_lexicon_index import load_node_map
+from ai.problem_generation.infrastructure.grammar_norm import (
+    load_grammar_norm_corpus,
+    select_node_rows,
+)
 from ai.problem_generation.infrastructure.graph_context import (
     AreaDelegatingGraphContextService,
 )
+from ai.problem_generation.infrastructure.lexicon_index import (
+    load_lexicon_index,
+    select_node_entries,
+)
+from ai.problem_generation.infrastructure.literature_pool import load_literature_pool
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryProblemItemStore,
+    InMemoryProblemSetStore,
 )
 from ai.problem_generation.provider import ProblemProviders
 from ai.runtime.errors import (
@@ -83,6 +101,26 @@ _HEADERS = {
     "Idempotency-Key": "idem-pg-router",
 }
 _SKILL_NODE_ID = "grammar.sentence-structure"
+_GRAPH_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "ai"
+    / "diagnosis"
+    / "data"
+    / "curriculum_graph.yaml"
+)
+_CURRICULUM_NODES = load_skill_graph(
+    _GRAPH_PATH,
+    expected_taxonomy_version="v1",
+).nodes
+_A_OWNED_REDACTION_BLOCKED_NODES = {
+    "language.grammar.fortition": "A 소유 redaction 오탐 · 정정 요청 중",
+}
+_RUNNABLE_CURRICULUM_NODES = tuple(
+    node
+    for node in _CURRICULUM_NODES
+    if node.id not in _A_OWNED_REDACTION_BLOCKED_NODES
+)
 
 
 def test_bootstrap_uses_area_delegate_without_replacing_explicit_services() -> None:
@@ -190,6 +228,7 @@ def _providers(
     calls: int = 1,
     item_types: tuple[TypeTag, ...] | None = None,
     generator_steps: tuple[str, ...] | None = None,
+    verifier_steps: tuple[str, ...] | None = None,
 ) -> tuple[ProblemProviders, FakeProvider, FakeProvider]:
     resolved_types = item_types or tuple(TypeTag.INFER for _ in range(calls))
     generator = FakeProvider(
@@ -198,7 +237,7 @@ def _providers(
         name="explicit-test-generator",
     )
     verifier = FakeProvider(
-        tuple(_solve_result_json() for _ in range(calls)),
+        verifier_steps or tuple(_solve_result_json() for _ in range(calls)),
         name="explicit-test-verifier",
     )
     return (
@@ -217,12 +256,14 @@ def _prepare(
     calls: int = 1,
     stores: ProblemRuntimeStores | None = None,
     generator_steps: tuple[str, ...] | None = None,
+    verifier_steps: tuple[str, ...] | None = None,
 ) -> tuple[InMemoryRunStore, ProblemRuntimeStores, FakeProvider, FakeProvider]:
     reset_shared_agent_runtime()
     problem_router.reset_problem_router()
     providers, generator, verifier = _providers(
         calls=calls,
         generator_steps=generator_steps,
+        verifier_steps=verifier_steps,
     )
     resolved_stores = stores or problem_runtime_stores()
     run_store = InMemoryRunStore()
@@ -233,6 +274,168 @@ def _prepare(
     problem_router.set_problem_stores(resolved_stores)
     problem_router.set_problem_run_store(run_store)
     return run_store, resolved_stores, generator, verifier
+
+
+class _RecordingProblemSetStore(InMemoryProblemSetStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.created: list[UUID] = []
+        self.finalized: list[ProblemSetResult] = []
+
+    async def create(
+        self,
+        *,
+        set_id: UUID,
+        request: ProblemRequest,
+        execution_context: ExecutionContext,
+        diagnostic_purpose: bool,
+    ) -> None:
+        await super().create(
+            set_id=set_id,
+            request=request,
+            execution_context=execution_context,
+            diagnostic_purpose=diagnostic_purpose,
+        )
+        self.created.append(set_id)
+
+    async def finalize(self, result: ProblemSetResult) -> None:
+        await super().finalize(result)
+        self.finalized.append(result)
+
+
+def _matrix_type(node: GraphNode) -> TypeTag:
+    return next(tag for tag in node.type_affinity if tag in V1_TYPE_TAGS)
+
+
+def _matrix_language_evidence(node_id: str) -> tuple[EvidenceKind, str]:
+    corpus = load_grammar_norm_corpus()
+    rows = select_node_rows(corpus, node_id)
+    if rows:
+        row = rows[0]
+        return (
+            EvidenceKind.GRAMMAR_RULE,
+            f"kornorms:{row.regulation_code}:{row.regulation_no}",
+        )
+    assert node_id in load_node_map().nodes, f"T1 사전 map에 없는 노드: {node_id}"
+    entries = select_node_entries(load_lexicon_index(), node_id)
+    assert entries, f"T1 근거가 없는 노드: {node_id}"
+    return EvidenceKind.DICT_ENTRY, f"stdict:{entries[0].sense_code}"
+
+
+def _matrix_work_selection() -> WorkSelection:
+    return WorkSelection(
+        genre=LiteratureGenre.MODERN_NOVEL,
+        era="근대",
+        concept_keywords=("달",),
+    )
+
+
+def _matrix_source_and_evidence(
+    node: GraphNode,
+) -> tuple[dict[str, Any], tuple[str, ...], EvidenceKind, str]:
+    if node.area_tag is AreaTag.LANGUAGE:
+        kind, ref = _matrix_language_evidence(node.id)
+        return {}, (), kind, ref
+    if node.area_tag is AreaTag.READING:
+        draft = PassageDraft(
+            passage_text=(
+                "생태계의 구성 요소는 서로 영향을 주고받는다.\n\n"
+                "관계의 변화는 전체 균형에도 영향을 준다."
+            ),
+            paragraph_count=2,
+            evidence_anchor_ids=("generated_source",),
+        )
+        ref = generated_material_ref(kind="passage_span", text=draft.passage_text)
+        return (
+            {
+                "passage": {
+                    "area_tag": "reading",
+                    "domain": "science",
+                    "topic_hint": "생태계의 상호 작용",
+                    "word_count": 500,
+                    "sentence_complexity": "standard",
+                    "paragraph_count": 2,
+                    "banned_topics_version": "pg-banned-v1",
+                }
+            },
+            (draft.model_dump_json(),),
+            EvidenceKind.PASSAGE_SPAN,
+            ref,
+        )
+    if node.area_tag is AreaTag.LITERATURE:
+        selection = _matrix_work_selection()
+        excerpt = LiteratureSelector(load_literature_pool()).select(selection)
+        return (
+            {"work_selection": selection.model_dump(mode="json")},
+            (),
+            EvidenceKind.WORK_SPAN,
+            excerpt.evidence_ref,
+        )
+    material = SourceMaterialDraft(
+        material_text="학생 A가 공공 자료를 대조하여 핵심 정보를 발표 자료로 구성했다.",
+        evidence_anchor_ids=("generated_source",),
+    )
+    ref = generated_material_ref(kind="source_claim", text=material.material_text)
+    source_kind = "presentation" if node.area_tag is AreaTag.SPEECH_WRITING else "paired"
+    return (
+        {
+            "passage": {
+                "area_tag": node.area_tag.value,
+                "source_kind": source_kind,
+                "topic_hint": "공공 정보 검증",
+                "banned_topics_version": "pg-banned-v1",
+            }
+        },
+        (material.model_dump_json(),),
+        EvidenceKind.SOURCE_CLAIM,
+        ref,
+    )
+
+
+def _matrix_item_json(
+    node: GraphNode,
+    *,
+    type_tag: TypeTag,
+    evidence_kind: EvidenceKind,
+    evidence_ref: str,
+) -> str:
+    return GeneratedItem(
+        area_tag=node.area_tag,
+        type_tag=type_tag,
+        item_format=ItemFormat.MCQ,
+        skill_node_id=node.id,
+        stem=f"{node.label}에 관한 설명으로 적절한 것을 고르시오.",
+        choices=tuple(
+            Choice(
+                no=no,
+                text=f"{node.label} 선택지 {no}",
+                why_wrong=None if no == 1 else f"{no}번은 승인 근거와 다르다.",
+            )
+            for no in range(1, 6)
+        ),
+        answer=Answer(correct_no=1),
+        rationale="승인된 근거와 대조하면 1번이 옳다.",
+        evidence=(
+            EvidenceAnchor(
+                kind=evidence_kind,
+                ref=evidence_ref,
+                quote="모델이 임의로 만든 인용",
+            ),
+        ),
+    ).model_dump_json()
+
+
+def _matrix_solve_json(node: GraphNode) -> str:
+    return SolveResult(
+        chosen=1,
+        reasoning="승인 근거와 선택지를 독립적으로 대조했다.",
+        confidence=0.95,
+        target_skill_node_id=node.id,
+        measured_skill_node_id=node.id,
+        aligned=True,
+        alignment_confidence=0.95,
+        alignment_reason="요청한 커리큘럼 노드와 일치한다.",
+    ).model_dump_json()
 
 
 def test_problem_router_roundtrip_and_prompt_version_ledger_match() -> None:
@@ -260,6 +463,126 @@ def test_problem_router_roundtrip_and_prompt_version_ledger_match() -> None:
     assert len(generator.requests) == 1
     assert len(verifier.requests) == 1
     assert default_llm_call_collector().evicted_runs == 0
+
+
+def test_curriculum_matrix_has_exact_five_area_distribution() -> None:
+    counts = {
+        area: sum(node.area_tag is area for node in _CURRICULUM_NODES)
+        for area in AreaTag
+    }
+
+    assert counts == {
+        AreaTag.LANGUAGE: 33,
+        AreaTag.READING: 6,
+        AreaTag.LITERATURE: 6,
+        AreaTag.SPEECH_WRITING: 6,
+        AreaTag.MEDIA: 6,
+    }
+    assert len(_RUNNABLE_CURRICULUM_NODES) == 56
+    assert _A_OWNED_REDACTION_BLOCKED_NODES == {
+        "language.grammar.fortition": "A 소유 redaction 오탐 · 정정 요청 중"
+    }
+
+
+@pytest.mark.parametrize("node", _RUNNABLE_CURRICULUM_NODES, ids=lambda node: node.id)
+def test_runnable_56_nodes_generate_persist_and_roundtrip_over_http(node: GraphNode) -> None:
+    """A 소유 오탐 1노드를 제외한 56노드의 실제 HTTP 완주를 증명한다.
+
+    fortition은 xfail로 숨기지 않고 명시적 제외 목록과 전용 redaction 재현 검사에 남긴다.
+    """
+    type_tag = _matrix_type(node)
+    source_body, source_steps, evidence_kind, evidence_ref = (
+        _matrix_source_and_evidence(node)
+    )
+    run_store, stores, generator, verifier = _prepare(
+        generator_steps=(
+            *source_steps,
+            _matrix_item_json(
+                node,
+                type_tag=type_tag,
+                evidence_kind=evidence_kind,
+                evidence_ref=evidence_ref,
+            ),
+        ),
+        verifier_steps=(_matrix_solve_json(node),),
+    )
+    set_store = _RecordingProblemSetStore()
+    observed_stores = ProblemRuntimeStores(
+        requests=stores.requests,
+        results=stores.results,
+        candidates=stores.candidates,
+        items=stores.items,
+        sets=set_store,
+    )
+    problem_router.set_problem_stores(observed_stores)
+    problem_router.set_problem_services(
+        graph_context=AreaDelegatingGraphContextService(),
+        diagnosis=_unused_diagnosis,
+    )
+    headers = {
+        "X-Tenant-Id": f"tenant-{node.id}",
+        "X-Request-Id": f"request-{node.id}",
+        "Idempotency-Key": f"idem-{node.id}",
+    }
+    body = _body(area_tag=node.area_tag.value, type_tags=(type_tag.value,))
+    body["manual_targets"] = [node.id]
+    body.update(source_body)
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=headers, json=body)
+        assert posted.status_code == 202, posted.text
+        job_id = posted.json()["data"]["job_id"]
+        job = client.get(
+            f"/v1/problems/{job_id}",
+            headers={"X-Tenant-Id": headers["X-Tenant-Id"]},
+        )
+        assert job.status_code == 200, job.text
+        result = job.json()["data"]["result"]
+        set_id = result["set_id"]
+        listed = client.get(
+            f"/v1/problems/{set_id}/items",
+            headers={"X-Tenant-Id": headers["X-Tenant-Id"]},
+        )
+        detailed = client.get(
+            f"/v1/problems/{set_id}/items/0",
+            headers={"X-Tenant-Id": headers["X-Tenant-Id"]},
+        )
+        hidden = client.get(
+            f"/v1/problems/{set_id}/items/0",
+            headers={"X-Tenant-Id": "tenant-other"},
+        )
+
+    assert job.json()["data"]["status"] == "succeeded"
+    assert result["status"] == "generated", result["items"][0].get("failure_detail")
+    assert result["items"][0]["status"] == "needs_review"
+    assert result["items"][0]["review_reason"] == (
+        "t3_literature"
+        if node.area_tag is AreaTag.LITERATURE
+        else "manual_target_first"
+    )
+    assert listed.status_code == detailed.status_code == 200
+    assert hidden.status_code == 404
+    assert listed.json()["data"]["items"][0]["status"] == "needs_review"
+    detail = detailed.json()["data"]
+    assert detail["item"]["area_tag"] == node.area_tag.value
+    assert detail["item"]["type_tag"] == type_tag.value
+    assert detail["item"]["skill_node_id"] == node.id
+    assert detail["item"]["evidence"][0]["ref"] == evidence_ref
+    assert detail["verification"] == {
+        "rule_validation": "passed",
+        "blind_cross_solve": "passed",
+        "release_decision": "needs_review",
+    }
+    assert set_store.created == [UUID(set_id)]
+    assert [saved.set_id for saved in set_store.finalized] == [UUID(set_id)]
+    assert isinstance(observed_stores.items, InMemoryProblemItemStore)
+    stored_items = _run(observed_stores.items.list_all())
+    assert len(stored_items) == 1
+    assert stored_items[0].item is not None
+    assert stored_items[0].item.evidence[0].ref == evidence_ref
+    assert len(run_store.runs) == 1
+    assert len(generator.requests) == len(source_steps) + 1
+    assert len(verifier.requests) == 1
 
 
 def test_step3_list_and_detail_return_saved_item_and_cross_solve() -> None:
