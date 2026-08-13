@@ -225,29 +225,43 @@ def _b_status_row(label: str) -> str:
     [
         ("Windows 실제 OpenAI 실행", "✅"),
         ("프롬프트 고도화 판정", "✅"),
-        ("R3 판정 근거 ↔ 브리핑 facts 정합", "☐"),
+        ("R3 판정 근거 ↔ 브리핑 facts 정합", "✅"),
     ],
 )
 def test_the_b_stage_status_row_states_the_current_verdict(
     label: str, mark: str
 ) -> None:
-    """🔴 B단계는 **완료**, 프롬프트는 **현행 유지**, R3만 **미해소**다."""
+    """🔴 **B단계·프롬프트·R3 정합은 완료됐다** — 남은 것은 백엔드 입력 의미 계약이다.
+
+    ⚠ **R3 행은 두 번 낡았다.** 처음엔 ☐(발견) → #233 구현 → #234 실제 OpenAI 확인.
+    가드가 지난 상태를 고정하면 **고친 사실이 문서에서 사라진다**(S15와 같은 형태).
+    """
     row = _b_status_row(label)
     assert mark in row, row
     if mark == "☐":
-        assert "✅" not in row, f"R3가 해소로 적혔다: {row}"
+        assert "✅" not in row, f"미해소 축이 해소로 적혔다: {row}"
 
 
-def test_the_remaining_work_does_not_ask_for_a_full_rerun() -> None:
-    """🔴 **현재 남은 작업에 「Windows 전체 14건 재실행」이 없다.**
+def test_the_remaining_work_is_only_the_backend_input_contract() -> None:
+    """🔴 **남은 것은 백엔드 입력 계약뿐이다** — R3 코드·실 OpenAI 작업은 끝났다.
 
-    ⚠ 남은 것은 **R3 두 사례**뿐이다 — 전체 재실행을 적으면 이미 끝난 일을 다시 시키고
-    실 OpenAI 비용이 또 든다.
+    ⚠ 이미 끝난 일을 현재 작업으로 적으면 다시 시키게 되고, 실 OpenAI는 **비용이 또 든다.**
     """
     block = _matrix_block(_REMAINING_HEAD)
-    assert "R3" in block, block
-    for forbidden in ("14건 실행", "대표 14건", "전체 재실행"):
-        assert forbidden not in block, f"현재 작업에 «{forbidden}»가 있다:\n{block}"
+    for required in (
+        "activity_count",
+        "learning_events",
+        "API validation",
+        "정의 확정 전에는",
+    ):
+        assert required in block, f"현재 작업에 «{required}»가 없다:\n{block}"
+    for forbidden in (
+        "R3 판정 근거와 브리핑 facts를 같은 정본으로 맞춘다",
+        "R3 두 사례만 Windows 실제 OpenAI로 재확인한다",
+        "대표 14건",
+        "전체 재실행",
+    ):
+        assert forbidden not in block, f"끝난 일이 현재 작업에 있다: «{forbidden}»"
 
 
 def test_the_past_windows_plan_is_marked_as_a_record() -> None:
@@ -258,6 +272,53 @@ def test_the_past_windows_plan_is_marked_as_a_record() -> None:
     assert "이 순서는 #231에서 실행 완료됐다" in text
     #: 🔴 반대편 — 과거 판정 근거가 사라지지 않았다.
     assert "Missing scopes: api.model.read" in text, "당시 환경 판정 근거가 지워졌다"
+
+
+def test_the_r3_resolution_heading_says_it_is_complete() -> None:
+    """🔴 **R3 해소 절 머리말이 「전체 완료가 아니다」로 남으면 안 된다** — #234로 끝났다."""
+    text = _matrix_text()
+    assert "# R3 정본 통일 — ✅ 구현·Fake 종단·실제 OpenAI 완료" in text
+    heading_block = _matrix_block("# R3 정본 통일 — ✅", stop="\n## ")
+    assert "#233" in heading_block and "#234" in heading_block, heading_block
+    #: 🔴 현재형으로 「남아 있다」고 적으면 red — 과거형(#233 머지 시점) 서술만 허용한다.
+    assert "재확인하는 일이 남아 있다" not in heading_block, heading_block
+
+
+def test_the_past_r3_defect_evidence_is_preserved() -> None:
+    """🔴 **반대편** — 수정 전 반례와 판정 근거가 **지워지지 않았다**.
+
+    ⚠ 완료로 바꾸면서 발견 기록까지 지우면 다음 사람이 *"왜 정본을 바꿨나"* 를 다시 판단한다.
+
+    🔴 **문서 전체에서 `20건`을 찾으면 안 된다**(첫 판이 그래서 뒤집기에 안 물었다) —
+    그 문자열은 §7-7의 *"`20건`·`100%` 없음"* 같은 **다른 맥락**에도 있어, 발견 블록을
+    통째로 지워도 통과한다. ⇒ **§6-5의 재현 블록**만 잘라서 본다(로그 85).
+    """
+    discovery = _matrix_block("## 6-5.", stop="\n## ")
+    for evidence in ("20건", "100%", "weekly_activity", "픽스처"):
+        assert evidence in discovery, f"발견 기록에서 «{evidence}»가 사라졌다"
+    #: 🔴 결함 문면 그대로가 남아 있다 — 요약만 남기면 «무엇이 틀렸나»를 못 읽는다.
+    assert "이번 주 학습 활동이 20건으로 나타났고" in discovery, discovery[:400]
+
+    text = _matrix_text()
+    assert "#233" in text and "#234" in text, "해소 PR 표기가 사라졌다"
+
+
+def test_the_current_r3_verdict_cites_the_zero_count_result() -> None:
+    """🔴 **수정 후 최종 문면에 `20건`·`100%`가 없고 `0건`이 있다.**
+
+    ⚠ **§7-7 전체를 보면 안 된다**(첫 판이 그래서 red였다) — 그 절은 *"종전 문면의
+    `20건 · 평소 대비 100%`가 사라졌다"* 를 **정당하게 인용**한다. 재려는 것은 **최종
+    문면 블록**이므로 그 코드 펜스만 잘라서 본다(로그 85).
+    """
+    section = _matrix_block("## 7-7.", stop="\n## ")
+    marker = "**최종 문면**"
+    assert marker in section, "최종 문면 블록이 없다 — 전제가 깨졌다"
+    fence = section[section.index(marker) :]
+    body = fence[fence.index("```") + 3 : fence.index("```", fence.index("```") + 3)]
+
+    assert "0건" in body, body
+    for stale in ("20건", "100%"):
+        assert stale not in body, f"최종 문면에 «{stale}»가 있다:\n{body}"
 
 
 def test_the_call_total_and_the_ledger_are_not_one_population() -> None:
