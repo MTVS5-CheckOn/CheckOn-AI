@@ -111,7 +111,22 @@ def test_event_type_values_frozen() -> None:
 
 
 def test_event_source_values_frozen() -> None:
-    assert {e.value for e in EventSource} == {"trackA", "trackB", "studentHome"}
+    """우리가 **허용하는** 값의 집합 — 안쪽 축이다.
+
+    ⚠ **상대가 실제로 보내는 값이 이 안에 드는지는 여기서 못 본다** — 그 축은
+    `test_backend_emitted_input_values.py`가 따로 문다(PR-τ). 두 축이 다른 것이라
+    한쪽만 있으면 계약 검사가 전부 green인 채로 첫 실왕복이 400으로 죽는다.
+
+    🔴 `MANUAL`은 **백엔드 서버 소유 라벨의 한시 호환값**이다(2026-08-13).
+    백엔드가 `source_type → source` 화이트리스트 매핑을 배포하면 `EventSource.MANUAL`과
+    저쪽 픽스처의 `"MANUAL"`을 **같이** 지운다 — 그때 이 리터럴도 함께 줄어든다.
+    """
+    assert {e.value for e in EventSource} == {
+        "trackA",
+        "trackB",
+        "studentHome",
+        "MANUAL",
+    }
 
 
 def test_alert_status_values_frozen() -> None:
