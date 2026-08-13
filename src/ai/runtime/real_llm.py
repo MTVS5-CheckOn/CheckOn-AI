@@ -1,36 +1,71 @@
 """실 LLM 호출의 **명시적 허용** 게이트 — 모르면 안 부른다 (99 #32).
 
-🔴 **사고(2026-08-09):** `pytest -m integration`이 사용자 키로 실 OpenAI API를 호출했다.
-스모크들의 skip 조건이 `"localhost" in openai_base_url`이었고 `.env`의 `OPENAI_BASE_URL`이
-**기본값을 덮어** 그 조건이 거짓이 됐다.
+🔴 **(2026-08-14 재설계) 막는 자리를 「설정」에서 「테스트 진입점」으로 옮겼다.**
+
+    종전:  `.env`를 안 읽는다            → 🔴 **운영 서버에서도 안 읽혀** 브리핑 11건이
+                                            조용히 템플릿 폴백으로 나갔다(2026-08-14 윈도우
+                                            실측 · 전건 `provider_error`).
+                                            그리고 03 §1 「`os.environ` 직접 접근 금지」 위반.
+    지금:  `.env`를 읽는다(설정)          ✅ 운영에서 먹는다
+           + 테스트 진입점이 테스트에서 끈다  ✅ 99 #32 사고는 **여기서** 막는다
+
+⚠ **막아야 할 것은 테스트지 설정이 아니었다.** 99 #32 사고는 `pytest -m integration`이
+실 API를 부른 것이다. 설정을 숨겨서 그걸 막으면 **운영도 같이 막힌다** — 8/14에 그게 났다.
+
+━━ 사고 원본 (2026-08-09) ━━
+
+`pytest -m integration`이 사용자 키로 실 OpenAI API를 호출했다. 스모크들의 skip 조건이
+`"localhost" in openai_base_url`이었고 `.env`의 `OPENAI_BASE_URL`이 **기본값을 덮어**
+그 조건이 거짓이 됐다.
 
 ⚠ `llm/providers/openai_compat.py`가 *"기본을 localhost로 둬서 미설정을 안전하게 만든다
 (fail-safe)"* 로 의도를 적어 뒀고 **그 판단은 옳다 — 기본값은 안 바꿨다.**
 🔴 **다만 기본값이 안전한 것은 기본값이 쓰일 때뿐이고** `env_file=".env"`가 그 전제를 깬다.
 ⇒ **안전은 기본값이 아니라 「명시적 허용」에 걸어야 한다.**
 
-    지금:  localhost가 아니면      → 부른다    🔴 fail-open (사고)
-    바꿔:  명시적 opt-in이 없으면  → 안 부른다  ✅ fail-closed (불변식 3의 결)
+    종전:  localhost가 아니면      → 부른다    🔴 fail-open (사고)
+    지금:  명시적 opt-in이 없으면  → 안 부른다  ✅ fail-closed (불변식 3의 결)
 
-🔴 **`.env`를 읽지 않는다 — 프로세스 env만 본다.** `.env`는 **한 번 넣으면 남고** 이 사고가
-정확히 그 형태였다. 셸 env(`CHECKON_ALLOW_REAL_LLM=1 uv run pytest …`)는 **그 명령에만**
-붙는다. ⚠ 그래서 `pydantic-settings`를 쓰지 않는다(그쪽은 `.env`를 읽는다) —
-선례는 `runtime/tracing.py`가 `os.environ`을 직접 보는 것이다.
+━━ 🔴 방어는 **두 겹**이다 — 하나를 지울 때 다른 하나를 확인하라 ━━
 
-⚠ **PR 전 로컬 검증은 이 변수가 켜져 있으면 시작 전에 실패한다.** 실 LLM 스모크는
-사람이 비용과 범위를 승인한 별도 명령에서만 연다.
+    tests/ai/fakes/real_llm_optin_pin.py   pytest 세션 전체 — `.env`를 끊고 프로세스 env로 덮는다
+    src/ai/evaluation/pre_pr_verify.py     PR 전 검증 — 켜져 있으면 시작 전에 실패 + 하위 env 제거
+
+🔴 **둘 다 지워지면 게이트가 없다.** 특히 `pre_pr_verify`의 `env.pop`은 **프로세스 env만**
+지운다 — `.env`를 읽는 지금은 그것만으로 부족하고 세션 핀이 그 구멍을 막는다.
+
+━━ 실 LLM을 켜는 법 ━━
+
+    운영   `.env`에 `CHECKON_ALLOW_REAL_LLM=1`          ✅ 어떤 기동 방식으로도 산다
+    테스트 🔴 **셸에서 그 명령에만** —
+           `CHECKON_ALLOW_REAL_LLM=1 uv run --frozen pytest tests/…`
+           (`.env` 값은 세션 핀이 무시한다 · 프로세스 env > `.env`라 셸이 이긴다)
+
+⚠ **`.env`에 `=1`을 둔 기계에서는 PR 전 검증을 명시로 꺼서 부른다**::
+
+    CHECKON_ALLOW_REAL_LLM=0 uv run python -m ai.evaluation.pre_pr_verify
+
+`pre_pr_verify`는 스위치가 켜져 있으면 **시작 전에 실패한다**(그게 두 겹 중 하나다).
+`.env`를 읽게 된 지금은 **운영 설정을 로컬에 둔 기계가 여기서 걸린다** — 정상 동작이고,
+`.env`를 고치는 게 아니라 **그 명령에만** `0`을 붙이는 것이 맞다.
 """
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from typing import Final
 
-#: 🔴 **실 LLM 호출의 유일한 허용 스위치.** 이 이름을 바꾸면 문서·로컬 검증이 같이 낡는다.
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: 🔴 **실 LLM 호출의 유일한 허용 스위치의 정본 이름.** 이 이름을 바꾸면 문서·명령서·
+#: `pre_pr_verify`(하위 프로세스 env 제거)·세션 핀이 **같이 낡는다.**
+#: ⚠ 상수를 지우지 마라 — 설정 필드의 `alias`이자 `pre_pr_verify`가 쓰는 키다.
 REAL_LLM_OPTIN_ENV: Final = "CHECKON_ALLOW_REAL_LLM"
 
-#: ⚠ **켜는 값을 좁게 둔다** — 오타(`"0"`·`"false"`·빈 값)로 열리면 fail-closed가 아니다.
+#: ⚠ **켜는 값을 좁게 둔다** — 오타(`"0"`·`"false"`·빈 값·`"yep"`)로 열리면 fail-closed가
+#: 아니다. 🔴 pydantic 기본 bool 파싱을 그대로 쓰면 모르는 값에 `ValidationError`가 나서
+#: **브리핑이 500으로 죽는다** — 우리는 「모르면 꺼짐」이라야 한다.
 _TRUTHY: Final = frozenset({"1", "true", "yes", "on"})
 
 
@@ -38,9 +73,48 @@ class RealLlmOptInRequired(RuntimeError):
     """명시적 허용 없이 실 LLM client를 만들려고 한 경우."""
 
 
+class RealLlmSettings(BaseSettings):
+    """실 LLM 허용 스위치 — `.env` 또는 환경 변수로 주입한다 (03 §1).
+
+    🔴 **셸 전용이 아니다.** `env_file=".env"`라 `.env`에 적어두면 어떤 기동 방식으로도
+    산다. 종전에는 `os.environ`만 봐서 **운영 서버의 `.env`가 안 먹었다**(8/14 사고).
+
+    ⚠ 우선순위는 **init 인자 > 프로세스 env > `.env` > 선언 기본값**이다.
+    ⇒ 셸에서 켜는 기존 사용법(`CHECKON_ALLOW_REAL_LLM=1 uv run …`)이 **안 깨진다.**
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", populate_by_name=True
+    )
+
+    allow_real_llm: bool = Field(default=False, alias=REAL_LLM_OPTIN_ENV)
+    """🔴 실 LLM 호출의 유일한 허용 스위치 (99 #32).
+
+    **기본이 `False`다 — fail-closed.** 명시적으로 켜야 실 client가 만들어진다.
+    """
+
+    @field_validator("allow_real_llm", mode="before")
+    @classmethod
+    def _only_explicit_truthy(cls, value: object) -> bool:
+        """🔴 **`_TRUTHY`에 있는 값만 켠다** — 모르는 값은 예외가 아니라 **꺼짐**이다.
+
+        ⚠ pydantic 기본 bool 파싱은 `"yep"`에 `ValidationError`를 던진다. 그러면 오타
+        하나가 **브리핑 전체를 500으로** 만든다. 여기서는 조용히 꺼지는 쪽이 맞다 —
+        게이트의 목적은 「부르지 않는 것」이지 「죽는 것」이 아니다.
+        """
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in _TRUTHY
+
+
 def real_llm_optin() -> bool:
-    """실 LLM 호출이 **명시적으로 허용**됐는가 — 프로세스 env만 본다."""
-    return os.environ.get(REAL_LLM_OPTIN_ENV, "").strip().lower() in _TRUTHY
+    """실 LLM 호출이 **명시적으로 허용**됐는가 — 🔴 `os.environ` 직접 접근을 하지 않는다(03 §1).
+
+    ⚠ **캐시하지 않는다.** `lru_cache`를 걸면 첫 호출의 값이 굳어 세션 핀·`monkeypatch`가
+    무력해지고(`store_backend_pin` 실측과 같은 함정), 운영에서도 `.env` 수정이 재기동
+    전까지 안 먹는다. 이 함수는 client 생성 시점에만 불려서 비용이 문제되지 않는다.
+    """
+    return RealLlmSettings().allow_real_llm
 
 
 def real_llm_skip_reason(base_url: str) -> str | None:
@@ -58,7 +132,8 @@ def real_llm_skip_reason(base_url: str) -> str | None:
     return (
         f"실 LLM 호출은 {REAL_LLM_OPTIN_ENV}=1 없이는 하지 않는다 — skip "
         f"(대상 호스트 {_host_of(base_url)} · 99 #32). "
-        f"⚠ 켜려면 셸에서 그 명령에만 붙여라 — `.env`에 넣으면 남는다"
+        f"⚠ 운영은 `.env`에 넣어라. 테스트는 셸에서 그 명령에만 붙여라 — "
+        f"pytest 세션은 `.env` 값을 무시한다"
     )
 
 

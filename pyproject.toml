@@ -82,4 +82,8 @@ markers = [
 #: 「기본 꺼짐」 가드 3건을 뒤집었고, 그 실패로 `pre_pr_verify`가 offline에서 멈춰
 #: **integration 단계가 아예 안 돌았다.** ⚠ 이번은 `setdefault`가 아니라 `env_file`을
 #: 끊는다 — 테스트가 `delenv`로 프로세스 env를 지우면 `.env`가 다시 이기기 때문이다.
-addopts = "-m 'not integration and not external' -p store_backend_pin -p llm_provider_pin -p console_env_pin"
+#: 🔴 `real_llm_optin_pin`은 **실 LLM 방어 한 겹**이다(99 #32 · 2026-08-14 재설계) —
+#: opt-in이 `.env`를 읽게 되돌린 대신(운영에서 안 먹어 브리핑 11건이 죽었다) **막는 자리를
+#: 테스트 진입점으로 옮겼다.** ⚠ `pre_pr_verify`의 `env.pop`은 프로세스 env만 지워서
+#: `.env`가 다시 올라온다 — 이 핀이 그 구멍을 막는다. **빼면 게이트가 약해진다.**
+addopts = "-m 'not integration and not external' -p store_backend_pin -p llm_provider_pin -p console_env_pin -p real_llm_optin_pin"
