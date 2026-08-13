@@ -656,7 +656,7 @@ async def _set_result(
     raise NotFound("set_id 부재", {"set_id": str(set_id)})
 
 
-def _set_job_id(*, tenant_id: str, set_id: uuid.UUID) -> uuid.UUID:
+def _optional_set_job_id(*, tenant_id: str, set_id: uuid.UUID) -> uuid.UUID | None:
     for (cached_tenant, job_id), cached in _views.items():
         result = cached.view.result
         if (
@@ -665,6 +665,13 @@ def _set_job_id(*, tenant_id: str, set_id: uuid.UUID) -> uuid.UUID:
             and result.set_id == set_id
         ):
             return uuid.UUID(job_id)
+    return None
+
+
+def _set_job_id(*, tenant_id: str, set_id: uuid.UUID) -> uuid.UUID:
+    job_id = _optional_set_job_id(tenant_id=tenant_id, set_id=set_id)
+    if job_id is not None:
+        return job_id
     raise NotFound("set_id 부재", {"set_id": str(set_id)})
 
 
@@ -880,9 +887,12 @@ async def get_problem_item(
         ProblemItemStatus.VERIFIED,
         ProblemItemStatus.NEEDS_REVIEW,
     }
+    job_id = _optional_set_job_id(tenant_id=tenant_id, set_id=parsed_set_id)
     return success_envelope(
         data={
             "set_id": str(parsed_set_id),
+            # 없는 실행을 가리키는 값을 지어내지 않고 캐시에서 확인된 키만 반복한다.
+            **({"job_id": str(job_id)} if job_id is not None else {}),
             "slot_index": slot_index,
             "item_id": (
                 str(item_result.item_id) if item_result.item_id is not None else None

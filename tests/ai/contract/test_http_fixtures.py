@@ -82,6 +82,7 @@ _BE_REQUIRED_FLOW_FIXTURES: Final = {
     "GET job 404": "get_problem.404",
     "GET items list": "get_problem_items.list",
     "GET items detail": "get_problem_items.detail",
+    "GET items detail after cache loss": "get_problem_items.detail.cache_lost",
     "GET items partial success": "get_problem_items.partial_success",
     "POST problems 400 missing header": "post_problems.400.missing_header",
     "POST problems 400 source procurement": (
@@ -138,8 +139,8 @@ def _fixture(name: str, payload: object) -> None:
 def test_be_required_flow_fixture_mapping_is_complete() -> None:
     """BE 필수 16흐름은 이름이 아니라 실제 JSON 파일에 일대일로 연결된다."""
 
-    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 16
-    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 16
+    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 17
+    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 17
     missing = {
         flow: fixture
         for flow, fixture in _BE_REQUIRED_FLOW_FIXTURES.items()
@@ -401,6 +402,7 @@ def test_items_fixtures_from_a_real_run() -> None:
 
     assert listed.status_code == 200
     assert detail.status_code == 200
+    assert detail.json()["data"]["job_id"] == job_id
     listed_item = listed.json()["data"]["items"][0]
     assert "stem" not in listed_item, (
         "목록이 본문을 갖게 됐다면 adapter의 N+1 호출 전제가 바뀐 것이다 — BE 통보가 선행이다"

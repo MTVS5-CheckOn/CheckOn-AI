@@ -874,6 +874,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 - **오류 판별은 §2.4 주체 3분할 그대로**다 — 라우터가 다시 판단하지 않는다. 강사가 바꿀 수 있다 → 200 + 도메인 결과 / BE가 고쳐야 한다 → 400 `INVALID_SCHEMA`(409·404 포함) / 아무도 지금 못 바꾼다 → **재시도 예산 소진 후에만** 503·504.
 - **LLM 예외 매핑**은 `runtime/errors.py`의 `domain_error_for()`가 정본이다: `LlmTimeout`→504 `TIMEOUT` · `LlmUnavailable`→503 `LLM_UPSTREAM_DOWN` · `ParseFailed`·`FieldMissing`·plain `LlmError`→500 `INTERNAL`. ⚠ **파싱·필드 오류를 503으로 뭉개지 않는다** — 벤더는 살아 있고 우리 요청이 틀린 경우라 "잠시 후 다시"가 거짓이 된다.
 - **워크플로 설정 예외:** `ProblemWorkflowConfigurationError`→400 · `ProblemTenantMismatch`→403 `TENANT_MISMATCH` · `ProblemSourceUnsupported`→400 + `detail.reason=source_procurement_not_implemented` · `ProblemExecutionContextMismatch`→500(내부 조립 버그). ⚠ 통째로 400으로 바꾸면 403과 조달 미구현 사유가 뭉개진다.
+- **Step3 `job_id` 보존:** BE는 POST 및 polling에서 받은 `job_id`를 보존한다. 상세 응답은 캐시가 살아 있으면 `job_id`를 반복 제공하지만, PG 복원 경로에서는 없는 값을 만들지 않고 해당 키를 생략한다(`job_id: null`도 금지). 문항 수정 API는 `job_id` 없이 `problem_set.request`의 원 요청 정본으로 동작한다. 이는 §2.2의 “없는 실행을 가리키는 값을 지어내지 않는다” 규약을 따른다.
 
 #### 🔴 v1 지원 한계 — BE가 **선검사**해야 하는 것 (약속 vs 현재)
 

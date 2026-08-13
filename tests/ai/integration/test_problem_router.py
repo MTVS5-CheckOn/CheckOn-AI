@@ -633,6 +633,7 @@ def test_step3_list_and_detail_return_saved_item_and_cross_solve() -> None:
     }
     assert len(execution_ids) == 1
     detail = detailed.json()["data"]
+    assert detail["job_id"] == posted.json()["data"]["job_id"]
     assert detail["item"]["stem"]
     assert len(detail["item"]["choices"]) == 5
     assert detail["cross_solve"]["chosen"] == 1
