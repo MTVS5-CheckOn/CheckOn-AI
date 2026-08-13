@@ -78,4 +78,8 @@ markers = [
 #: 🔴 `llm_provider_pin`도 같은 이유다(99 #57) — 개발자 `.env`의 `LLM_PROVIDER`가
 #: 선언 기본값 `fake`를 덮어 **상시 6건 red**였고, 그 중 둘이 하필 「실물을 안 부른다」를
 #: 지키는 가드였다. 가드가 빨간불이면 가드가 아니다.
-addopts = "-m 'not integration and not external' -p store_backend_pin -p llm_provider_pin"
+#: 🔴 `console_env_pin`은 **같은 병의 두 번째 축**이다(99 #63) — `.env`의 `CONSOLE_*`가
+#: 「기본 꺼짐」 가드 3건을 뒤집었고, 그 실패로 `pre_pr_verify`가 offline에서 멈춰
+#: **integration 단계가 아예 안 돌았다.** ⚠ 이번은 `setdefault`가 아니라 `env_file`을
+#: 끊는다 — 테스트가 `delenv`로 프로세스 env를 지우면 `.env`가 다시 이기기 때문이다.
+addopts = "-m 'not integration and not external' -p store_backend_pin -p llm_provider_pin -p console_env_pin"
