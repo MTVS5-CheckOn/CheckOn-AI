@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import Any, Final
 
 import pytest
+from pydantic import ValidationError
 
 from ai.contracts.detection import DetectRequest, EventSource
 
@@ -119,3 +120,39 @@ def test_the_event_source_enum_is_not_empty() -> None:
     `test_event_source_values_frozen`이 이미 문다(중복 금지).
     """
     assert list(EventSource), "EventSource가 비었다"
+
+
+# ═══════════════ classes 빈 배열 — 상대가 비울 수 있는 조건 ═══════════════
+#
+# 🔴 같은 형태가 `snapshot_meta.classes`에도 있다 — **아직 안 터졌을 뿐**이다
+#    (전원 반 미배정인 강사가 없었다).
+#
+# 전제: 백엔드 `LearningRecordSnapshotService :: build`가 반 미배정 학생의
+#       `cl_unassigned`를 classes에서 **거른다** ⇒ 전원 미배정인 강사는 **빈 배열**을 보낸다.
+#
+# ⚠ *"`min_length` 제약이 없나"* 를 묻지 않는다 — 스키마 자기 반영이다.
+#   **그 조건에서 파싱이 되는가**를 묻는다.
+
+
+def test_a_teacher_with_every_student_unassigned_parses() -> None:
+    """🔴 `classes=[]`인 요청이 파싱된다.
+
+    AI 판정은 `classes`를 **어디서도 읽지 않는다**(전수 실측 2026-08-13: 정의부 외 0건).
+    여기서 400을 내면 **잃는 것만 있다.**
+    """
+    body = _request("trackB")
+    body["snapshot_meta"]["classes"] = []
+    parsed = DetectRequest.model_validate(body)
+    assert parsed.snapshot_meta.classes == ()
+
+
+def test_the_classes_key_itself_is_still_required() -> None:
+    """🔴 **절단 가드** — 「안 보냈다」와 「빌 수 있다」는 **다른 사실**이다.
+
+    ⚠ 백엔드는 **항상 키를 보내고 값만 빌 수 있다.** 기본값을 주거나 `Optional`로 만들면
+    그 구분이 사라지고, 키가 통째로 빠진 요청도 조용히 통과한다.
+    """
+    body = _request("trackB")
+    del body["snapshot_meta"]["classes"]
+    with pytest.raises(ValidationError):
+        DetectRequest.model_validate(body)
