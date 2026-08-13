@@ -1,0 +1,221 @@
+{
+  "data": {
+    "status": "rejected_insufficient",
+    "status_reason": "판정 가능한 셀이 없다",
+    "weakness_map": null,
+    "grid": {
+      "areas": [
+        "language",
+        "media",
+        "literature",
+        "reading",
+        "speech_writing"
+      ],
+      "types": [
+        "fact",
+        "infer",
+        "critic",
+        "concept"
+      ],
+      "cell_min_items": 10,
+      "cells": [
+        {
+          "area_tag": "language",
+          "type_tag": "fact",
+          "key": "language×fact",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "language",
+          "type_tag": "infer",
+          "key": "language×infer",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "language",
+          "type_tag": "critic",
+          "key": "language×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "language",
+          "type_tag": "concept",
+          "key": "language×concept",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "media",
+          "type_tag": "fact",
+          "key": "media×fact",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "media",
+          "type_tag": "infer",
+          "key": "media×infer",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "media",
+          "type_tag": "critic",
+          "key": "media×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "media",
+          "type_tag": "concept",
+          "key": "media×concept",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "literature",
+          "type_tag": "fact",
+          "key": "literature×fact",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "literature",
+          "type_tag": "infer",
+          "key": "literature×infer",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "literature",
+          "type_tag": "critic",
+          "key": "literature×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "literature",
+          "type_tag": "concept",
+          "key": "literature×concept",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "reading",
+          "type_tag": "fact",
+          "key": "reading×fact",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "reading",
+          "type_tag": "infer",
+          "key": "reading×infer",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "reading",
+          "type_tag": "critic",
+          "key": "reading×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "reading",
+          "type_tag": "concept",
+          "key": "reading×concept",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "speech_writing",
+          "type_tag": "fact",
+          "key": "speech_writing×fact",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "speech_writing",
+          "type_tag": "infer",
+          "key": "speech_writing×infer",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "speech_writing",
+          "type_tag": "critic",
+          "key": "speech_writing×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "speech_writing",
+          "type_tag": "concept",
+          "key": "speech_writing×concept",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        }
+      ]
+    }
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "diagnosis-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": null,
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": "v1",
+      "verify_config": null,
+      "difficulty_calib": null
+    }
+  }
+}

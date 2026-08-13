@@ -1,0 +1,28 @@
+{
+  "data": null,
+  "error": {
+    "code": "INVALID_SCHEMA",
+    "message": "지원되는 자료 조달 조합은 language+자료 없음, reading+PassageRequest, literature+WorkSelection, speech_writing·media+생성 자료 요청이다",
+    "detail": {
+      "reason": "source_procurement_not_implemented",
+      "area_tag": "reading",
+      "passage": false,
+      "work_selection": false
+    }
+  },
+  "meta": {
+    "execution_id": null,
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "v3",
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": null,
+      "verify_config": "verify-config.v1",
+      "difficulty_calib": null
+    }
+  }
+}

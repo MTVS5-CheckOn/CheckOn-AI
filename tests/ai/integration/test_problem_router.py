@@ -856,3 +856,146 @@ def test_response_versions_and_ledger_versions_are_the_same_row() -> None:
     )
     # 🔴 그 원장 행을 가리키는지까지 본다 — 값이 같아도 다른 행을 가리키면 재현이 안 된다.
     assert meta["execution_id"] == str(run.execution_id)
+
+
+def test_items_endpoint_serves_bodies_that_the_set_result_never_carried() -> None:
+    """🔴 Step 3이 막혀 있던 자리 — 세트 결과에는 발문·선지·해설이 없다.
+
+    `GET /v1/problems/{job_id}`의 `result`는 `item_id`와 상태뿐이라, 백엔드가 그것만
+    미러링하면 강사 화면에 그릴 것이 없다. 이 테스트는 **본문이 실제로 나온다**는 것과
+    **세트 요약에는 없었다**는 것을 한 자리에서 잠근다.
+    """
+    _prepare()
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        job_id = posted.json()["data"]["job_id"]
+        summary = client.get(
+            f"/v1/problems/{job_id}", headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]}
+        )
+        listed = client.get(
+            f"/v1/problems/{job_id}/items",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+
+    assert listed.status_code == 200
+    data = listed.json()["data"]
+    assert data["job_status"] == "succeeded"
+    assert data["set_status"] == "generated"
+    # 🔴 `needs_review`인데 세트는 `generated`다 — **「검토 필요」는 실패가 아니다.**
+    #    화면의 「7/1/1/1」을 합산할 때 이 값을 실패 쪽에 얹으면 성공률이 조용히 틀린다.
+    assert data["counts"] == {
+        "verified": 0,
+        "needs_review": 1,
+        "dropped": 0,
+        "verification_unavailable": 0,
+    }
+    assert data["items"][0]["review_reason"] == "manual_target_first"
+    body = data["items"][0]["item"]
+    assert body["stem"]
+    assert len(body["choices"]) == 5
+    assert body["answer"]["correct_no"] == 1
+    assert body["evidence"], "출제 근거 앵커가 화면에 나가야 한다(불변식 2)"
+
+    summary_item = summary.json()["data"]["result"]["items"][0]
+    assert "stem" not in summary_item, (
+        "세트 요약이 본문을 갖게 됐다면 이 엔드포인트의 존재 이유가 바뀐 것이다 — "
+        "Kafka 결과 이벤트 크기 판단(08 §5)도 함께 다시 봐야 한다"
+    )
+
+
+def test_item_view_never_exposes_the_internal_failure_detail() -> None:
+    """폐기 사유는 **어휘 고정 필드**로만 나간다.
+
+    `ItemResult.failure_detail`은 구조화 파싱 오류 원문 같은 내부 문자열이라 강사 화면에
+    그대로 나가면 안 된다. 필드를 지운 게 아니라 **투영에서 뺀 것**이므로, 원본에 남아
+    있다는 사실까지 함께 잠가 둔다 — 원본이 사라지면 이 제외는 의미가 없다.
+    """
+    assert "failure_detail" in ItemResult.model_fields
+    assert "failure_detail" not in problem_router.ProblemItemView.model_fields
+    assert "failure_reason" in problem_router.ProblemItemView.model_fields
+
+
+def test_get_no_longer_depends_on_the_process_that_served_the_post() -> None:
+    """🔴 BE가 물은 "다중 인스턴스 지원"의 실제 자리.
+
+    종전 GET은 라우터 프로세스의 `_views` 캐시에 없으면 잡을 조회조차 하지 않고 404였다.
+    캐시를 비우는 것으로 "POST를 받지 않은 프로세스"를 흉내 낸다 — 영속 잡 원장이
+    정본이면 200이어야 한다.
+    """
+    _prepare()
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        job_id = posted.json()["data"]["job_id"]
+        problem_router._views.clear()
+        fetched = client.get(
+            f"/v1/problems/{job_id}", headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]}
+        )
+        listed = client.get(
+            f"/v1/problems/{job_id}/items",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+
+    assert fetched.status_code == 200
+    assert fetched.json()["data"]["status"] == "succeeded"
+    assert listed.status_code == 200
+    # 요청 레코드에서 복원하므로 taxonomy 버전도 지어내지 않고 그대로 살아 있다.
+    assert fetched.json()["meta"]["versions"]["taxonomy"] == "v1"
+
+
+def test_items_endpoint_hides_other_tenants_job() -> None:
+    _prepare()
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        job_id = posted.json()["data"]["job_id"]
+        hidden = client.get(
+            f"/v1/problems/{job_id}/items", headers={"X-Tenant-Id": "tenant-other"}
+        )
+
+    assert hidden.status_code == 404
+    assert hidden.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_pending_job_tells_the_adapter_when_to_come_back() -> None:
+    """🔴 Kafka-HTTP adapter의 폴링 주기를 **우리 설정이** 정한다(AI-BE-01).
+
+    adapter가 자기 상수로 돌면 우리 인라인 실행이 느려져도 그쪽 주기는 그대로다.
+    ⚠ 종단 응답에는 붙지 않는다 — 붙으면 adapter가 끝난 잡을 계속 돈다.
+    """
+    _run_store, stores, _generator, _verifier = _prepare(calls=2)
+    supervisor = Supervisor(
+        store=build_agent_job_store(),
+        lease_duration=timedelta(minutes=5),
+        priority_aging_interval=timedelta(minutes=10),
+    )
+    queued = _run(
+        ProblemGenerationEnqueuer(
+            supervisor=supervisor, request_store=stores.requests
+        ).enqueue(_problem_request(request_id="pending", target_ref="student-pending"))
+    )
+
+    # 🔴 드레인이 이 잡을 집어 가기 전에 읽어야 하므로 배경 드레인을 끈 앱으로 본다.
+    with TestClient(create_app()) as client:
+        pending = client.get(
+            f"/v1/problems/{queued.job_id}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+        if pending.json()["data"]["status"] == "queued":
+            assert pending.headers["Retry-After"] == "2"
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        job_id = posted.json()["data"]["job_id"]
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            done = client.get(
+                f"/v1/problems/{job_id}",
+                headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+            )
+            if done.json()["data"]["status"] == "succeeded":
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("잡이 종단되지 않았다")
+
+    assert "Retry-After" not in done.headers

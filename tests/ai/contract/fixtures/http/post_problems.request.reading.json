@@ -1,0 +1,26 @@
+{
+  "target_kind": "student",
+  "target_ref": "st_0123456789abcdef0123456789abcdef",
+  "target_source": "teacher_manual",
+  "manual_targets": [
+    "grammar.sentence-structure"
+  ],
+  "snapshot_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "taxonomy_version": "v1",
+  "area_tag": "reading",
+  "type_tags": [
+    "infer"
+  ],
+  "item_format": "mcq",
+  "count": 2,
+  "requested_difficulty": "medium",
+  "passage": {
+    "area_tag": "reading",
+    "domain": "science",
+    "topic_hint": "열역학 제2법칙",
+    "word_count": 900,
+    "sentence_complexity": "standard",
+    "paragraph_count": 4,
+    "banned_topics_version": "v1"
+  }
+}

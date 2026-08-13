@@ -1,0 +1,28 @@
+{
+  "event_id": "0198f100-0000-7000-8000-000000000101",
+  "event_type": "problem_generation.requested",
+  "occurred_at": "2026-08-12T05:00:00+00:00",
+  "tenant_id": "tn_0123456789abcdef0123456789abcdef",
+  "schema_version": "pg-request-1",
+  "correlation_id": "0198f100-0000-7000-8000-000000000001",
+  "causation_id": null,
+  "payload": {
+    "problem_request_id": "0198f100-0000-7000-8000-000000000001",
+    "idempotency_key": "pg_0198f100000070008000000000000001",
+    "request": {
+      "target_kind": "student",
+      "target_ref": "st_0123456789abcdef0123456789abcdef",
+      "target_source": "teacher_manual",
+      "manual_targets": ["language.grammar.phoneme.system"],
+      "taxonomy_version": "v1",
+      "area_tag": "language",
+      "type_tags": ["concept"],
+      "item_format": "mcq",
+      "count": 3,
+      "requested_difficulty": "medium",
+      "target": "auto",
+      "passage": null,
+      "snapshot_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  }
+}

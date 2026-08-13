@@ -1,0 +1,26 @@
+# 진단 판정 파라미터 — `part_b/06_quality_gates.md` 부록 'B 기본값 시트'의 코드 정본.
+#
+# 🔴 값을 바꾸면 `version`을 **함께 올린다.** `WeaknessMap.config_version`이 이 값을 그대로
+#    싣고, 같은 (snapshot_hash, graph_version, config_version)이면 바이트 동일 산출이어야
+#    한다(불변식 8 · part_b/04 §3). 버전을 안 올리고 값만 바꾸면 과거 지도를 재현할 수 없다.
+# ⚠ 전부 `[잠정]`이다 — 개정은 관측치와 `evaluation/golden/diagnosis/` 기대값을 함께
+#    리뷰한 새 버전으로만 한다.
+version: b-defaults-v1
+
+# 그래프가 이 어휘 버전으로 작성됐다는 **기대값**. `curriculum_graph.yaml`의 meta와 다르면
+# 로딩이 실패한다(fail-closed) — 어휘가 갈린 그래프로 판정하면 셀 좌표가 조용히 어긋난다.
+expected_taxonomy_version: v1
+
+params:
+  # 🔴 이 값의 정본은 이 파일이 아니라 **A threshold 시트 R6**이다
+  #    (`part_a/04_threshold_config.md` · 코드는 `detection/thresholds.py`의 R6 기본값).
+  #    B가 별도 값을 운영하면 감지와 진단이 같은 셀을 다르게 판정한다(part_b/04 §4 "이중
+  #    관리 금지"). 여기 적는 이유는 capability 경계를 넘어 A 모듈을 import할 수 없기
+  #    때문이며, 드리프트는 `tests/ai/contract/test_diagnosis_config.py`가 CI에서 잡는다.
+  cell_min_items: 10
+  relative_cut_pp: -15.0
+  severity_saturation: 0.30
+  decay: 0.7
+  propagate_threshold: 0.5
+  suspect_damping: 0.5
+  node_min_items: 6

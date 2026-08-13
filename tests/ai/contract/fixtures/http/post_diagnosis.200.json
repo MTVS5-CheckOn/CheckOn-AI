@@ -1,0 +1,539 @@
+{
+  "data": {
+    "status": "generated",
+    "status_reason": null,
+    "weakness_map": {
+      "graph_version": "curriculum-five-area-v1",
+      "taxonomy_version": "v1",
+      "config_version": "b-defaults-v1",
+      "snapshot_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "cells": {
+        "language×concept": {
+          "acc": 0.9,
+          "n": 20,
+          "verdict": "ok",
+          "severity": null
+        },
+        "language×infer": {
+          "acc": 0.2,
+          "n": 20,
+          "verdict": "weak",
+          "severity": 1.0
+        },
+        "reading×fact": {
+          "acc": 0.3333333333333333,
+          "n": 3,
+          "verdict": "unknown",
+          "severity": null
+        }
+      },
+      "nodes": {
+        "language.grammar.addition": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.alternation": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.causative_passive": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.contraction": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.deletion": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.ending": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.fortition": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.honorific": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.liquidization": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.nasalization": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.negation": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.palatalization": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.particle": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.phonological_change": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.predicate": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.quotation": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.sentence.connected": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.sentence.constituent": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.sentence.embedded": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.sentence.structure": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.speech_level": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.tense_aspect": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        },
+        "language.grammar.word.formation": {
+          "verdict": "suspect",
+          "basis": [
+            "cell:language×infer"
+          ]
+        }
+      },
+      "propagated": {
+        "language.grammar.alternation": {
+          "score": 1.1199999999999999,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.fortition",
+            "language.grammar.liquidization",
+            "language.grammar.nasalization",
+            "language.grammar.palatalization"
+          ]
+        },
+        "language.grammar.ending": {
+          "score": 2.17315,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.honorific",
+            "language.grammar.quotation",
+            "language.grammar.sentence.connected",
+            "language.grammar.sentence.embedded",
+            "language.grammar.sentence.structure",
+            "language.grammar.speech_level",
+            "language.grammar.tense_aspect"
+          ]
+        },
+        "language.grammar.morpheme.concept": {
+          "score": 4.4848685,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.causative_passive",
+            "language.grammar.ending",
+            "language.grammar.honorific",
+            "language.grammar.negation",
+            "language.grammar.particle",
+            "language.grammar.predicate",
+            "language.grammar.quotation",
+            "language.grammar.sentence.connected",
+            "language.grammar.sentence.constituent",
+            "language.grammar.sentence.embedded",
+            "language.grammar.sentence.structure",
+            "language.grammar.speech_level",
+            "language.grammar.tense_aspect",
+            "language.grammar.word.formation"
+          ]
+        },
+        "language.grammar.particle": {
+          "score": 0.8601599999999998,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.quotation",
+            "language.grammar.sentence.connected",
+            "language.grammar.sentence.constituent",
+            "language.grammar.sentence.embedded",
+            "language.grammar.sentence.structure"
+          ]
+        },
+        "language.grammar.parts_of_speech": {
+          "score": 2.6803069999999996,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.causative_passive",
+            "language.grammar.honorific",
+            "language.grammar.negation",
+            "language.grammar.predicate",
+            "language.grammar.quotation",
+            "language.grammar.sentence.connected",
+            "language.grammar.sentence.constituent",
+            "language.grammar.sentence.embedded",
+            "language.grammar.sentence.structure",
+            "language.grammar.speech_level",
+            "language.grammar.tense_aspect"
+          ]
+        },
+        "language.grammar.phoneme.system": {
+          "score": 2.7205024,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.addition",
+            "language.grammar.alternation",
+            "language.grammar.contraction",
+            "language.grammar.deletion",
+            "language.grammar.fortition",
+            "language.grammar.liquidization",
+            "language.grammar.nasalization",
+            "language.grammar.palatalization",
+            "language.grammar.phonological_change"
+          ]
+        },
+        "language.grammar.phonological_change": {
+          "score": 2.184,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.addition",
+            "language.grammar.alternation",
+            "language.grammar.contraction",
+            "language.grammar.deletion",
+            "language.grammar.fortition",
+            "language.grammar.liquidization",
+            "language.grammar.nasalization",
+            "language.grammar.palatalization"
+          ]
+        },
+        "language.grammar.predicate": {
+          "score": 2.1002099999999997,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.causative_passive",
+            "language.grammar.honorific",
+            "language.grammar.negation",
+            "language.grammar.quotation",
+            "language.grammar.sentence.connected",
+            "language.grammar.sentence.constituent",
+            "language.grammar.sentence.embedded",
+            "language.grammar.sentence.structure",
+            "language.grammar.speech_level",
+            "language.grammar.tense_aspect"
+          ]
+        },
+        "language.grammar.sentence.constituent": {
+          "score": 1.036,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.quotation",
+            "language.grammar.sentence.connected",
+            "language.grammar.sentence.embedded",
+            "language.grammar.sentence.structure"
+          ]
+        },
+        "language.grammar.sentence.structure": {
+          "score": 0.98,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.quotation",
+            "language.grammar.sentence.connected",
+            "language.grammar.sentence.embedded"
+          ]
+        },
+        "language.grammar.syllable.structure": {
+          "score": 1.50304,
+          "verdict": "root_candidate",
+          "from_nodes": [
+            "language.grammar.addition",
+            "language.grammar.alternation",
+            "language.grammar.contraction",
+            "language.grammar.deletion",
+            "language.grammar.fortition",
+            "language.grammar.liquidization",
+            "language.grammar.nasalization",
+            "language.grammar.palatalization",
+            "language.grammar.phonological_change"
+          ]
+        }
+      },
+      "overall_low": false
+    },
+    "grid": {
+      "areas": [
+        "language",
+        "media",
+        "literature",
+        "reading",
+        "speech_writing"
+      ],
+      "types": [
+        "fact",
+        "infer",
+        "critic",
+        "concept"
+      ],
+      "cell_min_items": 10,
+      "cells": [
+        {
+          "area_tag": "language",
+          "type_tag": "fact",
+          "key": "language×fact",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "language",
+          "type_tag": "infer",
+          "key": "language×infer",
+          "acc": 0.2,
+          "n": 20,
+          "verdict": "weak",
+          "severity": 1.0
+        },
+        {
+          "area_tag": "language",
+          "type_tag": "critic",
+          "key": "language×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "language",
+          "type_tag": "concept",
+          "key": "language×concept",
+          "acc": 0.9,
+          "n": 20,
+          "verdict": "ok",
+          "severity": null
+        },
+        {
+          "area_tag": "media",
+          "type_tag": "fact",
+          "key": "media×fact",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "media",
+          "type_tag": "infer",
+          "key": "media×infer",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "media",
+          "type_tag": "critic",
+          "key": "media×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "media",
+          "type_tag": "concept",
+          "key": "media×concept",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "literature",
+          "type_tag": "fact",
+          "key": "literature×fact",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "literature",
+          "type_tag": "infer",
+          "key": "literature×infer",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "literature",
+          "type_tag": "critic",
+          "key": "literature×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "literature",
+          "type_tag": "concept",
+          "key": "literature×concept",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "reading",
+          "type_tag": "fact",
+          "key": "reading×fact",
+          "acc": 0.3333333333333333,
+          "n": 3,
+          "verdict": "unknown",
+          "severity": null
+        },
+        {
+          "area_tag": "reading",
+          "type_tag": "infer",
+          "key": "reading×infer",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "reading",
+          "type_tag": "critic",
+          "key": "reading×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "reading",
+          "type_tag": "concept",
+          "key": "reading×concept",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "speech_writing",
+          "type_tag": "fact",
+          "key": "speech_writing×fact",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "speech_writing",
+          "type_tag": "infer",
+          "key": "speech_writing×infer",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "speech_writing",
+          "type_tag": "critic",
+          "key": "speech_writing×critic",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        },
+        {
+          "area_tag": "speech_writing",
+          "type_tag": "concept",
+          "key": "speech_writing×concept",
+          "acc": null,
+          "n": 0,
+          "verdict": null,
+          "severity": null
+        }
+      ]
+    }
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "diagnosis-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": null,
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": "v1",
+      "verify_config": null,
+      "difficulty_calib": null
+    }
+  }
+}

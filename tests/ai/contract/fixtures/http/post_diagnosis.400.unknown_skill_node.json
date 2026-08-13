@@ -1,0 +1,23 @@
+{
+  "data": null,
+  "error": {
+    "code": "INVALID_SCHEMA",
+    "message": "진단 입력 검증 실패",
+    "detail": "그래프에 없는 skill_node_id: language.grammar.does-not-exist"
+  },
+  "meta": {
+    "execution_id": null,
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "diagnosis-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": null,
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": "v1",
+      "verify_config": null,
+      "difficulty_calib": null
+    }
+  }
+}
