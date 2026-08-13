@@ -413,7 +413,7 @@ def test_pg_cache_loss_recovers_original_request_for_revision(
         problem_router.reset_problem_router()
 
 
-def test_step1_to_step4_flow_survives_cache_loss_and_reenters_revision(
+def test_step1_selection_to_step4_teacher_manual_flow_survives_cache_loss(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tenant_id = f"tenant-flow-{uuid.uuid4().hex[:10]}"
@@ -457,13 +457,15 @@ def test_step1_to_step4_flow_survives_cache_loss_and_reenters_revision(
             assert diagnosed.status_code == 200, diagnosed.text
             diagnosis_data = diagnosed.json()["data"]
             assert len(diagnosis_data["grid"]["cells"]) == 20
-            assert _FLOW_NODE_ID in diagnosis_data["weakness_map"]["nodes"]
+            diagnosed_node_ids = tuple(diagnosis_data["weakness_map"]["nodes"])
+            assert diagnosed_node_ids, "Step1 진단 응답에 Step2에서 선택할 노드가 없다"
+            selected_node_id = diagnosed_node_ids[0]
 
-            # 4~6. Step2 선택값을 출제 요청에 싣고 202 job_id를 받는다.
+            # 4~6. Step2가 고른 진단 응답 노드를 teacher_manual 요청에 싣는다.
             problem_body = _body(target_ref="student-flow")
             problem_body.update(
                 {
-                    "manual_targets": [_FLOW_NODE_ID],
+                    "manual_targets": [selected_node_id],
                     "snapshot_hash": diagnosis_data["weakness_map"]["snapshot_hash"],
                 }
             )
@@ -471,13 +473,11 @@ def test_step1_to_step4_flow_survives_cache_loss_and_reenters_revision(
             assert posted.status_code == 202, posted.text
             job_id = posted.json()["data"]["job_id"]
 
-            # 7~8. polling은 status로 끝내고 비종단일 때만 Retry-After를 요구한다.
+            # Retry-After의 비종단/종단 계약은 problem_router·HTTP fixture 전용 검사가 맡는다.
             job = client.get(
                 f"/v1/problems/{job_id}", headers={"X-Tenant-Id": tenant_id}
             )
             assert job.status_code == 200, job.text
-            if job.json()["data"]["status"] not in {"succeeded", "failed", "cancelled"}:
-                assert "Retry-After" in job.headers
             assert job.json()["data"]["status"] == "succeeded"
             result = job.json()["data"]["result"]
             set_id = result["set_id"]
