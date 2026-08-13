@@ -35,7 +35,9 @@ from ai.contracts.problem_generation import (
     RevisionKind,
 )
 from ai.db.repositories.idempotency import IdempotencyStore
+from ai.db.repositories.problem_set_store import PgProblemSetStore
 from ai.db.repositories.run_store import RunStore, default_llm_call_collector
+from ai.db.session import get_sessionmaker
 from ai.db.store_factory import (
     build_agent_job_store,
     build_idempotency_store,
@@ -356,6 +358,14 @@ def _require_services() -> tuple[GraphContextService, DiagnosisCallable]:
     return _graph_context, _diagnosis
 
 
+def _problem_set_store_for(tenant_id: str) -> PgProblemSetStore | None:
+    """문항 저장소의 단일 backend 판정을 공유해 PG 세트 저장소를 조립한다."""
+
+    if build_tenant_scoped_item_store(tenant_id=tenant_id) is None:
+        return None
+    return PgProblemSetStore(sessionmaker=get_sessionmaker(), tenant_id=tenant_id)
+
+
 def _build_supervisor() -> Supervisor:
     settings = ProblemRouterSettings()
     return Supervisor(
@@ -459,14 +469,20 @@ async def _run_next_for_tenant(tenant_id: str) -> WorkerJob | None:
     #  ⚠ `store_backend=memory`(기본)면 `None`이라 **`_stores`가 그대로 간다** — 주입 seam
     #   무변경. 교체할 때도 나머지 셋은 `_stores`에서 그대로 옮긴다(덮어쓰지 않는다).
     tenant_items = build_tenant_scoped_item_store(tenant_id=tenant_id)
+    tenant_sets = (
+        None
+        if tenant_items is None
+        else PgProblemSetStore(sessionmaker=get_sessionmaker(), tenant_id=tenant_id)
+    )
     stores = (
         _stores
-        if tenant_items is None
+        if tenant_items is None and tenant_sets is None
         else problem_runtime_stores(
             request_store=_stores.requests,
             result_store=_stores.results,
             candidate_store=_stores.candidates,
-            item_store=tenant_items,
+            item_store=tenant_items or _stores.items,
+            set_store=tenant_sets or _stores.sets,
         )
     )
     async with open_problem_generation_runner(
@@ -553,9 +569,6 @@ async def get_problem(job_id: str, request: Request) -> dict[str, Any]:
     tenant_id = request.headers.get("X-Tenant-Id")
     if not tenant_id:
         raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": ["X-Tenant-Id"]})
-    cached = _views.get((tenant_id, job_id))
-    if cached is None:
-        raise NotFound("job_id 부재", {"job_id": job_id})
     try:
         parsed_job_id = uuid.UUID(job_id)
     except ValueError as exc:
@@ -565,7 +578,25 @@ async def get_problem(job_id: str, request: Request) -> dict[str, Any]:
     )
     if job is None:
         raise NotFound("job_id 부재", {"job_id": job_id})
-    view = await _view_for(job, tenant_id=tenant_id)
+    cached = _views.get((tenant_id, job_id))
+    if cached is None:
+        set_store = _problem_set_store_for(tenant_id)
+        restored = (
+            await set_store.get_by_execution_id(job.execution_id)
+            if set_store is not None and job.phase is JobPhase.SUCCEEDED
+            else None
+        )
+        if restored is None:
+            raise NotFound("job_id 부재", {"job_id": job_id})
+        cached = _CachedView(
+            view=ProblemJobView(job_id=job_id, status=job.phase, result=restored.result),
+            versions=restored.versions,
+        )
+    view = (
+        cached.view
+        if cached.view.status is job.phase and cached.view.result is not None
+        else await _view_for(job, tenant_id=tenant_id)
+    )
     _views[(tenant_id, job_id)] = _CachedView(
         view=view, versions=cached.versions
     )
@@ -583,7 +614,7 @@ def _tenant_id(request: Request) -> str:
     return tenant_id
 
 
-def _set_result(
+async def _set_result(
     *, tenant_id: str, set_id: uuid.UUID
 ) -> tuple[ProblemSetResult, VersionSet]:
     for (cached_tenant, _job_id), cached in _views.items():
@@ -594,6 +625,10 @@ def _set_result(
             and result.set_id == set_id
         ):
             return result, cached.versions
+    set_store = _problem_set_store_for(tenant_id)
+    restored = await set_store.get_by_set_id(set_id) if set_store is not None else None
+    if restored is not None:
+        return restored.result, restored.versions
     raise NotFound("set_id 부재", {"set_id": str(set_id)})
 
 
@@ -719,7 +754,7 @@ async def get_problem_items(set_id: str, request: Request) -> dict[str, Any]:
 
     tenant_id = _tenant_id(request)
     parsed_set_id = _set_id(set_id)
-    result, versions = _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
+    result, versions = await _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
     counts = {status.value: 0 for status in ProblemItemStatus}
     items: list[dict[str, Any]] = []
     for slot_index, item_result in enumerate(result.items):
@@ -768,7 +803,7 @@ async def get_problem_item(
 
     tenant_id = _tenant_id(request)
     parsed_set_id = _set_id(set_id)
-    result, versions = _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
+    result, versions = await _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
     if slot_index < 0 or slot_index >= len(result.items):
         raise NotFound(
             "문항 슬롯 부재", {"set_id": str(parsed_set_id), "slot_index": slot_index}
@@ -904,7 +939,7 @@ async def post_problem_item_revision(
     request_id = request.headers["X-Request-Id"]
     idempotency_key = request.headers["Idempotency-Key"]
     parsed_set_id = _set_id(set_id)
-    _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
+    await _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
     try:
         raw_body = await request.json()
     except ValueError as exc:

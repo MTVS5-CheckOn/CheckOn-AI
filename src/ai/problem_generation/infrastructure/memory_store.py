@@ -8,7 +8,14 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
-from ai.contracts.problem_generation import GeneratedItem, ItemResult, ItemRevision
+from ai.contracts.execution import ExecutionContext
+from ai.contracts.problem_generation import (
+    GeneratedItem,
+    ItemResult,
+    ItemRevision,
+    ProblemRequest,
+    ProblemSetResult,
+)
 from ai.problem_generation.application.ports import (
     ImmutableStoreConflict,
     ProblemItemStore,
@@ -132,6 +139,40 @@ class InMemoryProblemItemStore:
                 self._records[key]
                 for key in sorted(self._records, key=lambda value: (str(value[0]), value[1]))
             )
+
+
+class InMemoryProblemSetStore:
+    """memory backend에서 부모 수명주기를 보존하는 결정론 저장소."""
+
+    def __init__(self) -> None:
+        self._records: dict[UUID, ProblemSetResult | None] = {}
+        self._identities: dict[UUID, tuple[ProblemRequest, ExecutionContext, bool]] = {}
+        self._lock = asyncio.Lock()
+
+    async def create(
+        self,
+        *,
+        set_id: UUID,
+        request: ProblemRequest,
+        execution_context: ExecutionContext,
+        diagnostic_purpose: bool,
+    ) -> None:
+        identity = (request, execution_context, diagnostic_purpose)
+        async with self._lock:
+            existing = self._identities.get(set_id)
+            if existing is not None and existing != identity:
+                raise ImmutableStoreConflict(f"문제 세트 부모 멱등 충돌: {set_id}")
+            self._identities[set_id] = identity
+            self._records.setdefault(set_id, None)
+
+    async def finalize(self, result: ProblemSetResult) -> None:
+        async with self._lock:
+            if result.set_id not in self._records:
+                raise LookupError(f"생성되지 않은 문제 세트 부모: {result.set_id}")
+            existing = self._records[result.set_id]
+            if existing is not None and existing != result:
+                raise ImmutableStoreConflict(f"문제 세트 결과 멱등 충돌: {result.set_id}")
+            self._records[result.set_id] = result
 
 
 @dataclass(slots=True)

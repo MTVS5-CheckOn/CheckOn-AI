@@ -91,6 +91,7 @@ from ai.problem_generation.infrastructure.literature_pool import load_literature
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
+    InMemoryProblemSetStore,
 )
 
 _GRAPH_VERSION = "curriculum-graph.v1"
@@ -139,6 +140,7 @@ class _WorkflowHarness:
         self.graph = FakeGraphContextService(graph_steps)
         self.candidates = InMemoryCandidateStore()
         self.items = InMemoryProblemItemStore()
+        self.sets = InMemoryProblemSetStore()
         config = (verify_config or load_verify_config()).model_copy(
             update={
                 "difficulty_regen_enabled": difficulty_regen_enabled,
@@ -174,6 +176,7 @@ class _WorkflowHarness:
             cross_solver=self.cross_solver,
             candidate_store=self.candidates,
             item_store=self.items,
+            set_store=self.sets,
             checkpointer=InMemorySaver(),
             verify_config=self.verify_config,
             banned_topics=self.banned_topics,
@@ -547,6 +550,21 @@ def test_all_llm_error_types_during_generation_follow_declared_route(
     assert expected_detail in result.items[0].failure_detail
     assert len(harness.generator_provider.requests) == expected_attempts
     assert not harness.verifier_provider.requests
+
+
+def test_dropped_slot_is_saved_as_a_bodyless_final_record() -> None:
+    harness = _WorkflowHarness(
+        generator_steps=("not-json", "not-json", "not-json"),
+        verifier_steps=(),
+    )
+
+    result = _run(harness, harness.request())
+    stored = asyncio.run(harness.items.get(result.set_id, 0))
+
+    assert result.items[0].status is ProblemItemStatus.DROPPED
+    assert stored.result == result.items[0]
+    assert stored.item is None
+    assert stored.candidate_ref is None
 
 
 def test_same_set_duplicate_stem_is_rejected_within_shared_attempt_budget() -> None:
@@ -932,6 +950,7 @@ def test_rejected_insufficient_remains_normal_domain_outcome() -> None:
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,
         item_store=harness.items,
+        set_store=harness.sets,
         checkpointer=InMemorySaver(),
         verify_config=harness.verify_config,
         banned_topics=harness.banned_topics,
@@ -982,6 +1001,7 @@ def test_unmapped_reference_node_converges_to_rejected_insufficient() -> None:
         cross_solver=harness.cross_solver,
         candidate_store=harness.candidates,
         item_store=harness.items,
+        set_store=harness.sets,
         checkpointer=InMemorySaver(),
         verify_config=harness.verify_config,
         banned_topics=harness.banned_topics,
