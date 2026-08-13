@@ -77,6 +77,20 @@ def test_phonological_change_context_uses_real_quotes_and_stable_refs() -> None:
     assert context.retrieval_trace["attribution"] == _ATTRIBUTION
 
 
+def test_t1_smoke_node_is_mapped_before_real_llm_call() -> None:
+    corpus = load_grammar_norm_corpus()
+
+    assert _NODE in corpus.mapping.nodes
+    assert len(select_node_rows(corpus, _NODE)) >= 1
+
+    context = asyncio.run(
+        GrammarNormGraphContextService(corpus).resolve_generation_context(_request())
+    )
+    refs = context.retrieval_trace["allowed_evidence_refs"]
+
+    assert isinstance(refs, list) and refs
+
+
 def test_unmapped_node_returns_context_without_reference_data() -> None:
     context = asyncio.run(
         GrammarNormGraphContextService().resolve_generation_context(

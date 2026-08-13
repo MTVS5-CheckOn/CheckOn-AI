@@ -19,6 +19,7 @@ from openai import (
     APIConnectionError,
     APIStatusError,
     APITimeoutError,
+    AsyncOpenAI,
     AuthenticationError,
 )
 
@@ -99,10 +100,16 @@ class _FakeCompletions:
         return self._result
 
 
-class _FakeClient:
+class _FakeClient(AsyncOpenAI):
+    """SDK 클라이언트 주입 경계를 만족하는 네트워크 없는 테스트 대역."""
+
     def __init__(self, *, result: object = None, error: Exception | None = None) -> None:
-        self.completions = _FakeCompletions(result=result, error=error)
-        self.chat = SimpleNamespace(completions=self.completions)
+        self.fake_completions = _FakeCompletions(result=result, error=error)
+        object.__setattr__(
+            self,
+            "chat",
+            SimpleNamespace(completions=self.fake_completions),
+        )
 
 
 def _ok_response(content: str | None) -> SimpleNamespace:
@@ -114,7 +121,12 @@ def _ok_response(content: str | None) -> SimpleNamespace:
 
 def _provider(*, result: object = None, error: Exception | None = None) -> OpenAICompatProvider:
     client = _FakeClient(result=result, error=error)
-    return OpenAICompatProvider(settings=_settings(), client=client)  # type: ignore[arg-type]
+    return OpenAICompatProvider(settings=_settings(), client=client)
+
+
+def _fake_client(provider: OpenAICompatProvider) -> _FakeClient:
+    assert isinstance(provider._client, _FakeClient)
+    return provider._client
 
 
 def test_satisfies_provider_protocol() -> None:
@@ -138,7 +150,7 @@ def test_injected_name_identifies_provider_and_result() -> None:
     provider = OpenAICompatProvider(
         name="openai-verifier",
         settings=_settings(),
-        client=_FakeClient(result=_ok_response("검증 결과")),  # type: ignore[arg-type]
+        client=_FakeClient(result=_ok_response("검증 결과")),
     )
 
     result = _run(provider.complete(_request(), _context()))
@@ -152,7 +164,7 @@ def test_blank_injected_name_is_rejected() -> None:
         OpenAICompatProvider(
             name="  ",
             settings=_settings(),
-            client=_FakeClient(result=_ok_response("검증 결과")),  # type: ignore[arg-type]
+            client=_FakeClient(result=_ok_response("검증 결과")),
         )
 
 
@@ -252,7 +264,7 @@ def test_generation_params_passed_through_interface_path() -> None:
     params = GenerationParams(temperature=0.2, top_p=0.9, max_tokens=256, seed=7)
     provider = _provider(result=_ok_response("ok"))
     _run(provider.complete(_request(params), _context()))
-    kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
+    kwargs = _fake_client(provider).fake_completions.last_kwargs
     assert kwargs is not None
     assert kwargs["model"] == "test-model"
     assert kwargs["temperature"] == 0.2
@@ -275,8 +287,9 @@ def test_max_tokens_is_sent_as_max_completion_tokens() -> None:
     """
     provider = _provider(result=_ok_response("ok"))
     _run(provider.complete(_request(GenerationParams(max_tokens=128)), _context()))
-    kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
+    kwargs = _fake_client(provider).fake_completions.last_kwargs
 
+    assert kwargs is not None
     assert kwargs["max_completion_tokens"] == 128
     assert "max_tokens" not in kwargs, "구 키로 되돌아갔다 — 전 호출이 400이 된다"
 
@@ -285,8 +298,9 @@ def test_no_token_cap_sends_neither_key() -> None:
     """상한 미지정이면 어느 키도 안 나간다 — 8/6에 상담 경로가 400을 피한 이유다(99 ⓧ)."""
     provider = _provider(result=_ok_response("ok"))
     _run(provider.complete(_request(GenerationParams(temperature=0.0)), _context()))
-    kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
+    kwargs = _fake_client(provider).fake_completions.last_kwargs
 
+    assert kwargs is not None
     assert "max_completion_tokens" not in kwargs
     assert "max_tokens" not in kwargs
 
@@ -345,7 +359,7 @@ def _sent_kwargs(params: GenerationParams | None) -> dict[str, object]:
     """어댑터를 **실제로 태워** 전선에 나가는 kwargs를 얻는다."""
     provider = _provider(result=_ok_response("ok"))
     _run(provider.complete(_request(params), _context()))
-    kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
+    kwargs = _fake_client(provider).fake_completions.last_kwargs
     assert kwargs is not None
     return dict(kwargs)
 
@@ -452,7 +466,7 @@ def test_vendor_extra_body_is_not_sent_by_default() -> None:
     """
     provider = _provider(result=_ok_response("ok"))
     _run(provider.complete(_request(), _context()))
-    kwargs = provider._client.chat.completions.last_kwargs  # type: ignore[attr-defined]
+    kwargs = _fake_client(provider).fake_completions.last_kwargs
     assert kwargs is not None
     assert "extra_body" not in kwargs
 
@@ -509,7 +523,7 @@ def test_settings_injection_overrides_model() -> None:
     settings = OpenAiSettings(openai_model="other-model")
     provider = OpenAICompatProvider(
         settings=settings,
-        client=_FakeClient(result=_ok_response("ok")),  # type: ignore[arg-type]
+        client=_FakeClient(result=_ok_response("ok")),
     )
     result = _run(provider.complete(_request(), _context()))
     assert result.model == "other-model"
