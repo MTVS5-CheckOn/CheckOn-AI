@@ -136,6 +136,32 @@ def test_area_delegate_preserves_t1_grammar_context() -> None:
     assert has_reference_data(context)
 
 
+def test_area_delegate_uses_neutral_base_for_literature() -> None:
+    skill_node_id = "literature.structure.composition"
+    request = _request(skill_node_id).model_copy(
+        update={
+            "locked_fields": _request(skill_node_id).locked_fields.model_copy(
+                update={"area_tag": AreaTag.LITERATURE}
+            ),
+            "policy_constraints": {
+                "evidence_required": True,
+                "taxonomy_version": "v1",
+                "verify_config_version": "verify-config.v1",
+                "work_selection": {"genre": "modern_novel"},
+            },
+        }
+    )
+
+    context = asyncio.run(
+        AreaDelegatingGraphContextService().resolve_generation_context(request)
+    )
+
+    assert context.retrieval_trace == {
+        "allowed_evidence_refs": [],
+        "evidence_anchors": [],
+    }
+
+
 def test_unmapped_node_returns_context_without_reference_data() -> None:
     context = asyncio.run(
         GrammarNormGraphContextService().resolve_generation_context(

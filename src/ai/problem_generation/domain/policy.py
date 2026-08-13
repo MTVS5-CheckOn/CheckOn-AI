@@ -60,6 +60,12 @@ def uses_generated_source_base(area_tag: AreaTag) -> bool:
     return _SOURCE_REQUEST_SHAPES.get(area_tag) == (True, False)
 
 
+def uses_selected_work_source_base(area_tag: AreaTag) -> bool:
+    """검증된 저작물 선택을 위해 중립 base ContextPack을 쓰는 영역인지 반환한다."""
+
+    return _SOURCE_REQUEST_SHAPES.get(area_tag) == (False, True)
+
+
 class DifficultyRange(BaseModel):
     """난이도 밴드의 폐구간."""
 

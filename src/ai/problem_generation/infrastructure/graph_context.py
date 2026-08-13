@@ -18,6 +18,7 @@ from ai.contracts.graphrag import (
 from ai.contracts.taxonomy import AreaTag
 from ai.problem_generation.domain.policy import (
     uses_generated_source_base,
+    uses_selected_work_source_base,
 )
 from ai.problem_generation.infrastructure.grammar_norm import (
     GrammarNormCorpus,
@@ -137,7 +138,10 @@ class AreaDelegatingGraphContextService:
         self,
         request: GraphContextRequest,
     ) -> ContextPack:
-        if uses_generated_source_base(request.locked_fields.area_tag):
+        area_tag = request.locked_fields.area_tag
+        if uses_generated_source_base(area_tag) or uses_selected_work_source_base(
+            area_tag
+        ):
             return _empty_base_context(request)
         return await self._grammar.resolve_generation_context(request)
 

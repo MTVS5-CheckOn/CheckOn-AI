@@ -32,6 +32,7 @@ from ai.contracts.problem_generation import (
     EvidenceAnchor,
     EvidenceKind,
     GeneratedItem,
+    LiteratureGenre,
     MediaSourceKind,
     MediaSourceRequest,
     PassageDomain,
@@ -49,18 +50,21 @@ from ai.contracts.problem_generation import (
     SpeechWritingSourceRequest,
     TargetKind,
     TargetSource,
+    WorkSelection,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.diagnosis.diagnoser import DiagnosisConfig, diagnose
 from ai.diagnosis.skill_graph import load_skill_graph
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application import workflow as workflow_module
+from ai.problem_generation.application.literature_selector import LiteratureSelector
 from ai.problem_generation.application.passage_generator import generated_material_ref
 from ai.problem_generation.bootstrap import build_problem_workflow
 from ai.problem_generation.infrastructure.config import load_verify_config
 from ai.problem_generation.infrastructure.graph_context import (
     AreaDelegatingGraphContextService,
 )
+from ai.problem_generation.infrastructure.literature_pool import load_literature_pool
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
@@ -156,6 +160,33 @@ def _reading_request() -> ProblemRequest:
     )
 
 
+def _literature_selection() -> WorkSelection:
+    return WorkSelection(
+        genre=LiteratureGenre.MODERN_NOVEL,
+        era="근대",
+        concept_keywords=("달",),
+    )
+
+
+def _literature_request() -> ProblemRequest:
+    return ProblemRequest(
+        request_id="req-pg-literature-smoke",
+        idempotency_key="idem-pg-literature-smoke",
+        tenant_id="tenant-pg-smoke",
+        target_kind=TargetKind.STUDENT,
+        target_ref="student-pg-smoke",
+        target_source=TargetSource.TEACHER_MANUAL,
+        manual_targets=("literature.structure.composition",),
+        snapshot_hash=_SNAPSHOT_HASH,
+        taxonomy_version=_TAXONOMY_VERSION,
+        area_tag=AreaTag.LITERATURE,
+        type_tags=(TypeTag.INFER,),
+        item_format=ItemFormat.MCQ,
+        count=1,
+        work_selection=_literature_selection(),
+    )
+
+
 def _execution_context() -> ExecutionContext:
     return ExecutionContext(
         execution_id=UUID("22222222-2222-4222-8222-222222222222"),
@@ -241,6 +272,47 @@ def _reading_item_json() -> str:
         ),
     )
     return item.model_dump_json()
+
+
+def _literature_item_json() -> str:
+    excerpt = LiteratureSelector(load_literature_pool()).select(_literature_selection())
+    return GeneratedItem(
+        area_tag=AreaTag.LITERATURE,
+        type_tag=TypeTag.INFER,
+        item_format=ItemFormat.MCQ,
+        skill_node_id="literature.structure.composition",
+        stem="윗글의 서술 방식으로 적절한 것을 고르시오.",
+        choices=tuple(
+            Choice(
+                no=no,
+                text=f"문학 작품 선택지 {no}",
+                why_wrong=None if no == 1 else f"{no}번은 원문과 다르다.",
+            )
+            for no in range(1, 6)
+        ),
+        answer=Answer(correct_no=1),
+        rationale="선택된 만료 원문에 따르면 1번이 옳다.",
+        evidence=(
+            EvidenceAnchor(
+                kind=EvidenceKind.WORK_SPAN,
+                ref=excerpt.evidence_ref,
+                quote="모델이 변형한 원문",
+            ),
+        ),
+    ).model_dump_json()
+
+
+def _literature_solve_json() -> str:
+    return SolveResult(
+        chosen=1,
+        reasoning="만료 원문을 독립적으로 확인했다.",
+        confidence=0.95,
+        target_skill_node_id="literature.structure.composition",
+        measured_skill_node_id="literature.structure.composition",
+        aligned=True,
+        alignment_confidence=0.95,
+        alignment_reason="목표 문학 노드와 일치한다.",
+    ).model_dump_json()
 
 
 def _solve_result_json() -> str:
@@ -576,6 +648,49 @@ async def _run_reading_smoke() -> None:
     assert len(verifier_provider.requests) == 1
 
 
+async def _run_literature_smoke() -> None:
+    excerpt = LiteratureSelector(load_literature_pool()).select(_literature_selection())
+    generator_provider = FakeProvider(
+        (_literature_item_json(),),
+        name="fake-literature-generator",
+    )
+    verifier_provider = FakeProvider(
+        (_literature_solve_json(),),
+        name="fake-literature-verifier",
+    )
+    gateway = LlmGateway(
+        {
+            ModelRole.GENERATOR: generator_provider,
+            ModelRole.VERIFIER: verifier_provider,
+        },
+        transport_retry={
+            ModelRole.GENERATOR: 0,
+            ModelRole.VERIFIER: 0,
+        },
+    )
+    item_store = InMemoryProblemItemStore()
+    workflow = build_problem_workflow(
+        gateway=gateway,
+        graph_context=AreaDelegatingGraphContextService(),
+        diagnosis=_diagnose,
+        candidate_store=InMemoryCandidateStore(),
+        item_store=item_store,
+        checkpointer=InMemorySaver(),
+        verify_config=load_verify_config(),
+    )
+
+    result = await workflow.run(_literature_request(), _execution_context())
+
+    assert isinstance(result, ProblemSetResult)
+    assert result.status is ProblemSetStatus.GENERATED
+    assert [call.prompt_id for call in generator_provider.requests] == ["pg.items.v1"]
+    stored = await item_store.list_all()
+    assert len(stored) == 1
+    assert stored[0].item is not None
+    assert stored[0].item.evidence[0].ref == excerpt.evidence_ref
+    assert stored[0].item.evidence[0].quote == excerpt.quote
+
+
 def test_problem_workflow_bootstrap_completes_and_is_idempotent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -592,6 +707,10 @@ def test_reading_generates_passage_before_item_and_is_idempotent(
         monkeypatch.delenv(name, raising=False)
 
     asyncio.run(_run_reading_smoke())
+
+
+def test_literature_uses_expired_original_and_persists_exact_quote() -> None:
+    asyncio.run(_run_literature_smoke())
 
 
 @pytest.mark.parametrize(

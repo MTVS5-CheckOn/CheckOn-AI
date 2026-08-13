@@ -23,6 +23,7 @@ from ai.contracts.problem_generation import (
     EvidenceAnchor,
     EvidenceKind,
     GeneratedItem,
+    LiteratureGenre,
     MediaSourceKind,
     MediaSourceRequest,
     PassageDomain,
@@ -33,17 +34,20 @@ from ai.contracts.problem_generation import (
     SourceMaterialDraft,
     SpeechWritingSourceKind,
     SpeechWritingSourceRequest,
+    WorkSelection,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.db.repositories.run_store import default_llm_call_collector
 from ai.db.session import get_engine
 from ai.db.settings import get_db_settings
 from ai.db.store_factory import build_run_store, reset_shared_agent_runtime
+from ai.problem_generation.application.literature_selector import LiteratureSelector
 from ai.problem_generation.application.passage_generator import generated_material_ref
 from ai.problem_generation.assembly import problem_runtime_stores
 from ai.problem_generation.infrastructure.graph_context import (
     AreaDelegatingGraphContextService,
 )
+from ai.problem_generation.infrastructure.literature_pool import load_literature_pool
 from ai.problem_generation.provider import ProblemProviders
 
 pytestmark = pytest.mark.integration
@@ -376,6 +380,69 @@ def test_generated_source_areas_persist_internal_evidence_to_pg(
         assert isinstance(evidence, list) and len(evidence) == 1
         assert evidence[0]["ref"] == evidence_ref
         assert evidence[0]["quote"] == source_text
+    finally:
+        monkeypatch.setenv("STORE_BACKEND", "memory")
+        get_db_settings.cache_clear()
+        get_engine.cache_clear()
+        reset_shared_agent_runtime()
+        problem_router.reset_problem_router()
+
+
+def test_literature_expired_excerpt_persists_exact_original_to_pg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tenant_id = f"tenant-literature-{uuid.uuid4().hex[:10]}"
+    headers = _headers(tenant_id)
+    selection = WorkSelection(
+        genre=LiteratureGenre.MODERN_NOVEL,
+        era="근대",
+        concept_keywords=("달",),
+    )
+    excerpt = LiteratureSelector(load_literature_pool()).select(selection)
+    item_json = _generated_source_item_json(
+        area_tag=AreaTag.LITERATURE,
+        evidence_kind=EvidenceKind.WORK_SPAN,
+        evidence_ref=excerpt.evidence_ref,
+        quote="모델이 변형한 원문",
+    )
+    monkeypatch.setenv("STORE_BACKEND", "pg")
+    monkeypatch.setenv("PG_DRAIN_ENABLED", "false")
+    get_db_settings.cache_clear()
+    get_engine.cache_clear()
+    database_url = get_db_settings().database_url
+    _prepare_pg(
+        generator_steps=(item_json,),
+        graph_context=AreaDelegatingGraphContextService(),
+    )
+    body = _body(area_tag=AreaTag.LITERATURE.value)
+    body["work_selection"] = selection.model_dump(mode="json")
+
+    try:
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            posted = client.post("/v1/problems", headers=headers, json=body)
+            assert posted.status_code == 202, posted.text
+            job_id = posted.json()["data"]["job_id"]
+            job = client.get(
+                f"/v1/problems/{job_id}",
+                headers={"X-Tenant-Id": tenant_id},
+            )
+            assert job.status_code == 200, job.text
+            result = job.json()["data"]["result"]
+            assert result["status"] == "generated", result
+            set_id = result["set_id"]
+
+        assert asyncio.run(
+            _persisted_counts(set_id, database_url=database_url)
+        ) == (1, 1)
+        snapshot = asyncio.run(
+            _persisted_snapshot(set_id, database_url=database_url)
+        )
+        item = snapshot["item"]
+        assert isinstance(item, dict)
+        evidence = item["evidence"]
+        assert isinstance(evidence, list) and len(evidence) == 1
+        assert evidence[0]["ref"] == excerpt.evidence_ref
+        assert evidence[0]["quote"] == excerpt.quote
     finally:
         monkeypatch.setenv("STORE_BACKEND", "memory")
         get_db_settings.cache_clear()
