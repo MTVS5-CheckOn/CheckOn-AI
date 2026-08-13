@@ -8,7 +8,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from ai.contracts.graphrag import ContextPack
-from ai.contracts.problem_generation import EvidenceKind, GeneratedItem, ProblemRequest
+from ai.contracts.problem_generation import GeneratedItem, ProblemRequest
 from ai.contracts.taxonomy import TypeTag
 from ai.problem_generation.domain.policy import BannedTopicsConfig
 
@@ -100,16 +100,8 @@ class RuleValidator:
         if banned:
             failed.append("R-5:금칙_오염")
 
-        if any(anchor.kind is EvidenceKind.DICT_ENTRY for anchor in item.evidence):
-            failed.append("R-1:어휘_대조_미구현")
-            return RuleValidationResult(
-                passed=False,
-                verification_available=False,
-                failed_checks=tuple(failed),
-                banned_topic=banned,
-                source_unverified=True,
-            )
-
+        # DICT_ENTRY는 커밋된 stdict 최소 색인의 known ref 대조로 R-1을 만족한다.
+        # 증명 범위는 승인 sense_code·표제어·품사·전문분야이며 뜻풀이 일치가 아니다.
         allowed_refs = _allowed_evidence_refs(context_pack)
         if allowed_refs is None or not allowed_refs:
             failed.append("R-1:기준_자료_없음")
