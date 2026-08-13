@@ -851,8 +851,8 @@ def test_attempt_is_checkpointed_before_external_generation_call() -> None:
     assert len(harness.generator_provider.requests) == 1
 
 
-def test_dict_entry_evidence_stops_as_explicit_unimplemented_verification() -> None:
-    evidence_ref = "표준국어대사전:484613"
+def test_approved_dict_entry_evidence_reaches_blind_cross_solve() -> None:
+    evidence_ref = "stdict:484613"
     harness = _WorkflowHarness(
         generator_steps=(
             _item_json(
@@ -861,7 +861,7 @@ def test_dict_entry_evidence_stops_as_explicit_unimplemented_verification() -> N
                 evidence_kind=EvidenceKind.DICT_ENTRY,
             ),
         ),
-        verifier_steps=(),
+        verifier_steps=(_solve_json(),),
         graph_steps=((evidence_ref,),),
     )
 
@@ -870,12 +870,41 @@ def test_dict_entry_evidence_stops_as_explicit_unimplemented_verification() -> N
         harness.request(target_source=TargetSource.TEACHER_MANUAL),
     )
 
+    assert result.status is ProblemSetStatus.GENERATED
     item_result = result.items[0]
-    assert item_result.status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
-    assert item_result.failure_reason is ProblemFailureReason.SOURCE_UNVERIFIED
-    assert item_result.failure_detail == "R-1 어휘 대조 구현 안 됨 — LexiconLookup 미배선"
+    assert item_result.status is ProblemItemStatus.NEEDS_REVIEW
+    assert item_result.review_reason is ReviewReason.MANUAL_TARGET_FIRST
     assert len(harness.generator_provider.requests) == 1
+    assert len(harness.verifier_provider.requests) == 1
+
+
+def test_unapproved_dict_entry_evidence_stops_before_blind_cross_solve() -> None:
+    evidence_ref = "stdict:999999"
+    harness = _WorkflowHarness(
+        generator_steps=tuple(
+            _item_json(
+                f"미승인 어휘 대조 {attempt}",
+                evidence_refs=(evidence_ref,),
+                evidence_kind=EvidenceKind.DICT_ENTRY,
+            )
+            for attempt in range(1, 4)
+        ),
+        verifier_steps=(_solve_json(),),
+        graph_steps=(("stdict:484613",),),
+    )
+
+    result = _run(
+        harness,
+        harness.request(target_source=TargetSource.TEACHER_MANUAL),
+    )
+
+    item_result = result.items[0]
     assert not harness.verifier_provider.requests
+    assert result.status is ProblemSetStatus.FAILED
+    assert item_result.status is ProblemItemStatus.DROPPED
+    assert item_result.failure_reason is ProblemFailureReason.SOURCE_UNVERIFIED
+    assert item_result.failure_detail == "규칙 검증 실패로 생성 시도 소진"
+    assert len(harness.generator_provider.requests) == 3
 
 
 def test_saved_slot_result_is_reconnected_without_repeating_llm_call() -> None:
