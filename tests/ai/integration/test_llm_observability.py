@@ -600,6 +600,34 @@ def test_all_paths_share_one_seed() -> None:
     assert deterministic_params().seed == LLM_SEED
 
 
+def test_only_high_frequency_paths_cap_the_token_ceiling() -> None:
+    """🔴 **예산을 거는 경로가 늘거나 줄면 여기서 걸린다** (2026-08-13 · 99 #54).
+
+    ⚠ **`_BRIEF_MAX_TOKENS == 1024`를 단언하지 않는다** — 값을 값으로 확인하는 것은
+    동어반복이고 **128일 때도 통과했을** 검사다. 이 사고를 하나도 못 막는다.
+
+    무는 것은 **비대칭 자체**다: 상담·문항생성은 `max_tokens=None`이라 벤더 키를 **안 보내고**
+    (그래서 2026-08-13에 그 둘만 살아남았다 — 크기 차이가 아니라 유무 차이였다),
+    브리핑·분류만 천장을 건다. 이 비대칭은 **의도된 것**이고(고빈도 경로만 폭주를 막는다),
+    **바뀌었다면 그 사고를 다시 검토해야 한다는 신호다.**
+
+    ⚠ 추론 모델에서 이 천장은 출력이 아니라 **추론+출력 합계**를 묶는다 — 새로 천장을 거는
+    경로를 만들 때 출력 길이만 보고 값을 정하면 128과 같은 자리를 다시 판다.
+    """
+    capped = {
+        name
+        for name, params in (
+            ("BRIEF", BRIEF_GEN_PARAMS),
+            ("COUNSEL", COUNSEL_GEN_PARAMS),
+            ("CLASSIFY", CLASSIFY_GEN_PARAMS),
+        )
+        if params.max_tokens is not None
+    }
+    assert capped == {"BRIEF", "CLASSIFY"}, (
+        f"천장을 거는 경로가 바뀌었다: {sorted(capped)} — 99 #54를 먼저 읽어라"
+    )
+
+
 def test_identical_input_produces_a_byte_identical_request() -> None:
     """같은 입력 → 같은 요청(프롬프트 + 생성 파라미터). 결정론은 여기까지가 AI 책임이다.
 
