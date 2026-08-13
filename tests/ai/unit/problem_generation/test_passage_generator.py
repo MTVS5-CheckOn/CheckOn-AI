@@ -39,6 +39,7 @@ from ai.problem_generation.application.passage_generator import (
     SourceMaterialGenerator,
     attach_passage_draft,
     attach_source_material_draft,
+    generated_material_ref,
 )
 from ai.problem_generation.domain.identity import canonical_json, sha256_hex
 from ai.problem_generation.infrastructure.config import load_area_specs, load_banned_topics
@@ -139,6 +140,15 @@ def _material_context(area_tag: AreaTag, skill_node_id: str) -> ContextPack:
         **payload["locked_fields"],
         "area_tag": area_tag,
         "skill_node_id": skill_node_id,
+    }
+    return ContextPack.model_validate(payload)
+
+
+def _empty_context(area_tag: AreaTag, skill_node_id: str) -> ContextPack:
+    payload = _material_context(area_tag, skill_node_id).model_dump(mode="python")
+    payload["retrieval_trace"] = {
+        "allowed_evidence_refs": [],
+        "evidence_anchors": [],
     }
     return ContextPack.model_validate(payload)
 
@@ -246,6 +256,39 @@ def test_attach_passage_draft_derives_stable_context_identity() -> None:
     assert context_hash == sha256_hex(canonical_json(payload))
 
 
+def test_generated_passage_becomes_the_only_approved_anchor() -> None:
+    base = _empty_context(AreaTag.READING, "reading.infer")
+    raw = _draft().model_copy(update={"evidence_anchor_ids": ("model-placeholder",)})
+    generator, _provider = _generator(raw.model_dump_json())
+
+    grounded = asyncio.run(
+        generator.generate(
+            passage_request=_passage_request(),
+            context_pack=base,
+            execution_context=_execution_context(),
+        )
+    )
+    attached = attach_passage_draft(base, grounded)
+    expected_ref = generated_material_ref(
+        kind="passage_span",
+        text=grounded.passage_text,
+    )
+
+    assert grounded.evidence_anchor_ids == (expected_ref,)
+    assert attached.retrieval_trace["allowed_evidence_refs"] == [expected_ref]
+    assert attached.retrieval_trace["evidence_anchors"] == [
+        {
+            "kind": "passage_span",
+            "ref": expected_ref,
+            "quote": grounded.passage_text,
+            "content_sha256": sha256_hex(grounded.passage_text),
+            "start": 0,
+            "end": len(grounded.passage_text),
+        }
+    ]
+    assert attach_passage_draft(attached, grounded) == attached
+
+
 @pytest.mark.parametrize(
     ("source_request", "skill_node_id", "label"),
     [
@@ -348,3 +391,64 @@ def test_attach_source_material_draft_derives_stable_context_identity() -> None:
     assert SourceMaterialDraft.model_validate(
         first.retrieval_trace["source_material_draft"]
     ) == draft
+
+
+@pytest.mark.parametrize(
+    ("area_tag", "skill_node_id", "source_request"),
+    [
+        (
+            AreaTag.SPEECH_WRITING,
+            "speech_writing.writing.material",
+            SpeechWritingSourceRequest(
+                source_kind=SpeechWritingSourceKind.WRITING_SOURCES,
+                banned_topics_version="pg-banned-v1",
+            ),
+        ),
+        (
+            AreaTag.MEDIA,
+            "media.reception.credibility",
+            MediaSourceRequest(
+                source_kind=MediaSourceKind.PAIRED,
+                banned_topics_version="pg-banned-v1",
+            ),
+        ),
+    ],
+)
+def test_generated_source_material_becomes_source_claim_anchor(
+    area_tag: AreaTag,
+    skill_node_id: str,
+    source_request: SourceMaterialRequest,
+) -> None:
+    base = _empty_context(area_tag, skill_node_id)
+    raw = _material_draft().model_copy(
+        update={"evidence_anchor_ids": ("model-placeholder",)}
+    )
+    generator, _provider = _source_material_generator(raw.model_dump_json())
+
+    grounded = asyncio.run(
+        generator.generate_source_material(
+            source_request=source_request,
+            context_pack=base,
+            execution_context=_execution_context(),
+        )
+    )
+    attached = attach_source_material_draft(base, grounded)
+    expected_ref = generated_material_ref(
+        kind="source_claim",
+        text=grounded.material_text,
+    )
+
+    assert grounded.evidence_anchor_ids == (expected_ref,)
+    assert attached.retrieval_trace["allowed_evidence_refs"] == [expected_ref]
+    anchors = attached.retrieval_trace["evidence_anchors"]
+    assert isinstance(anchors, list)
+    anchor = anchors[0]
+    assert anchor == {
+        "kind": "source_claim",
+        "ref": expected_ref,
+        "quote": grounded.material_text,
+        "content_sha256": sha256_hex(grounded.material_text),
+        "start": 0,
+        "end": len(grounded.material_text),
+    }
+    assert attach_source_material_draft(attached, grounded) == attached

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import uuid5
 
 from ai.contracts.execution import ExecutionContext
@@ -47,6 +48,16 @@ class SourceMaterialDraftRejected(ParseFailed):
 
 class SourceMaterialGenerationUnavailable(SourceMaterialDraftRejected):
     """모델이 승인 근거로 화법과작문·매체 자료를 만들 수 없다고 명시한 경우."""
+
+
+type GeneratedMaterialKind = Literal["passage_span", "source_claim"]
+
+
+def generated_material_ref(*, kind: GeneratedMaterialKind, text: str) -> str:
+    """생성 자료 본문과 종류로 재현 가능한 내부 근거 ref를 만든다."""
+
+    content_sha256 = sha256_hex(text)
+    return f"generated:{kind}:{content_sha256.removeprefix('sha256:')}"
 
 
 class PassageGenerator:
@@ -123,6 +134,8 @@ class PassageGenerator:
 
         draft = parse(response_text, PassageDraft)
         self._validate_draft(draft, passage_request, context_pack)
+        if _has_no_approved_evidence(context_pack):
+            return _ground_passage_draft(draft)
         return draft
 
     def _validate_draft(
@@ -135,7 +148,8 @@ class PassageGenerator:
             raise PassageDraftRejected(
                 "PassageDraft.paragraph_count가 PassageRequest와 다르다"
             )
-        _require_approved_evidence(draft, context_pack)
+        if not _has_no_approved_evidence(context_pack):
+            _require_approved_evidence(draft, context_pack)
         normalized_text = draft.passage_text.casefold()
         if any(term.casefold() in normalized_text for term in self._banned_topics.all_terms):
             raise PassageDraftRejected("PassageDraft 본문에 금칙 소재가 포함됐다")
@@ -219,18 +233,21 @@ class SourceMaterialGenerator:
             )
 
         draft = parse(response_text, SourceMaterialDraft)
-        _require_approved_evidence(
-            draft,
-            context_pack,
-            error_type=SourceMaterialDraftRejected,
-            draft_label="SourceMaterialDraft",
-        )
+        if not _has_no_approved_evidence(context_pack):
+            _require_approved_evidence(
+                draft,
+                context_pack,
+                error_type=SourceMaterialDraftRejected,
+                draft_label="SourceMaterialDraft",
+            )
         normalized_text = draft.material_text.casefold()
         if any(
             term.casefold() in normalized_text
             for term in self._banned_topics.all_terms
         ):
             raise SourceMaterialDraftRejected("생성 자료 본문에 금칙 소재가 포함됐다")
+        if _has_no_approved_evidence(context_pack):
+            return _ground_source_material_draft(draft)
         return draft
 
 
@@ -240,6 +257,8 @@ def attach_passage_draft(
 ) -> ContextPack:
     """원 ContextPack 해시와 초안을 묶어 새 결정론 ContextPack을 만든다."""
 
+    generated_base = _has_no_approved_evidence(context_pack)
+    grounded = _ground_passage_draft(draft) if generated_base else draft
     existing_raw = context_pack.retrieval_trace.get("passage_draft")
     if existing_raw is not None:
         try:
@@ -248,21 +267,35 @@ def attach_passage_draft(
             raise PassageDraftRejected(
                 "ContextPack의 기존 passage_draft가 유효하지 않다"
             ) from error
-        if existing == draft:
+        if existing == grounded:
             return context_pack
         raise PassageDraftRejected("ContextPack의 passage_draft를 바꿀 수 없다")
-    _require_approved_evidence(draft, context_pack)
-    draft_payload = draft.model_dump(mode="json")
+    if generated_base:
+        anchor = _generated_material_anchor(
+            kind="passage_span",
+            text=grounded.passage_text,
+        )
+    else:
+        _require_approved_evidence(draft, context_pack)
+        anchor = None
+    draft_payload = grounded.model_dump(mode="json")
     draft_hash = sha256_hex(canonical_json(draft_payload))
     derived_id = uuid5(
         context_pack.context_pack_id,
         f"passage-draft:{context_pack.context_pack_hash}:{draft_hash}",
     )
     payload = context_pack.model_dump(mode="json")
-    payload["retrieval_trace"] = {
-        **context_pack.retrieval_trace,
-        "passage_draft": draft_payload,
-    }
+    trace = context_pack.retrieval_trace
+    payload["retrieval_trace"] = (
+        {
+            **trace,
+            "passage_draft": draft_payload,
+            "allowed_evidence_refs": [anchor["ref"]],
+            "evidence_anchors": [anchor],
+        }
+        if anchor is not None
+        else {**trace, "passage_draft": draft_payload}
+    )
     payload["context_pack_id"] = str(derived_id)
     payload.pop("context_pack_hash")
     payload["context_pack_hash"] = sha256_hex(canonical_json(payload))
@@ -275,6 +308,8 @@ def attach_source_material_draft(
 ) -> ContextPack:
     """원 ContextPack 해시와 생성 자료를 묶어 새 결정론 ContextPack을 만든다."""
 
+    generated_base = _has_no_approved_evidence(context_pack)
+    grounded = _ground_source_material_draft(draft) if generated_base else draft
     existing_raw = context_pack.retrieval_trace.get("source_material_draft")
     if existing_raw is not None:
         try:
@@ -283,28 +318,42 @@ def attach_source_material_draft(
             raise SourceMaterialDraftRejected(
                 "ContextPack의 기존 source_material_draft가 유효하지 않다"
             ) from error
-        if existing == draft:
+        if existing == grounded:
             return context_pack
         raise SourceMaterialDraftRejected(
             "ContextPack의 source_material_draft를 바꿀 수 없다"
         )
-    _require_approved_evidence(
-        draft,
-        context_pack,
-        error_type=SourceMaterialDraftRejected,
-        draft_label="SourceMaterialDraft",
-    )
-    draft_payload = draft.model_dump(mode="json")
+    if generated_base:
+        anchor = _generated_material_anchor(
+            kind="source_claim",
+            text=grounded.material_text,
+        )
+    else:
+        _require_approved_evidence(
+            draft,
+            context_pack,
+            error_type=SourceMaterialDraftRejected,
+            draft_label="SourceMaterialDraft",
+        )
+        anchor = None
+    draft_payload = grounded.model_dump(mode="json")
     draft_hash = sha256_hex(canonical_json(draft_payload))
     derived_id = uuid5(
         context_pack.context_pack_id,
         f"source-material-draft:{context_pack.context_pack_hash}:{draft_hash}",
     )
     payload = context_pack.model_dump(mode="json")
-    payload["retrieval_trace"] = {
-        **context_pack.retrieval_trace,
-        "source_material_draft": draft_payload,
-    }
+    trace = context_pack.retrieval_trace
+    payload["retrieval_trace"] = (
+        {
+            **trace,
+            "source_material_draft": draft_payload,
+            "allowed_evidence_refs": [anchor["ref"]],
+            "evidence_anchors": [anchor],
+        }
+        if anchor is not None
+        else {**trace, "source_material_draft": draft_payload}
+    )
     payload["context_pack_id"] = str(derived_id)
     payload.pop("context_pack_hash")
     payload["context_pack_hash"] = sha256_hex(canonical_json(payload))
@@ -329,6 +378,39 @@ def _require_approved_evidence(
             f"{draft_label}가 승인되지 않은 근거를 참조한다: "
             + ", ".join(sorted(unknown_refs))
         )
+
+
+def _has_no_approved_evidence(context_pack: ContextPack) -> bool:
+    refs = context_pack.retrieval_trace.get("allowed_evidence_refs")
+    anchors = context_pack.retrieval_trace.get("evidence_anchors")
+    return refs == [] and anchors == []
+
+
+def _ground_passage_draft(draft: PassageDraft) -> PassageDraft:
+    ref = generated_material_ref(kind="passage_span", text=draft.passage_text)
+    return draft.model_copy(update={"evidence_anchor_ids": (ref,)})
+
+
+def _ground_source_material_draft(draft: SourceMaterialDraft) -> SourceMaterialDraft:
+    ref = generated_material_ref(kind="source_claim", text=draft.material_text)
+    return draft.model_copy(update={"evidence_anchor_ids": (ref,)})
+
+
+def _generated_material_anchor(
+    *,
+    kind: GeneratedMaterialKind,
+    text: str,
+) -> dict[str, object]:
+    ref = generated_material_ref(kind=kind, text=text)
+    content_sha256 = f"sha256:{ref.rsplit(':', 1)[1]}"
+    return {
+        "kind": kind,
+        "ref": ref,
+        "quote": text[0 : len(text)],
+        "content_sha256": content_sha256,
+        "start": 0,
+        "end": len(text),
+    }
 
 
 def _banned_topics_prompt_payload(
@@ -359,4 +441,5 @@ __all__ = [
     "SourceMaterialGenerator",
     "attach_passage_draft",
     "attach_source_material_draft",
+    "generated_material_ref",
 ]

@@ -305,6 +305,7 @@ class EvidenceKind(StrEnum):
     DICT_ENTRY = "dict_entry"
     GRAMMAR_RULE = "grammar_rule"
     WORK_SPAN = "work_span"
+    SOURCE_CLAIM = "source_claim"
 
 
 class EvidenceAnchor(BaseModel):
@@ -325,8 +326,13 @@ class EvidenceAnchor(BaseModel):
 
     @model_validator(mode="after")
     def validate_quote(self) -> Self:
-        if self.kind in {EvidenceKind.PASSAGE_SPAN, EvidenceKind.WORK_SPAN} and self.quote is None:
-            raise ValueError("passage_span과 work_span에는 원문 quote가 필요하다")
+        quoted_kinds = {
+            EvidenceKind.PASSAGE_SPAN,
+            EvidenceKind.WORK_SPAN,
+            EvidenceKind.SOURCE_CLAIM,
+        }
+        if self.kind in quoted_kinds and self.quote is None:
+            raise ValueError("passage_span·work_span·source_claim에는 원문 quote가 필요하다")
         return self
 
 

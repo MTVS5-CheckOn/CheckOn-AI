@@ -55,6 +55,9 @@ from ai.problem_generation.assembly import (
 )
 from ai.problem_generation.domain.models import StoredProblemItem
 from ai.problem_generation.enqueue import ProblemGenerationEnqueuer
+from ai.problem_generation.infrastructure.graph_context import (
+    AreaDelegatingGraphContextService,
+)
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryProblemItemStore,
 )
@@ -80,6 +83,24 @@ _HEADERS = {
     "Idempotency-Key": "idem-pg-router",
 }
 _SKILL_NODE_ID = "grammar.sentence-structure"
+
+
+def test_bootstrap_uses_area_delegate_without_replacing_explicit_services() -> None:
+    problem_router.reset_problem_router()
+    try:
+        problem_router.bootstrap_problem_services()
+        graph_context, _diagnosis = problem_router.require_problem_services()
+        assert isinstance(graph_context, AreaDelegatingGraphContextService)
+
+        explicit = FakeGraphContextService()
+        problem_router.set_problem_services(
+            graph_context=explicit,
+            diagnosis=_unused_diagnosis,
+        )
+        problem_router.bootstrap_problem_services()
+        assert problem_router.require_problem_services()[0] is explicit
+    finally:
+        problem_router.reset_problem_router()
 
 
 def _run[T](coro: Coroutine[object, object, T]) -> T:

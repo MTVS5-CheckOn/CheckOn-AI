@@ -54,8 +54,13 @@ from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.diagnosis.diagnoser import DiagnosisConfig, diagnose
 from ai.diagnosis.skill_graph import load_skill_graph
 from ai.llm.gateway import LlmGateway
+from ai.problem_generation.application import workflow as workflow_module
+from ai.problem_generation.application.passage_generator import generated_material_ref
 from ai.problem_generation.bootstrap import build_problem_workflow
 from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.graph_context import (
+    AreaDelegatingGraphContextService,
+)
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
@@ -204,11 +209,13 @@ def _passage_draft() -> PassageDraft:
             "글을 읽고 핵심 내용을 정리했어요."
         ),
         paragraph_count=2,
-        evidence_anchor_ids=("grammar:rule-1",),
+        evidence_anchor_ids=("generated_source",),
     )
 
 
 def _reading_item_json() -> str:
+    passage = _passage_draft().passage_text
+    evidence_ref = generated_material_ref(kind="passage_span", text=passage)
     item = GeneratedItem(
         area_tag=AreaTag.READING,
         type_tag=TypeTag.INFER,
@@ -228,8 +235,8 @@ def _reading_item_json() -> str:
         evidence=(
             EvidenceAnchor(
                 kind=EvidenceKind.PASSAGE_SPAN,
-                ref="grammar:rule-1",
-                quote="오늘 수업은 비문학 독해였어요.",
+                ref=evidence_ref,
+                quote="모델이 낸 자료 밖 인용",
             ),
         ),
     )
@@ -283,6 +290,8 @@ def _source_material_request(area_tag: AreaTag, skill_node_id: str) -> ProblemRe
 
 
 def _source_material_item_json(area_tag: AreaTag, skill_node_id: str) -> str:
+    material_text = "학생 A가 승인 근거를 활용해 자료를 구성했다."
+    evidence_ref = generated_material_ref(kind="source_claim", text=material_text)
     return GeneratedItem(
         area_tag=area_tag,
         type_tag=TypeTag.CRITIC,
@@ -301,9 +310,9 @@ def _source_material_item_json(area_tag: AreaTag, skill_node_id: str) -> str:
         rationale="승인된 자료 근거에 따르면 1번이 옳다.",
         evidence=(
             EvidenceAnchor(
-                kind=EvidenceKind.PASSAGE_SPAN,
-                ref="grammar:rule-1",
-                quote="승인된 자료 근거",
+                kind=EvidenceKind.SOURCE_CLAIM,
+                ref=evidence_ref,
+                quote="모델이 낸 자료 밖 인용",
             ),
         ),
     ).model_dump_json()
@@ -396,7 +405,7 @@ async def _run_source_material_smoke(
 
     material = SourceMaterialDraft(
         material_text="학생 A가 승인 근거를 활용해 자료를 구성했다.",
-        evidence_anchor_ids=("grammar:rule-1",),
+        evidence_anchor_ids=("generated_source",),
     )
     generator_provider = FakeProvider(
         (material.model_dump_json(), _source_material_item_json(area_tag, skill_node_id)),
@@ -416,12 +425,13 @@ async def _run_source_material_smoke(
             ModelRole.VERIFIER: 0,
         },
     )
+    item_store = InMemoryProblemItemStore()
     workflow = build_problem_workflow(
         gateway=gateway,
-        graph_context=FakeGraphContextService(),
+        graph_context=AreaDelegatingGraphContextService(),
         diagnosis=diagnose_request,
         candidate_store=InMemoryCandidateStore(),
-        item_store=InMemoryProblemItemStore(),
+        item_store=item_store,
         checkpointer=InMemorySaver(),
         verify_config=load_verify_config(),
     )
@@ -438,6 +448,10 @@ async def _run_source_material_smoke(
         "pg.items.v1",
     ]
     assert len(verifier_provider.requests) == 1
+    stored = await item_store.list_all()
+    assert len(stored) == 1
+    assert stored[0].item is not None
+    assert stored[0].item.evidence[0].quote == material.material_text
 
 
 async def _run_smoke() -> None:
@@ -514,7 +528,7 @@ async def _run_reading_smoke() -> None:
     item_store = InMemoryProblemItemStore()
     workflow = build_problem_workflow(
         gateway=gateway,
-        graph_context=FakeGraphContextService(),
+        graph_context=AreaDelegatingGraphContextService(),
         diagnosis=_diagnose,
         candidate_store=InMemoryCandidateStore(),
         item_store=item_store,
@@ -538,9 +552,22 @@ async def _run_reading_smoke() -> None:
         "\n\n[생성 입력 JSON]",
         1,
     )[0]
-    assert json.loads(context_json)["retrieval_trace"]["passage_draft"] == (
-        passage.model_dump(mode="json")
+    expected_passage = passage.model_copy(
+        update={
+            "evidence_anchor_ids": (
+                generated_material_ref(
+                    kind="passage_span",
+                    text=passage.passage_text,
+                ),
+            )
+        }
     )
+    assert json.loads(context_json)["retrieval_trace"]["passage_draft"] == (
+        expected_passage.model_dump(mode="json")
+    )
+    stored = await item_store.list_all()
+    assert stored[0].item is not None
+    assert stored[0].item.evidence[0].quote == passage.passage_text
     assert len(verifier_provider.requests) == 1
 
     second = await workflow.run(request, execution_context)
@@ -565,6 +592,123 @@ def test_reading_generates_passage_before_item_and_is_idempotent(
         monkeypatch.delenv(name, raising=False)
 
     asyncio.run(_run_reading_smoke())
+
+
+@pytest.mark.parametrize(
+    "source_step",
+    [
+        "generation_unavailable",
+        '{"passage_text":"근거 없는 첫 문단.\\n\\n근거 없는 둘째 문단.",'
+        '"paragraph_count":2,"evidence_anchor_ids":[]}',
+    ],
+)
+def test_reading_source_generation_failure_is_rejected_insufficient(
+    source_step: str,
+) -> None:
+    generator_provider = FakeProvider(
+        (source_step,),
+        name="fake-reading-unavailable",
+    )
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: generator_provider},
+        transport_retry={ModelRole.GENERATOR: 0},
+    )
+    workflow = build_problem_workflow(
+        gateway=gateway,
+        graph_context=AreaDelegatingGraphContextService(),
+        diagnosis=_diagnose,
+        candidate_store=InMemoryCandidateStore(),
+        item_store=InMemoryProblemItemStore(),
+        checkpointer=InMemorySaver(),
+        verify_config=load_verify_config(),
+    )
+
+    result = asyncio.run(workflow.run(_reading_request(), _execution_context()))
+
+    assert result.outcome == "rejected_insufficient"
+    assert len(generator_provider.requests) == 1
+
+
+def test_generated_item_with_unapproved_ref_drops_after_retry_budget() -> None:
+    passage = _passage_draft()
+    valid_item = GeneratedItem.model_validate_json(_reading_item_json())
+    invalid_item = valid_item.model_copy(
+        update={
+            "evidence": (
+                EvidenceAnchor(
+                    kind=EvidenceKind.PASSAGE_SPAN,
+                    ref="generated:passage_span:unapproved",
+                    quote=passage.passage_text,
+                ),
+            )
+        }
+    )
+    generator_provider = FakeProvider(
+        (
+            passage.model_dump_json(),
+            invalid_item.model_dump_json(),
+            invalid_item.model_dump_json(),
+            invalid_item.model_dump_json(),
+        ),
+        name="fake-reading-unapproved-item",
+    )
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: generator_provider},
+        transport_retry={ModelRole.GENERATOR: 0},
+    )
+    workflow = build_problem_workflow(
+        gateway=gateway,
+        graph_context=AreaDelegatingGraphContextService(),
+        diagnosis=_diagnose,
+        candidate_store=InMemoryCandidateStore(),
+        item_store=InMemoryProblemItemStore(),
+        checkpointer=InMemorySaver(),
+        verify_config=load_verify_config(),
+    )
+
+    result = asyncio.run(workflow.run(_reading_request(), _execution_context()))
+
+    assert isinstance(result, ProblemSetResult)
+    assert result.items[0].status is ProblemItemStatus.DROPPED
+    assert result.items[0].failure_reason is not None
+    assert result.items[0].failure_reason.value == "source_unverified"
+    assert len(generator_provider.requests) == 4
+
+
+def test_second_reference_gate_blocks_generated_draft_without_anchor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    passage = _passage_draft()
+    generator_provider = FakeProvider(
+        (passage.model_dump_json(), _reading_item_json()),
+        name="fake-reading-anchor-flip",
+    )
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: generator_provider},
+        transport_retry={ModelRole.GENERATOR: 0},
+    )
+    workflow = build_problem_workflow(
+        gateway=gateway,
+        graph_context=AreaDelegatingGraphContextService(),
+        diagnosis=_diagnose,
+        candidate_store=InMemoryCandidateStore(),
+        item_store=InMemoryProblemItemStore(),
+        checkpointer=InMemorySaver(),
+        verify_config=load_verify_config(),
+    )
+    monkeypatch.setattr(
+        workflow_module,
+        "attach_passage_draft",
+        lambda context_pack, _draft: context_pack,
+    )
+
+    result = asyncio.run(workflow.run(_reading_request(), _execution_context()))
+
+    assert isinstance(result, ProblemSetResult)
+    assert result.status is not ProblemSetStatus.GENERATED
+    assert [call.prompt_id for call in generator_provider.requests] == [
+        "pg.passage.v1"
+    ]
 
 
 @pytest.mark.parametrize(
