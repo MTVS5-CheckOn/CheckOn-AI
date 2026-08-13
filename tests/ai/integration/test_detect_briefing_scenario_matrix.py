@@ -291,7 +291,10 @@ def test_r3_merged_with_r2_still_prompts_with_the_authoritative_activity(
     signals = response.json()["data"]["signals"]
     assert len(signals) == 1, signals
     assert signals[0]["rule_id"] == "R3", signals
-    assert len(signals[0]["evidence"]) <= 3
+    #: ⚠ **`trigger` 만 센다**(99 #60) — 기준선 행이 뒤에 함께 실리므로 전체 개수를 세면
+    #:   *"병합돼도 대표 규칙의 근거만 실린다"* 는 이 검사의 취지가 기준선 수에 흔들린다.
+    triggers = [e for e in signals[0]["evidence"] if e["role"] == "trigger"]
+    assert len(triggers) <= 3, signals[0]["evidence"]
 
     prompt = provider.prompts[0]
     assert f"{_R3_ACTIVITY}건" in prompt and "0%" in prompt, prompt

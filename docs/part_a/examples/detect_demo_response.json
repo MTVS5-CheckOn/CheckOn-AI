@@ -21,19 +21,35 @@
           {
             "source_table": "learning_event",
             "record_id": "le_163",
-            "summary": "acc_drop 근거 기록"
+            "summary": "acc_drop 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
           },
           {
             "source_table": "learning_event",
             "record_id": "le_164",
-            "summary": "acc_drop 근거 기록"
+            "summary": "acc_drop 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
           },
           {
             "source_table": "learning_event",
             "record_id": "le_165",
-            "summary": "acc_drop 근거 기록"
+            "summary": "acc_drop 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
           }
-        ]
+        ],
+        "metric": "accuracy",
+        "observed": 0.625,
+        "baseline": 0.875,
+        "sample_size": 8
       },
       {
         "signal_id": "a72d5e01-08cc-51bc-861e-e4a1c4999942",
@@ -55,19 +71,35 @@
           {
             "source_table": "assignment_week_summary",
             "record_id": "aws_2026-07-06_st_04",
-            "summary": "예정 과제 1건 중 제출 0건"
+            "summary": "예정 과제 1건 중 제출 0건",
+            "role": "trigger",
+            "observed": 0.0,
+            "sample_size": 1,
+            "occurred_on": "2026-07-06"
           },
           {
             "source_table": "assignment_week_summary",
             "record_id": "aws_2026-07-13_st_04",
-            "summary": "예정 과제 1건 중 제출 0건"
+            "summary": "예정 과제 1건 중 제출 0건",
+            "role": "trigger",
+            "observed": 0.0,
+            "sample_size": 1,
+            "occurred_on": "2026-07-13"
           },
           {
             "source_table": "assignment_week_summary",
             "record_id": "aws_2026-07-20_st_04",
-            "summary": "예정 과제 1건 중 제출 0건"
+            "summary": "예정 과제 1건 중 제출 0건",
+            "role": "trigger",
+            "observed": 0.0,
+            "sample_size": 1,
+            "occurred_on": "2026-07-20"
           }
-        ]
+        ],
+        "metric": "consecutive_missing_weeks",
+        "observed": 3.0,
+        "baseline": null,
+        "sample_size": null
       },
       {
         "signal_id": "542c088b-fd38-53dd-af87-7fcad992cd5c",
@@ -89,19 +121,35 @@
           {
             "source_table": "learning_event",
             "record_id": "le_253",
-            "summary": "hidden_risk 근거 기록"
+            "summary": "hidden_risk 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
           },
           {
             "source_table": "learning_event",
             "record_id": "le_254",
-            "summary": "hidden_risk 근거 기록"
+            "summary": "hidden_risk 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
           },
           {
             "source_table": "learning_event",
             "record_id": "le_255",
-            "summary": "hidden_risk 근거 기록"
+            "summary": "hidden_risk 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
           }
-        ]
+        ],
+        "metric": "norm_time",
+        "observed": 0.4125,
+        "baseline": 0.225,
+        "sample_size": 8
       },
       {
         "signal_id": "bc2f4dcc-5117-51ea-ae33-65ae16db9224",
@@ -123,19 +171,35 @@
           {
             "source_table": "learning_event",
             "record_id": "le_763",
-            "summary": "type_bias 근거 기록"
+            "summary": "type_bias 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "learning_event",
             "record_id": "le_764",
-            "summary": "type_bias 근거 기록"
+            "summary": "type_bias 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "learning_event",
             "record_id": "le_765",
-            "summary": "type_bias 근거 기록"
+            "summary": "type_bias 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-20"
           }
-        ]
+        ],
+        "metric": "error_share",
+        "observed": 0.8,
+        "baseline": null,
+        "sample_size": 12
       },
       {
         "signal_id": "1a2677f5-3256-5ba1-b74a-7ae77ab8a298",
@@ -157,9 +221,44 @@
           {
             "source_table": "student_week_activity",
             "record_id": "swa_2026-07-20_st_09",
-            "summary": "해당 주 학습 활동 4건"
+            "summary": "해당 주 학습 활동 4건",
+            "role": "trigger",
+            "observed": 4.0,
+            "sample_size": null,
+            "occurred_on": "2026-07-20"
+          },
+          {
+            "source_table": "student_week_activity",
+            "record_id": "swa_2026-07-13_st_09",
+            "summary": "해당 주 학습 활동 11건",
+            "role": "baseline",
+            "observed": 11.0,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
+          },
+          {
+            "source_table": "student_week_activity",
+            "record_id": "swa_2026-07-06_st_09",
+            "summary": "해당 주 학습 활동 11건",
+            "role": "baseline",
+            "observed": 11.0,
+            "sample_size": null,
+            "occurred_on": "2026-07-06"
+          },
+          {
+            "source_table": "student_week_activity",
+            "record_id": "swa_2026-06-29_st_09",
+            "summary": "해당 주 학습 활동 11건",
+            "role": "baseline",
+            "observed": 11.0,
+            "sample_size": null,
+            "occurred_on": "2026-06-29"
           }
-        ]
+        ],
+        "metric": "activity_count",
+        "observed": 4.0,
+        "baseline": 11.0,
+        "sample_size": 8
       },
       {
         "signal_id": "d040d2da-7d61-52e0-8c38-12edf09b0ef6",
@@ -181,9 +280,17 @@
           {
             "source_table": "student_status_history",
             "record_id": "ssh_st_08_2026-07-20",
-            "summary": "휴원 후 복귀 상태 전환 기록"
+            "summary": "휴원 후 복귀 상태 전환 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-20"
           }
-        ]
+        ],
+        "metric": null,
+        "observed": null,
+        "baseline": null,
+        "sample_size": null
       },
       {
         "signal_id": "deccfc8f-1cce-5dbd-a577-3b0acdc02d19",
@@ -205,19 +312,35 @@
           {
             "source_table": "learning_event",
             "record_id": "le_1053",
-            "summary": "acc_drop 근거 기록"
+            "summary": "acc_drop 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
           },
           {
             "source_table": "learning_event",
             "record_id": "le_1054",
-            "summary": "acc_drop 근거 기록"
+            "summary": "acc_drop 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
           },
           {
             "source_table": "learning_event",
             "record_id": "le_1055",
-            "summary": "acc_drop 근거 기록"
+            "summary": "acc_drop 근거 기록",
+            "role": "trigger",
+            "observed": null,
+            "sample_size": null,
+            "occurred_on": "2026-07-13"
           }
-        ]
+        ],
+        "metric": "accuracy",
+        "observed": 0.5,
+        "baseline": 0.75,
+        "sample_size": 8
       }
     ],
     "stats": {
@@ -233,7 +356,7 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "7cec49eb-c40e-4a5d-a09f-3d6a415f665e",
+    "execution_id": "e1823112-72df-46d4-8afa-c8ab1e58ffff",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.3",

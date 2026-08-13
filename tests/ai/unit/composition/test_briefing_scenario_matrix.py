@@ -35,7 +35,11 @@ from ai.detection.thresholds import default_threshold_config
 _CONFIG: Final = default_threshold_config()
 
 #: 응답 evidence 상한 — 계약값을 여기 복제하지 않고 계약에서 읽는다.
-_EVIDENCE_CAP: Final = 3
+#: 🔴 **역할별 상한이다**(99 #60) — `trigger` 3 + `baseline` 3. 종전 단일 상한 3을 그대로
+#: 두면 기준선 행이 들어오면서 red가 나는데, 그건 결함이 아니라 **추가**다.
+#: ⚠ 그래서 아래 검사들은 **`trigger` 수**를 본다 — 그것이 종전과 같아야 한다는 것이 요지다.
+_TRIGGER_CAP: Final = 3
+_EVIDENCE_CAP: Final = 6
 
 
 def _run(scenario: ScenarioBuilder) -> DetectResponse:
@@ -170,6 +174,7 @@ def test_s07_r1_and_r6_merge_into_one_signal() -> None:
     signal = response.signals[0]
     assert signal.rule_id is RuleId.R1, "대표는 최고 score다"
     assert 0 < len(signal.evidence) <= _EVIDENCE_CAP
+    assert len([i for i in signal.evidence if i.role.value == "trigger"]) <= _TRIGGER_CAP
     assert len({i.record_id for i in signal.evidence}) == len(signal.evidence)
 
 
@@ -187,6 +192,7 @@ def test_s08_r2_and_r3_merge_without_inventing_causation() -> None:
     tables = {i.source_table for i in signal.evidence}
     assert tables <= {"assignment_week_summary", "student_week_activity"}, tables
     assert len(signal.evidence) <= _EVIDENCE_CAP
+    assert len([i for i in signal.evidence if i.role.value == "trigger"]) <= _TRIGGER_CAP
 
 
 def test_s09_r4_merged_with_a_non_advisory_rule_is_not_advisory() -> None:
@@ -548,6 +554,7 @@ def test_s21_evidence_is_capped_and_deduplicated() -> None:
     assert len(response.signals) == 1
     evidence = response.signals[0].evidence
     assert 0 < len(evidence) <= _EVIDENCE_CAP, len(evidence)
+    assert len([i for i in evidence if i.role.value == "trigger"]) <= _TRIGGER_CAP
     assert len({i.record_id for i in evidence}) == len(evidence)
 
 

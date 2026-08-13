@@ -19,6 +19,7 @@ from ai.contracts.detection import (
     EventSource,
     EventType,
     EvidenceItem,
+    EvidenceRole,
     Lifecycle,
     RuleId,
     RuleSkipped,
@@ -49,7 +50,12 @@ def _signal(
         lifecycle=lifecycle,
         brief=Brief(text="비문학 지문 시간이 늘고 있어요", gate_passed=True, fallback_used=False),
         evidence=(
-            EvidenceItem(source_table="learning_event", record_id="le_1029", summary="지연"),
+            EvidenceItem(
+                source_table="learning_event",
+                record_id="le_1029",
+                summary="지연",
+                role=EvidenceRole.TRIGGER,
+            ),
         ),
     )
 

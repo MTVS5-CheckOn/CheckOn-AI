@@ -18,7 +18,7 @@ from typing import Any, Final
 
 import pytest
 
-from ai.contracts.detection import DetectRequest, DetectResponse, RuleId
+from ai.contracts.detection import DetectRequest, DetectResponse, EvidenceRole, RuleId
 from ai.detection.engine import detect
 from ai.detection.evidence import SKIP_AUTHORITATIVE_EVIDENCE_MISSING
 from ai.detection.thresholds import ThresholdConfig
@@ -165,8 +165,11 @@ def test_r3_fires_when_the_analysis_week_is_completely_empty() -> None:
     signals = _signals(response, RuleId.R3)
     assert signals, "활동 0건인데 R3가 발화하지 않았다 — 분석 주가 판정 창에 없다"
     assert _skipped(response, RuleId.R3) == 0, "근거가 있는데 skip으로 샜다"
+    #: ⚠ **`trigger`만 본다**(99 #60) — 기준선 행이 뒤에 함께 실린다.
     assert [
-        (item.source_table, item.record_id, item.summary) for item in signals[0].evidence
+        (item.source_table, item.record_id, item.summary)
+        for item in signals[0].evidence
+        if item.role is EvidenceRole.TRIGGER
     ] == [
         (
             "student_week_activity",
@@ -209,7 +212,9 @@ def test_r5_fires_after_a_return_with_no_activity() -> None:
     signals = _signals(response, RuleId.R5)
     assert signals, "복귀 후 활동 0건이라 R5가 묻혔다"
     assert [
-        (item.source_table, item.summary) for item in signals[0].evidence
+        (item.source_table, item.summary)
+        for item in signals[0].evidence
+        if item.role is EvidenceRole.TRIGGER
     ] == [("student_status_history", "휴원 후 복귀 상태 전환 기록")]
 
 
