@@ -997,7 +997,10 @@ async def post_problem_item_revision(
             "요청 바디 스키마 위반", _format_validation_error(exc)
         ) from exc
     if body.revision_kind is not RevisionKind.AI_REFINE:
-        raise SnapshotInvalid("MVP 수정 API는 ai_refine만 지원한다")
+        raise SnapshotInvalid(
+            "MVP 수정 API는 ai_refine만 지원한다",
+            {"reason": "revision_kind_not_implemented"},
+        )
 
     item_store = _item_store_for(tenant_id)
     try:
@@ -1013,7 +1016,10 @@ async def post_problem_item_revision(
             {"set_id": str(parsed_set_id), "slot_index": slot_index},
         )
     if stored.item.area_tag.value != "language":
-        raise SnapshotInvalid("MVP ai_refine은 language 문항만 지원한다")
+        raise SnapshotInvalid(
+            "MVP ai_refine은 language 문항만 지원한다",
+            {"reason": "revision_area_not_implemented"},
+        )
     command = ItemRevisionRequest(
         request_id=request_id,
         idempotency_key=idempotency_key,

@@ -402,6 +402,99 @@ def test_step3_ai_refine_revalidates_persists_and_replays_idempotently() -> None
     }
 
 
+@pytest.mark.parametrize("revision_kind", ["teacher_direct", "rollback"])
+def test_step3_unsupported_revision_kind_is_rejected_before_revision_or_llm(
+    revision_kind: str,
+) -> None:
+    run_store, _stores, generator, verifier = _prepare()
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        result = client.get(
+            f"/v1/problems/{posted.json()['data']['job_id']}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        ).json()["data"]["result"]
+        endpoint = f"/v1/problems/{result['set_id']}/items/0/revisions"
+        rejected = client.post(
+            endpoint,
+            headers={
+                **_HEADERS,
+                "X-Request-Id": f"request-{revision_kind}",
+                "Idempotency-Key": f"idem-{revision_kind}",
+            },
+            json={
+                "base_revision_no": 0,
+                "revision_kind": revision_kind,
+                "instruction": "강사가 직접 수정합니다.",
+            },
+        )
+        detailed = client.get(
+            f"/v1/problems/{result['set_id']}/items/0",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+
+    assert rejected.status_code == 400
+    assert rejected.json()["error"]["detail"] == {
+        "reason": "revision_kind_not_implemented"
+    }
+    assert detailed.json()["data"]["revisions"] == []
+    assert len(generator.requests) == len(verifier.requests) == 1
+    assert len(run_store.runs) == 1
+
+
+def test_step3_non_language_revision_is_rejected_before_revision_or_llm() -> None:
+    material = SourceMaterialDraft(
+        material_text="학생 A가 승인 근거를 활용해 발표 자료를 구성했다.",
+        evidence_anchor_ids=("grammar:rule-1",),
+    )
+    run_store, _stores, generator, verifier = _prepare(
+        generator_steps=(
+            material.model_dump_json(),
+            _generated_item_json(area_tag=AreaTag.SPEECH_WRITING),
+        )
+    )
+    body = _body(area_tag="speech_writing")
+    body["passage"] = {
+        "area_tag": "speech_writing",
+        "source_kind": "presentation",
+        "banned_topics_version": "pg-banned-v1",
+    }
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=body)
+        result = client.get(
+            f"/v1/problems/{posted.json()['data']['job_id']}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        ).json()["data"]["result"]
+        endpoint = f"/v1/problems/{result['set_id']}/items/0/revisions"
+        rejected = client.post(
+            endpoint,
+            headers={
+                **_HEADERS,
+                "X-Request-Id": "request-speech-refine",
+                "Idempotency-Key": "idem-speech-refine",
+            },
+            json={
+                "base_revision_no": 0,
+                "revision_kind": "ai_refine",
+                "instruction": "발문을 더 명확히 다듬어 주세요.",
+            },
+        )
+        detailed = client.get(
+            f"/v1/problems/{result['set_id']}/items/0",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+
+    assert rejected.status_code == 400
+    assert rejected.json()["error"]["detail"] == {
+        "reason": "revision_area_not_implemented"
+    }
+    assert detailed.json()["data"]["revisions"] == []
+    assert len(generator.requests) == 2
+    assert len(verifier.requests) == 1
+    assert len(run_store.runs) == 1
+
+
 def test_step3_prompt_injection_records_blocked_revision_without_llm_call() -> None:
     run_store, _stores, generator, verifier = _prepare()
 
