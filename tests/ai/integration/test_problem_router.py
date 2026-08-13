@@ -1089,6 +1089,33 @@ def test_problem_literature_without_work_selection_is_400_before_job() -> None:
     assert run_store.runs == {}
 
 
+def test_weakness_auto_is_400_before_request_job_or_run() -> None:
+    run_store, stores, _generator, _verifier = _prepare()
+    job_store = build_agent_job_store()
+    assert isinstance(job_store, InMemoryJobStore)
+    body = _body()
+    body.update(
+        {
+            "target_source": "weakness_auto",
+            "weakness_map_id": "00000000-0000-4000-8000-0000000000a0",
+        }
+    )
+    del body["manual_targets"]
+
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        response = client.post("/v1/problems", headers=_HEADERS, json=body)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_SCHEMA"
+    assert response.json()["error"]["detail"] == {
+        "reason": "weakness_auto_not_wired"
+    }
+    assert len(job_store) == 0
+    assert job_store.added == 0
+    assert vars(stores.requests)["_records"] == {}
+    assert run_store.runs == {}
+
+
 @pytest.mark.parametrize(
     ("area_tag", "source_kind"),
     [
