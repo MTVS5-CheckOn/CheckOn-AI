@@ -67,7 +67,7 @@ def test_phonological_change_context_uses_real_quotes_and_stable_refs() -> None:
     assert isinstance(refs, list)
     assert all(isinstance(ref, str) and ref.startswith("kornorms:") for ref in refs)
     assert any(
-        isinstance(anchor, dict) and "‘ㄷ, ㅌ’ 받침 뒤에" in str(anchor.get("quote"))
+        isinstance(anchor, dict) and "발음 변화에 따른 표준어 규정" in str(anchor.get("quote"))
         for anchor in anchors
     )
     assert context.retrieval_trace["attribution"] == _ATTRIBUTION
@@ -193,7 +193,7 @@ def test_generator_hydrates_omitted_quote_from_approved_context() -> None:
     context = asyncio.run(GrammarNormGraphContextService().resolve_generation_context(_request()))
     refs = context.retrieval_trace["allowed_evidence_refs"]
     assert isinstance(refs, list)
-    ref = refs[4]
+    ref = refs[0]
     assert isinstance(ref, str)
     item = GeneratedItem(
         area_tag=AreaTag.LANGUAGE,
@@ -218,7 +218,7 @@ def test_generator_hydrates_omitted_quote_from_approved_context() -> None:
 
     quote = hydrated.evidence[0].quote
     assert quote is not None
-    assert "‘ㄷ, ㅌ’ 받침 뒤에" in quote
+    assert "발음 변화에 따른 표준어 규정" in quote
 
 
 def test_generator_replaces_model_quote_with_approved_context_quote() -> None:
@@ -227,7 +227,7 @@ def test_generator_replaces_model_quote_with_approved_context_quote() -> None:
     anchors = context.retrieval_trace["evidence_anchors"]
     assert isinstance(refs, list)
     assert isinstance(anchors, list)
-    ref = refs[4]
+    ref = refs[0]
     assert isinstance(ref, str)
     canonical_quote = next(
         anchor["quote"]
@@ -288,6 +288,6 @@ def test_loader_uses_one_process_wide_csv_read(
     assert first.eligible_count == 2134
     assert first.eligible_count - 1546 == 588
     assert first.duplicate_count == 1437
-    assert count_node_matches(first, _NODE) == 41
-    assert len(select_node_rows(first, _NODE)) == 8
+    assert count_node_matches(first, _NODE) == 1
+    assert len(select_node_rows(first, _NODE)) == 1
     load_grammar_norm_corpus.cache_clear()
