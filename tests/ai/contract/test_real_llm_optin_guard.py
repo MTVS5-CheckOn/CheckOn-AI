@@ -45,6 +45,7 @@ from typing import Final
 import pytest
 
 from ai.runtime.real_llm import (
+    _TRUTHY,
     REAL_LLM_OPTIN_ENV,
     RealLlmSettings,
     build_real_openai_client,
@@ -404,3 +405,61 @@ def test_pytest_session_ignores_dotenv_optin(tmp_path: Path) -> None:
         "pytest 세션이 `.env`의 opt-in을 켰다 — 99 #32 사고 경로가 열려 있다\n"
         f"{result.stdout}\n{result.stderr}"
     )
+
+
+# ══ 🔴 두 겹 방어의 **각 축을 단독으로** 지키는 검사 (2026-08-14) ══
+#
+# ⚠ **종전에는 둘 다 지워야 red 였다** — 준영님 고의 파괴 실측:
+#
+#     env_file = None 만 제거      → 초록   🔴 이게 「하중을 받는 쪽」인데 안 잡혔다
+#     pytest_configure 만 제거     → 초록
+#     둘 다 제거                   → red
+#
+# 🔴 `env_file` 축은 **`.env` 에 `=1` 이 있는 기기에서만** 하중을 받는다. 그 키가 없는
+# 기기(그리고 CI)에서는 그 줄을 지워도 초록이라, **지운 사람은 모르고 진희님 맥에서만
+# 뒤늦게 빨개진다.** ⇒ 기기와 무관하게 그 조건을 만들어 축을 단독으로 잰다.
+
+
+def test_the_pin_cuts_dotenv_even_when_it_says_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """🔴 `.env` 에 `=1` 이 있어도 pytest 세션에서는 꺼져 있다 — **핀 ① 축 단독**.
+
+    ⚠ **하위 pytest 프로세스를 쓰지 않는다** — PR #271 이 그 방식이 윈도우에서
+    상시 red 였음을 보였다. 여기서는 두 사실이 맞물려 **in-process 로 재현된다**:
+
+        `real_llm_optin()` 이 캐시하지 않는다 → 매번 `RealLlmSettings()` 를 새로 만든다
+        `env_file=".env"` 가 CWD 상대경로다  → `chdir` 한 곳의 `.env` 를 본다
+
+    ⚠ **기기의 실제 `.env` 와 무관하다** — 키가 없는 기기와 `=1` 인 맥에서 같게 돈다.
+    """
+    (tmp_path / ".env").write_text(f"{REAL_LLM_OPTIN_ENV}=1\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    #: 🔴 프로세스 env 를 비워 **`.env` 만 남긴다** — 핀 ②가 심은 `"0"` 이 이기면
+    #: ① 축이 죽어 있어도 초록이 나서 이 검사가 눈이 먼다.
+    monkeypatch.delenv(REAL_LLM_OPTIN_ENV, raising=False)
+
+    assert real_llm_optin() is False, (
+        "🔴 핀의 `env_file = None` 이 죽었다 — `.env` 의 `=1` 이 살아 들어왔다"
+    )
+
+
+def test_the_pin_pins_the_process_env_to_off() -> None:
+    """핀 ②(`pytest_configure`) 축 — 세션 프로세스 env 가 꺼짐으로 고정돼 있다.
+
+    🔴 **`os.environ` 을 직접 읽는 유일한 자리다 — 반려하지 마라.** 03 §1 의
+    「`os.environ` 직접 접근 금지」는 **프로덕션 코드** 규칙이고, 이 검사의 대상이
+    **핀이 프로세스 env 에 심은 값 그 자체**라 설정 객체를 거치면 잴 수가 없다
+    (설정은 `.env`·기본값과 섞인 결과를 준다).
+
+    ⚠ 셸에서 `CHECKON_ALLOW_REAL_LLM=1` 로 켠 실 LLM 스모크에서는 **켜져 있는 것이 정상**
+    이라 그때는 건너뛴다 — 이 검사는 「기본 상태」만 본다.
+    """
+    raw = os.environ.get(REAL_LLM_OPTIN_ENV)
+    assert raw is not None, (
+        "🔴 핀의 `pytest_configure` 가 죽었다 — 세션에 값이 안 심겼다. "
+        "그러면 `pre_pr_verify` 의 `env.pop` 뒤에 `.env` 가 판정을 쥔다 (99 #32)"
+    )
+    if raw.strip().lower() in _TRUTHY:
+        pytest.skip("셸에서 실 LLM 을 명시로 켠 세션 — 켜져 있는 것이 정상")
+    assert real_llm_optin() is False

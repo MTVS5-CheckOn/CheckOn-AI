@@ -61,6 +61,8 @@
 2. **경계를 넘는 입력:** B가 감지 산출을 더 원하면 A의 `contracts/detection.py`에 PR → A 승인. 반대 방향도 동일. **상대 capability 내부 파일 직접 수정은 금지**(지시서 2.2).
 3. **골든셋·평가:** `evaluation/detection_eval.py`·`draft_eval.py`·`import_eval.py` = A, `problem_eval.py` = B. golden/ 하위는 §5 트리의 코퍼스별 소유 — **(v2) `golden/tagging/`은 정답 라벨 확정이 [A+B]**(어휘집 §2 판정 기준 합의 후 각자 라벨링, 불일치가 경계 사례집 증보분). 엔진·프롬프트 버전업 시 골든셋 diff는 상호 리뷰(오너 아닌 쪽이 리뷰어).
 4. **tests/ai/:** 프로덕션 대칭 — 소유도 대응 파일을 따름. `tests/ai/fakes/`(FakeProvider 시나리오)는 llm/ 소유자인 B — **(v2) 단 refine 게이트 공격·에이전트 장애 시나리오는 A가 시나리오 명세를 제공**(B는 Fake 구현만).
+   - 🔴 **(2026-08-14 신설) 세션 핀 플러그인(`tests/ai/fakes/*_pin.py`)은 A 단독**이다 — `-p` 로 등록되는 회귀 보호 장치이고 FakeProvider 시나리오가 아니다. **넷 다 A 작성**(`store_backend_pin` 8/12 · `llm_provider_pin`·`console_env_pin` 8/13 · `real_llm_optin_pin` 8/14 — `git log --diff-filter=A` 실측).
+     ⚠ **자리를 옮길 수 없다** — `tests/ai/fakes/` 가 `pythonpath` 에 있는 유일한 자리라 `-p` 평면 import 가 거기서만 된다. `conftest.py` 는 mypy 가 `Duplicate module named "conftest"` 로 막는다(`tests/` 트리에 `__init__.py` 가 하나뿐이라 `tests/ai/unit/llm/conftest.py` 가 최상위 `conftest` 이름을 점유). **근거: B 확인(2026-08-14) · B 요청으로 등재.**
 5. **(v2 신설) 데이터 파일 규칙:** `tone_map.yaml`·`buffer_lexicon.yaml`·`redaction_patterns.yaml`은 코드와 동일하게 PR 리뷰 대상(오너 단독) — 단 **golden 코퍼스 통과가 머지 조건**(사전 갱신도 테스트를 거친다).
 6. **(2026-08-08 신설) 미확정 안건의 추적 정본 — 99는 색인, 소유자 문서는 본문:**
    - `docs/99_open_items.md` = **전 안건의 색인.** 🔴 **미해소 안건은 소유와 무관하게 한 줄이 반드시 있다** — *"미해소 안건 전부를 세려면 99만 보면 된다"* 가 성립해야 한다.
