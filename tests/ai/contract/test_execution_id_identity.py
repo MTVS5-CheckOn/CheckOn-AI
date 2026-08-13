@@ -48,12 +48,6 @@ _ROUTERS: Final = Path(__file__).resolve().parents[3] / "src" / "ai" / "api" / "
 #: 그때 그 파일만 이 dict에서 지운다. 화이트리스트는 영원히 조용하고 이건 시끄럽다.
 #: 목록에 없는 파일이 걸리면 **그대로 red**다.
 _PENDING: Final[dict[str, str]] = {
-    "problem.py": (
-        "GET(`:435`)이 `str(uuid.uuid4())`를 쓴다 — counsel GET과 **같은 한 줄 결함**이다. "
-        "⚠ **B 소유 파일**이고 B가 같은 파일 `:397`(POST)에서 이미 "
-        "`str(job.execution_id)`로 **올바른 형태**를 쓰고 있다 — 기계적 파급에 가깝지만 "
-        "소유자 리뷰가 필요해 #140에서 고치지 않았다(99 ㊮)."
-    ),
     "confirmations.py": (
         "`:185`가 `str(uuid.uuid4())`를 쓴다. ⚠ **성격이 다르다** — 이 엔드포인트는 "
         "LLM을 안 부르고 **원장을 아예 안 쓴다.** *「가리킬 실행이 없다」* 가 정답일 수 "

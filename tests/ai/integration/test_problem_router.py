@@ -267,10 +267,11 @@ def test_step3_list_and_detail_return_saved_item_and_cross_solve() -> None:
 
     with TestClient(create_app()) as client:
         posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
-        result = client.get(
+        fetched = client.get(
             f"/v1/problems/{posted.json()['data']['job_id']}",
             headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
-        ).json()["data"]["result"]
+        )
+        result = fetched.json()["data"]["result"]
         set_id = result["set_id"]
         listed = client.get(
             f"/v1/problems/{set_id}/items",
@@ -278,6 +279,14 @@ def test_step3_list_and_detail_return_saved_item_and_cross_solve() -> None:
         )
         detailed = client.get(
             f"/v1/problems/{set_id}/items/0",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+        fetched_again = client.get(
+            f"/v1/problems/{posted.json()['data']['job_id']}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+        listed_again = client.get(
+            f"/v1/problems/{set_id}/items",
             headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
         )
 
@@ -291,6 +300,15 @@ def test_step3_list_and_detail_return_saved_item_and_cross_solve() -> None:
     }
     assert list_data["items"][0]["current_revision_no"] == 0
     assert detailed.status_code == 200, detailed.text
+    execution_ids = {
+        posted.json()["meta"]["execution_id"],
+        fetched.json()["meta"]["execution_id"],
+        listed.json()["meta"]["execution_id"],
+        detailed.json()["meta"]["execution_id"],
+        fetched_again.json()["meta"]["execution_id"],
+        listed_again.json()["meta"]["execution_id"],
+    }
+    assert len(execution_ids) == 1
     detail = detailed.json()["data"]
     assert detail["item"]["stem"]
     assert len(detail["item"]["choices"]) == 5
