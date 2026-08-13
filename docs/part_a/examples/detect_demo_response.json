@@ -20,30 +20,30 @@
         "evidence": [
           {
             "source_table": "learning_event",
-            "record_id": "le_163",
+            "record_id": "le_172",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_164",
+            "record_id": "le_173",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-14"
+            "occurred_on": "2026-07-21"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_165",
+            "record_id": "le_174",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-15"
+            "occurred_on": "2026-07-22"
           }
         ],
         "metric": "accuracy",
@@ -120,30 +120,30 @@
         "evidence": [
           {
             "source_table": "learning_event",
-            "record_id": "le_253",
+            "record_id": "le_262",
             "summary": "hidden_risk 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_254",
+            "record_id": "le_263",
             "summary": "hidden_risk 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-14"
+            "occurred_on": "2026-07-21"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_255",
+            "record_id": "le_264",
             "summary": "hidden_risk 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-15"
+            "occurred_on": "2026-07-22"
           }
         ],
         "metric": "norm_time",
@@ -311,30 +311,30 @@
         "evidence": [
           {
             "source_table": "learning_event",
-            "record_id": "le_1053",
+            "record_id": "le_1062",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-20"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_1054",
+            "record_id": "le_1063",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-14"
+            "occurred_on": "2026-07-21"
           },
           {
             "source_table": "learning_event",
-            "record_id": "le_1055",
+            "record_id": "le_1064",
             "summary": "acc_drop 근거 기록",
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-15"
+            "occurred_on": "2026-07-22"
           }
         ],
         "metric": "accuracy",
@@ -356,7 +356,7 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "7068777b-4bf0-4245-95ae-e0521e1548de",
+    "execution_id": "fedacec1-29ea-4ceb-befe-915c58534543",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.3",

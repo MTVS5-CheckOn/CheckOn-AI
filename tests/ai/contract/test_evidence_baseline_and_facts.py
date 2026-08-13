@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import inspect
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Final
 
@@ -234,3 +235,60 @@ def test_the_unit_table_in_the_design_doc_lists_every_metric() -> None:
     assert metrics, "metric을 가진 신호가 없다"
     missing = sorted(m for m in metrics if f"`{m}`" not in doc)
     assert not missing, f"단위 표에 없는 metric: {missing}"
+
+
+def test_the_cited_records_come_from_the_week_that_observed_reports() -> None:
+    """🔴 **근거가 `observed`와 같은 주에서 나온다** — 판정 창이 여러 주인 규칙에서.
+
+    `_finding`이 판정 창을 **오래된 주 먼저** 담았고 `engine._evidence_items`가
+    `triggers[:3]`으로 자르므로, **이번 주 근거가 통째로 잘려 나갔다.** 실측(2026-08-13):
+
+        분석 주 2026-07-20 · signal.observed = 이번 주 값
+        근거    2026-07-13 · 07-14 · 07-15   🔴 전부 지난 주
+
+    화면에는 *"평소 72% → 이번 주 51%"* 옆에 **지난 주 문항 3개**가 붙는다.
+    🔴 **날짜가 안 실릴 때는 안 보였다** — `occurred_on`을 실제 날짜로 바꾸면서 드러났다.
+
+    ⚠ **R2는 이미 `reversed(streak)`로 최신 우선이었다** — 최신 우선이 원래 의도였고
+    `_finding`을 쓰는 R1·R4만 빠져 있었다.
+    """
+    by_rule = _signals_by_rule()
+    multi_week = {RuleId.R1, RuleId.R4}
+    checked = 0
+    for rule_id in multi_week:
+        for signal in by_rule.get(rule_id, []):
+            dates = [i.occurred_on for i in signal.evidence if i.occurred_on is not None]
+            assert dates, f"{rule_id.value}: 근거에 날짜가 없다"
+            #: 판정 창의 **마지막 주**가 `observed`의 주다 — 근거의 가장 이른 날짜가
+            #: 그 주에 들어와야 «이번 주를 인용한다»가 성립한다.
+            newest_week = max(dates) - timedelta(days=max(dates).weekday())
+            oldest_week = min(dates) - timedelta(days=min(dates).weekday())
+            assert newest_week == oldest_week, (
+                f"{rule_id.value}: 근거가 여러 주에 걸쳐 있다 {sorted(dates)}"
+            )
+            checked += 1
+    assert checked, "R1·R4 신호가 없다 — 이 검사가 눈이 멀었다"
+
+
+def test_the_newest_week_survives_the_trigger_cap() -> None:
+    """🔴 상한에 걸려 잘리는 것은 **오래된 주**여야 한다.
+
+    판정 창 2주 × 주당 10~20문항이면 상한 3건은 **한 주로도 다 찬다.** 오래된 주가 앞에
+    오면 이번 주가 **한 건도 안 남는다** — 그게 이 회귀의 형태였다.
+    """
+    from ai.detection.features import WeekFeatures
+    from ai.detection.rules import RuleFinding, _finding
+
+    weeks = tuple(
+        WeekFeatures(
+            week_monday=date(2026, 7, 13) + timedelta(weeks=i),
+            n_solves=10, accuracy=0.8, submitted=True, norm_time=0.2,
+            event_count=10, tagging_rate=1.0, cells=(), graded_count=10, timed_count=10,
+        )
+        for i in range(2)
+    )
+    finding: RuleFinding = _finding(RuleId.R1, 0.5, weeks)
+
+    assert finding.evidence_weeks[0] == date(2026, 7, 20), (
+        f"판정 창이 오래된 주부터 실린다 {finding.evidence_weeks}"
+    )

@@ -495,7 +495,13 @@ def _finding(
         rule_id=rule_id,
         signal_type=RULE_SIGNAL_MAP[rule_id],
         score=score,
-        evidence_weeks=tuple(w.week_monday for w in weeks),
+        #: 🔴 **최신 주부터** — `engine._evidence_items`가 `triggers[:3]`으로 자르므로
+        #:   **오래된 주가 앞에 오면 이번 주 근거가 통째로 잘린다.** 실측(2026-08-13):
+        #:   분석 주가 `07-20`인데 R1 근거가 전부 `07-13`~`15`(지난 주)로 나갔다 —
+        #:   `observed`는 **판정 창 마지막 주**의 값인데 근거는 그 전 주였다.
+        #: ⚠ **R2는 이미 `reversed(streak)`로 최신 우선이다** — 최신 우선이 원래 의도였고
+        #:   `_finding`을 쓰는 R1·R4만 빠져 있었다(R3·R5·R6는 주가 하나라 해당 없음).
+        evidence_weeks=tuple(w.week_monday for w in reversed(weeks)),
         metric=metric,
         observed=observed,
         baseline=baseline,
