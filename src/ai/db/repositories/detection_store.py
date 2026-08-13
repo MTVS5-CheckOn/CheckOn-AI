@@ -37,6 +37,7 @@ from ai.contracts.detection import LearningEvent, Signal
 from ai.contracts.execution import RunMetadata
 from ai.db.models import FeatureWeek
 from ai.db.models import Signal as SignalRow
+from ai.db.models import SignalBrief as SignalBriefRow
 from ai.db.repositories.idempotency import system_utc_now
 from ai.db.repositories.run_store import ai_run_orm  # AI_RUN 매퍼 정본(불변식 8)
 from ai.runtime.errors import LedgerWriteFailed
@@ -198,8 +199,12 @@ class PgDetectionStore:
                 async with session.begin():
                     session.add(ai_run_orm(run))
                     for signal in ledger.signals:
+                        #: 🔴 행 id 를 여기서 잡는다 — `signal_brief.signal_ref` 가 이 값을
+                        #: FK 로 참조한다. 같은 트랜잭션이라 SQLAlchemy 가 의존 순서대로 넣는다.
+                        signal_id = self._new_id()
+                        session.add(_signal_orm(signal, run, signal_id, self._clock()))
                         session.add(
-                            _signal_orm(signal, run, self._new_id(), self._clock())
+                            _signal_brief_orm(signal, run, signal_id, self._new_id())
                         )
                     for row in ledger.feature_weeks:
                         await session.execute(
@@ -284,6 +289,44 @@ def _signal_orm(
         baseline=_decimal_or_none(signal.baseline),
         sample_size=signal.sample_size,
         created_at=created_at,
+    )
+
+
+def _signal_brief_orm(
+    signal: Signal, run: RunMetadata, signal_id: uuid.UUID, row_id: uuid.UUID
+) -> SignalBriefRow:
+    """Signal.brief(계약) → SIGNAL_BRIEF 행 — 🔴 **브리핑 품질의 유일한 관측 자리**.
+
+    🔴 **왜 이게 필요한가 (2026-08-14 실측):** 윈도우 AI 서버에서 브리핑 11건이 **전부**
+    템플릿 폴백으로 나갔는데(실 LLM opt-in 이 `.env` 에서 안 읽혔다 · 99 #32) **원장에
+    안 남아 폴백률을 셀 수 없었다.** `signal` 70행 · `signal_brief` **0행**이었다.
+
+    ⚠ **`evidence_item` 과 성격이 다르다.** evidence 는 응답으로 백엔드에 가서 **거기
+    어딘가엔 있다.** 🔴 **`gate_passed`·`fallback_used` 는 백엔드에 안 간다** — 응답
+    계약(`Brief`)에는 있지만 백엔드가 저장하지 않는 우리 관측값이다. **여기 안 남기면
+    어디에도 없다.**
+
+    ━━ `llm_call_id` 를 왜 `None` 으로 두나 ━━
+
+    🔴 **채울 수 없다 — 지어내지 않는다.** 두 가지가 막는다:
+
+    1. **순서** — `LLM_CALL` 행은 `persist_ledger` **뒤에** 적재된다
+       (`api/routers/detect.py`: `llm_call.run_id` 가 `ai_run.execution_id` 를 NOT NULL
+       FK 로 참조해 AI_RUN 이 먼저 서야 한다). 여기서 FK 를 채우면 없는 행을 가리킨다.
+    2. **대응** — 수집기는 **실행 단위**로 콜을 모은다. 「이 signal 의 brief 를 만든 콜」
+       이라는 신호별 대응이 지금 계약에 없다.
+
+    ⇒ 컬럼은 `nullable=True` 이고 `None` 으로 둔다. 채우려면 **콜↔신호 대응을 먼저**
+    세워야 하고 그건 별건이다.
+    """
+    return SignalBriefRow(
+        id=row_id,
+        tenant_id=run.tenant_id,
+        signal_ref=signal_id,
+        brief_text=signal.brief.text,
+        gate_passed=signal.brief.gate_passed,
+        fallback_used=signal.brief.fallback_used,
+        llm_call_id=None,
     )
 
 

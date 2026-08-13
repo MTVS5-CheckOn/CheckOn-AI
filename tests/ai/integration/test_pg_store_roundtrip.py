@@ -106,3 +106,102 @@ def test_ledger_roundtrip_persists_ai_run() -> None:
         assert count == 1
 
     _run(scenario)
+
+
+def test_ledger_roundtrip_persists_the_brief_next_to_its_signal() -> None:
+    """🔴 SIGNAL 과 SIGNAL_BRIEF 가 **한 트랜잭션에 같이** 남고 FK 가 이어진다.
+
+    ⚠ **오프라인 검사로는 이 축이 안 보인다** — `signal_brief.signal_ref` 는 FK 라
+    실제 INSERT 순서가 틀리면 **실 PG 에서만** 터진다(99 #62 의 「마이그레이션이 정적
+    검사에 안 보인다」와 같은 층).
+
+    🔴 **폴백 하나 + 정상 하나**를 같이 넣는다 — 한쪽만 넣으면 상수로 짜도 통과한다.
+    """
+    tenant = f"t_{uuid.uuid4().hex[:8]}"
+
+    async def scenario(sm: async_sessionmaker[AsyncSession]) -> None:
+        from sqlalchemy import select
+
+        from ai.contracts.detection import (
+            DISPLAY_LABELS,
+            Brief,
+            EvidenceItem,
+            EvidenceRole,
+            Lifecycle,
+            RuleId,
+            Signal,
+            SignalType,
+        )
+        from ai.contracts.execution import Capability, RunMetadata
+        from ai.db.models import Signal as SignalRow
+        from ai.db.models import SignalBrief
+        from ai.db.repositories.detection_store import LedgerWrite, PgDetectionStore
+
+        def _signal(n: int, brief: Brief) -> Signal:
+            return Signal(
+                signal_id=f"sig_{n}",
+                student_ref=f"st_{n}",
+                class_ref="cl_a1",
+                rule_id=RuleId.R1,
+                signal_type=SignalType.ACC_DROP,
+                display_label=DISPLAY_LABELS[SignalType.ACC_DROP],
+                score=0.5,
+                rank=n,
+                lifecycle=Lifecycle.NEW,
+                brief=brief,
+                evidence=(
+                    EvidenceItem(
+                        source_table="learning_event",
+                        record_id=f"le_{n}",
+                        summary="x",
+                        role=EvidenceRole.TRIGGER,
+                    ),
+                ),
+            )
+
+        run = RunMetadata(
+            execution_id=uuid.uuid4(),
+            tenant_id=tenant,
+            capability=Capability.DETECTION,
+            pipeline_version="0.1.0",
+            engine_version="detection-rules-0.1",
+            schema_version="0.1",
+            contract_version="0.1",
+            input_snapshot_hash="hash-brief",
+            created_at=datetime.now(UTC),
+        )
+        await PgDetectionStore(sessionmaker=sm).persist_ledger(
+            LedgerWrite(
+                run=run,
+                signals=(
+                    _signal(1, Brief(text="정상", gate_passed=True, fallback_used=False)),
+                    _signal(2, Brief(text="폴백", gate_passed=False, fallback_used=True)),
+                ),
+            )
+        )
+
+        async with sm() as session:
+            briefs = (
+                await session.scalars(
+                    select(SignalBrief).where(SignalBrief.tenant_id == tenant)
+                )
+            ).all()
+            signal_ids = set(
+                (
+                    await session.scalars(
+                        select(SignalRow.id).where(SignalRow.tenant_id == tenant)
+                    )
+                ).all()
+            )
+
+        assert len(briefs) == 2, briefs
+        #: 🔴 FK 가 **실제로 그 신호 행**을 가리킨다 — 새로 뽑은 id 가 아니다.
+        assert {b.signal_ref for b in briefs} == signal_ids
+        assert {b.fallback_used for b in briefs} == {True, False}
+        assert {(b.brief_text, b.gate_passed) for b in briefs} == {
+            ("정상", True),
+            ("폴백", False),
+        }
+        assert all(b.llm_call_id is None for b in briefs)
+
+    _run(scenario)

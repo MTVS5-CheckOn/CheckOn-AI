@@ -35,6 +35,7 @@ from ai.db.repositories.detection_store import (
     InMemoryDetectionStore,
     LedgerWrite,
     PgDetectionStore,
+    _signal_brief_orm,
     _signal_orm,
     dedupe_learning_events,
 )
@@ -303,3 +304,68 @@ def test_the_float_goes_through_str_not_binary() -> None:
 
     assert row.observed == Decimal("0.1")
     assert str(row.observed) == "0.1"
+
+
+# ── SIGNAL_BRIEF 적재 — 🔴 폴백률을 셀 수 있게 (99 #32 의 부수 피해) ──
+
+
+def _signal_with_brief(brief: Brief) -> Signal:
+    """브리핑만 다른 최소 Signal — 나머지는 `_signal_with` 과 같은 축."""
+    return _signal_with(observed=0.5, baseline=0.8).model_copy(update={"brief": brief})
+
+
+def test_a_fallback_brief_is_recorded_as_fallback() -> None:
+    """🔴 폴백으로 나간 브리핑이 원장에 **폴백으로** 남는다.
+
+    2026-08-14 에 브리핑 11건이 전부 폴백이었는데 `signal_brief` 가 **0행**이라
+    그 사실을 셀 수 없었다. `gate_passed`·`fallback_used` 는 백엔드에 안 가므로
+    **여기 안 남기면 어디에도 없다.**
+    """
+    row = _signal_brief_orm(
+        _signal_with_brief(Brief(text="템플릿", gate_passed=False, fallback_used=True)),
+        _comparison_run(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+    )
+
+    assert row.fallback_used is True
+    assert row.gate_passed is False
+    assert row.brief_text == "템플릿"
+
+
+def test_a_gated_brief_is_recorded_as_passed() -> None:
+    """⚠ 반대 방향 — 정상 경로도 단언한다. 🔴 **한쪽만 보면 상수를 못 잡는다.**
+
+    `fallback_used=True` 만 검사하면 «항상 True» 로 짜도 통과한다(그 반대도 같다).
+    """
+    row = _signal_brief_orm(
+        _signal_with_brief(Brief(text="정상", gate_passed=True, fallback_used=False)),
+        _comparison_run(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+    )
+
+    assert row.fallback_used is False
+    assert row.gate_passed is True
+    assert row.brief_text == "정상"
+
+
+def test_the_brief_row_points_at_its_signal_row() -> None:
+    """🔴 `signal_ref` 가 **그 신호의 행 id** 다 — 새로 뽑은 id 가 아니다.
+
+    ⚠ 여기서 id 를 한 번 더 뽑으면 FK 가 **없는 행**을 가리키고, 실 PG 에서만 터진다
+    (오프라인 검사는 FK 를 안 본다 — 99 #62 에서 겪은 「마이그레이션이 안 보인다」와 같은 층).
+    """
+    signal_id = uuid.uuid4()
+    row_id = uuid.uuid4()
+    row = _signal_brief_orm(
+        _signal_with_brief(Brief(text="x", gate_passed=True, fallback_used=False)),
+        _comparison_run(),
+        signal_id,
+        row_id,
+    )
+
+    assert row.signal_ref == signal_id
+    assert row.id == row_id
+    #: 🔴 채울 수 없어서 `None` 이다 — 사유는 `_signal_brief_orm` docstring.
+    assert row.llm_call_id is None
