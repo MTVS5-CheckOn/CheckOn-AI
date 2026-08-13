@@ -2154,6 +2154,17 @@ reading·literature의 기존 출제 경로도 수동 목표로만 도달 가능
 않았다. 자료 생성은 `area_specs.yaml` 규격 블록을 프롬프트에 싣고 승인 evidence가 없거나
 미승인 ref를 쓰면 문항 생성 전에 실패 닫힘한다.
 
+T1 language 33노드는 어문규범 11노드와 표준국어대사전 최소 색인 22노드로 근거를
+배선했다. 표준국어대사전 `20260805` XML 덤프에는 `target_code`와 `sense_code`가 함께
+있다. `infrastructure/stdict.py`의 “`sense_code`는 `view.do`에만 있다”는 설명은
+`search.do` API 응답과 비교한 경계이며, 날짜 고정 덤프에는 해당하지 않는다.
+
+다만 33노드의 근거 강도가 같지는 않다. 어문규범 11노드는 조문 전문을 `quote`로 제공하지만,
+사전 22노드(특히 통사 10노드)는 승인 표제어·품사·전문 분야·`sense_code`로 그 용어가
+국어학 전문어임을 대조하는 수준이다. 사전 뜻풀이는 빌드타임 후보 판별에만 읽고 최소 색인,
+anchor, 프롬프트에는 남기지 않는다. 따라서 33노드 coverage 초록을 동일 강도의 내용 근거가
+확보됐다는 뜻으로 해석하지 않는다.
+
 ### 실 LLM matrix의 GraphContext 대체 한계 `[판정 기록]`
 
 `tests/ai/integration/test_pg_real_llm_smoke.py::_graph_context()`는 `language`만

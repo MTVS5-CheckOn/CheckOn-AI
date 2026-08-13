@@ -1,8 +1,51 @@
-version: grammar-norm-map-v1
+version: grammar-norm-map-v2
 source_table: 최신고지규정정보.csv
 max_evidence_count: 8
 nodes:
+  language.grammar.phoneme.system:
+    label: 음운 체계
+    codes: [표준어 규정]
+    keywords: [표준어의 자음은, 표준어의 모음은]
+  language.grammar.syllable.structure:
+    label: 음절 구조
+    codes: [표준어 규정]
+    keywords: [받침소리로는]
   language.grammar.phonological_change:
     label: 음운 변동
-    codes: [한글 맞춤법, 표준어 규정]
-    keywords: [비음, 구개음, 된소리, 음운, 받침, 동화, 축약, 탈락, 첨가, 유음, 경음]
+    codes: [표준어 규정]
+    keywords: [발음 변화에 따른 표준어 규정]
+  language.grammar.alternation:
+    label: 음운 교체
+    codes: [표준어 규정]
+    keywords: ["대표음 [ㄱ, ㄷ, ㅂ]", 대표음으로 바꾸어서]
+  language.grammar.deletion:
+    label: 음운 탈락
+    codes: [한글 맞춤법]
+    keywords: ["‘ㄹ’ 소리가 나지 아니하는", 끝모음이 줄어지고]
+  language.grammar.addition:
+    label: 음운 첨가
+    codes: [표준어 규정]
+    keywords: ["‘ㄴ’ 음을 첨가하여"]
+  language.grammar.contraction:
+    label: 음운 축약
+    codes: [한글 맞춤법]
+    keywords:
+      - "어울려 ‘ㅘ/ㅝ"
+      - "‘-이어’가 어울려 줄어질"
+      - "‘ㅎ’이 다음 음절의 첫소리와 어울려 거센소리"
+  language.grammar.fortition:
+    label: 된소리되기
+    codes: [표준어 규정]
+    keywords: [된소리로 발음한다, 된소리로 발음함]
+  language.grammar.palatalization:
+    label: 구개음화
+    codes: [표준어 규정]
+    keywords: ["받침 ‘ㄷ, ㅌ(ㄾ)’"]
+  language.grammar.nasalization:
+    label: 비음화
+    codes: [표준어 규정]
+    keywords: ["‘ㄴ, ㅁ’ 앞에서"]
+  language.grammar.liquidization:
+    label: 유음화
+    codes: [표준어 규정]
+    keywords: ["‘ㄴ’은 ‘ㄹ’의 앞이나 뒤에서"]

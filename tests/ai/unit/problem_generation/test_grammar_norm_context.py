@@ -58,21 +58,16 @@ def _request(skill_node_id: str = _NODE) -> GraphContextRequest:
 
 
 def test_phonological_change_context_uses_real_quotes_and_stable_refs() -> None:
-    context = asyncio.run(
-        GrammarNormGraphContextService().resolve_generation_context(_request())
-    )
+    context = asyncio.run(GrammarNormGraphContextService().resolve_generation_context(_request()))
 
     assert has_reference_data(context)
     anchors = context.retrieval_trace["evidence_anchors"]
     assert isinstance(anchors, list) and anchors
     refs = context.retrieval_trace["allowed_evidence_refs"]
     assert isinstance(refs, list)
-    assert all(
-        isinstance(ref, str) and ref.startswith("kornorms:") for ref in refs
-    )
+    assert all(isinstance(ref, str) and ref.startswith("kornorms:") for ref in refs)
     assert any(
-        isinstance(anchor, dict)
-        and "‘ㄷ, ㅌ’ 받침 뒤에" in str(anchor.get("quote"))
+        isinstance(anchor, dict) and "발음 변화에 따른 표준어 규정" in str(anchor.get("quote"))
         for anchor in anchors
     )
     assert context.retrieval_trace["attribution"] == _ATTRIBUTION
@@ -118,9 +113,7 @@ def test_area_delegate_keeps_generated_source_base_empty(
         }
     )
 
-    context = asyncio.run(
-        AreaDelegatingGraphContextService().resolve_generation_context(request)
-    )
+    context = asyncio.run(AreaDelegatingGraphContextService().resolve_generation_context(request))
 
     assert not has_reference_data(context)
     assert context.retrieval_trace["allowed_evidence_refs"] == []
@@ -152,9 +145,7 @@ def test_area_delegate_uses_neutral_base_for_literature() -> None:
         }
     )
 
-    context = asyncio.run(
-        AreaDelegatingGraphContextService().resolve_generation_context(request)
-    )
+    context = asyncio.run(AreaDelegatingGraphContextService().resolve_generation_context(request))
 
     assert context.retrieval_trace == {
         "allowed_evidence_refs": [],
@@ -182,9 +173,7 @@ def test_revision_context_reuses_approved_grammar_evidence_and_locked_inputs() -
         }
     )
 
-    context = asyncio.run(
-        GrammarNormGraphContextService().resolve_revision_context(request)
-    )
+    context = asyncio.run(GrammarNormGraphContextService().resolve_revision_context(request))
 
     assert context.operation is GraphContextOperation.REFINE
     assert context.current_item_snapshot == request.current_item_snapshot
@@ -201,12 +190,10 @@ def test_revision_context_rejects_missing_snapshot_or_instruction() -> None:
 
 
 def test_generator_hydrates_omitted_quote_from_approved_context() -> None:
-    context = asyncio.run(
-        GrammarNormGraphContextService().resolve_generation_context(_request())
-    )
+    context = asyncio.run(GrammarNormGraphContextService().resolve_generation_context(_request()))
     refs = context.retrieval_trace["allowed_evidence_refs"]
     assert isinstance(refs, list)
-    ref = refs[4]
+    ref = refs[0]
     assert isinstance(ref, str)
     item = GeneratedItem(
         area_tag=AreaTag.LANGUAGE,
@@ -231,18 +218,16 @@ def test_generator_hydrates_omitted_quote_from_approved_context() -> None:
 
     quote = hydrated.evidence[0].quote
     assert quote is not None
-    assert "‘ㄷ, ㅌ’ 받침 뒤에" in quote
+    assert "발음 변화에 따른 표준어 규정" in quote
 
 
 def test_generator_replaces_model_quote_with_approved_context_quote() -> None:
-    context = asyncio.run(
-        GrammarNormGraphContextService().resolve_generation_context(_request())
-    )
+    context = asyncio.run(GrammarNormGraphContextService().resolve_generation_context(_request()))
     refs = context.retrieval_trace["allowed_evidence_refs"]
     anchors = context.retrieval_trace["evidence_anchors"]
     assert isinstance(refs, list)
     assert isinstance(anchors, list)
-    ref = refs[4]
+    ref = refs[0]
     assert isinstance(ref, str)
     canonical_quote = next(
         anchor["quote"]
@@ -300,8 +285,9 @@ def test_loader_uses_one_process_wide_csv_read(
 
     assert first is second
     assert csv_reads == 1
-    assert first.eligible_count == 1546
-    assert first.duplicate_count == 1028
-    assert count_node_matches(first, _NODE) == 15
-    assert len(select_node_rows(first, _NODE)) == 8
+    assert first.eligible_count == 2134
+    assert first.eligible_count - 1546 == 588
+    assert first.duplicate_count == 1437
+    assert count_node_matches(first, _NODE) == 1
+    assert len(select_node_rows(first, _NODE)) == 1
     load_grammar_norm_corpus.cache_clear()

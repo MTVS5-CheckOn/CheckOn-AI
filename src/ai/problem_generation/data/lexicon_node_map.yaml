@@ -1,0 +1,93 @@
+version: stdict-t1-map-v2
+source_revision: stdict-20260805
+required_cat: 언어
+max_evidence_count: 8
+nodes:
+  language.grammar.morpheme.concept:
+    label: 형태소
+    headwords: [형태소]
+    allowed_pos: [명사]
+  language.grammar.word.formation:
+    label: 단어 형성
+    headwords: [파생어, 합성어]
+    allowed_pos: [명사]
+  language.grammar.parts_of_speech:
+    label: 품사 체계
+    headwords: [품사]
+    allowed_pos: [명사]
+  language.grammar.noun:
+    label: 명사
+    headwords: [명사]
+    allowed_pos: [명사]
+  language.grammar.pronoun:
+    label: 대명사
+    headwords: [대-명사01, 대-명사02]
+    allowed_pos: [명사]
+  language.grammar.numeral:
+    label: 수사
+    headwords: [수사]
+    allowed_pos: [명사]
+  language.grammar.predicate:
+    label: 용언
+    headwords: [용언]
+    allowed_pos: [명사]
+  language.grammar.modifier:
+    label: 관형사
+    headwords: [관형사]
+    allowed_pos: [명사]
+  language.grammar.adverb:
+    label: 부사
+    headwords: [부사]
+    allowed_pos: [명사]
+  language.grammar.interjection:
+    label: 감탄사
+    headwords: [감탄사]
+    allowed_pos: [명사]
+  language.grammar.particle:
+    label: 조사
+    headwords: [조사]
+    allowed_pos: [명사]
+  language.grammar.ending:
+    label: 어미
+    headwords: [어미]
+    allowed_pos: [명사]
+  language.grammar.sentence.constituent:
+    label: 문장 성분
+    headwords: [문장^성분, 주성분, 부속^성분, 독립^성분]
+    allowed_pos: [명사]
+  language.grammar.sentence.structure:
+    label: 문장 구조
+    headwords: [홑문장, 겹문장]
+    allowed_pos: [명사]
+  language.grammar.sentence.embedded:
+    label: 안은문장
+    headwords: [안은-문장]
+    allowed_pos: [명사]
+  language.grammar.sentence.connected:
+    label: 이어진문장
+    headwords: [이어진-문장]
+    allowed_pos: [명사]
+  language.grammar.honorific:
+    label: 높임 표현
+    headwords: [주체^높임법, 객체^높임법, 상대^높임법]
+    allowed_pos: [명사]
+  language.grammar.tense_aspect:
+    label: 시간 표현
+    headwords: [시제, 동작상]
+    allowed_pos: [명사]
+  language.grammar.quotation:
+    label: 인용 표현
+    headwords: [직접^화법02, 간접^화법]
+    allowed_pos: [명사]
+  language.grammar.negation:
+    label: 부정 표현
+    headwords: [부정문, 부정법]
+    allowed_pos: [명사]
+  language.grammar.causative_passive:
+    label: 사동과 피동
+    headwords: [사동, 피동]
+    allowed_pos: [명사]
+  language.grammar.speech_level:
+    label: 종결 표현
+    headwords: [종결^어미]
+    allowed_pos: [명사]

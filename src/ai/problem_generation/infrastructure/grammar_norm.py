@@ -69,7 +69,7 @@ def parse_grammar_norm_rows(
 
     eligible: list[GrammarNormRow] = []
     for raw in rows:
-        keyword = (raw.get("주제어") or "").strip()
+        keyword = (raw.get("주제어") or "").strip() or (raw.get("부주제어") or "").strip()
         if not keyword or (raw.get("상태") or "").strip() != _NORMAL_STATUS:
             continue
         if (raw.get("본문노출여부") or "").strip() not in _VISIBLE_VALUES:
@@ -93,9 +93,7 @@ def parse_grammar_norm_rows(
     return tuple(unique.values()), len(eligible), len(eligible) - len(unique)
 
 
-def select_node_rows(
-    corpus: GrammarNormCorpus, skill_node_id: str
-) -> tuple[GrammarNormRow, ...]:
+def select_node_rows(corpus: GrammarNormCorpus, skill_node_id: str) -> tuple[GrammarNormRow, ...]:
     """노드의 승인 코드·키워드에 맞는 근거를 원본 순서와 상한대로 고른다."""
 
     node = corpus.mapping.nodes.get(skill_node_id)
