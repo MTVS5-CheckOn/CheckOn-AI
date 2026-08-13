@@ -1,0 +1,61 @@
+{
+  "data": {
+    "set_id": "00000000-0000-4000-8000-000000000050",
+    "status_counts": {
+      "verified": 1,
+      "needs_review": 1,
+      "dropped": 1,
+      "verification_unavailable": 1
+    },
+    "items": [
+      {
+        "slot_index": 0,
+        "item_id": "00000000-0000-4000-8000-000000000010",
+        "status": "verified",
+        "current_revision_no": 0,
+        "review_reason": null,
+        "failure_reason": null
+      },
+      {
+        "slot_index": 1,
+        "item_id": "00000000-0000-4000-8000-000000000010",
+        "status": "needs_review",
+        "current_revision_no": 1,
+        "review_reason": "manual_target_first",
+        "failure_reason": null
+      },
+      {
+        "slot_index": 2,
+        "item_id": "00000000-0000-4000-8000-000000000010",
+        "status": "verification_unavailable",
+        "current_revision_no": 0,
+        "review_reason": null,
+        "failure_reason": null
+      },
+      {
+        "slot_index": 3,
+        "item_id": null,
+        "status": "dropped",
+        "current_revision_no": 0,
+        "review_reason": null,
+        "failure_reason": "generation_exhausted"
+      }
+    ]
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "v4",
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": null,
+      "verify_config": "verify-config.v1",
+      "difficulty_calib": null
+    }
+  }
+}

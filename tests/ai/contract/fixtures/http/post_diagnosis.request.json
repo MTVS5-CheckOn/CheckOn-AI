@@ -1,0 +1,398 @@
+{
+  "student_ref": "st_0123456789abcdef0123456789abcdef",
+  "period": {
+    "from_date": "2026-06-17",
+    "to_date": "2026-08-12"
+  },
+  "as_of": "2026-08-12T09:00:00+00:00",
+  "snapshot_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "events": [
+    {
+      "event_id": "ok-000",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-001",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-002",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-003",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-004",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-005",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-006",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-007",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-008",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-009",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-010",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-011",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-012",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-013",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-014",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-015",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-016",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-017",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-018",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "ok-019",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-000",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-001",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-002",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-003",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-004",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-005",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-006",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-007",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-008",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-009",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-010",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-011",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-012",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-013",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-014",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-015",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-016",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-017",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-018",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "weak-019",
+      "area_tag": "language",
+      "type_tag": "infer",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "thin-000",
+      "area_tag": "reading",
+      "type_tag": "fact",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "thin-001",
+      "area_tag": "reading",
+      "type_tag": "fact",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    },
+    {
+      "event_id": "thin-002",
+      "area_tag": "reading",
+      "type_tag": "fact",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:00:00+00:00",
+      "tag_confirmed": true,
+      "skill_node_id": null
+    }
+  ]
+}

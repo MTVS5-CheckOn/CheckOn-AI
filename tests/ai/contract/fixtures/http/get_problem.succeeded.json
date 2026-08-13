@@ -1,0 +1,48 @@
+{
+  "data": {
+    "job_id": "00000000-0000-4000-8000-0000000000b0",
+    "status": "succeeded",
+    "result": {
+      "outcome": "problem_set",
+      "set_id": "00000000-0000-4000-8000-000000000050",
+      "status": "generated",
+      "stop_reason": null,
+      "target_source": "teacher_manual",
+      "personalized": false,
+      "requested_count": 1,
+      "processed_count": 1,
+      "unstarted_count": 0,
+      "items": [
+        {
+          "item_id": "00000000-0000-4000-8000-000000000010",
+          "status": "needs_review",
+          "attempt_no": 1,
+          "failure_reason": null,
+          "failure_detail": null,
+          "difficulty_est": 1.0,
+          "difficulty_band": "low",
+          "difficulty_fit": null,
+          "review_reason": "manual_target_first"
+        }
+      ],
+      "summary": null,
+      "dropped_reasons": []
+    }
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "v4",
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": "v1",
+      "verify_config": "verify-config.v1",
+      "difficulty_calib": null
+    }
+  }
+}

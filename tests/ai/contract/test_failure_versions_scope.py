@@ -112,6 +112,7 @@ _FAILURE_REQUESTS: Final[dict[str, tuple[str, str, dict[str, Any] | None]]] = {
     "/v1/imports": ("POST", "/v1/imports", {"bad": 1}),
     "/v1/confirmations": ("POST", "/v1/confirmations", {"bad": 1}),
     "/v1/problems": ("POST", "/v1/problems", {"bad": 1}),
+    "/v1/diagnosis": ("POST", "/v1/diagnosis", {"bad": 1}),
 }
 
 

@@ -18,7 +18,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
 from ai.api.version_scope import RouterScope
-from ai.contracts.agents import JobPhase, WorkerJob
+from ai.contracts.agents import TERMINAL_PHASES, JobPhase, WorkerJob
 from ai.contracts.diagnosis import DiagnosisResult
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.graphrag import GraphContextService
@@ -135,6 +135,14 @@ class ProblemRouterSettings(BaseSettings):
 
     lease_seconds: int = 300
     priority_aging_seconds: int = 600
+    poll_retry_after_seconds: int = Field(default=2, ge=1)
+    """비종단 조회 응답의 `Retry-After` 값(초).
+
+    🔴 **호출자의 폴링 주기를 코드가 아니라 설정이 정한다.** Kafka-HTTP adapter가 자기
+    상수로 돌면 우리가 인라인 실행을 바꿔도(느려지거나 빨라져도) 그쪽 주기는 그대로다 —
+    "값이 바뀌면 코드 diff가 생기면 위치가 틀린 것"(03 §1).
+    """
+
     drain_enabled: bool = True
     drain_max_jobs_per_cycle: int = Field(default=20, ge=1)
     drain_cycle_interval_seconds: float = Field(default=0.25, gt=0)
@@ -563,7 +571,9 @@ async def post_problem(request: Request, response: Response) -> dict[str, Any]:
 
 
 @router.get("/v1/problems/{job_id}")
-async def get_problem(job_id: str, request: Request) -> dict[str, Any]:
+async def get_problem(
+    job_id: str, request: Request, response: Response
+) -> dict[str, Any]:
     """테넌트 범위에서 잡 현재 phase와 확정 결과를 회수한다."""
 
     tenant_id = request.headers.get("X-Tenant-Id")
@@ -600,6 +610,12 @@ async def get_problem(job_id: str, request: Request) -> dict[str, Any]:
     _views[(tenant_id, job_id)] = _CachedView(
         view=view, versions=cached.versions
     )
+    if job.phase not in TERMINAL_PHASES:
+        # 🔴 **폴링 종료 조건은 `data.status`가 종단인지 하나다.** 이 헤더는 *"언제 다시
+        #    오라"* 만 말한다 — 종단 응답에는 붙지 않으므로 헤더 유무로도 갈린다.
+        response.headers["Retry-After"] = str(
+            ProblemRouterSettings().poll_retry_after_seconds
+        )
     return success_envelope(
         data=view.model_dump(mode="json"),
         execution_id=str(uuid.uuid4()),

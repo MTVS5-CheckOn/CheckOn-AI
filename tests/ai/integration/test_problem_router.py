@@ -1059,3 +1059,49 @@ def test_response_versions_and_ledger_versions_are_the_same_row() -> None:
     )
     # 🔴 그 원장 행을 가리키는지까지 본다 — 값이 같아도 다른 행을 가리키면 재현이 안 된다.
     assert meta["execution_id"] == str(run.execution_id)
+
+def test_pending_job_tells_the_adapter_when_to_come_back() -> None:
+    """🔴 Kafka-HTTP adapter의 폴링 주기를 **우리 설정이** 정한다(AI-BE-01).
+
+    adapter가 자기 상수로 돌면 우리 인라인 실행이 느려져도 그쪽 주기는 그대로다.
+    ⚠ 종단 응답에는 붙지 않는다 — 붙으면 adapter가 끝난 잡을 계속 돈다.
+    """
+    _run_store, stores, _generator, _verifier = _prepare(calls=2)
+    supervisor = Supervisor(
+        store=build_agent_job_store(),
+        lease_duration=timedelta(minutes=5),
+        priority_aging_interval=timedelta(minutes=10),
+    )
+    # 🔴 **앞선 잡을 하나 넣어 두어야 내 잡이 `queued`로 남는다** — POST의 인라인 러너가
+    #    우선순위·aging 순으로 집으므로 자기 잡을 집는다는 보장이 없다(같은 파일의
+    #    `test_problem_post_never_returns_another_queued_jobs_result`와 같은 구성).
+    _run(
+        ProblemGenerationEnqueuer(
+            supervisor=supervisor, request_store=stores.requests
+        ).enqueue(_problem_request(request_id="pending", target_ref="student-pending"))
+    )
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        job_id = posted.json()["data"]["job_id"]
+        if posted.json()["data"]["status"] == "queued":
+            pending = client.get(
+                f"/v1/problems/{job_id}",
+                headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+            )
+            # ⚠ 배경 드레인이 그 사이 끝냈을 수 있다 — 비종단일 때만 헤더를 요구한다.
+            if pending.json()["data"]["status"] not in {"succeeded", "failed", "cancelled"}:
+                assert pending.headers["Retry-After"] == "2"
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            done = client.get(
+                f"/v1/problems/{job_id}",
+                headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+            )
+            if done.json()["data"]["status"] == "succeeded":
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("잡이 종단되지 않았다")
+
+    assert "Retry-After" not in done.headers

@@ -1,0 +1,29 @@
+{
+  "data": null,
+  "error": {
+    "code": "INVALID_SCHEMA",
+    "message": "필수 헤더 누락",
+    "detail": {
+      "missing_headers": [
+        "X-Tenant-Id",
+        "X-Request-Id",
+        "Idempotency-Key"
+      ]
+    }
+  },
+  "meta": {
+    "execution_id": null,
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "v4",
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": null,
+      "verify_config": "verify-config.v1",
+      "difficulty_calib": null
+    }
+  }
+}
