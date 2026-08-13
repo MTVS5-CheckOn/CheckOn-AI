@@ -104,7 +104,7 @@ DETECT_HEADERS: Final[tuple[dict[str, Any], ...]] = (
             "같은 키 + 같은 `snapshot_hash` → 기존 결과 200 재반환, "
             "다른 `snapshot_hash` → 409."
         ),
-        "example": "t_demo:detect:2026-07-20",
+        "example": "t_demo:detect:2026-08-10",
     },
 )
 
@@ -289,8 +289,8 @@ def _request_schema() -> dict[str, Any]:
 #: ⚠ alias만 쓴다. 실명·연락처·실 키가 없다(불변식 3 — 문서도 경계 밖이다).
 DETECT_REQUEST_EXAMPLE: Final[dict[str, Any]] = {
     "snapshot_meta": {
-        "week_start": "2026-07-20",
-        "snapshot_hash": "sha256:example-1-2026-07-20",
+        "week_start": "2026-08-10",
+        "snapshot_hash": "sha256:example-1-2026-08-10",
         "term_context": "normal",
         "classes": [{"class_ref": "cl_a1"}],
     },
