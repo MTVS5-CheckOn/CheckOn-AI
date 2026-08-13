@@ -23,6 +23,7 @@ from dataclasses import dataclass, replace
 
 from ai.contracts.detection import (
     DetectRequest,
+    EvidenceRole,
     Lifecycle,
     RuleId,
     Signal,
@@ -309,7 +310,7 @@ def build_briefing_context(
 
     ⚠ `evidence`·`config`는 **R3 전용**이다 — 나머지 규칙의 facts 의미는 바뀌지 않는다.
     """
-    summaries = tuple(dict.fromkeys(e.summary for e in signal.evidence))
+    summaries = _trigger_summaries(signal)
     return BriefingContext(
         signal_type=signal.signal_type,
         display_label=signal.display_label,
@@ -323,9 +324,36 @@ def build_briefing_context(
     )
 
 
+def _trigger_summaries(signal: Signal) -> tuple[str, ...]:
+    """프롬프트에 실을 근거 문면 — 🔴 **`trigger` 행만.**
+
+    🔴 **기준선 행을 실으면 두 가지가 깨진다**(2026-08-13 실측 · 99 #60):
+
+      ① **LLM이 비교 기준을 「이번 주 값」으로 오독한다.** 브리핑은 *"지금 이렇다"* 를
+         한 문장으로 전하는 것이고, 기준선은 **비교 대상**이지 관찰값이 아니다.
+      ② 🔴 **EXACT 게이트가 느슨해진다.** `allowed_numbers`가 근거 문면의 숫자를 모으는데,
+         기준선 행이 들어가면 **그 숫자를 아무 자리에나 써도 통과**한다. 게이트를 넓히는
+         변경은 이 PR의 축이 아니다.
+
+    ⚠ 실제로 `test_r3_prompt_carries_the_authoritative_activity_not_the_learning_events`가
+    이걸 잡았다 — 기준선 활동량(20건)이 프롬프트에 새어 *"learning_events 20건이 새면
+    안 된다"* 는 단언과 **값이 겹쳤다.** 값이 겹치지 않았으면 조용히 지나갔을 자리다.
+
+    ⇒ **기준선 행은 백엔드 표시용이다**(강사가 *"평소 대비"* 를 보는 재료). 브리핑 문장의
+    재료가 아니다. 비교값 자체는 `Signal.metric`·`observed`·`baseline`이 든다(안 D).
+    """
+    return tuple(
+        dict.fromkeys(
+            item.summary
+            for item in signal.evidence
+            if item.role is EvidenceRole.TRIGGER
+        )
+    )
+
+
 def _minimal_context(signal: Signal) -> BriefingContext:
     """학생 피처를 못 찾은 방어 경로 — 수치 없이 lifecycle·폴백만(정직하게 비움)."""
-    summaries = tuple(dict.fromkeys(e.summary for e in signal.evidence))
+    summaries = _trigger_summaries(signal)
     return BriefingContext(
         signal_type=signal.signal_type,
         display_label=signal.display_label,

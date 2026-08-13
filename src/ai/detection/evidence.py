@@ -30,6 +30,7 @@ from ai.contracts.detection import (
     DetectRequest,
     EnrollmentTransitionEvidence,
     EvidenceItem,
+    EvidenceRole,
     RuleId,
     StudentStatus,
     WeeklyActivityEvidence,
@@ -203,12 +204,22 @@ def resolve_weekly_activity_window(
 # ───────────────────────── 규칙별 resolver ─────────────────────────
 
 
-def _learning_event_items(record_ids: Sequence[str], label: str) -> tuple[EvidenceItem, ...]:
+def _learning_event_items(
+    record_ids: Sequence[str], label: str, *, week_monday: date | None = None
+) -> tuple[EvidenceItem, ...]:
+    """학습 기록 근거 — 🔴 **`observed`를 채우지 않는다.**
+
+    `learning_event`는 **문항 단위**다(`correct`·`duration_sec`). 주 단위 지표(정답률·
+    정규화 시간)에 해당하는 값이 **그 레코드에 없으므로**, 주 값을 레코드마다 반복해 실으면
+    *"그 기록 자신의 값"* 이라는 계약이 거짓이 된다. 비교값은 `Signal`이 든다(99 #60 · 안 D).
+    """
     return tuple(
         EvidenceItem(
             source_table=_LEARNING_EVENT_TABLE,
             record_id=record_id,
             summary=f"{label} 근거 기록",
+            role=EvidenceRole.TRIGGER,
+            occurred_on=week_monday,
         )
         for record_id in record_ids
     )
@@ -226,18 +237,36 @@ class EvidenceRequest:
     learning_events: Mapping[tuple[str, date], list[str]]
     student_evidence: StudentEvidence
 
+    baseline_weeks: tuple[date, ...] = ()
+    """🔴 **기준선이 된 주** — 레코드가 실존하는 규칙만 채워진다(현재 R3뿐).
+
+    비어 있으면 `role="baseline"` 행이 안 나간다. **누락이 아니라 「가리킬 레코드가 없다」**다
+    (`docs/part_a/14_evidence_fields.md` 규칙별 표).
+    """
+
 
 type EvidenceResolver = Callable[[EvidenceRequest], tuple[EvidenceItem, ...]]
 
 
 def _from_learning_events(request: EvidenceRequest) -> tuple[EvidenceItem, ...]:
-    """R1·R4·R6 — 판정에 쓴 **그 주의 학습 기록**이 곧 근거다(현행 유지)."""
-    record_ids: list[str] = []
+    """R1·R4·R6 — 판정에 쓴 **그 주의 학습 기록**이 곧 근거다.
+
+    ⚠ **주별로 만든다** — 종전에는 전 주의 record_id를 한 덩어리로 폈는데, 그러면 각 근거가
+    **어느 주 것인지**가 사라진다(`occurred_on`을 못 채운다).
+    """
+    items: list[EvidenceItem] = []
+    seen: set[str] = set()
     for week_monday in request.evidence_weeks:
-        record_ids.extend(
-            request.learning_events.get((request.student_ref, week_monday), [])
-        )
-    return _learning_event_items(list(dict.fromkeys(record_ids)), request.label)
+        fresh = [
+            record_id
+            for record_id in request.learning_events.get(
+                (request.student_ref, week_monday), []
+            )
+            if record_id not in seen
+        ]
+        seen.update(fresh)
+        items.extend(_learning_event_items(fresh, request.label, week_monday=week_monday))
+    return tuple(items)
 
 
 def resolve_r2_evidence(request: EvidenceRequest) -> tuple[EvidenceItem, ...]:
@@ -256,26 +285,53 @@ def resolve_r2_evidence(request: EvidenceRequest) -> tuple[EvidenceItem, ...]:
                 source_table=window.source_table,
                 record_id=window.record_id,
                 summary=f"예정 과제 {window.expected_count}건 중 제출 {window.submitted_count}건",
+                role=EvidenceRole.TRIGGER,
+                #: ⚠ 주 단위 백엔드 집계라 **그 레코드 자신의 값**이 실존한다.
+                observed=float(window.submitted_count),
+                #: 🔴 `summary`의 *"예정 N건"* 이 갈 곳 — 이게 없으면 그 숫자가 응답에서
+                #:   사라져 백엔드가 문자열을 계속 파싱해야 한다.
+                sample_size=window.expected_count,
+                occurred_on=week_monday,
             )
         )
     return tuple(items)
 
 
 def resolve_r3_evidence(request: EvidenceRequest) -> tuple[EvidenceItem, ...]:
-    """R3 — **그 주 학습량 집계**만 인용한다. 0건도 실존 레코드다."""
-    items: list[EvidenceItem] = []
-    for week_monday in request.evidence_weeks:
-        activity = request.student_evidence.weekly_activity.get(week_monday)
-        if activity is None:
-            continue
-        items.append(
-            EvidenceItem(
-                source_table=activity.source_table,
-                record_id=activity.record_id,
-                summary=f"해당 주 학습 활동 {activity.activity_count}건",
-            )
-        )
-    return tuple(items)
+    """R3 — 그 주 학습량 집계를 인용하고 **기준선이 된 주들도 함께** 싣는다.
+
+    0건도 실존 레코드다.
+
+    🔴 **기록 단위 기준선을 가진 유일한 규칙이다**(99 #60). `weekly_activity_summary`가
+    **주 단위 백엔드 레코드**라 `record_id`와 `activity_count`가 1:1로 붙는다 — R1·R4의
+    `learning_event`(문항 단위)에는 그런 레코드가 없다.
+    """
+    items = [
+        _activity_item(request, week_monday, EvidenceRole.TRIGGER)
+        for week_monday in request.evidence_weeks
+    ]
+    items += [
+        _activity_item(request, week_monday, EvidenceRole.BASELINE)
+        for week_monday in request.baseline_weeks
+    ]
+    return tuple(item for item in items if item is not None)
+
+
+def _activity_item(
+    request: EvidenceRequest, week_monday: date, role: EvidenceRole
+) -> EvidenceItem | None:
+    """주간 학습량 집계 1건 → 근거. 그 주 레코드가 없으면 `None`(지어내지 않는다)."""
+    activity = request.student_evidence.weekly_activity.get(week_monday)
+    if activity is None:
+        return None
+    return EvidenceItem(
+        source_table=activity.source_table,
+        record_id=activity.record_id,
+        summary=f"해당 주 학습 활동 {activity.activity_count}건",
+        role=role,
+        observed=float(activity.activity_count),
+        occurred_on=week_monday,
+    )
 
 
 def resolve_r5_evidence(request: EvidenceRequest) -> tuple[EvidenceItem, ...]:
@@ -288,6 +344,8 @@ def resolve_r5_evidence(request: EvidenceRequest) -> tuple[EvidenceItem, ...]:
                     source_table=transition.source_table,
                     record_id=transition.record_id,
                     summary="휴원 후 복귀 상태 전환 기록",
+                    role=EvidenceRole.TRIGGER,
+                    occurred_on=transition.occurred_at.date(),
                 )
             )
     return tuple(items)

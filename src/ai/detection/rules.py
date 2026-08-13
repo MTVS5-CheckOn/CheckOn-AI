@@ -46,6 +46,27 @@ class RuleFinding:
     detail: str = ""
     """brief·evidence 보조 문구 재료 (R6 셀 정보 등)."""
 
+    #: ━━ 비교값 (99 #60 · 안 D) — 엔진이 `Signal`로 그대로 옮긴다 ━━
+    #: 🔴 **판정에 쓴 그 값을 그대로 싣는다.** 여기서 다시 계산하면 판정과 문면이 갈린다
+    #:   (`evidence.py` 모듈 docstring의 같은 규율 · 2026-08-13 R3에서 실제로 겪었다).
+    #: ⚠ **기준선 비교를 안 하는 규칙은 `baseline`이 `None`이다** — R2는 연속 **횟수**를,
+    #:   R6는 셀 점유율을 **임계값과** 비교한다. 임계를 baseline으로 적으면 *"평소 대비"* 로
+    #:   읽혀 거짓이 된다.
+    metric: str | None = None
+    observed: float | None = None
+    baseline: float | None = None
+    sample_size: int | None = None
+    """🔴 적재분에서 복원한 주는 `None`이다 — 모르는 것을 0으로 적지 않는다."""
+
+    baseline_weeks: tuple[date, ...] = ()
+    """🔴 **기준선이 된 주** — 엔진이 그 주의 레코드를 `role="baseline"` 근거로 바꾼다.
+
+    ⚠ **비어 있는 규칙이 대부분이다.** 가리킬 **레코드**가 있어야 채운다 — R1·R4의 기준선은
+    직전 주들의 **평균**이고 `learning_event`는 **문항 단위**라 그 값에 해당하는 레코드가
+    없다. 문항 레코드에 주 단위 값을 붙이면 *"그 기록의 값"* 이 거짓이 된다(99 #60 · 안 D).
+    ⇒ 비교값은 `Signal`이 들고, 여기는 **레코드가 실존하는 규칙**(R3)만 채운다.
+    """
+
 
 @dataclass(frozen=True)
 class RuleSkip:
@@ -173,7 +194,21 @@ def _r1(
             return None, None
         drops.append(drop_pp)
     score = _normalize(max(drops), p.drop_pp, p.saturation_drop_pp)
-    return _finding(RuleId.R1, score, assess), None
+    #: ⚠ **판정 창의 마지막 주**를 관측값으로 싣는다 — 강사가 보는 *"지금"* 이 그 주다.
+    #:   `max(drops)`가 난 주가 아니다(그건 score의 근거이고 화면 문면의 축이 아니다).
+    latest = assess[-1]
+    return (
+        _finding(
+            RuleId.R1,
+            score,
+            assess,
+            metric="accuracy",
+            observed=latest.accuracy,
+            baseline=baseline.accuracy,
+            sample_size=latest.graded_count,
+        ),
+        None,
+    )
 
 
 def _r2(
@@ -229,6 +264,10 @@ def _r2(
             signal_type=RULE_SIGNAL_MAP[RuleId.R2],
             score=score,
             evidence_weeks=tuple(reversed(streak)),
+            metric="consecutive_missing_weeks",
+            observed=float(len(streak)),
+            #: 🔴 `baseline`을 안 싣는다 — R2는 **임계값**과 비교하지 기준선과 비교하지
+            #:   않는다. 임계를 baseline으로 적으면 *"평소 대비"* 로 읽혀 거짓이 된다.
         ),
         None,
     )
@@ -285,6 +324,12 @@ def _r3(
             score=score,
             #: ⚠ 판정에 쓴 그 레코드의 주다 — `analysis_week`과 같고, 인용도 여기서 나온다.
             evidence_weeks=(window.current.week_start,),
+            metric="activity_count",
+            observed=float(window.current.activity_count),
+            baseline=window.baseline_volume,
+            sample_size=len(window.prior),
+            #: 🔴 **평균을 낸 그 주들**이다 — 여기서 다시 고르지 않는다(판정과 인용 일치).
+            baseline_weeks=tuple(row.week_start for row in window.prior),
         ),
         None,
     )
@@ -332,9 +377,25 @@ def _r4(
             return None, None
         ratios.append(time_ratio)
     score = _normalize(max(ratios), p.time_ratio, p.saturation_time_ratio)
-    return _finding(RuleId.R4, score, assess), None
+    latest = assess[-1]
+    return (
+        _finding(
+            RuleId.R4,
+            score,
+            assess,
+            metric="norm_time",
+            observed=latest.norm_time,
+            baseline=baseline.norm_time,
+            sample_size=latest.timed_count,
+        ),
+        None,
+    )
 
 
+#: 🔴 **R5는 비교값을 비워 둔다 — 누락이 아니다.**
+#: 복귀 케어는 *"휴원했다가 돌아왔다"* 는 **사건**이지 어떤 값이 어떤 기준보다 낮다는
+#: 주장이 아니다. 잴 지표(`metric`)도, 관측값(`observed`)도, 비교 기준(`baseline`)도
+#: **개념 자체가 없다.** ⚠ 이 주석이 없으면 다음 사람이 *"R5만 빠졌네"* 하고 억지로 채운다.
 def _r5(
     features: StudentFeatures,
     baseline: Baseline,
@@ -410,14 +471,33 @@ def _r6(
         score=score,
         evidence_weeks=(recent.week_monday,),
         detail=detail,
+        metric="error_share",
+        observed=share,
+        #: ⚠ **`observed`의 분모(`total_wrong`)가 아니라 그 셀의 문항 수다** — 화면 문면이
+        #:   `detail`("…오답 8/12")과 같은 자를 써야 강사가 두 숫자를 대조할 수 있다.
+        sample_size=top.n,
+        #: 🔴 `baseline` 없음 — 같은 주 안의 셀 점유율을 **임계**와 비교한다.
     )
     return finding, None
 
 
-def _finding(rule_id: RuleId, score: float, weeks: tuple[WeekFeatures, ...]) -> RuleFinding:
+def _finding(
+    rule_id: RuleId,
+    score: float,
+    weeks: tuple[WeekFeatures, ...],
+    *,
+    metric: str | None = None,
+    observed: float | None = None,
+    baseline: float | None = None,
+    sample_size: int | None = None,
+) -> RuleFinding:
     return RuleFinding(
         rule_id=rule_id,
         signal_type=RULE_SIGNAL_MAP[rule_id],
         score=score,
         evidence_weeks=tuple(w.week_monday for w in weeks),
+        metric=metric,
+        observed=observed,
+        baseline=baseline,
+        sample_size=sample_size,
     )

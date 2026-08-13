@@ -124,13 +124,28 @@ def test_the_existing_request_fields_are_unchanged() -> None:
     assert fields["snapshot_meta"].is_required() is True
 
 
-def test_the_response_contract_is_untouched() -> None:
-    """🔴 **응답 구조는 전혀 안 바뀐다** — 필드 집합을 값으로 못 박는다."""
+def test_the_response_contract_only_grew_and_never_shrank() -> None:
+    """🔴 응답 구조는 **더해지기만** 한다 — 기존 필드 삭제·개명 0.
+
+    ⚠ **이 검사의 이름과 취지가 2026-08-13에 바뀌었다**(99 #59·#60). 종전 이름은
+    `test_the_response_contract_is_untouched`였고 *"응답 구조 변경 0"* 을 못 박았는데,
+    그 약속은 **#43(요청에 `detection_evidence` 추가)의 범위**에서 한 것이다 — 그 PR이
+    응답을 안 건드린다는 뜻이었지 응답을 영원히 동결한다는 뜻이 아니었다.
+
+    🔴 **그래도 지켜야 하는 것은 남는다** — 백엔드가 이미 읽고 있는 필드는 **사라지지도
+    이름이 바뀌지도 않는다.** 그래서 `==`(동결)이 아니라 `<=`(부분집합)로 잠근다:
+    새 필드는 통과하고 **삭제·개명은 red**다.
+    """
     from ai.contracts.detection import EvidenceItem, Signal  # noqa: PLC0415
 
     assert set(DetectResponse.model_fields) == {"signals", "stats"}
-    assert set(EvidenceItem.model_fields) == {"source_table", "record_id", "summary"}
-    assert set(Signal.model_fields) == {
+    #: 🔴 백엔드가 지금 읽고 있는 셋 — `summary`는 deprecated지만 **지우지 않는다**(#59).
+    assert {"source_table", "record_id", "summary"} <= set(EvidenceItem.model_fields)
+    #: ⚠ 새로 더한 것은 여기 적어 둔다 — 다음 사람이 diff 없이 무엇이 늘었는지 안다.
+    assert {"role", "observed", "sample_size", "occurred_on"} <= set(
+        EvidenceItem.model_fields
+    )
+    assert {
         "signal_id",
         "student_ref",
         "class_ref",
@@ -143,7 +158,9 @@ def test_the_response_contract_is_untouched() -> None:
         "lifecycle",
         "brief",
         "evidence",
-    }
+    } <= set(Signal.model_fields)
+    #: 🔴 2026-08-13에 더한 비교값(99 #60 · 안 D) — 기존 필드는 하나도 안 건드렸다.
+    assert {"metric", "observed", "baseline", "sample_size"} <= set(Signal.model_fields)
     #: ⚠ `merged_rule_ids`는 이번 작업에서 **추가하지 않는다.**
     assert "merged_rule_ids" not in Signal.model_fields
 
