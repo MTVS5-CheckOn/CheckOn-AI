@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ai.api.app import ROUTER_VERSION_SCOPES, create_app
 from ai.api.envelope import success_envelope, versions_dict
 from ai.api.routers import ops
 from ai.api.routers.detect import detection_versions
@@ -184,3 +185,41 @@ def test_ops_version_scopes_are_exact_and_do_not_capture_v1() -> None:
     assert resolve_versions("/v1/health", ()) == FALLBACK_VERSIONS
     assert resolve_versions("/v1/health", ()) != ops.ops_versions()
     assert resolve_versions("/v1/problems", ops.VERSION_SCOPE) == FALLBACK_VERSIONS
+
+
+def test_registered_app_exposes_ops_paths_and_keeps_version_scopes_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _Session()
+    monkeypatch.setattr(ops, "get_sessionmaker", lambda: _sessionmaker(session))
+    app = create_app()
+    paths = app.openapi()["paths"]
+
+    assert {"/v1/health", "/v1/ready", "/v1/meta/versions"} <= set(paths)
+
+    with TestClient(app) as client:
+        health = client.get("/v1/health")
+        ready = client.get("/v1/ready")
+        versions = client.get("/v1/meta/versions")
+        problem_failure = client.post("/v1/problems", json={})
+        diagnosis_failure = client.post("/v1/diagnosis", json={})
+
+    for response in (health, ready, versions):
+        assert response.json()["meta"]["versions"]["engine"] == "ops-0.1"
+    assert problem_failure.json()["meta"]["versions"] == versions_dict(
+        problem_failure_versions()
+    )
+    assert diagnosis_failure.json()["meta"]["versions"] == versions_dict(
+        diagnosis_versions()
+    )
+    assert resolve_versions("/v1/nonexistent", ROUTER_VERSION_SCOPES) == FALLBACK_VERSIONS
+
+
+def test_registered_app_requires_all_three_ops_version_scopes() -> None:
+    registered = {
+        scope.prefix: resolve_versions(scope.prefix, ROUTER_VERSION_SCOPES)
+        for scope in ops.VERSION_SCOPE
+    }
+
+    assert set(registered) == {scope.prefix for scope in ops.VERSION_SCOPE}
+    assert all(versions.engine_version == "ops-0.1" for versions in registered.values())
