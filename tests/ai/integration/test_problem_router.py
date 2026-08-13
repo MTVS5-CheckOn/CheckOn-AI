@@ -725,6 +725,34 @@ def test_step3_ai_refine_revalidates_persists_and_replays_idempotently() -> None
     }
 
 
+def test_step3_memory_mode_keeps_job_payload_request_path() -> None:
+    _run_store, _stores, generator, verifier = _prepare(calls=2)
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        result = client.get(
+            f"/v1/problems/{posted.json()['data']['job_id']}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        ).json()["data"]["result"]
+        revised = client.post(
+            f"/v1/problems/{result['set_id']}/items/0/revisions",
+            headers={
+                **_HEADERS,
+                "X-Request-Id": "request-memory-refine",
+                "Idempotency-Key": "idem-memory-refine",
+            },
+            json={
+                "base_revision_no": 0,
+                "revision_kind": "ai_refine",
+                "instruction": "발문을 더 명확하게 다듬어 주세요.",
+            },
+        )
+
+    assert revised.status_code == 200, revised.text
+    assert revised.json()["data"]["revision"]["revision_no"] == 1
+    assert len(generator.requests) == len(verifier.requests) == 2
+
+
 @pytest.mark.parametrize("revision_kind", ["teacher_direct", "rollback"])
 def test_step3_unsupported_revision_kind_is_rejected_before_revision_or_llm(
     revision_kind: str,

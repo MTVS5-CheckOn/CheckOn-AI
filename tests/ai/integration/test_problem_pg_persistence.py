@@ -81,6 +81,7 @@ def _headers(tenant_id: str) -> dict[str, str]:
 def _prepare_pg(
     *,
     generator_steps: tuple[str, ...] | None = None,
+    verifier_steps: tuple[str, ...] | None = None,
     graph_context: GraphContextService | None = None,
 ) -> None:
     reset_shared_agent_runtime()
@@ -90,7 +91,9 @@ def _prepare_pg(
             generator=FakeProvider(
                 generator_steps or (_generated_item_json(),), name="pg-generator"
             ),
-            verifier=FakeProvider((_solve_result_json(),), name="pg-verifier"),
+            verifier=FakeProvider(
+                verifier_steps or (_solve_result_json(),), name="pg-verifier"
+            ),
             has_dedicated_verifier=False,
         )
     )
@@ -269,6 +272,56 @@ def test_pg_post_persists_items_and_cache_miss_recovers_reads(
         assert restarted_items.json()["meta"]["execution_id"] == execution_id
         assert hidden_job.status_code == 404
         assert hidden_items.status_code == 404
+    finally:
+        monkeypatch.setenv("STORE_BACKEND", "memory")
+        get_db_settings.cache_clear()
+        get_engine.cache_clear()
+        reset_shared_agent_runtime()
+        problem_router.reset_problem_router()
+
+
+def test_pg_cache_loss_recovers_original_request_for_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tenant_id = f"tenant-revision-{uuid.uuid4().hex[:10]}"
+    headers = _headers(tenant_id)
+    monkeypatch.setenv("STORE_BACKEND", "pg")
+    monkeypatch.setenv("PG_DRAIN_ENABLED", "false")
+    get_db_settings.cache_clear()
+    get_engine.cache_clear()
+    _prepare_pg(
+        generator_steps=(_generated_item_json(), _generated_item_json()),
+        verifier_steps=(_solve_result_json(), _solve_result_json()),
+    )
+
+    try:
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            posted = client.post("/v1/problems", headers=headers, json=_body())
+            assert posted.status_code == 202, posted.text
+            job_id = posted.json()["data"]["job_id"]
+            job = client.get(
+                f"/v1/problems/{job_id}", headers={"X-Tenant-Id": tenant_id}
+            )
+            assert job.status_code == 200, job.text
+            set_id = job.json()["data"]["result"]["set_id"]
+
+            problem_router._views.clear()  # noqa: SLF001 — 프로세스 재시작 캐시 소실 재현
+            revised = client.post(
+                f"/v1/problems/{set_id}/items/0/revisions",
+                headers={
+                    **headers,
+                    "X-Request-Id": f"request-revision-{uuid.uuid4().hex}",
+                    "Idempotency-Key": f"idem-revision-{uuid.uuid4().hex}",
+                },
+                json={
+                    "base_revision_no": 0,
+                    "revision_kind": "ai_refine",
+                    "instruction": "발문을 더 명확하게 다듬어 주세요.",
+                },
+            )
+
+        assert revised.status_code == 200, revised.text
+        assert revised.json()["data"]["revision"]["revision_no"] == 1
     finally:
         monkeypatch.setenv("STORE_BACKEND", "memory")
         get_db_settings.cache_clear()

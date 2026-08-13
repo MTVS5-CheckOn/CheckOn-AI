@@ -721,6 +721,11 @@ def _item_diff(
 async def _problem_request_for_set(
     *, tenant_id: str, set_id: uuid.UUID
 ) -> ProblemRequest:
+    set_store = _problem_set_store_for(tenant_id)
+    restored = await set_store.get_by_set_id(set_id) if set_store is not None else None
+    # 저장 백엔드 이름이 아니라 복원분의 존재로 갈라야 기존 인메모리 경로가 그대로 산다.
+    if restored is not None:
+        return restored.request
     job_id = _set_job_id(tenant_id=tenant_id, set_id=set_id)
     job = await _build_supervisor().get(tenant_id=tenant_id, job_id=job_id)
     if job is None:
