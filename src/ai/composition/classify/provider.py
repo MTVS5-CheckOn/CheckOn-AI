@@ -80,9 +80,9 @@ def build_classify_provider(settings: ClassifySettings | None = None) -> LLMProv
     """
     settings = settings or get_classify_settings()
     if settings.llm_provider == _OPENAI_COMPAT:
-        from ai.llm.providers.openai_compat import OpenAICompatProvider
+        from ai.llm.providers.openai_compat import build_openai_compat_provider
 
-        return OpenAICompatProvider()
+        return build_openai_compat_provider()
     return FakeClassifyProvider()
 
 

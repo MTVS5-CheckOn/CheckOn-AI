@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Final
 
 #: 🔴 **실 LLM 호출의 유일한 허용 스위치.** 이 이름을 바꾸면 문서·로컬 검증이 같이 낡는다.
@@ -31,6 +32,10 @@ REAL_LLM_OPTIN_ENV: Final = "CHECKON_ALLOW_REAL_LLM"
 
 #: ⚠ **켜는 값을 좁게 둔다** — 오타(`"0"`·`"false"`·빈 값)로 열리면 fail-closed가 아니다.
 _TRUTHY: Final = frozenset({"1", "true", "yes", "on"})
+
+
+class RealLlmOptInRequired(RuntimeError):
+    """명시적 허용 없이 실 LLM client를 만들려고 한 경우."""
 
 
 def real_llm_optin() -> bool:
@@ -54,6 +59,30 @@ def real_llm_skip_reason(base_url: str) -> str | None:
         f"실 LLM 호출은 {REAL_LLM_OPTIN_ENV}=1 없이는 하지 않는다 — skip "
         f"(대상 호스트 {_host_of(base_url)} · 99 #32). "
         f"⚠ 켜려면 셸에서 그 명령에만 붙여라 — `.env`에 넣으면 남는다"
+    )
+
+
+def build_real_openai_client[T](
+    client_factory: Callable[..., T],
+    *,
+    denied_client_factory: Callable[[str], T],
+    base_url: str,
+    api_key: str,
+    timeout_s: float,
+) -> T:
+    """유일한 opt-in 관문을 통과한 뒤 실 OpenAI client를 만든다.
+
+    벤더 SDK import는 기존 경계대로 ``llm/providers``에만 둔다. 이 함수는 그 경계에서
+    받은 생성자를 실행하므로, 허용 판정과 실제 client 생성 시점은 한곳에 고정된다.
+    """
+    reason = real_llm_skip_reason(base_url)
+    if reason is not None:
+        return denied_client_factory(reason)
+    return client_factory(
+        base_url=base_url,
+        api_key=api_key,
+        timeout=timeout_s,
+        max_retries=0,
     )
 
 

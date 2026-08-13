@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Coroutine
 from types import SimpleNamespace
 from typing import Final
@@ -42,6 +43,7 @@ from ai.llm.providers.openai_compat import (
     PROVIDER_NAME,
     OpenAICompatProvider,
     OpenAiSettings,
+    build_openai_compat_provider,
 )
 
 _REQ = httpx.Request("POST", "http://local/v1/chat/completions")
@@ -489,9 +491,24 @@ def test_settings_surface_is_openai_only() -> None:
     )
 
 
-def test_real_client_disables_sdk_retries() -> None:
+def test_provider_requires_an_injected_client() -> None:
+    """provider 생성자는 실 client를 만들지 않고 주입만 받는다."""
+    parameter = inspect.signature(OpenAICompatProvider).parameters["client"]
+    assert parameter.default is inspect.Parameter.empty
+
+
+def test_real_provider_is_blocked_without_optin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """실 provider를 조립해도 opt-in 없이는 SDK client 생성과 HTTP 호출이 모두 차단된다."""
+    monkeypatch.delenv("CHECKON_ALLOW_REAL_LLM", raising=False)
+    provider = build_openai_compat_provider(settings=_settings())
+    with pytest.raises(LlmUnavailable, match="CHECKON_ALLOW_REAL_LLM"):
+        _run(provider.complete(_request(), _context()))
+
+
+def test_real_client_disables_sdk_retries(monkeypatch: pytest.MonkeyPatch) -> None:
     """실 클라이언트는 SDK 내장 재시도를 끈다(무재시도 확정) — 네트워크 없이 생성만."""
-    provider = OpenAICompatProvider(settings=_settings())
+    monkeypatch.setenv("CHECKON_ALLOW_REAL_LLM", "1")
+    provider = build_openai_compat_provider(settings=_settings())
     assert provider._client.max_retries == 0
 
 

@@ -23,7 +23,10 @@ skip 조건이 `"localhost" in openai_base_url`이었고 `.env`의 `OPENAI_BASE_
 from __future__ import annotations
 
 import ast
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Final
 
@@ -31,6 +34,7 @@ import pytest
 
 from ai.runtime.real_llm import (
     REAL_LLM_OPTIN_ENV,
+    build_real_openai_client,
     real_llm_optin,
     real_llm_skip_reason,
 )
@@ -114,6 +118,55 @@ def test_the_optin_lets_it_through(monkeypatch: pytest.MonkeyPatch) -> None:
     assert real_llm_skip_reason("https://api.openai.com/v1") is None
 
 
+def test_real_client_factory_blocks_before_constructing_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """opt-in이 없으면 SDK 생성자 대신 호출 차단 client를 반환한다."""
+    monkeypatch.delenv(REAL_LLM_OPTIN_ENV, raising=False)
+    called = False
+
+    def _factory(**_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        return object()
+
+    denied = object()
+    client = build_real_openai_client(
+        _factory,
+        denied_client_factory=lambda _reason: denied,
+        base_url="https://api.openai.com/v1",
+        api_key="test-key",
+        timeout_s=15.0,
+    )
+    assert called is False
+    assert client is denied
+
+
+def test_detect_import_does_not_assemble_real_provider() -> None:
+    """라우터 import는 설정과 실 provider 조립을 실행하지 않는다."""
+    env = os.environ.copy()
+    env["LLM_PROVIDER"] = "openai_compat"
+    env.pop(REAL_LLM_OPTIN_ENV, None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from ai.api.routers import detect; "
+                "assert detect._brief_provider is None; "
+                "assert detect._brief_gateway is None"
+            ),
+        ],
+        cwd=_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_no_site_keeps_the_old_default_based_gate() -> None:
     """🔴 **판정이 한 자리다** — 종전 조건이 복제돼 있던 셋을 걷었는가.
 
@@ -141,3 +194,23 @@ def test_every_site_uses_the_shared_gate() -> None:
         if "real_llm_skip_reason" not in (_ROOT / site).read_text(encoding="utf-8")
     ]
     assert not missing, f"공용 게이트를 안 쓰는 자리: {missing}"
+
+
+def test_real_client_creation_has_one_production_gate() -> None:
+    """실 client 생성 관문과 provider 생성 책임이 새 진입점으로 복제되지 않는다."""
+    source_root = _ROOT / "src" / "ai"
+    adapter = source_root / "llm" / "providers" / "openai_compat.py"
+    gate_calls: list[Path] = []
+    direct_provider_calls: list[Path] = []
+    for path in source_root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            if node.func.id == "build_real_openai_client":
+                gate_calls.append(path)
+            if node.func.id == "OpenAICompatProvider" and path != adapter:
+                direct_provider_calls.append(path)
+
+    assert gate_calls == [adapter], gate_calls
+    assert not direct_provider_calls, direct_provider_calls

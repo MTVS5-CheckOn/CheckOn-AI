@@ -331,7 +331,7 @@ def test_choosing_the_real_provider_does_not_warn(
     """실 경로에서는 경고가 없다 — 늘 울리는 경고는 아무도 안 본다."""
     sentinel = object()
     monkeypatch.setattr(
-        "ai.llm.providers.openai_compat.OpenAICompatProvider", lambda: sentinel
+        "ai.llm.providers.openai_compat.build_openai_compat_provider", lambda: sentinel
     )
     with caplog.at_level(logging.WARNING, logger="ai.composition.counsel.assembly"):
         chosen = build_counsel_llm_provider(CounselSettings(llm_provider="openai_compat"))

@@ -34,7 +34,8 @@ import asyncio
 import logging
 import time
 from functools import lru_cache
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, NoReturn
 
 from openai import (
     APIConnectionError,
@@ -56,6 +57,7 @@ from ai.contracts.llm import (
     ParseFailed,
     TokenUsage,
 )
+from ai.runtime.real_llm import RealLlmOptInRequired, build_real_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -115,27 +117,23 @@ def get_llm_settings() -> OpenAiSettings:
 class OpenAICompatProvider:
     """LLMProvider 구현 — OpenAI API 어댑터.
 
-    client·settings는 주입 가능(테스트는 mock client를 꽂아 실서버 없이 결정론화).
+    client는 필수 주입이다. 실 client는 ``build_openai_compat_provider``만 만들고,
+    테스트는 mock client를 직접 꽂아 opt-in이나 실서버 없이 결정론화한다.
     """
 
     def __init__(
         self,
         *,
+        client: AsyncOpenAI,
         name: str = PROVIDER_NAME,
         settings: OpenAiSettings | None = None,
-        client: AsyncOpenAI | None = None,
     ) -> None:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError("provider name은 비어 있을 수 없다")
         self._name = normalized_name
         self._settings = settings or get_llm_settings()
-        self._client = client or AsyncOpenAI(
-            base_url=self._settings.openai_base_url,
-            api_key=self._settings.openai_api_key,
-            timeout=self._settings.openai_timeout_s,
-            max_retries=0,  # 무재시도 확정 — SDK 기본 2회 재시도를 끈다(정책 불일치 수정)
-        )
+        self._client = client
 
     @property
     def name(self) -> str:
@@ -201,6 +199,8 @@ class OpenAICompatProvider:
                 )
         except (APITimeoutError, TimeoutError) as exc:
             raise LlmTimeout("LLM 타임아웃(전체 상한)") from exc
+        except RealLlmOptInRequired as exc:
+            raise LlmUnavailable(str(exc)) from exc
         except APIConnectionError as exc:
             raise LlmUnavailable("LLM 연결 실패") from exc
         except APIStatusError as exc:
@@ -249,3 +249,42 @@ class OpenAICompatProvider:
             usage=token_usage,
             latency_ms=latency_ms,
         )
+
+
+class _DeniedCompletions:
+    """opt-in 없이 실 SDK client를 만들지 않기 위한 호출 차단 대역."""
+
+    def __init__(self, reason: str) -> None:
+        self._reason = reason
+
+    async def create(self, **kwargs: object) -> NoReturn:
+        del kwargs
+        raise RealLlmOptInRequired(self._reason)
+
+
+class _DeniedOpenAIClient(AsyncOpenAI):
+    """SDK를 초기화하지 않고 ``chat.completions.create``에서 명시적으로 거부한다."""
+
+    def __init__(self, reason: str) -> None:
+        object.__setattr__(
+            self,
+            "chat",
+            SimpleNamespace(completions=_DeniedCompletions(reason)),
+        )
+
+
+def build_openai_compat_provider(
+    *,
+    name: str = PROVIDER_NAME,
+    settings: OpenAiSettings | None = None,
+) -> OpenAICompatProvider:
+    """중앙 실 client 관문을 거쳐 OpenAI 호환 provider를 조립한다."""
+    resolved = settings or get_llm_settings()
+    client = build_real_openai_client(
+        AsyncOpenAI,
+        denied_client_factory=_DeniedOpenAIClient,
+        base_url=resolved.openai_base_url,
+        api_key=resolved.openai_api_key,
+        timeout_s=resolved.openai_timeout_s,
+    )
+    return OpenAICompatProvider(name=name, settings=resolved, client=client)
