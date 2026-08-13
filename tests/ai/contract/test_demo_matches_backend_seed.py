@@ -16,20 +16,60 @@
 ⇒ **비교 기준은 「시나리오 위치」다.** `demo_students()` 순서를 시드 `students.csv` 순서와
 같게 두었으므로 **매핑표 없이 위치로 읽힌다**(1번째 학생 ↔ 1번째 행).
 🔴 **`student_ref` 문자열을 단언하지 않는다.**
+
+━━ 🔴 (2026-08-14) 이 파일은 **시드를 안 보고 있었다** (99 #68) ━━
+
+종전에는 시드가 저장소에 없어 `_SEED_CLASS_SIZES` 처럼 **여기에 손으로 적은 숫자**와만
+대조했다. ⇒ **이름이 약속하는 것을 못 지켰고, 데모가 시드와 갈렸는데 아무도 몰랐다.**
+지금은 `docs/part_a/examples/seed/students.csv` 를 **읽어서** 대조한다.
+
+⚠ **손으로 적은 숫자와의 대조는 「같은 사람이 두 번 적은 것」이다** — 틀리면 둘 다 틀린다.
 """
 
 from __future__ import annotations
 
+import csv
 from collections import Counter
+from pathlib import Path
 from typing import Final
+
+import pytest
 
 from ai.detection.engine import detect
 from ai.evaluation.demo_snapshot import WEEK, WEEKS, build_demo_request, demo_students
 
-#: 시드 구성 — 승우님께 넘긴 `students.csv` 의 모양.
+#: 🔴 정본 — 승우님께 넘긴 시드 그대로(2026-08-13). 반입 경위는 그 폴더 `README.md`.
+_SEED_CSV: Final = (
+    Path(__file__).resolve().parents[3]
+    / "docs"
+    / "part_a"
+    / "examples"
+    / "seed"
+    / "students.csv"
+)
+
+#: 시드 구성 중 **CSV 로 표현되지 않는 것**만 여기 둔다.
+#: ⚠ `students.csv` 에 기준 주·주차 수 열이 없다 — `checkon_seed.sql` 의 `\set monday`
+#:   와 주차 배열이 정본이고, 그 값을 옮겨 적은 것이다.
 _SEED_WEEK: Final = "2026-08-10"
 _SEED_WEEKS: Final = 12
-_SEED_CLASS_SIZES: Final = {"cl_a1": 9, "cl_b2": 7, "cl_unassigned": 1}
+
+#: 시드의 반 미배정 표기 ↔ 백엔드가 실제로 보내는 alias.
+#: ⚠ 이 변환이 필요한 것 자체가 사실이다 — CSV 는 사람이 읽는 표기(`(미배정)`)를 쓰고
+#:   요청 경로는 `cl_unassigned` 를 쓴다(8/13 리허설에서 400 을 냈던 그 값).
+_UNASSIGNED: Final = "cl_unassigned"
+
+
+def _seed_rows() -> list[dict[str, str]]:
+    """🔴 시드 CSV 를 **읽는다** — 이 파일에 숫자를 옮겨 적지 않는다."""
+    with _SEED_CSV.open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows, f"시드를 못 읽었다: {_SEED_CSV} — 검사 경로가 끊기면 통과가 아니라 실패다"
+    return rows
+
+
+def _seed_class(alias: str) -> str:
+    return alias if alias.startswith("cl_") else _UNASSIGNED
 
 
 def test_the_demo_has_the_same_shape_as_the_backend_seed() -> None:
@@ -38,13 +78,61 @@ def test_the_demo_has_the_same_shape_as_the_backend_seed() -> None:
     ⚠ `student_ref` 값은 비교하지 않는다 — 어댑터가 `st_` + 32hex 를 강제해 데모의
     `st_01` 과 다르다. **위치와 모양**으로 비교한다.
     """
+    rows = _seed_rows()
     plans = demo_students()
 
     assert WEEK == _SEED_WEEK
     assert WEEKS == _SEED_WEEKS
-    assert len(plans) == sum(_SEED_CLASS_SIZES.values())
-    assert Counter(plan.class_ref for plan in plans) == _SEED_CLASS_SIZES
+    assert len(plans) == len(rows)
+    assert Counter(plan.class_ref for plan in plans) == Counter(
+        _seed_class(row["class_alias"]) for row in rows
+    )
     assert {plan.weeks for plan in plans} == {_SEED_WEEKS}, "주차 수가 학생마다 다르다"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "🔴 데모가 시드와 갈려 있다 (2026-08-14 실측 · 폴더 README §3). "
+        "① 평가 학생 14 vs 시드 기대 15 — 데모에만 PAUSED 가 1명 있어 하나 더 빠진다"
+        "(시드에는 PAUSED 가 0명이라 휴원 제외 경로가 시드로는 검증되지 않는다). "
+        "② type_bias 2 vs 시드 기대 1 — 시드가 st_15 를 「R6 skip · tagging_below_60pct」로 "
+        "겨냥했는데 `fake_snapshot._cell_for()` 가 **모든 문항에 type_tag 를 채워** 태그 누락을 "
+        "만들 수 없어 그 학생이 skip 대신 정상 발화한다 (99 #67). "
+        "⚠ strict=True 다 — 데모를 고치면 XPASS 로 red 가 나서 이 마커를 지우게 된다."
+    ),
+)
+def test_the_demo_matches_the_seed_student_axes() -> None:
+    """🔴 status·consent 분포와 **판정 결과 수**가 시드와 같다.
+
+    ⚠ 위 검사(모양)는 통과하는데 여기가 갈린다 — **모양이 같아도 축이 다르면 대조가
+    성립하지 않는다.** 8/14 에 승우님 E2E 와 숫자를 나란히 놓고서야 드러났다.
+    """
+    rows = _seed_rows()
+    plans = demo_students()
+
+    assert Counter(plan.status.value for plan in plans) == Counter(
+        row["status"].lower() for row in rows
+    ), "status 분포가 시드와 다르다 (시드에는 PAUSED 가 없다)"
+    assert Counter(plan.consent for plan in plans) == Counter(
+        row["consent"] for row in rows
+    )
+
+    #: 시드 기대 = 전체 − 재원 2주 미만 − 미동의
+    expected = len(rows) - sum(
+        1
+        for row in rows
+        if int(row["relationship_started_weeks_ago"]) < 2 or row["consent"] != "granted"
+    )
+    response = detect(build_demo_request())
+    assert response.stats.students_evaluated == expected, (
+        f"평가 학생 수가 시드 기대({expected})와 다르다"
+    )
+
+    fired = Counter(signal.signal_type.value for signal in response.signals)
+    assert fired["type_bias"] == 1, (
+        "type_bias 가 시드 기대(1건 + R6 skip 1건)와 다르다 — R6 skip 이 안 만들어진다"
+    )
 
 
 def test_the_demo_exercises_every_rule_and_every_exclusion() -> None:
