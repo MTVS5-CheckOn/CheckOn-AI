@@ -141,6 +141,22 @@ class EventSource(StrEnum):
     STUDENT_HOME = "studentHome"
     """학생 숙제 앱."""
 
+    MANUAL = "MANUAL"
+    """🔴 **백엔드 서버 소유 라벨의 한시 호환값**(2026-08-13) — 강사 수기 입력.
+
+    출처: 백엔드 `LearningRecordController :: LearningRecordRequest.toCommand`가
+    `LearningRecordSource.MANUAL`을 고정으로 넣는다. `learning_records.source_type`은
+    enum이 아니라 자유 문자열이고, v1의 유일한 등록 경로가 이 값을 쓴다.
+    의미는 `trackB`(강사 채점 입력)와 같다.
+
+    ⚠ **값을 `trackB`로 정규화하지 않는다.** 정규화하면 `canonical_snapshot_payload`가
+      백엔드 원문과 갈려 `snapshot_hash` 대조가 **영구히** 불가능해진다.
+    ⚠ **유입 경로 판정에 이 값을 쓰지 마라** — 어느 경로인지는 백엔드만 안다.
+      AI는 현재 `source`를 어떤 판정에도 읽지 않는다(전수 실측 2026-08-13: 0건).
+    # TODO(Open-N): 백엔드가 source_type → source 화이트리스트 매핑을 배포하면
+    #   이 멤버와 BACKEND_EMITTED_SOURCE_VALUES의 "MANUAL"을 **같이** 제거한다.
+    """
+
 
 class AlertStatus(StrEnum):
     """경보 이력 상태 — 명세 §2 alert_context.status."""
