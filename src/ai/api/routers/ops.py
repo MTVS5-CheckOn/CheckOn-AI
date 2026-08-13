@@ -15,7 +15,7 @@ from ai.api.envelope import error_envelope, versions_dict
 from ai.api.routers.detect import detection_versions
 from ai.api.routers.diagnosis import diagnosis_versions
 from ai.api.routers.problem import problem_failure_versions
-from ai.api.version_scope import FALLBACK_VERSIONS, RouterScope
+from ai.api.version_scope import RouterScope
 from ai.composition.classify.classifier import classify_versions
 from ai.composition.counsel.versions import counsel_versions
 from ai.contracts.execution import VersionSet
@@ -28,12 +28,19 @@ router = APIRouter(tags=["ops"])
 
 _READY_TIMEOUT_SECONDS: Final = 2.0
 _READY_ERROR_MESSAGE: Final = "서비스 준비 상태를 확인할 수 없습니다."
+_OPS_ENGINE: Final = "ops-0.1"
+_OPS_VERSIONS: Final = VersionSet(
+    pipeline_version="0.1.0",
+    engine_version=_OPS_ENGINE,
+    schema_version="0.1",
+    contract_version="0.1",
+)
 
 
 def ops_versions() -> VersionSet:
     """엔진이 관여하지 않는 앱 운영 응답의 기존 정본 버전."""
 
-    return FALLBACK_VERSIONS
+    return _OPS_VERSIONS
 
 
 VERSION_SCOPE: Final = (
@@ -91,6 +98,7 @@ async def ready() -> dict[str, Any] | JSONResponse:
 async def meta_versions() -> dict[str, Any]:
     """구현된 capability factory의 현재 선언 버전을 모아 반환한다."""
 
+    # confirmations는 classify_versions를 공유하므로 별도 capability 축으로 중복하지 않는다.
     capabilities = {
         "classify": versions_dict(classify_versions()),
         "counsel": versions_dict(counsel_versions()),

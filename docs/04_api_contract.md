@@ -970,6 +970,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 - ops 라우터에 기존 버전 문자열을 복제하지 않고 각 팩토리 결과를 사용한다.
 - 구현돼 버전 팩토리가 등록된 capability만 싣는다. 없는 축을 임의 값으로 채우지 않는다.
+- `confirmations`는 `classify_versions()`를 공유하므로 별도 capability 키를 두지 않는다.
 - `data.capabilities.*`는 조회 대상의 버전이고, 최상위 `meta.versions`는 이 운영 API 자체의
   버전이다.
 - DB·LLM·외부 API를 호출하지 않는 정적 선언 조회다.

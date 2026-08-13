@@ -70,7 +70,8 @@ def test_health_is_liveness_only(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.headers["X-Request-Id"] == "req-health"
     assert response.json()["data"] == {"status": "alive"}
     assert response.json()["meta"]["execution_id"] is None
-    assert response.json()["meta"]["versions"] == versions_dict(FALLBACK_VERSIONS)
+    assert response.json()["meta"]["versions"] == versions_dict(ops.ops_versions())
+    assert response.json()["meta"]["versions"]["engine"] == "ops-0.1"
 
 
 def test_ready_executes_one_bounded_database_probe(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,7 +141,11 @@ def test_ops_version_scopes_are_exact_and_do_not_capture_v1() -> None:
         "/v1/meta/versions",
     }
     assert all(
-        resolve_versions(scope.prefix, ops.VERSION_SCOPE) == FALLBACK_VERSIONS
+        resolve_versions(scope.prefix, ops.VERSION_SCOPE) == ops.ops_versions()
         for scope in ops.VERSION_SCOPE
     )
+    assert ops.ops_versions().engine_version == "ops-0.1"
+    assert FALLBACK_VERSIONS.engine_version == "app-0.1"
+    assert resolve_versions("/v1/health", ()) == FALLBACK_VERSIONS
+    assert resolve_versions("/v1/health", ()) != ops.ops_versions()
     assert resolve_versions("/v1/problems", ops.VERSION_SCOPE) == FALLBACK_VERSIONS
