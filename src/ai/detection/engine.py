@@ -43,6 +43,8 @@ from ai.detection.baseline import Baseline, compute_baseline
 from ai.detection.brief import build_brief
 from ai.detection.evidence import (
     EMPTY_EVIDENCE,
+    EventRef,
+    EvidenceIndex,
     EvidenceRequest,
     StudentEvidence,
     build_student_evidence,
@@ -200,7 +202,7 @@ def _rank_with_lifecycle(
     class_alerts: dict[str, list[StudentAlert]],
     config: ThresholdConfig,
     week_start: date,
-    evidence_index: dict[tuple[str, date], list[str]],
+    evidence_index: EvidenceIndex,
     student_evidence: dict[str, StudentEvidence],
 ) -> tuple[list[Signal], int, Counter[tuple[str, str]]]:
     """파이프라인: 병합 → lifecycle 억제(탈락) → **evidence 전무 탈락** → new·follow_up만
@@ -299,7 +301,7 @@ def _rank_with_lifecycle(
 
 def _evidence_items(
     alert: StudentAlert,
-    evidence_index: dict[tuple[str, date], list[str]],
+    evidence_index: EvidenceIndex,
     student_evidence: dict[str, StudentEvidence],
 ) -> tuple[EvidenceItem, ...]:
     """이 경보가 인용할 근거 — 🔴 **규칙별 resolver가 만든다**(99 #43).
@@ -333,6 +335,11 @@ def _evidence_items(
     #:   전체 상한 하나로 자르면 trigger 수가 바뀌어 **기존 응답이 흔들린다**.
     triggers = [i for i in unique.values() if i.role is EvidenceRole.TRIGGER]
     baselines = [i for i in unique.values() if i.role is EvidenceRole.BASELINE]
+    #: 🔴 **trigger를 자르는 기준은 「요청에 실려 온 순서」다** — 날짜순도 중요도순도 아니다.
+    #:   `record_id` 인덱스가 `request.learning_events` 순서로 쌓이고 여기서 앞 N개를 남긴다.
+    #:   ⚠ **날짜가 붙으면서 그 사실이 화면에 보인다** — *"왜 8/10·8/11만 있고 8/13은 없나"* 를
+    #:   백엔드가 묻게 된다. **설명 가능한 기준으로 바꾸는 것은 별건이다**(계약·상한 축이 다르다).
+    #:   여기서는 **지금 기준이 무엇인지를 적어 두는 것**까지만 한다.
     #: ⚠ 기준선은 **최근 주부터** 남긴다 — 오래된 주가 먼저 잘리는 것이 읽는 쪽에 자연스럽다.
     baselines.sort(key=lambda i: i.occurred_on or date.min, reverse=True)
     return tuple(
@@ -342,7 +349,7 @@ def _evidence_items(
 
 def _drop_findings_without_evidence(
     alert: StudentAlert,
-    evidence_index: dict[tuple[str, date], list[str]],
+    evidence_index: EvidenceIndex,
     student_evidence: dict[str, StudentEvidence],
     skipped: Counter[tuple[str, str]],
     week_start: date,
@@ -399,7 +406,7 @@ def _build_signal(
     ranked: RankedAlert,
     lifecycle: Lifecycle,
     week_start: date,
-    evidence_index: dict[tuple[str, date], list[str]],
+    evidence_index: EvidenceIndex,
     student_evidence: dict[str, StudentEvidence],
 ) -> Signal:
     """경보 → 응답 Signal. 호출 전에 evidence 실존이 보장돼 있다(`_rank_with_lifecycle` ①')."""
@@ -433,12 +440,22 @@ def _build_signal(
     )
 
 
-def _build_evidence_index(request: DetectRequest) -> dict[tuple[str, date], list[str]]:
-    """(student_ref, week_monday) → record_id 목록. evidence 조립용."""
+def _build_evidence_index(request: DetectRequest) -> dict[tuple[str, date], list[EventRef]]:
+    """(student_ref, week_monday) → 그 주의 `EventRef` 목록. evidence 조립용.
 
-    index: dict[tuple[str, date], list[str]] = defaultdict(list)
+    🔴 **날짜를 버리지 않는다**(99 #60 보강). 종전에는 `list[str]`(record_id만)이라
+    인용이 **주 월요일**밖에 못 실었고, 8/13에 푼 문항이 `2026-08-10`으로 나갔다 —
+    `occurred_at`은 **필수 필드**인데 **있는 값을 버리고 없는 값을 만들어 넣고 있었다.**
+
+    ⚠ **키는 여전히 월요일이다** — 그건 «어느 판정 창인가»이고, 값의 날짜는 «그 기록이
+    언제인가»다. 두 축을 섞지 않는다.
+    """
+
+    index: dict[tuple[str, date], list[EventRef]] = defaultdict(list)
     for event in request.learning_events:
         day = event.occurred_at.date()
         monday = day - timedelta(days=day.weekday())
-        index[(event.student_ref, monday)].append(event.record_id)
+        index[(event.student_ref, monday)].append(
+            EventRef(record_id=event.record_id, occurred_on=day)
+        )
     return index

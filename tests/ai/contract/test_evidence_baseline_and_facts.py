@@ -179,3 +179,58 @@ def test_the_baseline_rows_never_reach_the_briefing_prompt() -> None:
             assert item.summary not in summaries, (
                 f"기준선 문면이 프롬프트 재료에 실렸다: {item.summary!r}"
             )
+
+
+def test_signal_metric_units_match_the_documented_table() -> None:
+    """규칙별 `metric` 문자열과 `baseline is None` 집합이 문서 표와 일치하는지.
+
+    🔴 **이 표는 백엔드가 화면 단위를 고르는 근거다.** `observed`를 그냥 `%`로 찍으면
+    `submit_drop`이 **300%**로 나간다 — `consecutive_missing_weeks`는 **주 수**다.
+    표가 코드와 갈리면 그 사고가 **조용히** 난다.
+
+    🔴 **이 검사가 못 잠그는 것 — 단위 그 자체.**
+    «0~1 비율»·«주 수» 같은 말은 문자열로 단언할 수 없다. 여기서 잠그는 것은
+    **이름(`metric`)과 «비교 규칙인가»(`baseline is None`)** 뿐이고, **단위는 문서가 든다**
+    (`docs/part_a/14_evidence_fields.md` §3-2′).
+    ⚠ **이 한계를 안 적으면 다음 사람이 «테스트가 다 잡아준다»고 믿는다.**
+    """
+    expected_metric = {
+        RuleId.R1: "accuracy",
+        RuleId.R2: "consecutive_missing_weeks",
+        RuleId.R3: "activity_count",
+        RuleId.R4: "norm_time",
+        RuleId.R6: "error_share",
+        RuleId.R5: None,
+    }
+    #: 🔴 «평소와 비교하지 않는» 규칙 — 임계값과 비교한다(임계를 baseline으로 적으면 거짓).
+    no_baseline = {RuleId.R2, RuleId.R5, RuleId.R6}
+
+    by_rule = _signals_by_rule()
+    assert by_rule, "골든에 신호가 하나도 없다 — 이 검사가 눈이 멀었다"
+    for rule_id, signals in by_rule.items():
+        for signal in signals:
+            assert signal.metric == expected_metric[rule_id], rule_id.value
+            if rule_id in no_baseline:
+                assert signal.baseline is None, (
+                    f"{rule_id.value}가 baseline을 실었다 — 임계는 «평소»가 아니다"
+                )
+            else:
+                assert signal.baseline is not None, f"{rule_id.value}에 기준선이 비었다"
+
+
+def test_the_unit_table_in_the_design_doc_lists_every_metric() -> None:
+    """🔴 문서 표가 **코드의 metric 전량**을 담고 있는지.
+
+    규칙이 늘거나 `metric` 이름이 바뀌었는데 표가 안 따라오면, 백엔드가 **모르는 단위**를
+    받는다. 위 검사는 이름을 잠그지만 «표에 그 줄이 있는가»는 안 본다.
+    """
+    doc = _DESIGN_DOC.read_text(encoding="utf-8")
+    metrics = {
+        signal.metric
+        for signals in _signals_by_rule().values()
+        for signal in signals
+        if signal.metric
+    }
+    assert metrics, "metric을 가진 신호가 없다"
+    missing = sorted(m for m in metrics if f"`{m}`" not in doc)
+    assert not missing, f"단위 표에 없는 metric: {missing}"

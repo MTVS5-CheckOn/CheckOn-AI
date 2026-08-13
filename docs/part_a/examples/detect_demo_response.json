@@ -34,7 +34,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-14"
           },
           {
             "source_table": "learning_event",
@@ -43,7 +43,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-15"
           }
         ],
         "metric": "accuracy",
@@ -134,7 +134,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-14"
           },
           {
             "source_table": "learning_event",
@@ -143,7 +143,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-15"
           }
         ],
         "metric": "norm_time",
@@ -184,7 +184,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-20"
+            "occurred_on": "2026-07-21"
           },
           {
             "source_table": "learning_event",
@@ -193,7 +193,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-20"
+            "occurred_on": "2026-07-22"
           }
         ],
         "metric": "error_share",
@@ -325,7 +325,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-14"
           },
           {
             "source_table": "learning_event",
@@ -334,7 +334,7 @@
             "role": "trigger",
             "observed": null,
             "sample_size": null,
-            "occurred_on": "2026-07-13"
+            "occurred_on": "2026-07-15"
           }
         ],
         "metric": "accuracy",
@@ -356,7 +356,7 @@
   },
   "error": null,
   "meta": {
-    "execution_id": "e1823112-72df-46d4-8afa-c8ab1e58ffff",
+    "execution_id": "7068777b-4bf0-4245-95ae-e0521e1548de",
     "versions": {
       "pipeline": "0.1.0",
       "engine": "detection-rules-0.3",

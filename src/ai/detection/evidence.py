@@ -51,6 +51,32 @@ MAX_ABSENCE_LOOKBACK_WEEKS: Final = 10
 
 
 @dataclass(frozen=True)
+class EventRef:
+    """근거로 인용할 학습 기록 1건 — `record_id`와 **그 기록의 날짜**.
+
+    🔴 **날짜를 버리지 않기 위해 생겼다**(99 #60). 종전에는 인덱스가 `list[str]`이라
+    주 월요일밖에 알 수 없었고, 그래서 8/13에 푼 문항이 `occurred_on: 2026-08-10`으로
+    나갔다 — **BE가 원본을 열면 날짜가 안 맞는다.** `EvidenceItem.observed`의
+    *"없는 값을 지어내지 않는다"* 를 바로 옆 필드가 어기고 있었다.
+
+    ⚠ **튜플 `(str, date)`로 두지 않았다** — 소비처가 `[0]`·`[1]`로 읽으면 다음 사람이
+    순서를 뒤집는다. 이름이 있어야 한다.
+    """
+
+    record_id: str
+    occurred_on: date
+
+
+#: 학습 기록 인덱스 — `(student_ref, 주 월요일) → 그 주의 기록들`.
+#:
+#: ⚠ **키의 월요일은 「어느 판정 창인가」이고, 값의 날짜는 「그 기록이 언제인가」다.**
+#: 둘은 다른 축이다 — 판정은 주 단위로 하고 인용은 기록 단위로 한다.
+#: 🔴 별칭을 둔 이유: 이 타입을 **전달만** 하는 시그니처가 `engine.py`에 넷이라,
+#: 원시 타입을 적어 두면 형태가 바뀔 때마다 네 곳을 같이 고쳐야 한다(값이 두 곳에 사는 것과 같다).
+type EvidenceIndex = Mapping[tuple[str, date], list[EventRef]]
+
+
+@dataclass(frozen=True)
 class StudentEvidence:
     """한 학생의 **정본 근거 묶음** — 판정과 인용이 같은 레코드를 본다.
 
@@ -205,23 +231,30 @@ def resolve_weekly_activity_window(
 
 
 def _learning_event_items(
-    record_ids: Sequence[str], label: str, *, week_monday: date | None = None
+    events: Sequence[EventRef], label: str
 ) -> tuple[EvidenceItem, ...]:
-    """학습 기록 근거 — 🔴 **`observed`를 채우지 않는다.**
+    """학습 기록 근거 — 🔴 **`observed`를 채우지 않고, `occurred_on`은 그 기록의 날짜다.**
 
     `learning_event`는 **문항 단위**다(`correct`·`duration_sec`). 주 단위 지표(정답률·
     정규화 시간)에 해당하는 값이 **그 레코드에 없으므로**, 주 값을 레코드마다 반복해 실으면
     *"그 기록 자신의 값"* 이라는 계약이 거짓이 된다. 비교값은 `Signal`이 든다(99 #60 · 안 D).
+
+    🔴 **날짜도 같은 규율이다**(99 #60 보강) — 종전에는 **주 월요일**을 실었다. 8/13에 푼
+    문항이 `2026-08-10`으로 나가 **BE가 원본을 열면 날짜가 안 맞았다.** `occurred_at`은
+    필수 필드라 **있는 값을 버리고 없는 값을 만들어 넣고 있었다.**
+
+    ⚠ **주간 집계 근거는 그대로 주 시작일이다**(`_activity_item`·`resolve_r2_evidence`) —
+    그쪽은 **진짜 주 단위 레코드**라 주 시작일이 정답이다.
     """
     return tuple(
         EvidenceItem(
             source_table=_LEARNING_EVENT_TABLE,
-            record_id=record_id,
+            record_id=event.record_id,
             summary=f"{label} 근거 기록",
             role=EvidenceRole.TRIGGER,
-            occurred_on=week_monday,
+            occurred_on=event.occurred_on,
         )
-        for record_id in record_ids
+        for event in events
     )
 
 
@@ -234,7 +267,7 @@ class EvidenceRequest:
     """`signal_type.value` — 학습 기록 요약 문구 재료."""
 
     evidence_weeks: tuple[date, ...]
-    learning_events: Mapping[tuple[str, date], list[str]]
+    learning_events: EvidenceIndex
     student_evidence: StudentEvidence
 
     baseline_weeks: tuple[date, ...] = ()
@@ -258,14 +291,12 @@ def _from_learning_events(request: EvidenceRequest) -> tuple[EvidenceItem, ...]:
     seen: set[str] = set()
     for week_monday in request.evidence_weeks:
         fresh = [
-            record_id
-            for record_id in request.learning_events.get(
-                (request.student_ref, week_monday), []
-            )
-            if record_id not in seen
+            event
+            for event in request.learning_events.get((request.student_ref, week_monday), [])
+            if event.record_id not in seen
         ]
-        seen.update(fresh)
-        items.extend(_learning_event_items(fresh, request.label, week_monday=week_monday))
+        seen.update(event.record_id for event in fresh)
+        items.extend(_learning_event_items(fresh, request.label))
     return tuple(items)
 
 
