@@ -114,27 +114,39 @@ _FAILURE_REQUESTS: Final[dict[str, tuple[str, str, dict[str, Any] | None]]] = {
     "/v1/problems": ("POST", "/v1/problems", {"bad": 1}),
     "/v1/diagnosis": ("POST", "/v1/diagnosis", {"bad": 1}),
 }
+_DIRECT_RESPONSE_PREFIXES: Final = frozenset(
+    {"/v1/health", "/v1/ready", "/v1/meta/versions"}
+)
 
 
-def test_every_registered_prefix_has_a_failure_request() -> None:
-    """🔴 **등록된 접두 전수**가 위 매핑에 있다 — 빠뜨리면 red다.
+def test_every_registered_prefix_has_one_response_contract() -> None:
+    """🔴 등록된 접두는 DomainException 또는 직접 응답 계약 중 정확히 하나에 속한다.
 
-    새 라우터가 붙으면 *"실패 응답이 자기 engine을 단다"* 검사가 **그 경로엔 안 돌던**
-    것이 종전 형태였다(5개 하드코딩). 이 단정이 그 침묵을 없앤다.
+    DomainException 핸들러를 지나는 경로는 `_FAILURE_REQUESTS`, 라우터가 직접 응답을
+    만드는 경로는 `_DIRECT_RESPONSE_PREFIXES`다. 새 라우터는 반드시 둘 중 하나에 넣어라.
+    어느 쪽도 아니면 검사에서 조용히 빠진다.
     """
     prefixes = {scope.prefix for scope in ROUTER_VERSION_SCOPES}
     assert prefixes, "ROUTER_VERSION_SCOPES가 비었다 — 검사가 끊긴 것이다"
-    missing = sorted(prefixes - set(_FAILURE_REQUESTS))
-    assert not missing, (
-        f"실패 요청 매핑이 없는 접두: {missing}\n"
-        "그 경로는 '실패 응답이 자기 engine을 단다' 검사를 **안 받는다**(99 ㊓). "
-        "_FAILURE_REQUESTS에 (메서드, 경로, 실패를 내는 바디)를 추가하라 — "
-        "대개 `{\"bad\": 1}` 같은 스키마 위반 바디면 400이 난다."
+    failure_prefixes = set(_FAILURE_REQUESTS)
+    assert not failure_prefixes & _DIRECT_RESPONSE_PREFIXES, (
+        "DomainException 경로와 직접 응답 경로가 겹친다: "
+        f"{sorted(failure_prefixes & _DIRECT_RESPONSE_PREFIXES)}"
+    )
+    assert prefixes == failure_prefixes | _DIRECT_RESPONSE_PREFIXES, (
+        "등록 scope와 검증 계약이 갈렸다. DomainException 핸들러를 지나는 경로는 "
+        "_FAILURE_REQUESTS, 라우터가 직접 응답을 만드는 경로는 "
+        "_DIRECT_RESPONSE_PREFIXES다. 새 라우터는 반드시 둘 중 하나에 넣어라 — "
+        "어느 쪽도 아니면 검사에서 조용히 빠진다. "
+        f"missing={sorted(prefixes - failure_prefixes - _DIRECT_RESPONSE_PREFIXES)}, "
+        f"stale={sorted((failure_prefixes | _DIRECT_RESPONSE_PREFIXES) - prefixes)}"
     )
 
 
 @pytest.mark.parametrize(
-    "scope", ROUTER_VERSION_SCOPES, ids=lambda s: s.prefix.replace("/", "_")
+    "scope",
+    tuple(scope for scope in ROUTER_VERSION_SCOPES if scope.prefix in _FAILURE_REQUESTS),
+    ids=lambda s: s.prefix.replace("/", "_"),
 )
 def test_failure_response_carries_its_own_engine_version(scope: Any) -> None:  # noqa: ANN401
     """🔴 각 엔드포인트의 실패 응답이 **자기 스코프가 말하는 engine**을 단다.
