@@ -166,6 +166,7 @@ class ProblemJobView(BaseModel):
 class _CachedView:
     view: ProblemJobView
     versions: VersionSet
+    execution_id: uuid.UUID
 
 
 _idempotency_store: IdempotencyStore = build_idempotency_store()
@@ -548,7 +549,11 @@ async def post_problem(request: Request, response: Response) -> dict[str, Any]:
         taxonomy_version=problem_request.taxonomy_version,
         verify_config_version=load_verify_config().version,
     )
-    _views[(tenant_id, view.job_id)] = _CachedView(view=view, versions=versions)
+    _views[(tenant_id, view.job_id)] = _CachedView(
+        view=view,
+        versions=versions,
+        execution_id=job.execution_id,
+    )
     envelope = success_envelope(
         # 🔴 `status`를 같이 싣는다 — counsel 202와 대칭이고(04 §3.9) **BE가 통지를 기다릴지
         #    바로 GET할지를 이 값 하나로 정한다**(런북 §2 규칙). 종전에는 `job_id`만 실려서
@@ -601,6 +606,7 @@ async def get_problem(
         cached = _CachedView(
             view=ProblemJobView(job_id=job_id, status=job.phase, result=restored.result),
             versions=restored.versions,
+            execution_id=restored.execution_id,
         )
     view = (
         cached.view
@@ -608,7 +614,9 @@ async def get_problem(
         else await _view_for(job, tenant_id=tenant_id)
     )
     _views[(tenant_id, job_id)] = _CachedView(
-        view=view, versions=cached.versions
+        view=view,
+        versions=cached.versions,
+        execution_id=cached.execution_id,
     )
     if job.phase not in TERMINAL_PHASES:
         # 🔴 **폴링 종료 조건은 `data.status`가 종단인지 하나다.** 이 헤더는 *"언제 다시
@@ -618,7 +626,7 @@ async def get_problem(
         )
     return success_envelope(
         data=view.model_dump(mode="json"),
-        execution_id=str(uuid.uuid4()),
+        execution_id=str(cached.execution_id),
         versions=cached.versions,
     )
 
@@ -632,7 +640,7 @@ def _tenant_id(request: Request) -> str:
 
 async def _set_result(
     *, tenant_id: str, set_id: uuid.UUID
-) -> tuple[ProblemSetResult, VersionSet]:
+) -> tuple[ProblemSetResult, VersionSet, uuid.UUID]:
     for (cached_tenant, _job_id), cached in _views.items():
         result = cached.view.result
         if (
@@ -640,11 +648,11 @@ async def _set_result(
             and isinstance(result, ProblemSetResult)
             and result.set_id == set_id
         ):
-            return result, cached.versions
+            return result, cached.versions, cached.execution_id
     set_store = _problem_set_store_for(tenant_id)
     restored = await set_store.get_by_set_id(set_id) if set_store is not None else None
     if restored is not None:
-        return restored.result, restored.versions
+        return restored.result, restored.versions, restored.execution_id
     raise NotFound("set_id 부재", {"set_id": str(set_id)})
 
 
@@ -770,7 +778,10 @@ async def get_problem_items(set_id: str, request: Request) -> dict[str, Any]:
 
     tenant_id = _tenant_id(request)
     parsed_set_id = _set_id(set_id)
-    result, versions = await _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
+    result, versions, execution_id = await _set_result(
+        tenant_id=tenant_id,
+        set_id=parsed_set_id,
+    )
     counts = {status.value: 0 for status in ProblemItemStatus}
     items: list[dict[str, Any]] = []
     for slot_index, item_result in enumerate(result.items):
@@ -806,7 +817,7 @@ async def get_problem_items(set_id: str, request: Request) -> dict[str, Any]:
         )
     return success_envelope(
         data={"set_id": str(parsed_set_id), "status_counts": counts, "items": items},
-        execution_id=str(uuid.uuid4()),
+        execution_id=str(execution_id),
         versions=versions,
     )
 
@@ -819,7 +830,10 @@ async def get_problem_item(
 
     tenant_id = _tenant_id(request)
     parsed_set_id = _set_id(set_id)
-    result, versions = await _set_result(tenant_id=tenant_id, set_id=parsed_set_id)
+    result, versions, execution_id = await _set_result(
+        tenant_id=tenant_id,
+        set_id=parsed_set_id,
+    )
     if slot_index < 0 or slot_index >= len(result.items):
         raise NotFound(
             "문항 슬롯 부재", {"set_id": str(parsed_set_id), "slot_index": slot_index}
@@ -937,7 +951,7 @@ async def get_problem_item(
                 else None
             ),
         },
-        execution_id=str(uuid.uuid4()),
+        execution_id=str(execution_id),
         versions=versions,
     )
 
@@ -983,7 +997,10 @@ async def post_problem_item_revision(
             "요청 바디 스키마 위반", _format_validation_error(exc)
         ) from exc
     if body.revision_kind is not RevisionKind.AI_REFINE:
-        raise SnapshotInvalid("MVP 수정 API는 ai_refine만 지원한다")
+        raise SnapshotInvalid(
+            "MVP 수정 API는 ai_refine만 지원한다",
+            {"reason": "revision_kind_not_implemented"},
+        )
 
     item_store = _item_store_for(tenant_id)
     try:
@@ -999,7 +1016,10 @@ async def post_problem_item_revision(
             {"set_id": str(parsed_set_id), "slot_index": slot_index},
         )
     if stored.item.area_tag.value != "language":
-        raise SnapshotInvalid("MVP ai_refine은 language 문항만 지원한다")
+        raise SnapshotInvalid(
+            "MVP ai_refine은 language 문항만 지원한다",
+            {"reason": "revision_area_not_implemented"},
+        )
     command = ItemRevisionRequest(
         request_id=request_id,
         idempotency_key=idempotency_key,

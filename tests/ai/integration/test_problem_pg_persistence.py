@@ -240,6 +240,8 @@ def test_pg_post_persists_items_and_cache_miss_recovers_reads(
                 f"/v1/problems/{job_id}", headers={"X-Tenant-Id": tenant_id}
             )
             assert first_job.status_code == 200, first_job.text
+            execution_id = posted.json()["meta"]["execution_id"]
+            assert first_job.json()["meta"]["execution_id"] == execution_id
             set_id = first_job.json()["data"]["result"]["set_id"]
             assert asyncio.run(
                 _persisted_counts(set_id, database_url=database_url)
@@ -263,6 +265,8 @@ def test_pg_post_persists_items_and_cache_miss_recovers_reads(
 
         assert restarted_job.status_code == 200, restarted_job.text
         assert restarted_items.status_code == 200, restarted_items.text
+        assert restarted_job.json()["meta"]["execution_id"] == execution_id
+        assert restarted_items.json()["meta"]["execution_id"] == execution_id
         assert hidden_job.status_code == 404
         assert hidden_items.status_code == 404
     finally:

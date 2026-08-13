@@ -881,9 +881,9 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 | 요청 | 약속한 동작 | 🔴 **현재 동작** |
 | --- | --- | --- |
-| `area_tag`가 `language`가 아니다 (독서·문학·화법·작문·매체) | 400 `INVALID_SCHEMA` + `detail.reason=source_procurement_not_implemented` | **같다 — 구현됨** ✅ ⚠ **다만 잡을 만든 뒤에 난다.** 문 앞 검사가 없고(`enqueue.py`·`routers/problem.py`에 `area_tag`·`passage` 참조 **0건**) 판정이 `workflow.py:541`, 즉 **잡 실행 안**에서 난다 ⇒ **`job_id`가 응답에 없는 실패 잡이 남는다**(원장에 `failed` 1건이 생기고 **조회할 수 없다**). 🔴 **아래 `apply` 행과 같은 형태다** — 그쪽은 500이고 여기는 400인 것이 다를 뿐, **고아 잡이 남는 것은 같다**(99 #01) |
-| `passage`가 있다 | 위와 같다 | **같다 — 구현됨** ✅ ⚠ **다만 잡을 만든 뒤에 난다.** 문 앞 검사가 없고(`enqueue.py`·`routers/problem.py`에 `area_tag`·`passage` 참조 **0건**) 판정이 `workflow.py:541`, 즉 **잡 실행 안**에서 난다 ⇒ **`job_id`가 응답에 없는 실패 잡이 남는다**(원장에 `failed` 1건이 생기고 **조회할 수 없다**). 🔴 **아래 `apply` 행과 같은 형태다** — 그쪽은 500이고 여기는 400인 것이 다를 뿐, **고아 잡이 남는 것은 같다**(99 #01) |
-| `type_tags`에 **`apply`** | 400 `type_tag_not_supported` | **같다 — 구현됨** ✅ (8/9 · B 구현). 🔴 **이 경로는 잡을 만들지 않는다** — 거절이 `enqueue.py::reject_unsupported_type_tags()`, 즉 요청 레코드·`WorkerJob` 생성보다 **앞**이다. ⇒ **고아 잡이 남지 않는다**(실측 8/9: HTTP **400** · `잡 0건` · `AI_RUN 0건`). ⚠ **위 두 행과 갈리는 지점이 여기다** — 그쪽은 `workflow.py`, 즉 **잡 실행 안**에서 거절해 실패 잡이 남는다(99 #01 · B의 `part_b/09` §2-19.4 「잡을 만드는가」 표와 **같은 분할**). `detail` = `{reason: "type_tag_not_supported", type_tags: [...], supported: ["concept","critic","fact","infer"]}` |
+| 영역별 필수 자료 요청이 없거나 지원하지 않는 자료 조달 조합이다 | 400 `INVALID_SCHEMA` + `detail.reason=source_procurement_not_implemented` | **같다 — 문 앞 검사로 구현됨** ✅ `ProblemGenerationEnqueuer.enqueue()`가 요청 레코드와 `WorkerJob`을 만들기 전에 조합을 검사한다. 따라서 HTTP **400** · `WorkerJob` **0건** · `AI_RUN` **0건**이며 고아 잡이 남지 않는다. 독서는 `PassageRequest`, 문학은 `WorkSelection`, 화법과 작문·매체는 각 영역의 생성 자료 요청이 필요하다. 근거: `problem_generation/enqueue.py::reject_unsupported_source_procurement()` 및 `test_problem_router.py`의 문 앞 검사 테스트. |
+| `passage`·`work_selection`과 `area_tag`의 조합이 지원 범위와 다르다 | 위와 같다 | **같다 — 문 앞 검사로 구현됨** ✅ `detail`에는 `reason=source_procurement_not_implemented`와 실제 `area_tag`·자료 요청 존재 여부가 실린다. 요청 저장·잡 생성·원장 기록보다 먼저 끝나므로 `WorkerJob` **0건** · `AI_RUN` **0건**이고, 응답 없는 실패 잡도 만들지 않는다. 지원 조합의 자료 생성·선택이 성공한 경우에는 이 400에 해당하지 않는다. 근거: `problem_generation/domain/policy.py::supports_source_procurement()`·`problem_generation/enqueue.py`. |
+| `type_tags`에 **`apply`** | 400 `type_tag_not_supported` | **같다 — 구현됨** ✅ (8/9 · B 구현). 🔴 **이 경로도 잡을 만들지 않는다** — 거절이 `enqueue.py::reject_unsupported_type_tags()`, 즉 요청 레코드·`WorkerJob` 생성보다 **앞**이다. ⇒ **고아 잡이 남지 않는다**(실측 8/9: HTTP **400** · `잡 0건` · `AI_RUN 0건`). 자료 조달 조합까지 함께 위반하면 관측 순서를 보존해 이 사유가 먼저 난다. `detail` = `{reason: "type_tag_not_supported", type_tags: [...], supported: ["concept","critic","fact","infer"]}` |
 | 프로세스 재시작 후 이전 `job_id`·`set_id` 조회 | — | **`STORE_BACKEND=memory`: 404 `NOT_FOUND`.** 잡 원장·요청·결과·문항·라우터 조회 캐시가 프로세스 메모리라 모두 사라진다. **`STORE_BACKEND=pg`: 종단에 도달한 세트는 200으로 복구한다.** `AI_RUN → problem_set → problem_item` 순서로 부모와 슬롯 스냅숏을 저장하고, `_views` 캐시가 없으면 `problem_set_store.py`가 요청·결과·버전 세트를 재조립한다. 따라서 이전 `job_id` GET과 `set_id`의 items 목록·상세 GET이 프로세스 캐시에 기대지 않는다. dropped 슬롯도 본문 없는 `problem_item.snapshot`으로 남아 `dropped_reasons`가 복구된다. **단, 재시작 시점에 queued·running이던 잡의 실행 재개는 v1 범위 밖이다.** `ProblemRequest`가 아직 인메모리라 워커가 원 요청을 다시 읽을 수 없으며, “종단 결과 조회 가능”을 “미완료 실행 재개 가능”으로 해석하면 안 된다. 근거: `problem_set_store.py`·`problem_store.py`·`problem.py`·`workflow.py` 및 `test_problem_pg_persistence.py`. `store_backend` 기본값은 이 변경에서 바꾸지 않는다. |
 
 > **배경 드레인 근거(99 #21 해소):** `api/routers/problem.py`가 router startup/shutdown에
@@ -983,6 +983,8 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 ```
 
 `503 LLM_UPSTREAM_DOWN`은 LLM 벤더 장애 전용이므로 readiness에 재사용하지 않는다.
+🔴 503은 status가 아니라 code로 분기한다 — SERVICE_NOT_READY(준비 미완)와
+LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
 `SERVICE_NOT_READY`의 공용 오류 사전 편입과 표시 문구는 운영 라우터 구현 PR에서 함께
 동기화한다.
 
@@ -1011,6 +1013,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 - ops 라우터에 기존 버전 문자열을 복제하지 않고 각 팩토리 결과를 사용한다.
 - 구현돼 버전 팩토리가 등록된 capability만 싣는다. 없는 축을 임의 값으로 채우지 않는다.
+- `confirmations`는 `classify_versions()`를 공유하므로 별도 capability 키를 두지 않는다.
 - `data.capabilities.*`는 조회 대상의 버전이고, 최상위 `meta.versions`는 이 운영 API 자체의
   버전이다.
 - DB·LLM·외부 API를 호출하지 않는 정적 선언 조회다.

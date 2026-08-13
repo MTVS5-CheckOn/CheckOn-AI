@@ -162,34 +162,62 @@ def test_rule_validator_checks_echo_evidence_and_banned_topics() -> None:
     assert failed.source_unverified
 
 
-def test_dict_entry_evidence_fails_as_unimplemented_lexicon_verification() -> None:
+def test_dict_entry_evidence_uses_committed_index_refs_for_r1() -> None:
     validator = RuleValidator(
         load_banned_topics(),
         duplicate_similarity_max=load_verify_config().dup_similarity_max,
     )
-    item = _item(evidence_refs=("표준국어대사전:484613",)).model_copy(
+    approved_ref = "stdict:484613"
+    item = _item(evidence_refs=(approved_ref,)).model_copy(
         update={
             "evidence": (
                 EvidenceAnchor(
                     kind=EvidenceKind.DICT_ENTRY,
-                    ref="표준국어대사전:484613",
+                    ref=approved_ref,
                 ),
             )
         }
     )
+    context_pack = _context_pack().model_copy(
+        update={
+            "retrieval_trace": {
+                "allowed_evidence_refs": [approved_ref],
+                "evidence_anchors": [{"kind": "dict_entry", "ref": approved_ref}],
+            }
+        }
+    )
 
-    result = validator.validate(
+    approved = validator.validate(
         item=item,
         request=_request(),
         type_tag=TypeTag.CONCEPT,
         skill_node_id="grammar.node-1",
-        context_pack=_context_pack(),
+        context_pack=context_pack,
+    )
+    rejected = validator.validate(
+        item=item.model_copy(
+            update={
+                "evidence": (
+                    EvidenceAnchor(
+                        kind=EvidenceKind.DICT_ENTRY,
+                        ref="stdict:999999",
+                    ),
+                )
+            }
+        ),
+        request=_request(),
+        type_tag=TypeTag.CONCEPT,
+        skill_node_id="grammar.node-1",
+        context_pack=context_pack,
     )
 
-    assert not result.passed
-    assert not result.verification_available
-    assert result.source_unverified
-    assert "R-1:어휘_대조_미구현" in result.failed_checks
+    assert approved.passed
+    assert approved.verification_available
+    assert not approved.source_unverified
+    assert not rejected.passed
+    assert rejected.verification_available
+    assert rejected.source_unverified
+    assert "R-1:근거_참조_불일치" in rejected.failed_checks
 
 
 def test_cross_gate_and_t1_difficulty_are_code_determined() -> None:

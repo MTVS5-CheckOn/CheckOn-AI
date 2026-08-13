@@ -2001,6 +2001,9 @@ adapter다. 백엔드가 정규화 이벤트에 문항 본문을 실을지는 **
 | ② | 비종단 조회 응답의 `Retry-After` | 🔴 **폴링 주기를 우리 설정이 정한다.** adapter가 자기 상수로 돌면 우리 실행이 느려져도 그쪽 주기는 그대로다 |
 | ③ | `kafka_contract.py` 재분류 | 런타임 경로가 아니라 **adapter 참고 계약**이라고 문면을 고쳤다. 지우지 않은 이유는 백엔드 요청 이벤트가 우리 `ProblemRequest`로 매핑되는지를 CI가 계속 잡아 주기 때문이다 |
 
+🔴 503은 status가 아니라 code로 분기한다 — SERVICE_NOT_READY(준비 미완)와
+LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
+
 ⚠ **fixture 3종은 실행이 아니라 응답 모델에서 만들었다**(`queued`·`partial_success`·
 `no_items`). 실행으로 만들기 어려운 상태라서이고, 모델이 바뀌면 같이 바뀌므로 형태
 드리프트는 잡힌다 — **그 사실을 픽스처 문서에 적었다**(안 적으면 다음 사람이 "실측"으로 읽는다).
@@ -2154,10 +2157,18 @@ reading·literature의 기존 출제 경로도 수동 목표로만 도달 가능
 않았다. 자료 생성은 `area_specs.yaml` 규격 블록을 프롬프트에 싣고 승인 evidence가 없거나
 미승인 ref를 쓰면 문항 생성 전에 실패 닫힘한다.
 
+BE의 출제 목표 정본은 **진단 응답이 산출한 `skill_node_id`**다. BE는 이 ID를
+`POST /v1/problems`의 `manual_targets`에 그대로 전달하며, 57노드 카탈로그만 보고 임의의
+다른 노드를 고르지 않는다. 카탈로그의 `evidence_mode`는 정적 조달 방식
+(`grammar_norm|lexicon|generated_source|licensed_work`)을 설명할 뿐, 실행 중 근거 존재 여부를
+`has_evidence` 같은 boolean으로 약속하지 않는다.
+
 T1 language 33노드는 어문규범 11노드와 표준국어대사전 최소 색인 22노드로 근거를
 배선했다. 표준국어대사전 `20260805` XML 덤프에는 `target_code`와 `sense_code`가 함께
 있다. `infrastructure/stdict.py`의 “`sense_code`는 `view.do`에만 있다”는 설명은
 `search.do` API 응답과 비교한 경계이며, 날짜 고정 덤프에는 해당하지 않는다.
+`724a997`은 부주제어 확장으로 어문규범 corpus가 넓어진 사실에 맞춰 기존 `kornorms:` 직접
+호출 검사를 부주제어 확장 검사와 33노드 coverage 검사로 재작성했다.
 
 다만 33노드의 근거 강도가 같지는 않다. 어문규범 11노드는 조문 전문을 `quote`로 제공하지만,
 사전 22노드(특히 통사 10노드)는 승인 표제어·품사·전문 분야·`sense_code`로 그 용어가

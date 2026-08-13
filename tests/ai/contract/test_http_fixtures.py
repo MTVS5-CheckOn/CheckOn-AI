@@ -11,6 +11,9 @@
 **재생성:** 계약이 정당하게 바뀌었으면 `WRITE_HTTP_FIXTURES=1 uv run pytest
 tests/ai/contract/test_http_fixtures.py`로 다시 쓰고 **diff를 리뷰**한다. 무심코 돌리면
 계약 변경이 조용히 통과하므로 기본값은 항상 대조다.
+
+🔴 503은 status가 아니라 code로 분기한다 — SERVICE_NOT_READY(준비 미완)와
+LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
 """
 
 from __future__ import annotations
@@ -71,6 +74,28 @@ _PLACEHOLDER: Final = {
     "set_id": "00000000-0000-4000-8000-000000000050",
     "item_id": "00000000-0000-4000-8000-000000000010",
 }
+_BE_REQUIRED_FLOW_FIXTURES: Final = {
+    "POST problems request": "post_problems.request",
+    "POST problems 202": "post_problems.202",
+    "GET job queued": "get_problem.queued",
+    "GET job succeeded": "get_problem.succeeded",
+    "GET job 404": "get_problem.404",
+    "GET items list": "get_problem_items.list",
+    "GET items detail": "get_problem_items.detail",
+    "GET items partial success": "get_problem_items.partial_success",
+    "POST problems 400 missing header": "post_problems.400.missing_header",
+    "POST problems 400 source procurement": (
+        "post_problems.400.source_procurement_not_implemented"
+    ),
+    "POST problems 400 unsupported type": "post_problems.400.type_tag_not_supported",
+    "POST problems 409 conflict": "post_problems.409.idempotency_conflict",
+    "POST diagnosis request": "post_diagnosis.request",
+    "POST diagnosis 200": "post_diagnosis.200",
+    "POST diagnosis 200 rejected insufficient": (
+        "post_diagnosis.200.rejected_insufficient"
+    ),
+    "POST diagnosis 400": "post_diagnosis.400.unknown_skill_node",
+}
 
 
 def _normalize(value: object) -> object:
@@ -108,6 +133,36 @@ def _fixture(name: str, payload: object) -> None:
         f"HTTP 응답이 픽스처와 갈렸다: {path}\n"
         "adapter가 이 형태를 보고 만들어졌다 — 바꿔야 한다면 백엔드에 통보가 선행이다."
     )
+
+
+def test_be_required_flow_fixture_mapping_is_complete() -> None:
+    """BE 필수 16흐름은 이름이 아니라 실제 JSON 파일에 일대일로 연결된다."""
+
+    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 16
+    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 16
+    missing = {
+        flow: fixture
+        for flow, fixture in _BE_REQUIRED_FLOW_FIXTURES.items()
+        if not (FIXTURE_DIR / f"{fixture}.json").is_file()
+    }
+    assert not missing, f"BE 필수 흐름에 대응하는 HTTP 픽스처가 없다: {missing}"
+
+
+def test_problem_studio_openapi_paths_match_the_fixture_flows() -> None:
+    """픽스처가 약속한 호출 경로·정상 상태가 실제 앱 OpenAPI에도 있어야 한다."""
+
+    paths = create_app().openapi()["paths"]
+    expected = {
+        ("/v1/problems", "post", "202"),
+        ("/v1/problems/{job_id}", "get", "200"),
+        ("/v1/problems/{set_id}/items", "get", "200"),
+        ("/v1/problems/{set_id}/items/{slot_index}", "get", "200"),
+        ("/v1/diagnosis", "post", "200"),
+    }
+
+    for path, method, status in expected:
+        assert method in paths[path]
+        assert status in paths[path][method]["responses"]
 
 
 # --------------------------------------------------------------------------
