@@ -1,13 +1,9 @@
 """스킬 노드 카탈로그 — BE·adapter가 `area×type` 셀을 목표 노드로 바꿀 때 보는 표.
 
-**왜 필요한가(2026-08-13 BE 명세 대조 §1-2):** `POST /v1/problems`의
-`target_source="teacher_manual"`은 `manual_targets`가 **필수**이고 그 원소는
-`curriculum_graph.yaml`의 `skill_node_id`다. 그런데 스튜디오 화면은 `areaTag × typeTag`
-셀만 받으므로 **BE에는 그 식별자를 만들 재료가 없다.** 필드를 채우려 해도 채울 값이
-없어서 전 요청이 400으로 떨어진다.
-
-🔴 **그래서 AI가 카탈로그를 내고, 셀→노드 매핑의 소유는 adapter로 둔다.** 우리가 매핑까지
-가지면 BE의 화면 축(영역×유형)이 AI 계약으로 새어 들어온다.
+**정본 흐름(2026-08-13 BE 명세 대조 §1-2):** 진단이 산출한 `skill_node_id`를
+`POST /v1/problems`의 `manual_targets`에 그대로 전달한다. 카탈로그는 그 ID의 라벨·영역·
+유형·근거 조달 방식을 해석하는 표이며, BE가 카탈로그만 보고 임의의 다른 노드를 고르는
+목록이 아니다.
 
 ⚠ **이 파일은 목록만 만든다.** "어느 노드가 지금 실제로 문항을 낼 수 있는가"는 **적지
 않는다** — 근거 자료 배선에 따라 바뀌는 값이라 카탈로그에 박으면 곧 거짓이 된다.
@@ -25,17 +21,43 @@ from typing import Any, Final
 
 from ai.contracts.taxonomy import V1_TYPE_TAGS, AreaTag, TypeTag
 from ai.diagnosis.config import default_diagnosis_runtime
+from ai.problem_generation.infrastructure.build_lexicon_index import load_node_map
+from ai.problem_generation.infrastructure.grammar_norm import load_grammar_norm_corpus
 
 FIXTURE_PATH: Final = (
     Path(__file__).parent / "fixtures" / "taxonomy" / "curriculum_nodes.json"
 )
 _WRITE: Final = os.environ.get("WRITE_TAXONOMY_CATALOG") == "1"
+_EVIDENCE_MODES: Final = frozenset(
+    {"grammar_norm", "lexicon", "generated_source", "licensed_work"}
+)
+
+
+def _evidence_modes_by_node() -> dict[str, str]:
+    grammar_nodes = set(load_grammar_norm_corpus().mapping.nodes)
+    lexicon_nodes = set(load_node_map().nodes)
+    overlap = grammar_nodes & lexicon_nodes
+    assert not overlap, f"어문규범·사전 근거 모드가 중복된 노드: {sorted(overlap)}"
+
+    graph, _ = default_diagnosis_runtime()
+    modes: dict[str, str] = {}
+    for node in graph.nodes:
+        if node.id in grammar_nodes:
+            modes[node.id] = "grammar_norm"
+        elif node.id in lexicon_nodes:
+            modes[node.id] = "lexicon"
+        elif node.area_tag is AreaTag.LITERATURE:
+            modes[node.id] = "licensed_work"
+        else:
+            modes[node.id] = "generated_source"
+    return modes
 
 
 def build_catalog() -> dict[str, Any]:
     """패키지 동봉 그래프에서 카탈로그를 만든다 — 순수 변환, 손으로 적지 않는다."""
 
     graph, document = default_diagnosis_runtime()
+    evidence_modes = _evidence_modes_by_node()
     return {
         "graph_version": graph.meta.graph_version,
         "taxonomy_version": graph.meta.taxonomy_version,
@@ -51,6 +73,7 @@ def build_catalog() -> dict[str, Any]:
                 "area_tag": node.area_tag.value,
                 # 🔴 **이 필드가 셀→노드 매핑의 키다.** 어느 유형으로 물을 수 있는 노드인지.
                 "type_affinity": [tag.value for tag in node.type_affinity],
+                "evidence_mode": evidence_modes[node.id],
                 "level": node.level,
             }
             for node in graph.nodes
@@ -118,3 +141,13 @@ def test_node_ids_are_unique_and_stable_shape() -> None:
 
     assert len(ids) == len(set(ids))
     assert all(node["label"] for node in nodes), "라벨 없는 노드는 화면에 못 그린다"
+
+
+def test_every_node_declares_one_supported_evidence_mode() -> None:
+    """정적 조달 방식만 싣고 실행 중 근거 유무를 boolean으로 약속하지 않는다."""
+
+    nodes = build_catalog()["nodes"]
+
+    assert all(node["evidence_mode"] in _EVIDENCE_MODES for node in nodes)
+    assert all("has_evidence" not in node for node in nodes)
+    assert {node["evidence_mode"] for node in nodes} == _EVIDENCE_MODES

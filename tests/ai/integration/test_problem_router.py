@@ -913,6 +913,8 @@ def test_problem_post_replays_202_and_conflicts_on_different_body() -> None:
 
     assert first.status_code == replay.status_code == 202
     assert replay.json() == first.json()
+    assert replay.json()["data"]["job_id"] == first.json()["data"]["job_id"]
+    assert replay.json()["meta"]["execution_id"] == first.json()["meta"]["execution_id"]
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
 

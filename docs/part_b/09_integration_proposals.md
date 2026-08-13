@@ -2154,6 +2154,12 @@ reading·literature의 기존 출제 경로도 수동 목표로만 도달 가능
 않았다. 자료 생성은 `area_specs.yaml` 규격 블록을 프롬프트에 싣고 승인 evidence가 없거나
 미승인 ref를 쓰면 문항 생성 전에 실패 닫힘한다.
 
+BE의 출제 목표 정본은 **진단 응답이 산출한 `skill_node_id`**다. BE는 이 ID를
+`POST /v1/problems`의 `manual_targets`에 그대로 전달하며, 57노드 카탈로그만 보고 임의의
+다른 노드를 고르지 않는다. 카탈로그의 `evidence_mode`는 정적 조달 방식
+(`grammar_norm|lexicon|generated_source|licensed_work`)을 설명할 뿐, 실행 중 근거 존재 여부를
+`has_evidence` 같은 boolean으로 약속하지 않는다.
+
 T1 language 33노드는 어문규범 11노드와 표준국어대사전 최소 색인 22노드로 근거를
 배선했다. 표준국어대사전 `20260805` XML 덤프에는 `target_code`와 `sense_code`가 함께
 있다. `infrastructure/stdict.py`의 “`sense_code`는 `view.do`에만 있다”는 설명은
