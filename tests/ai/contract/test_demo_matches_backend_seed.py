@@ -51,6 +51,8 @@ _SEED_CSV: Final = (
 #: 시드 구성 중 **CSV 로 표현되지 않는 것**만 여기 둔다.
 #: ⚠ `students.csv` 에 기준 주·주차 수 열이 없다 — `checkon_seed.sql` 의 `\set monday`
 #:   와 주차 배열이 정본이고, 그 값을 옮겨 적은 것이다.
+#: 🔴 그 SQL 은 **저장소에 없다**(2026-08-13 전달분 · 99 #68 재조정). 즉 아래 두 값은
+#:   여전히 **손으로 옮겨 적은 값**이고 검사가 원본을 읽어 확인하지 않는다.
 _SEED_WEEK: Final = "2026-08-10"
 _SEED_WEEKS: Final = 12
 
@@ -99,6 +101,10 @@ def test_the_demo_has_the_same_shape_as_the_backend_seed() -> None:
         "② type_bias 2 vs 시드 기대 1 — 시드가 st_15 를 「R6 skip · tagging_below_60pct」로 "
         "겨냥했는데 `fake_snapshot._cell_for()` 가 **모든 문항에 type_tag 를 채워** 태그 누락을 "
         "만들 수 없어 그 학생이 skip 대신 정상 발화한다 (99 #67). "
+        "🔴 **어느 쪽을 맞출지 아직 정하지 않았다**(99 #71) — 데모를 시드에 맞추면 "
+        "휴원 제외 경로가 아무 데서도 검증되지 않고, 시드에 PAUSED 를 넣으면 승우님이 "
+        "시드를 다시 넣어야 한다. 시드 2판을 낼 때 같이 정한다. "
+        "⚠ 「고치면 되는데 안 고친 것」이 아니다. "
         "⚠ strict=True 다 — 데모를 고치면 XPASS 로 red 가 나서 이 마커를 지우게 된다."
     ),
 )
