@@ -47,6 +47,17 @@ class Replacement:
     target: str
     """빈 문자열이면 삭제(§4의 비교 함의 제거 항목)."""
 
+    stem: str = ""
+    """🔴 **관측 전용 어간**(선택) — 프롬프트는 **안 쓴다**(99 #84).
+
+    `source`는 프롬프트가 쓰는 **자연문**이라(*"「심각합니다」 대신 …"*) 어간으로 낮출 수
+    없는데, 관측(`observe_gated_draft`)은 어간이어야 활용형을 잡는다. **용도가 둘이라
+    필드를 둘로 가른 것**이고 `source`·`target`은 한 글자도 안 바뀐다.
+
+    ⚠ **비어 있는 것이 정상이다** — 어간·구로 등재된 항은 이미 활용형을 잡고, 종결형 중
+    일부는 **낮추면 정상 문장을 오탐**해서 일부러 안 준다(yaml 주석에 사유가 있다).
+    """
+
 
 @dataclass(frozen=True)
 class BufferLexicon:
@@ -153,7 +164,14 @@ def parse_buffer_lexicon(raw: dict[str, Any]) -> BufferLexicon:
         source = str(item["from"])
         if not source:
             raise BufferLexiconError("replace의 from이 비었다")
-        replacements.append(Replacement(source=source, target=str(item.get("to", ""))))
+        replacements.append(
+            Replacement(
+                source=source,
+                target=str(item.get("to", "")),
+                #: `stem`은 **선택**이다 — 없으면 빈 문자열(관측이 `source`만 본다).
+                stem=str(item.get("stem", "")).strip(),
+            )
+        )
 
     conjugating = tuple(str(word) for word in raw["conjugating"])
     if len(set(conjugating)) != len(conjugating):
