@@ -1,0 +1,36 @@
+{
+  "data": {
+    "job_id": "00000000-0000-4000-8000-0000000000b0",
+    "status": "succeeded",
+    "result": {
+      "draft_status": "llm_failed",
+      "text": null,
+      "citations": [],
+      "labels_applied": [
+        "narrative",
+        "anxious",
+        "attitude",
+        "frequent"
+      ],
+      "label_suggestions": [],
+      "status_reason": "draft_body_missing",
+      "generated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "counsel-pack-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "0.3",
+      "graph": null,
+      "taxonomy": null,
+      "verify_config": null,
+      "difficulty_calib": null
+    }
+  }
+}

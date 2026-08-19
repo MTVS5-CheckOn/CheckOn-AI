@@ -1,0 +1,38 @@
+{
+  "inquiry": {
+    "inquiry_ref": "iq_884",
+    "topic": "grade",
+    "urgency": "immediate",
+    "received_at": "2026-07-31T14:20:00+09:00",
+    "text_masked": "요즘 아이가 힘들어하는 것 같은데…"
+  },
+  "student_ref": "st_8f2a",
+  "parent_ref": "pa_9c1d",
+  "class_ref": "cl_a1",
+  "labels": [
+    "narrative",
+    "attitude",
+    "anxious",
+    "frequent"
+  ],
+  "dismissed_suggestions": [
+    {
+      "axis": "frequency",
+      "value": "monthly"
+    }
+  ],
+  "context": {
+    "snapshot_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "period_label": "2026년 7월",
+    "facts": [
+      {
+        "record_id": "le_2041",
+        "summary": "6월 지문 42개·312문항"
+      },
+      {
+        "record_id": "le_2077",
+        "summary": "제출률 100% (4주)"
+      }
+    ]
+  }
+}
