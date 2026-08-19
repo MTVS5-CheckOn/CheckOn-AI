@@ -5,6 +5,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ai.runtime.env_files import ENV_FILES
@@ -15,9 +16,21 @@ class CounselSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
-    counsel_llm_failure_circuit: int = 3
-    """연속 LLM 실패 학생 수 임계 → paused. 기본 3은 `langgraph_state.md` §1.3
-    ("LLM 연속 실패 3학생(서킷)")의 기준 수치를 그대로 옮긴 값이다."""
+    counsel_llm_failure_circuit: int = Field(default=3, ge=2)
+    """연속 LLM 실패 **학생 수** 임계 → paused. 기본 3은 `langgraph_state.md` §1.3
+    ("LLM 연속 실패 3학생(서킷)")의 기준 수치를 그대로 옮긴 값이다.
+
+    🔴 **`ge=2` — 1 이하는 기동에서 거부한다** (99 #08 ⓐ). `1`이면 **첫 실패에 열린다** —
+    그건 「**연속** 실패」가 아니라 「단발 실패」이고 **서킷이라는 개념 자체와 어긋난다.**
+    임계값을 조정하는 것이 아니라 **뜻이 안 되는 값**을 막는 것이다.
+    ⚠ 실측(2026-08-19): `COUNSEL_LLM_FAILURE_CIRCUIT=1` 로 주면 **기동이 되고** 첫 LLM
+    실패에 잡이 `paused` 로 갔다 — 그 상태를 푸는 **HTTP 표면이 없어** 고착이었다(99 ㉖).
+
+    🔴 **⚠ 2로 올려도 N=1 에서는 안 열린다.** 카운터는 **학생 단위**로 오르는데
+    (`graph.py` 의 `consecutive["llm_failed"]`) counsel 라우터는 학생을 **1명만** 넣는다
+    ⇒ **최대 1**이다. **이 가드는 footgun 방지이지 서킷을 도달 가능하게 만드는 것이 아니다.**
+    이 문장이 없으면 다음 사람이 *"2로 했으니 이제 열리겠지"* 로 읽는다.
+    ⚠ 서킷이 실제로 열리는 조건은 **N>1**(월별 벌크·Kafka)이다."""
 
     counsel_inline_drain_max: int = 3
     """POST 한 번이 **자기 잡이 끝날 때까지** 돌리는 최대 회전 수 (99 #21 · 불변식 6).
