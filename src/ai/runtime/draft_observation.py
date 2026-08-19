@@ -88,8 +88,20 @@ def observe_gated_draft(
     처방은 「B군을 어간으로 재등재」이고, 그건 05 §4 개정 + 항 수 fail-closed가 함께 움직이는
     별건이다(99 #84).
     """
-    replacements = tuple(item.source for item in load_buffer_lexicon().replacements)
-    hits = find_forbidden(text, replacements)
+    #: 🔴 **`source`와 `stem`을 둘 다 본다 — `or`가 아니다**(99 #84).
+    #: 좁힌 어간이 원본을 포함하지 않는 경우가 있다(`못한` ⊄ `못합니다`) — `or`로 갈면
+    #: **종결형 자체를 놓친다.** 합집합으로 봐야 계수가 늘기만 하고 줄지 않는다.
+    #: ⚠ 로그·반환값은 **`source`로 정규화**한다 — 적중 어휘 이름이 흔들리면 그 숫자를
+    #:   읽는 쪽(다음 회차 게이트 판정 · 99 #79)이 두 이름을 같은 것으로 못 센다.
+    probes: dict[str, str] = {}
+    for item in load_buffer_lexicon().replacements:
+        probes.setdefault(item.source, item.source)
+        if item.stem:
+            probes.setdefault(item.stem, item.source)
+    seen: dict[str, None] = {}
+    for matched in find_forbidden(text, tuple(probes)):
+        seen.setdefault(probes[matched], None)
+    hits = tuple(seen)
     if hits:
         logger.warning(
             "초안 완충어휘 적중 — origin=%s tenant=%s execution=%s len=%d terms=%s "
