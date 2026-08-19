@@ -53,16 +53,17 @@ from ai.db.repositories.run_store import (
 from ai.db.store_factory import build_agent_job_store, reset_shared_agent_runtime
 from ai.diagnosis.skill_graph import GraphNode, load_skill_graph
 from ai.llm.gateway import LlmCallRecord
-from ai.problem_generation.application.literature_selector import LiteratureSelector
 from ai.problem_generation.application.passage_generator import generated_material_ref
 from ai.problem_generation.assembly import (
     ProblemGenerationRunner,
     ProblemRuntimeStores,
     problem_runtime_stores,
 )
+from ai.problem_generation.bootstrap import build_literature_selector
 from ai.problem_generation.domain.models import StoredProblemItem
 from ai.problem_generation.enqueue import ProblemGenerationEnqueuer
 from ai.problem_generation.infrastructure.build_lexicon_index import load_node_map
+from ai.problem_generation.infrastructure.config import load_verify_config
 from ai.problem_generation.infrastructure.grammar_norm import (
     load_grammar_norm_corpus,
     select_node_rows,
@@ -74,7 +75,6 @@ from ai.problem_generation.infrastructure.lexicon_index import (
     load_lexicon_index,
     select_node_entries,
 )
-from ai.problem_generation.infrastructure.literature_pool import load_literature_pool
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryProblemItemStore,
     InMemoryProblemSetStore,
@@ -364,7 +364,7 @@ def _matrix_source_and_evidence(
         )
     if node.area_tag is AreaTag.LITERATURE:
         selection = _matrix_work_selection()
-        excerpt = LiteratureSelector(load_literature_pool()).select(selection)
+        excerpt = build_literature_selector(load_verify_config()).select(selection)
         return (
             {"work_selection": selection.model_dump(mode="json")},
             (),

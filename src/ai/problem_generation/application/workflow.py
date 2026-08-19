@@ -83,6 +83,7 @@ from ai.problem_generation.domain.difficulty import (
     estimate_t1_difficulty,
     needs_difficulty_regeneration,
 )
+from ai.problem_generation.domain.external_corpus import ExternalCorpusIndex
 from ai.problem_generation.domain.identity import (
     item_stem_hash,
     problem_item_id,
@@ -213,6 +214,7 @@ class ProblemGenerationWorkflow:
         checkpointer: BaseCheckpointSaver[Any],
         verify_config: VerifyConfig,
         banned_topics: BannedTopicsConfig,
+        external_corpus: ExternalCorpusIndex | None = None,
     ) -> None:
         self._diagnosis = diagnosis
         self._graph_context = graph_context
@@ -229,6 +231,8 @@ class ProblemGenerationWorkflow:
         self._rule_validator = RuleValidator(
             banned_topics,
             duplicate_similarity_max=self._verify_config.dup_similarity_max,
+            external_corpus=external_corpus,
+            external_similarity_max=self._verify_config.external_similarity_max,
         )
 
         if (

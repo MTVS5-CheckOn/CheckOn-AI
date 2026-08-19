@@ -43,11 +43,18 @@ class SentenceComplexity(StrEnum):
 
 
 class LiteratureGenre(StrEnum):
-    """버전 고정 문학 풀의 갈래 어휘."""
+    """버전 고정 문학 풀의 갈래 어휘.
+
+    수능 문학의 갈래 구분(운문/산문 × 고전/현대 + 수필)을 따른다. 갈래는 곧 **발췌
+    단위**다 — 운문은 전문, 산문은 문단(`literature_selector._excerpt_spans`).
+    극(희곡·시나리오)은 공유 저작물 원문을 아직 확보하지 못해 열지 않는다.
+    """
 
     CLASSICAL_POETRY = "classical_poetry"
     MODERN_POETRY = "modern_poetry"
+    CLASSICAL_PROSE = "classical_prose"
     MODERN_NOVEL = "modern_novel"
+    ESSAY = "essay"
 
 
 class PassageRequest(BaseModel):

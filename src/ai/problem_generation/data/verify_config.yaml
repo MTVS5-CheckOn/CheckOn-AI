@@ -3,6 +3,15 @@ version: verify-config.v1
 regen_max: 2
 transport_retry: 1
 dup_similarity_max: 0.8
+# R-8 외부 대조 상한 — 생성 지문의 8자 shingle 중 외부 자료 한 건과 겹치는 비율.
+# 실측(2026-08-19 · AI Hub 71857 지문 2,628건 색인): 전재 1.000 · 무관한 한국어 산문
+# 73건 전부 0.000. 잡음 바닥이 0이라 0.2는 「상당 분량 전재」만 잡고 인용은 흘린다.
+external_similarity_max: 0.2
+# 산문 갈래 발췌 창의 길이 경계. 🔴 **문단 하나는 발췌 단위가 아니다** — 실측(2026-08-19)
+# 소설 문단 104,259개의 중앙값이 41자이고 78%가 100자 미만이다(대화 한 줄이 한 문단).
+# 그대로 고르면 「거짓말을 해?」 9자가 제시문이 된다. 연속 문단을 하한까지 이어 붙인다.
+literature_excerpt_min_chars: 600
+literature_excerpt_max_chars: 2000
 cross_confidence_high: 0.8
 alignment_confidence_min: 0.7
 set_drop_ratio_max: 0.3

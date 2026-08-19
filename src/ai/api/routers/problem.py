@@ -63,6 +63,7 @@ from ai.problem_generation.assembly import (
     problem_versions,
     reset_problem_memory_runtime,
 )
+from ai.problem_generation.bootstrap import resolve_external_corpus
 from ai.problem_generation.domain.identity import canonical_json
 from ai.problem_generation.enqueue import ProblemGenerationEnqueuer
 from ai.problem_generation.infrastructure.config import (
@@ -1077,6 +1078,7 @@ async def post_problem_item_revision(
                 verify_config=verify_config,
                 banned_topics=load_banned_topics(),
                 area_specs=load_area_specs(),
+                external_corpus=resolve_external_corpus(),
             )
             try:
                 outcome = await refiner.refine(
