@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -114,6 +115,9 @@ def screen_instruction(instruction: str) -> BlockedReason | None:
     return None
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass(frozen=True)
 class RefineOutcome:
     """한 턴의 결과 — 반영 또는 차단. 예외를 쓰지 않는다(게이트 거부 = 정상 반환값)."""
@@ -121,6 +125,14 @@ class RefineOutcome:
     applied: bool
     text: str | None = None
     blocked_reason: BlockedReason | None = None
+    previous_text_dropped: bool = False
+    """🔴 직전 본문이 마스킹 불확실이라 **누적을 끊고** 이 턴을 돌렸다 (99 #77).
+
+    ⚠ **와이어 계약이 아니다** — `RefineOutcome`은 `composition` 내부 값이고
+    `RefineResponse`(BE 표면)는 **필드가 안 늘었다.** 라우터가 이 값을 **로그와 원장**으로만
+    쓴다. 화면에 *"이전 내용을 이어받지 못했다"* 를 띄우려면 계약 표면이 필요한데,
+    BE가 counsel을 아직 안 짠 시점에 **확실히 필요하지 않은 표면을 늘리지 않는다**.
+    """
 
 
 async def refine_draft(
@@ -194,6 +206,29 @@ async def refine_draft(
     if redact(instruction).uncertain:
         return RefineOutcome(applied=False, blocked_reason=BlockedReason.PII_EXPOSURE)
 
+    # 🔴 **세 번째 주체다 — 직전 본문.** 프롬프트에 들어가는 입력은 셋인데(지시문·컨텍스트·
+    #   직전 본문) 위 검사는 **둘만** 가른다. `previous_text`가 `uncertain`을 내면
+    #   `writer.write` 안에서 `RedactionBlockedError`가 나고, 아래 `except`가 그것을
+    #   **컨텍스트 쪽**으로 분류해 5xx로 올린다 — 그런데 **직전 본문은 컨텍스트가 아니라
+    #   LLM이 쓴 글**이다.
+    # 🔴 **그리고 이 저장소는 `redact()`의 오탐을 실측으로 등재해 뒀다**(`provider.py`의
+    #   대역 문면 주석 ⓐ′ — 「성씨 1자+이름 2자」 휴리스틱이 `가정에서도`·`정리하는` 같은
+    #   평범한 활용형을 인명 후보로 잡는다). 그 오탐이 **한 번 본문에 들어가면** 강사는
+    #   지시를 백 번 고쳐도 매번 5xx이고 **되돌릴 경로가 없다.**
+    # ⇒ **누적을 끊고 간다.** 그 잡의 다듬기가 처음부터 다시 쌓이지만 영구 5xx보다 낫다.
+    # ⚠ **조용히 버리지 않는다** — 끊었다는 사실을 `RefineOutcome`이 들고 나가 라우터가
+    #   로그·원장에 남긴다(관측이 0이면 「안 일어난 일」과 구분이 안 된다).
+    # ⚠ **컨텍스트 기인 5xx는 그대로다** — 그건 강사가 못 고치는 것이 맞고 근거가 아래 있다.
+    # ⚠ **LLM 호출보다 앞이라 원가가 0이다**(위 지시문 검사와 같은 자리).
+    previous_text_dropped = bool(previous_text) and redact(previous_text).uncertain
+    if previous_text_dropped:
+        logger.warning(
+            "refine 직전 본문이 마스킹 불확실 — 누적을 끊고 진행한다 "
+            "(길이=%d · 99 #77). ⚠ 본문은 로그에 싣지 않는다",
+            len(previous_text),
+        )
+        previous_text = ""
+
     max_chars = max_chars_for(context)
     min_chars = min_chars_for(context)  # 하한도 같은 자리에서 파생(99 #13)
     last_reason = ""
@@ -223,12 +258,17 @@ async def refine_draft(
             text, context, max_chars=max_chars, min_chars=min_chars
         )
         if gate.passed:
-            return RefineOutcome(applied=True, text=text)
+            return RefineOutcome(
+                applied=True, text=text, previous_text_dropped=previous_text_dropped
+            )
         last_reason = gate.reason
     prefix = last_reason.partition(":")[0]
     return RefineOutcome(
         applied=False,
         blocked_reason=_GATE_REASON_TO_BLOCK.get(prefix, BlockedReason.TONE_VIOLATION),
+        #: ⚠ 차단 턴도 「끊고 돌렸다」는 사실을 들고 나간다 — 반영 턴만 실으면
+        #:   *"끊었는데 차단됐다"* 가 관측에서 사라진다.
+        previous_text_dropped=previous_text_dropped,
     )
 
 

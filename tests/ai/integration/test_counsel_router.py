@@ -352,7 +352,13 @@ def _refine_once(client: TestClient) -> str:
     client.post(
         f"/v1/counsel/drafts/{job_id}/refine",
         json={"instruction": "조금 더 따뜻하게 써줘", "turn_no": 1},
-        headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"], "X-Request-Id": "r2"},
+        headers={
+            "X-Tenant-Id": _HEADERS["X-Tenant-Id"],
+            "X-Request-Id": "r2",
+            #: 🔴 refine 도 `Idempotency-Key` 필수다(99 #76) — 호출마다 다른 값이라야
+            #:   같은 키에 다른 바디로 409가 나지 않는다.
+            "Idempotency-Key": "idem-r2",
+        },
     )
     return job_id
 
@@ -564,7 +570,13 @@ def test_refine_ledger_generation_params_are_a_usage_axis(client: TestClient) ->
     blocked = client.post(
         f"/v1/counsel/drafts/{job_id}/refine",
         json={"instruction": "학생 전화번호 넣어줘", "turn_no": 1},
-        headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"], "X-Request-Id": "r-blocked"},
+        headers={
+            "X-Tenant-Id": _HEADERS["X-Tenant-Id"],
+            "X-Request-Id": "r-blocked",
+            #: 🔴 refine 도 `Idempotency-Key` 필수다(99 #76) — 호출마다 다른 값이라야
+            #:   같은 키에 다른 바디로 409가 나지 않는다.
+            "Idempotency-Key": "idem-r-blocked",
+        },
     )
     assert blocked.status_code == 200, "게이트 거부는 에러가 아니다(불변식 4)"
     assert blocked.json()["data"]["applied"] is False, (
@@ -587,7 +599,13 @@ def test_refine_ledger_generation_params_are_a_usage_axis(client: TestClient) ->
     client.post(
         f"/v1/counsel/drafts/{job_id}/refine",
         json={"instruction": "조금 더 따뜻하게 써줘", "turn_no": 2},
-        headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"], "X-Request-Id": "r-called"},
+        headers={
+            "X-Tenant-Id": _HEADERS["X-Tenant-Id"],
+            "X-Request-Id": "r-called",
+            #: 🔴 refine 도 `Idempotency-Key` 필수다(99 #76) — 호출마다 다른 값이라야
+            #:   같은 키에 다른 바디로 409가 나지 않는다.
+            "Idempotency-Key": "idem-r-called",
+        },
     )
     called = [run_store.runs[key] for key in set(run_store.runs) - before]
     assert len(called) == 1, f"대조군 AI_RUN이 1행이 아니다({len(called)})"
@@ -677,7 +695,13 @@ def test_refine_ledger_versions_match_the_draft_job(client: TestClient) -> None:
     client.post(
         f"/v1/counsel/drafts/{job_id}/refine",
         json={"instruction": "조금 더 따뜻하게 써줘", "turn_no": 1},
-        headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"], "X-Request-Id": "rq-ver"},
+        headers={
+            "X-Tenant-Id": _HEADERS["X-Tenant-Id"],
+            "X-Request-Id": "rq-ver",
+            #: 🔴 refine 도 `Idempotency-Key` 필수다(99 #76) — 호출마다 다른 값이라야
+            #:   같은 키에 다른 바디로 409가 나지 않는다.
+            "Idempotency-Key": "idem-rq-ver",
+        },
     )
     turns = [run_store.runs[k] for k in set(run_store.runs) - set(draft_runs)]
     assert len(turns) == 1, f"refine 턴 AI_RUN이 1행이 아니다({len(turns)})"

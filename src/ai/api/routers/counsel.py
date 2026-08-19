@@ -120,6 +120,23 @@ router = APIRouter()
 _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id", "Idempotency-Key")
 _POST_ENDPOINT = "POST /v1/counsel/drafts"
 
+
+def _refine_endpoint(job_id: str) -> str:
+    """refine 멱등 스코프 — 🔴 **`job_id`가 스코프 키에 들어간다.**
+
+    멱등 스코프는 `(tenant_id, endpoint, idempotency_key)` **셋**이다. refine 바디는
+    `instruction`·`turn_no` 둘뿐이라 **다른 잡에 같은 지시를 같은 턴으로 보내면 바디 해시가
+    같아진다.** `endpoint`를 리터럴 하나로 두면 BE가 키를 재사용하는 순간
+    **다른 잡의 응답이 그대로 나간다.**
+
+    ⚠ **바디 해시에 `job_id`를 섞는 길도 있다 — 그쪽을 안 골랐다.** 409는
+    *"같은 잡의 같은 키인데 바디가 다르다"* 일 때만 뜻이 맞는데, 해시에 섞으면 다른 잡의
+    같은 키가 **409(충돌)** 로 나간다. 그건 충돌이 아니라 **다른 스코프**다.
+    🔴 이 문단을 지우지 마라 — 없으면 다음 사람이 *"왜 endpoint에 변수를 넣었지"* 하고
+    리터럴로 되돌린다.
+    """
+    return f"POST /v1/counsel/drafts/{job_id}/refine"
+
 #: 학습 데이터가 필요 없는 문의 유형 — `template_only` 경로(error_codes §2.1 · 03 §C 상황 2).
 #: ⚠ **`schedule` 한 종만이다.** `etc`를 넣지 않는 이유는 **오분류의 비대칭**이다 —
 #: 데이터 유관 문의를 무관으로 잘못 보면 근거가 있는데도 일반 안내만 나가 **기능이 사라지고**,
@@ -1214,9 +1231,16 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
     FE 계약 §3-③의 `inquiry_id`는 BE가 중계 매핑한다(04 §3.9).
     턴 상한을 판정하지 않는다: `turn_no`는 받아서 로그로만 쓴다(쿼터는 전부 백엔드).
     """
-    tenant_id = request.headers.get("X-Tenant-Id")
-    if not tenant_id:
-        raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": ["X-Tenant-Id"]})
+    #: 🔴 **`Idempotency-Key`를 필수로 받는다** (99 #76). refine은 LLM 호출이라 중복이
+    #: **원가와 품질을 동시에** 친다 — 네트워크 재시도 한 번이 *강사가 시키지 않은 다듬기
+    #: 한 턴*이 되고, 그 턴이 누적에 남는다.
+    #: ⚠ **선택 필드로 두지 않는다** — 나중에 조이는 순간이 곧 BE 재작업이다. 헤더는
+    #:   클라이언트가 굳으면 못 늘린다(BE counsel 구현 0건인 지금이 유일하게 싼 시점이다).
+    missing = [name for name in ("X-Tenant-Id", "Idempotency-Key") if not request.headers.get(name)]
+    if missing:
+        raise SnapshotInvalid("필수 헤더 누락", {"missing_headers": missing})
+    tenant_id = request.headers["X-Tenant-Id"]
+    idempotency_key = request.headers["Idempotency-Key"]
 
     try:
         raw_body = await request.json()
@@ -1232,6 +1256,21 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
     state = await _draft_state_of((tenant_id, job_id))
     if state is None:  # 존재 은닉 — 다른 테넌트의 job_id도 여기로 떨어진다
         raise NotFound("job_id 부재", {"job_id": job_id})
+
+    #: 흐름은 POST와 같다 — get → 같은 해시면 저장분 재반환, 다른 해시면 409, 아니면 실행 후 put.
+    #: ⚠ **멱등 hit이면 LLM을 안 부르고 원장(AI_RUN·LLM_CALL)도 안 남는다** — POST와 같은
+    #:   성질이다. 원장 0건을 *"실행이 없었다"* 로 읽는 사람이 나오므로 여기 적어 둔다.
+    endpoint = _refine_endpoint(job_id)
+    body_hash = _canonical_hash(raw_body)
+    hit = await _idempotency_store.get(
+        tenant_id=tenant_id, endpoint=endpoint, idempotency_key=idempotency_key
+    )
+    if hit is not None:
+        if hit.snapshot_hash == body_hash:
+            return hit.response_body
+        raise IdempotencyConflict(
+            "같은 Idempotency-Key에 다른 바디", {"idempotency_key": idempotency_key}
+        )
 
     execution_id = uuid.uuid4()
     refine_context = _refine_execution_context(
@@ -1297,11 +1336,35 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
         response = RefineResponse(
             applied=False, blocked_reason=outcome.blocked_reason
         )
-    return success_envelope(
+    if outcome.previous_text_dropped:
+        #: 🔴 **누적을 조용히 끊지 않는다** (99 #77). 강사 화면에는 안 보이지만
+        #: (`RefineResponse`는 필드가 안 늘었다) 운영이 *"이 잡은 이어받지 못했다"* 를
+        #: 셀 수 있어야 한다 — 관측이 0이면 「안 일어난 일」과 구분이 안 된다.
+        logger.warning(
+            "refine 누적 끊김 — 직전 본문이 마스킹 불확실이었다 "
+            "tenant=%s job=%s turn=%d execution_id=%s (99 #77)",
+            tenant_id,
+            job_id,
+            refine_request.turn_no,
+            execution_id,
+        )
+
+    envelope = success_envelope(
         data=response.model_dump(mode="json"),
         execution_id=str(execution_id),
         versions=counsel_versions(),
     )
+    #: ⚠ **`put`은 fail-open이다** — 저장이 실패해도 200이 나가고 그러면 재시도가 두 턴이
+    #: 된다. **여기서 고치지 않는다**: 예약 2단계는 `IdempotencyStore` Protocol 변경 +
+    #: 미완료 예약 행 처리라는 판정이 붙어 별건이다(99 #76의 잔여로 적어 뒀다).
+    await _idempotency_store.put(
+        tenant_id=tenant_id,
+        endpoint=endpoint,
+        idempotency_key=idempotency_key,
+        snapshot_hash=body_hash,
+        response_body=envelope,
+    )
+    return envelope
 
 
 

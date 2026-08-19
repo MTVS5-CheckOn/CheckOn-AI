@@ -753,6 +753,10 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 }
 
 // ④ POST /v1/counsel/drafts/{job_id}/refine — 다듬기 (대상 키 = ①이 돌려준 job_id · 동기 · 매 턴 게이트 전체 재통과)
+//    🔴 헤더: X-Tenant-Id · Idempotency-Key (둘 다 필수 — 누락은 400 INVALID_SCHEMA)
+//    ⚠ 멱등 스코프는 **잡별**이다 — 같은 키를 다른 job_id 에 써도 섞이지 않는다.
+//      같은 잡 + 같은 키 + 같은 바디 = 저장분 재반환(LLM 미호출 · 원장 미기록),
+//      같은 잡 + 같은 키 + 다른 바디 = 409 IDEMPOTENCY_CONFLICT (99 #76)
 // 요청  { "instruction": "정답률이 오르고 있다고 강조해서 써줘", "turn_no": 3 }
 // 반영  { "applied": true,  "text": "…", "citations": [ … ] }
 // 차단  { "applied": false, "blocked_reason": "comparison_exposure" }   // ⚠ `message` 없다(8/5 제거 · 아래 규약)
