@@ -60,6 +60,9 @@ _GATE_REASON_TO_BLOCK: Final[dict[str, BlockedReason]] = {
     "ungrounded_number": BlockedReason.EVIDENCE_MISSING,
     # 톤 축 — 원래 이 값이 뜻하는 것.
     "forbidden": BlockedReason.TONE_VIOLATION,
+    #: B군 완충 치환(99 #79) — A군과 **같은 축**이라 같은 값으로 합류한다.
+    #: ⚠ `BlockedReason` 은 닫힌 공용 enum(양자)이라 값을 늘리지 않는다.
+    "buffered": BlockedReason.TONE_VIOLATION,
     # ── 아래부터 ㊴ 수렴분: 맞는 enum 값이 없어 tone_violation으로 모은다 ──
     "internal_term": BlockedReason.TONE_VIOLATION,  # 지시문 누출(#113)
     "too_long": BlockedReason.TONE_VIOLATION,

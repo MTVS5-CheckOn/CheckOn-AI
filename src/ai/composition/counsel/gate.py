@@ -14,7 +14,11 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict
 
-from ai.composition.buffer_lexicon import find_forbidden, forbidden_terms
+from ai.composition.buffer_lexicon import (
+    find_forbidden,
+    forbidden_terms,
+    replacement_probes,
+)
 from ai.contracts.composition import DraftContext, extract_numbers
 from ai.runtime.internal_terms import find_internal_terms
 
@@ -74,6 +78,34 @@ def check_counsel_gate(
     hits = find_forbidden(body, forbidden_terms())
     if hits:  # A군 금칙 — 치환 불가, 블록 재생성(05 §4)
         return GateResult(passed=False, reason=f"forbidden:{hits[0]}")
+
+    #: 🔴 **B군 — 「이 말 대신 저 말」**(99 #79 · 05 §4). A군 **바로 뒤**다:
+    #:   같은 어휘 축이고 **A군이 더 강하다**(금칙 > 완충). ⚠ `ungrounded_number` **앞**이어야
+    #:   한다 — 숫자 검사가 더 치명적인데 B군이 먼저 걸리면 **숫자 문제가 가려진다.**
+    #:
+    #: 🔴 **두 달 열려 있던 이유는 「재생성이 터지나」였고, 실측이 답했다** —
+    #:   실 LLM 57건에서 적중 **0건**(95% 상한 5.3% · 99 #79·#80). ⇒ 넣어도 안 터진다.
+    #: ⚠ **그 상한은 「이 입력 분포에서」다** — 실 문의가 다양해지면 다시 재야 한다.
+    #:
+    #: 🔴 **그리고 이 층이 유일한 방어인 항이 둘 있다** — `이해력이 부족`·`다른 학생에 비해`는
+    #:   `redact()` 오탐 때문에 **프롬프트에 못 싣는다**(99 #83) ⇒ 종전에는 **어디서도 안
+    #:   막혔다.** 그게 이 검사의 실제 값이다.
+    #:
+    #: ⚠ **관측과 같은 목록을 본다**(`replacement_probes()`) — 두 층이 갈리면
+    #:   *"관측엔 안 잡히는데 게이트에 걸린다"* 가 나고 강사가 원인을 볼 수 없다.
+    buffered = find_forbidden(body, replacement_probes())
+    if buffered:
+        #: 🔴 **detail(콜론 뒤)을 안 싣는다 — 이 자리만 그렇다.** 다른 사유는 `forbidden:게으르`
+        #: 처럼 걸린 어휘를 붙이고 `gate_feedback` 의 `detail_suffix` 가 그걸 **재생성
+        #: 프롬프트에 실어** 준다. 🔴 **B군은 그러면 안 된다** — 실측(8/20 · 28항 전수):
+        #: `이해력이 부족`·`다른 학생에 비해` **2항**이 detail 로 붙는 순간 그 프롬프트가
+        #: `redact()` 에 걸려 **fail-closed 로 미전송**된다(99 #83 이 실측한 그 둘이다).
+        #: ⇒ 그러면 2회차가 통째로 죽는다 — **99 #102 와 정확히 같은 사고**다.
+        #: ⚠ 대가: 강사·로그가 «어느 표현이었나» 를 사유에서 못 읽는다. 그건 **관측**이
+        #:   답한다(`observe_gated_draft` 가 같은 목록으로 세고 어휘를 로그에 남긴다) —
+        #:   재생성 프롬프트에 싣는 것과 **읽는 자리가 다르다.**
+        del buffered  # 사유에 안 싣는다(위) — 매칭 여부만 쓴다
+        return GateResult(passed=False, reason="buffered")
 
     leaked = find_internal_terms(body)
     if leaked:

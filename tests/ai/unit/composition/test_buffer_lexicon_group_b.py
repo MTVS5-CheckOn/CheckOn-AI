@@ -78,17 +78,25 @@ def test_the_moved_comparison_terms_are_blocked_by_the_gate(term: str) -> None:
 
 
 def test_the_comparison_axis_still_has_gaps() -> None:
-    """⚠ **닫힌 것과 안 닫힌 것을 같이 적는다** — 「비교가 막힌다」로 뭉뚱그리지 않는다.
+    """🔴 **(8/20) 이 검사가 뒤집혔다 — 이제 `다른 학생에 비해`가 막힌다**(99 #79).
 
-    🔴 `다른 학생에 비해`는 **여전히 통과한다** — 그건 `to`가 있는 **실제 치환**이라
-    B군이 맞고(비교축을 타인→본인 과거로 전환), B군의 게이트 축은 아직 안 섰다(99 #79).
+    ⚠ **종전 문면**: *«`다른 학생에 비해`는 **여전히 통과한다** … B군의 게이트 축은 아직
+    안 섰다»*. 그 「아직」이 **두 달**이었고, 막고 있던 물음이 *"게이트에 넣으면 재생성이
+    터지나"* 였다. **실 LLM 57건 실측이 답했다 — 적중 0건 · 95% 상한 5.3%.**
+
+    🔴 **그리고 이 항은 게이트가 유일한 방어다** — `redact()` 오탐 때문에 **프롬프트에 못
+    싣는다**(99 #83) ⇒ 종전에는 **어디서도 안 막혔다.** 그게 #79 의 실제 값이다.
+
+    ⚠ **검사를 지우지 않고 뒤집었다** — 「무엇이 안 막혔었나」와 「언제 왜 막히게 됐나」가
+    한 자리에 남아야 다음 사람이 이 축의 이력을 읽는다(#04 규율).
     """
     body = "이 학생은 다른 학생에 비해 시간이 조금 더 걸리는 편입니다. " * 6
     result = check_counsel_gate(body, _context(), max_chars=2000, min_chars=10)
 
-    assert result.passed is True, (
-        "`다른 학생에 비해`가 막혔다 — 판정 ②(B군은 게이트에 안 넣는다)를 어긴 것이다"
+    assert result.passed is False, (
+        "`다른 학생에 비해`가 통과했다 — B군 게이트가 안 도는 것이다(99 #79)"
     )
+    assert result.reason == "buffered", result.reason
 
 
 # ── ② 판정 ③ — 단계 축 ────────────────────────────────────────
@@ -146,16 +154,20 @@ def test_the_lexicon_counts_are_still_fail_closed() -> None:
 def test_group_b_vocabulary_is_counted_not_blocked(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """🔴 **판정 ②의 정본** — B군 어휘가 든 본문은 **차단되지 않고 계수만** 된다.
+    """🔴 **(8/20) 이 검사도 뒤집혔다 — 이제 막고 **또** 센다**(99 #79).
 
-    여기서 막히면 **ⓐ(게이트 검출)를 몰래 넣은 것**이다. 게이트에 넣으려면 재생성 폭증
-    여부를 볼 빈도 표본이 있어야 하는데 그게 없다(99 #80) — 이 관측이 그 표본을 만든다.
+    ⚠ **종전 문면**: *«B군 어휘가 든 본문은 **차단되지 않고 계수만** 된다. 여기서 막히면
+    ⓐ(게이트 검출)를 몰래 넣은 것이다»*. 그 경계는 **빈도 표본이 없어서** 그어진 것이었고
+    (99 #80), 표본이 생기자(n=57 · 적중 0건) 판정이 바뀌었다.
+
+    🔴 **관측은 그대로 산다** — 게이트가 막아도 **세는 자리는 따로**다: 게이트는 «이번 초안을
+    다시 쓰게» 하고, 관측은 «얼마나 나오나» 를 남긴다. 두 층이 **같은 목록**을 보므로
+    (`replacement_probes()`) 「관측엔 안 잡히는데 게이트에 걸린다」가 안 난다.
     """
     body = "이번 결과는 심각합니다. 최악의 주였습니다. " * 6
     gate = check_counsel_gate(body, _context(), max_chars=2000, min_chars=10)
-    assert gate.passed is True, (
-        f"B군 어휘가 게이트에서 막혔다({gate.reason!r}) — 판정 ②를 어긴 것이다"
-    )
+    assert gate.passed is False, "B군 어휘가 게이트를 통과했다 — 게이트 축이 안 도는 것이다"
+    assert gate.reason == "buffered", gate.reason
 
     with caplog.at_level(logging.WARNING, logger="ai.runtime.draft_observation"):
         hits = observe_gated_draft(
