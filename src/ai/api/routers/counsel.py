@@ -41,6 +41,18 @@ from pydantic import ValidationError
 from ai.agents.job_store import JobAlreadyExistsError
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
+from ai.api.routers.counsel_openapi import (
+    COUNSEL_CREATE_OPERATION_ID,
+    COUNSEL_CREATE_RESPONSES,
+    COUNSEL_GET_OPERATION_ID,
+    COUNSEL_GET_RESPONSES,
+    COUNSEL_REFINE_OPERATION_ID,
+    COUNSEL_REFINE_RESPONSES,
+    COUNSEL_TAG,
+    counsel_create_openapi_extra,
+    counsel_get_openapi_extra,
+    counsel_refine_openapi_extra,
+)
 from ai.api.version_scope import RouterScope
 from ai.composition.counsel.assembly import (
     build_counsel_llm_provider,
@@ -1091,7 +1103,19 @@ async def _wire_result(
     )
 
 
-@router.post("/v1/counsel/drafts", status_code=202)
+@router.post(
+    "/v1/counsel/drafts",
+    status_code=202,
+    #: 🔴 **문서 전용 인자다** — 런타임(시그니처·검증·반환)은 한 글자도 안 바뀐다.
+    #:   `response_model=`을 쓰면 직렬화에 관여하고, 핸들러 인자를 모델로 바꾸면
+    #:   FastAPI 자동 검증이 **422**를 만들어 현행 400 `INVALID_SCHEMA`가 사라진다
+    #:   (`counsel_openapi.py` 모듈 docstring · 99 #99).
+    openapi_extra=counsel_create_openapi_extra(),
+    responses=COUNSEL_CREATE_RESPONSES,
+    operation_id=COUNSEL_CREATE_OPERATION_ID,
+    tags=[COUNSEL_TAG],
+    summary="상담 초안 생성을 기동한다",
+)
 async def post_counsel_draft(request: Request, response: Response) -> dict[str, Any]:
     """초안 생성 — 헤더·바디 검증 → 멱등 → 근거 선검사 → 워커(N=1) → 계약 뷰 저장."""
     missing = [name for name in _REQUIRED_HEADERS if not request.headers.get(name)]
@@ -1249,7 +1273,14 @@ async def _restore_result(
     )
 
 
-@router.get("/v1/counsel/drafts/{job_id}")
+@router.get(
+    "/v1/counsel/drafts/{job_id}",
+    openapi_extra=counsel_get_openapi_extra(),
+    responses=COUNSEL_GET_RESPONSES,
+    operation_id=COUNSEL_GET_OPERATION_ID,
+    tags=[COUNSEL_TAG],
+    summary="상담 초안 결과를 회수한다",
+)
 async def get_counsel_draft(
     job_id: str, request: Request, response: Response
 ) -> dict[str, Any]:
@@ -1350,7 +1381,14 @@ async def _record_refine_run(
         logger.exception("refine 장애 턴의 원장 적재 실패 — 원인 예외를 유지한다")
 
 
-@router.post("/v1/counsel/drafts/{job_id}/refine")
+@router.post(
+    "/v1/counsel/drafts/{job_id}/refine",
+    openapi_extra=counsel_refine_openapi_extra(),
+    responses=COUNSEL_REFINE_RESPONSES,
+    operation_id=COUNSEL_REFINE_OPERATION_ID,
+    tags=[COUNSEL_TAG],
+    summary="상담 초안을 다듬는다",
+)
 async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
     """다듬기 1턴 — 동기 · **매 턴 게이트 전체 재통과**(06 §1).
 
