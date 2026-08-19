@@ -1,5 +1,5 @@
 {
-  "version": "stdict-t1-map-v2",
+  "version": "stdict-t1-map-v3",
   "source_revision": "stdict-20260805",
   "max_evidence_count": 8,
   "nodes": {
@@ -27,9 +27,105 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:f04a396799aadb08990d831acffdbbd8f6c1fa3e04e866f2368cd10c7ee0c26c"
+      },
+      {
+        "node_id": "language.grammar.morpheme.concept",
+        "target_code": "208862",
+        "sense_code": "212372",
+        "word": "실질^형태소",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:bb276d5822440bf5fe70bf50c48f480251d3ae3c8bbaef3aee9ec2df41cadaaa"
+      },
+      {
+        "node_id": "language.grammar.morpheme.concept",
+        "target_code": "259936",
+        "sense_code": "248950",
+        "word": "의존^형태소",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:f750efaa2b3e7c2d1411147c48997ef692d25b82e039ec80d71cf501921bf4a4"
+      },
+      {
+        "node_id": "language.grammar.morpheme.concept",
+        "target_code": "479036",
+        "sense_code": "269729",
+        "word": "접미-사",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:652ced4ff85ac658f1ccac7aea0d02ba502455c9f331f1f66dcf234d464264bf"
+      },
+      {
+        "node_id": "language.grammar.morpheme.concept",
+        "target_code": "478417",
+        "sense_code": "433886",
+        "word": "접두-사",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:47bea7a023363a7c227801adf61d8a3155cfbf456c2011b7615c7884eebc0d76"
+      },
+      {
+        "node_id": "language.grammar.morpheme.concept",
+        "target_code": "274616",
+        "sense_code": "469261",
+        "word": "자립^형태소",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:8d4f73148be14b08fb6b17ad7dfcc5b88b9bb2291c075e7d19573a6d50955ea8"
+      },
+      {
+        "node_id": "language.grammar.morpheme.concept",
+        "target_code": "461397",
+        "sense_code": "539381",
+        "word": "어근",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:b41a58dfefe7f1ded9aa5d5f0436b04292e4ef9eb84028edf388e7c09793dff3"
       }
     ],
     "language.grammar.word.formation": [
+      {
+        "node_id": "language.grammar.word.formation",
+        "target_code": "75461",
+        "sense_code": "122398",
+        "word": "단일-어",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:1b846175ead680af2e2970226050205ec00e0ad903c7379a441b51b1f3b6601f"
+      },
+      {
+        "node_id": "language.grammar.word.formation",
+        "target_code": "354293",
+        "sense_code": "307984",
+        "word": "파생-법",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:aad232006052c77e9f6079b7f51e2b2b2e220567004de1ec80b2aa853728331d"
+      },
       {
         "node_id": "language.grammar.word.formation",
         "target_code": "501835",
@@ -44,6 +140,18 @@
       },
       {
         "node_id": "language.grammar.word.formation",
+        "target_code": "502330",
+        "sense_code": "333756",
+        "word": "합성-법",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:8849495edf45c45e5629f422603fd83cc418fcbf5f0cb0d413b64faa2a359bf7"
+      },
+      {
+        "node_id": "language.grammar.word.formation",
         "target_code": "354323",
         "sense_code": "364853",
         "word": "파생-어",
@@ -53,9 +161,45 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:c8aa390df94c2693c938391c27f38829fdc793965cdf088cb3bc67031b2516a0"
+      },
+      {
+        "node_id": "language.grammar.word.formation",
+        "target_code": "436620",
+        "sense_code": "570331",
+        "word": "복합-어",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:bd9c6553b37eaf5df5bdf47b36ed5b9829ef53bb41b9c742a30d6982d9f786ad"
       }
     ],
     "language.grammar.parts_of_speech": [
+      {
+        "node_id": "language.grammar.parts_of_speech",
+        "target_code": "450031",
+        "sense_code": "203035",
+        "word": "수식-언",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:6ae526ebc45044b37f8b410ad218145ef2497c9d3edb51223673d12d45910180"
+      },
+      {
+        "node_id": "language.grammar.parts_of_speech",
+        "target_code": "247371",
+        "sense_code": "237864",
+        "word": "용언01",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:3bd78455ed2b8ba795d690b29f1b0cacbe73bfbca810a7a95d7de535a6e0fbd1"
+      },
       {
         "node_id": "language.grammar.parts_of_speech",
         "target_code": "503208",
@@ -67,9 +211,57 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:b3f69246df4db369c5f7fef929449726e795ec587f05de0b7e0169688404e0b9"
+      },
+      {
+        "node_id": "language.grammar.parts_of_speech",
+        "target_code": "332504",
+        "sense_code": "509916",
+        "word": "체언",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:03d7c43061ffa599740f0861b41c3f4aa66fd6a0637d450b0277601b55109b40"
+      },
+      {
+        "node_id": "language.grammar.parts_of_speech",
+        "target_code": "515911",
+        "sense_code": "597099",
+        "word": "관계-언",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:2a419fd563f7d19f53371b6178d64f250141c3e8b25ef3f9ad7018febc40370e"
+      },
+      {
+        "node_id": "language.grammar.parts_of_speech",
+        "target_code": "516102",
+        "sense_code": "597309",
+        "word": "독립-언",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:23e636ca6f2cad6bad615ebd35d873f1dad717e893846457533b12b29b4e054e"
       }
     ],
     "language.grammar.noun": [
+      {
+        "node_id": "language.grammar.noun",
+        "target_code": "395910",
+        "sense_code": "89517",
+        "word": "고유^명사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:94742521df2ed71312a132081d8d02c56cd141270198bead7de2df2142e17ee0"
+      },
       {
         "node_id": "language.grammar.noun",
         "target_code": "116592",
@@ -81,9 +273,81 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:70ef20cd22979109f35ed753582eeae80785c9f7cddbb0611983a49f7c5952f8"
+      },
+      {
+        "node_id": "language.grammar.noun",
+        "target_code": "259932",
+        "sense_code": "248782",
+        "word": "의존^명사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:d3108b77b6f35e8c5ed19afb15b7c2a64b92133c07896a55d44a54601478b94e"
+      },
+      {
+        "node_id": "language.grammar.noun",
+        "target_code": "274345",
+        "sense_code": "255313",
+        "word": "자립^명사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:8a27303e457a6e51da1b8026781e4c34cdc3c15dedccfcbf6e34b632997ffb54"
+      },
+      {
+        "node_id": "language.grammar.noun",
+        "target_code": "146083",
+        "sense_code": "423345",
+        "word": "보통^명사01",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:c47658580ef723311daa10af6f1b5481f0c8449742dbe254c5449814f7681303"
+      },
+      {
+        "node_id": "language.grammar.noun",
+        "target_code": "146084",
+        "sense_code": "570640",
+        "word": "보통^명사02",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:dbcef20194825c3669f784e7bfa1db9f07cce2c990b5362ff142a1e64fea1d5a"
       }
     ],
     "language.grammar.pronoun": [
+      {
+        "node_id": "language.grammar.pronoun",
+        "target_code": "315007",
+        "sense_code": "279227",
+        "word": "지시^대명사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:01aab3e0a579226fdbdaafa7e14f831fd518a81bd9f2c78a0d4bcb1cca882735"
+      },
+      {
+        "node_id": "language.grammar.pronoun",
+        "target_code": "281143",
+        "sense_code": "359630",
+        "word": "재귀^대명사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:8e633175cd49fdbd41ab74afcd730f3bf8fb5580604bd2cf7b32fcaac95a31d4"
+      },
       {
         "node_id": "language.grammar.pronoun",
         "target_code": "414113",
@@ -95,9 +359,33 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:ed19bc3ee0142802245e3a3b18db26109cb3a36e9a9a00e1363e475d3529bc66"
+      },
+      {
+        "node_id": "language.grammar.pronoun",
+        "target_code": "265648",
+        "sense_code": "579114",
+        "word": "인칭^대명사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:f5f0fcfbdcc5ff0c289d72b49224f1f17a71fc0cb74ff5855221f00758856c9e"
       }
     ],
     "language.grammar.numeral": [
+      {
+        "node_id": "language.grammar.numeral",
+        "target_code": "440675",
+        "sense_code": "193728",
+        "word": "서-수사",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:137fc7c8fd385949f2d2f8d90fddef87d6eb78d6225428b61f480a6062b04bb4"
+      },
       {
         "node_id": "language.grammar.numeral",
         "target_code": "197897",
@@ -109,9 +397,57 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:fbdc89055b47b4a4346bc220905a6938b7785c5999ce2c39759f04165ea48735"
+      },
+      {
+        "node_id": "language.grammar.numeral",
+        "target_code": "224670",
+        "sense_code": "224312",
+        "word": "양-수사",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:02e6f477483bdb98edd446d697f47aa13f5ce4a28a717e1dee0b27817d845a23"
       }
     ],
     "language.grammar.predicate": [
+      {
+        "node_id": "language.grammar.predicate",
+        "target_code": "144248",
+        "sense_code": "171053",
+        "word": "보조^용언",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:f1439ce0aaa85d68093f897de093b0fd24b535f8c00d10243e5969ca493d3bc7"
+      },
+      {
+        "node_id": "language.grammar.predicate",
+        "target_code": "145507",
+        "sense_code": "171450",
+        "word": "보조^형용사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:4a8252830c7864b4f5d90401e89be72b792c7fddfc625af6ce250a1c19bc1f05"
+      },
+      {
+        "node_id": "language.grammar.predicate",
+        "target_code": "150847",
+        "sense_code": "175152",
+        "word": "본-용언",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:d88aa9e67fdca89ef9f9cda835cb86bae94eec122b4f17d825bbc5a8378bda34"
+      },
       {
         "node_id": "language.grammar.predicate",
         "target_code": "247371",
@@ -123,9 +459,81 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:7e06246e2be2167a525b734e375e97de6f366c55b8b59f55ba5aebb2ea8585df"
+      },
+      {
+        "node_id": "language.grammar.predicate",
+        "target_code": "369258",
+        "sense_code": "319911",
+        "word": "형용-사",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:76a7db8fd2fbf165c5bb2552bf95572597c946dd0d7de4184183ce2ab2c37f7f"
+      },
+      {
+        "node_id": "language.grammar.predicate",
+        "target_code": "150327",
+        "sense_code": "349754",
+        "word": "보조^동사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:61d6434ba7b3f7d72e58399935776ad1989b908abb995aca0e9015d425297fa6"
+      },
+      {
+        "node_id": "language.grammar.predicate",
+        "target_code": "412293",
+        "sense_code": "492707",
+        "word": "동사09",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:33913b1c3923f18ff28bc541e7dae93fdaf8680651a93205f190daf11f1634a9"
       }
     ],
     "language.grammar.modifier": [
+      {
+        "node_id": "language.grammar.modifier",
+        "target_code": "192316",
+        "sense_code": "196581",
+        "word": "성상^관형사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:ca617a70998566891547e59e0f0a40497d82fe4e8d3c323cb88c2a2c98dc1cc5"
+      },
+      {
+        "node_id": "language.grammar.modifier",
+        "target_code": "197362",
+        "sense_code": "204385",
+        "word": "수^관형사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:94f23e312d51933739bbe51a135af250148cb56d9b08100002c9dccd686be2fe"
+      },
+      {
+        "node_id": "language.grammar.modifier",
+        "target_code": "485033",
+        "sense_code": "508759",
+        "word": "지시^관형사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:62cc8f36d927a743a84d39c711ad6eaea54766e48563363dbe0f03604af4d587"
+      },
       {
         "node_id": "language.grammar.modifier",
         "target_code": "398237",
@@ -140,6 +548,54 @@
       }
     ],
     "language.grammar.adverb": [
+      {
+        "node_id": "language.grammar.adverb",
+        "target_code": "428166",
+        "sense_code": "155646",
+        "word": "문장^부사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:c7bf3c0d0e1b5af18a89f8669f243845f5b490b75057d343a3ac6278623dcf8c"
+      },
+      {
+        "node_id": "language.grammar.adverb",
+        "target_code": "185695",
+        "sense_code": "195944",
+        "word": "성분^부사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:7b703dfc49ea96417db94170142abf0a9a17d6b9180220e2da4a6d17abd0e2a4"
+      },
+      {
+        "node_id": "language.grammar.adverb",
+        "target_code": "475724",
+        "sense_code": "270200",
+        "word": "접속^부사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:de8647c6a201c7eef71211ae04f965ce54e73daf843f7fb193a298bfc0132967"
+      },
+      {
+        "node_id": "language.grammar.adverb",
+        "target_code": "315572",
+        "sense_code": "279230",
+        "word": "지시^부사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:c3c47418e93b60afa9d3e5bda500251778475b5a723c540a1e0779d60e900724"
+      },
       {
         "node_id": "language.grammar.adverb",
         "target_code": "435278",
@@ -170,6 +626,66 @@
     "language.grammar.particle": [
       {
         "node_id": "language.grammar.particle",
+        "target_code": "18131",
+        "sense_code": "84763",
+        "word": "격^조사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:2e982f9843e604492be6da85cd99cffe0bb4bbc0115d828f3ca41d2684ed96dd"
+      },
+      {
+        "node_id": "language.grammar.particle",
+        "target_code": "32426",
+        "sense_code": "94475",
+        "word": "관형격^조사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:8cdd613a7c540941f48d0019d6ace4d54a8143d968e77fd0e2dc5592f29e607e"
+      },
+      {
+        "node_id": "language.grammar.particle",
+        "target_code": "120166",
+        "sense_code": "151665",
+        "word": "목적격^조사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:c76d9e18878ba044b250e280d1d8072692e5d91a71d232be8fe1ab357a13c6a6"
+      },
+      {
+        "node_id": "language.grammar.particle",
+        "target_code": "430377",
+        "sense_code": "170664",
+        "word": "보-조사",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:4b917173a5e2208b874479f426c647acc7177709c38aacc80ef8f53f17fcf529"
+      },
+      {
+        "node_id": "language.grammar.particle",
+        "target_code": "448147",
+        "sense_code": "193948",
+        "word": "서술격^조사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:4fa6781f4a04fb39a43df4744ca4a43dd17d97212f81fee11eb8090ee0f0a9cd"
+      },
+      {
+        "node_id": "language.grammar.particle",
         "target_code": "292428",
         "sense_code": "273531",
         "word": "조사08",
@@ -191,9 +707,33 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:95100cac2f90b4a777ab3254bcc32d6416f01c576e1a691ed780d37b001564b3"
+      },
+      {
+        "node_id": "language.grammar.particle",
+        "target_code": "151978",
+        "sense_code": "423195",
+        "word": "부사격^조사",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:35855645faf20bb7d8877b787d6b812ba2cf0041a0cf17df239f16126e98241b"
       }
     ],
     "language.grammar.ending": [
+      {
+        "node_id": "language.grammar.ending",
+        "target_code": "443817",
+        "sense_code": "192903",
+        "word": "선어말^어미",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:129ca9d62eb52d63697382219dea936968ece6206edcc1416d79b334df754583"
+      },
       {
         "node_id": "language.grammar.ending",
         "target_code": "227798",
@@ -205,6 +745,54 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:5c95c2ac0b2944ca84795d261d14c51c19dfcd3224cb5a5c4257adb42e72f819"
+      },
+      {
+        "node_id": "language.grammar.ending",
+        "target_code": "226537",
+        "sense_code": "225377",
+        "word": "어말^어미",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:44449b2f19f9e01e6a5fb324987be87aaa9630f9ef8899a8c4400e7103f2843d"
+      },
+      {
+        "node_id": "language.grammar.ending",
+        "target_code": "229854",
+        "sense_code": "227380",
+        "word": "연결^어미",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:04ad0aaca6bf3fb00d0644b2341f36dc8bf03f8770b53420b0fac141c36bf854"
+      },
+      {
+        "node_id": "language.grammar.ending",
+        "target_code": "283596",
+        "sense_code": "265761",
+        "word": "전성^어미",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:53fb427d2c6c05bc587a58a2240cf21b15853764b24d3697a41111ccbe39fdfc"
+      },
+      {
+        "node_id": "language.grammar.ending",
+        "target_code": "481571",
+        "sense_code": "471274",
+        "word": "종결^어미",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:40a60cdc6468892c230dd102a70d00a13019e07529e092a4300b073241b7edd3"
       }
     ],
     "language.grammar.sentence.constituent": [
@@ -222,6 +810,42 @@
       },
       {
         "node_id": "language.grammar.sentence.constituent",
+        "target_code": "398251",
+        "sense_code": "94521",
+        "word": "관형-어",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:103b7d646442c3b5217c160a7d99ad3c2fd07b99b36c0c89ff46a3a7622b0357"
+      },
+      {
+        "node_id": "language.grammar.sentence.constituent",
+        "target_code": "119800",
+        "sense_code": "151875",
+        "word": "목적-어",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:cf79170a10b2a724c497d45c5e71568834dc4bf0b16ec1a5edc00db804f09f51"
+      },
+      {
+        "node_id": "language.grammar.sentence.constituent",
+        "target_code": "152558",
+        "sense_code": "173001",
+        "word": "부사-어",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:d82bcd77516c9250494d64be8f896c3fd6ff1f969ce789a174bbb91482f5be51"
+      },
+      {
+        "node_id": "language.grammar.sentence.constituent",
         "target_code": "159473",
         "sense_code": "175047",
         "word": "부속^성분",
@@ -234,6 +858,30 @@
       },
       {
         "node_id": "language.grammar.sentence.constituent",
+        "target_code": "448149",
+        "sense_code": "193953",
+        "word": "서술-어",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:e834bd2e279f69e29694f5abbaffdda6d1c7d969b6d30dde2c66cb8dc06bbef9"
+      },
+      {
+        "node_id": "language.grammar.sentence.constituent",
+        "target_code": "415829",
+        "sense_code": "345189",
+        "word": "독립-어",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:fd8644656237cac4f78809302232f23794f381884b2305cd94f23ec89facfced"
+      },
+      {
+        "node_id": "language.grammar.sentence.constituent",
         "target_code": "127778",
         "sense_code": "348075",
         "word": "문장^성분",
@@ -243,21 +891,21 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:c61d2372db06bf98e349edc1d4538af9aed317a6c9e41a99291361b98eb45847"
-      },
-      {
-        "node_id": "language.grammar.sentence.constituent",
-        "target_code": "85966",
-        "sense_code": "492297",
-        "word": "독립^성분",
-        "pos": "품사 없음",
-        "cat": "언어",
-        "word_type": "한자어",
-        "grammar_info": [],
-        "source_revision": "stdict-20260805",
-        "content_hash": "sha256:f9becd8d8ff13a64c62c9c1c4975868ccd23db89fa086f217d08d92fd5a0e465"
       }
     ],
     "language.grammar.sentence.structure": [
+      {
+        "node_id": "language.grammar.sentence.structure",
+        "target_code": "467737",
+        "sense_code": "250546",
+        "word": "이어진-문장",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:5547645c1f87e786b39bdf01b0bafa976b13d23d0910396851e7fe152cafe841"
+      },
       {
         "node_id": "language.grammar.sentence.structure",
         "target_code": "376721",
@@ -281,9 +929,81 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:efa520f7c3af7f4e83d6cde50c1b5921bf7fa9bcefd935a9ec781691e8fe338a"
+      },
+      {
+        "node_id": "language.grammar.sentence.structure",
+        "target_code": "215724",
+        "sense_code": "428155",
+        "word": "안긴-문장",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:2a7b6bdbf137671eb157f07f2180a343f11e32dc659dfc220a2f15112db138e6"
+      },
+      {
+        "node_id": "language.grammar.sentence.structure",
+        "target_code": "217537",
+        "sense_code": "465006",
+        "word": "안은-문장",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:48874e4cfe506077a2c9a11417f683891265e3d4fe3a58e02e7f16665860ceb5"
       }
     ],
     "language.grammar.sentence.embedded": [
+      {
+        "node_id": "language.grammar.sentence.embedded",
+        "target_code": "115415",
+        "sense_code": "347496",
+        "word": "명사-절",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:6564d86d73af167669f2dba3082647afa52107b53d04f1b7cd1df9f5edb0ceb7"
+      },
+      {
+        "node_id": "language.grammar.sentence.embedded",
+        "target_code": "32431",
+        "sense_code": "377773",
+        "word": "관형-절",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:47e5bbb0bebc7ddf74582de78c944ec91e70e89c4c236b1f53426d9a491f06af"
+      },
+      {
+        "node_id": "language.grammar.sentence.embedded",
+        "target_code": "435559",
+        "sense_code": "386429",
+        "word": "부사-절",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:4187d10dc17d32aef11d94d7c9eb7d301fe5d352631c47098e296266029b7072"
+      },
+      {
+        "node_id": "language.grammar.sentence.embedded",
+        "target_code": "215724",
+        "sense_code": "428155",
+        "word": "안긴-문장",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:930e8c01e3e62fdd51f7ca5c04d8a154573113b775d2c19a47e96ea173dff98d"
+      },
       {
         "node_id": "language.grammar.sentence.embedded",
         "target_code": "217537",
@@ -295,9 +1015,45 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:b9a2411b48d088da45a84801dccceec9fe96a8e958ea7301c7fcea2b7106d4ca"
+      },
+      {
+        "node_id": "language.grammar.sentence.embedded",
+        "target_code": "272917",
+        "sense_code": "542237",
+        "word": "인용-절",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:a724967427abda75cd15faf73a9c69a4552949f69621089371aa58948c6aeb5f"
+      },
+      {
+        "node_id": "language.grammar.sentence.embedded",
+        "target_code": "176546",
+        "sense_code": "572797",
+        "word": "서술-절",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:bc6fddaac9f4cbf936fb7c99becae809f793c38edf32f157d3a1668781e6e432"
       }
     ],
     "language.grammar.sentence.connected": [
+      {
+        "node_id": "language.grammar.sentence.connected",
+        "target_code": "78097",
+        "sense_code": "125524",
+        "word": "대등적^연결^어미",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:dd6b1ebc88b28fc1aabc4fbe8ea416e894a2f5db762c2b9a02c900f7ef15389d"
+      },
       {
         "node_id": "language.grammar.sentence.connected",
         "target_code": "467737",
@@ -309,9 +1065,33 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:33f3172d46497dfe0fbcaaf758a060dfa9787cd5d499757088c1776311b66bf2"
+      },
+      {
+        "node_id": "language.grammar.sentence.connected",
+        "target_code": "302738",
+        "sense_code": "271101",
+        "word": "종속적^연결^어미",
+        "pos": "품사 없음",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:39b70218f1f7e1d17a6e7a7bf1f87d9a70967b8b450c73bd5ef973bcc5ecda28"
       }
     ],
     "language.grammar.honorific": [
+      {
+        "node_id": "language.grammar.honorific",
+        "target_code": "66977",
+        "sense_code": "117626",
+        "word": "높임-법",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "혼종어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:5a4f6d5f2ed4927e81aa1e5e541677cd82a52f19c3f638dd7067d0b7ed90f108"
+      },
       {
         "node_id": "language.grammar.honorific",
         "target_code": "479627",
@@ -338,6 +1118,18 @@
       },
       {
         "node_id": "language.grammar.honorific",
+        "target_code": "19387",
+        "sense_code": "376799",
+        "word": "경어-법",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:f1ca1bfdefc12d8747a6896c34e152f1e15be965a9df07b9c60a018af917e559"
+      },
+      {
+        "node_id": "language.grammar.honorific",
         "target_code": "443850",
         "sense_code": "535453",
         "word": "상대^높임법",
@@ -361,6 +1153,30 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:c1ef9f0f2a8e857fcfa9eaf1086b978ef0e86c8a3b29bd75be58b4977e5c380e"
+      },
+      {
+        "node_id": "language.grammar.tense_aspect",
+        "target_code": "248741",
+        "sense_code": "234898",
+        "word": "완료-상",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:12eeab08956aba58507424dc47ef0e7782413fb9932c74f29400634d3bd77faa"
+      },
+      {
+        "node_id": "language.grammar.tense_aspect",
+        "target_code": "319072",
+        "sense_code": "282853",
+        "word": "진행-상",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:dd6a19dcf51d0f4c63124d998c4529307d02e036647cc241e169e555e48d10ba"
       },
       {
         "node_id": "language.grammar.tense_aspect",
@@ -399,6 +1215,18 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:c4d61ddd4c7827e814c61d77cc23ab3d985a3128d0bd0b2c480eb88e147f4eb6"
+      },
+      {
+        "node_id": "language.grammar.quotation",
+        "target_code": "272917",
+        "sense_code": "542237",
+        "word": "인용-절",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:ae81957ca0f063af3f5cad59b170ddd02cc621f8970f8c06640a6baf47178392"
       }
     ],
     "language.grammar.negation": [
@@ -451,9 +1279,81 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:4d8618e7245b3468bfb0fd95c7284a73fc0833259d251768acbb159518d6855e"
+      },
+      {
+        "node_id": "language.grammar.causative_passive",
+        "target_code": "172136",
+        "sense_code": "184717",
+        "word": "사동-문",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:106c6911023f47ada60fd82c0d483f929461d542cdc83ebd256ec1e66c93f11c"
+      },
+      {
+        "node_id": "language.grammar.causative_passive",
+        "target_code": "440483",
+        "sense_code": "184718",
+        "word": "사동-법",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:cfa52e4f7b3252cc792d47c6fd1707974e3bfaab2675a09bd520106942e59770"
+      },
+      {
+        "node_id": "language.grammar.causative_passive",
+        "target_code": "363750",
+        "sense_code": "314571",
+        "word": "피동-법",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:8da48793dcf6b746bc9de9fabea9186643a6c4c94e309fd228ff39d810bfadd0"
+      },
+      {
+        "node_id": "language.grammar.causative_passive",
+        "target_code": "363193",
+        "sense_code": "402172",
+        "word": "피동-문",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:ef2020303c6d9b376db901378c0bf1ea6b7940ec4aa055794186924cfa829029"
       }
     ],
     "language.grammar.speech_level": [
+      {
+        "node_id": "language.grammar.speech_level",
+        "target_code": "267522",
+        "sense_code": "246897",
+        "word": "의문-문",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:f154bf4dbed069952cee2a130a0b5f8a21b7e00e7e20b777b212e22658b6e03b"
+      },
+      {
+        "node_id": "language.grammar.speech_level",
+        "target_code": "330965",
+        "sense_code": "399282",
+        "word": "청유-문",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:633ad4812ccc5f5892a89aced7870db0ffbeee6453104886914918da535100f0"
+      },
       {
         "node_id": "language.grammar.speech_level",
         "target_code": "481571",
@@ -465,6 +1365,42 @@
         "grammar_info": [],
         "source_revision": "stdict-20260805",
         "content_hash": "sha256:6b939340145e8c7a32f993d13e79b5355ab6b886cad2af141d8ca338b0e7e673"
+      },
+      {
+        "node_id": "language.grammar.speech_level",
+        "target_code": "8104",
+        "sense_code": "523084",
+        "word": "감탄-문",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:6750d79a2bb4b44bb13c365b7140fed5c305b8fffa00786167c64dd218aa01e5"
+      },
+      {
+        "node_id": "language.grammar.speech_level",
+        "target_code": "356069",
+        "sense_code": "548939",
+        "word": "평서-문",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:ac1c402dcd9fe2e6e2d6695d17c69d03a19e0683baf5c00b546c8a9a3d58a11b"
+      },
+      {
+        "node_id": "language.grammar.speech_level",
+        "target_code": "425290",
+        "sense_code": "555557",
+        "word": "명령-문",
+        "pos": "명사",
+        "cat": "언어",
+        "word_type": "한자어",
+        "grammar_info": [],
+        "source_revision": "stdict-20260805",
+        "content_hash": "sha256:a1255582abe7953b19e78048b3221034371b6a177fe8ade0f20e563d0c0e652b"
       }
     ]
   }
