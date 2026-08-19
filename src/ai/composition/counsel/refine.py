@@ -37,6 +37,7 @@ from ai.composition.gate_feedback import instruction_for
 from ai.contracts.composition import DraftContext
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.gates import BlockedReason
+from ai.runtime.draft_observation import ORIGIN_REFINE, observe_gated_draft
 from ai.runtime.errors import RedactionUncertain
 from ai.runtime.redaction import redact
 
@@ -258,6 +259,14 @@ async def refine_draft(
             text, context, max_chars=max_chars, min_chars=min_chars
         )
         if gate.passed:
+            #: 🔴 **관측만 한다 — 차단하지 않는다**(99 #79·#80·#28). 자리가 둘이라
+            #: 한 함수로 모았다(최초 생성 `graph.py` · 여기 · 99 #02).
+            observe_gated_draft(
+                text,
+                origin=ORIGIN_REFINE,
+                tenant_id=execution_context.tenant_id,
+                execution_id=str(execution_context.execution_id),
+            )
             return RefineOutcome(
                 applied=True, text=text, previous_text_dropped=previous_text_dropped
             )

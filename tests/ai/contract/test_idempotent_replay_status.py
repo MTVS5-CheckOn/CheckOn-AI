@@ -35,6 +35,7 @@ from ai.api.routers.classify import reset_inquiry_class_store
 from ai.api.routers.counsel import reset_counsel_stores
 from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
 from ai.api.routers.imports import reset_import_stores
+from ai.composition.counsel.prompt import PROMPT_VERSION
 from ai.db.repositories.run_store import InMemoryRunStore
 from ai.db.store_factory import reset_shared_agent_runtime
 
@@ -227,7 +228,7 @@ def test_counsel_response_and_ledger_agree_on_prompt_version() -> None:
     #: ⚠ plan 프롬프트(0.1)는 유실되지 않는다 — 축이 다르다.
     #:   AI_RUN = 실행의 대표 프롬프트 · LLM_CALL = 호출별 프롬프트.
     call_versions = [c.prompt_version for c in store.calls]
-    assert "0.1" in call_versions and "0.2" in call_versions, (
+    assert "0.1" in call_versions and PROMPT_VERSION in call_versions, (
         f"LLM_CALL에 plan·초안 버전이 둘 다 남지 않았다: {call_versions} — "
         "AI_RUN이 하나만 들 수 있는 이유가 이 축 분리인데 그 축이 비었다"
     )

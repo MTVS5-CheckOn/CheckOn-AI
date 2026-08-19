@@ -16,9 +16,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Final
 
+from ai.composition.buffer_lexicon import Replacement, load_buffer_lexicon
 from ai.composition.gate_feedback import render_feedback_block
 from ai.composition.tone import ToneRule, combination_key, load_tone_map
 from ai.contracts.composition import DraftContext
+from ai.runtime.redaction import redact
 
 _PROMPT_PATH: Final = (
     Path(__file__).resolve().parents[2]
@@ -30,8 +32,14 @@ _PROMPT_PATH: Final = (
 )
 
 PROMPT_ID: Final = "composition/counsel_pack"
-PROMPT_VERSION: Final = "0.2"
-"""🔴 **0.1 → 0.2 (8/6).** 템플릿 문면이 바뀌었다 — 세 가지가 함께 들어갔다.
+PROMPT_VERSION: Final = "0.3"
+"""🔴 **0.2 → 0.3 (8/19).** 완충 단계 문면에 **B군 치환 어휘 28항**이 들어간다 (99 #79).
+
+⚠ **「컨텍스트 파생 문면」이 아니다.** 05 §6-3의 예외는 강조점·지시·피드백처럼 **그 요청에서
+나오는** 값이고, 이건 **데이터 파일에서 오는 고정 어휘**가 모든 요청에 새로 실리는 것이다 —
+같은 컨텍스트라도 0.2와 0.3의 프롬프트가 다르다. ⇒ 버전을 올린다.
+
+🔴 **0.1 → 0.2 (8/6).** 템플릿 문면이 바뀌었다 — 세 가지가 함께 들어갔다.
 
 ① **산출물 이름 제거** — 종전 템플릿이 *"…상담 초안을 작성하세요"* / *"상담 초안:"* 이라
    적어 LLM이 그걸 되뇌었다(3차 실측 첫 문장: *"2026년 7월 상담 초안을 드립니다."*).
@@ -51,6 +59,81 @@ _BUFFER_TEXT: Final = {
         "부정적인 내용은 반드시 대응 계획과 같은 문장 안에 두고 뒤쪽에 배치하세요."
     ),
 }
+
+
+#: 🔴 **한 줄에 실을 치환 쌍의 상한** — 어휘가 늘어도 프롬프트가 무한정 길어지지 않게.
+#: ⚠ 지금은 28항 전부가 들어간다(상한 위). 상한을 낮추려면 **무엇을 뺄지의 근거**가
+#: 먼저 있어야 하고 그건 99의 「30항을 가를 근거」와 같은 안건이다 — 임의로 자르지 마라.
+_BUFFER_TERM_LIMIT: Final = 64
+
+
+@lru_cache
+def _buffer_replacements(buffer_level: int) -> str:
+    """완충 단계에 실을 **B군 치환 쌍 문면** — 05 §4의 「프롬프트 규칙」 축.
+
+    🔴 **종전에는 이 축이 비어 있었다** (99 #79). `_BUFFER_TEXT`가 *"단정 표현을 관찰·상태
+    서술로 바꾸세요"* 라는 **추상 지시만** 했고 어휘는 하나도 안 들어갔다 — 그리고 게이트도
+    A군만 봐서 **B군 30항이 아무 데서도 안 쓰였다**(로드·검증만 됐다).
+
+    ⚠ **어휘를 코드에 박지 않는다** — `buffer_lexicon.yaml`이 런타임 원본이다(03 §1).
+
+    ━━ 🔴 단계 구분이 데이터에 없다 (99 #82) ━━
+
+    05 §4는 *"1 = B군 **기본** · 2 = B군 **전체**"* 로 규정하는데 **yaml의 `replace` 항목에
+    단계 필드가 없다.** 30항을 1/2로 가를 근거가 데이터에 없고, **근거 없이 가르면 그게 곧
+    하드코딩된 임의값**이다(03 §1). ⇒ `buffer_level ≥ 1`이면 **전 항**을 싣는다.
+    **완충 1과 2가 이 축에서는 같아진다** — 05 §4를 그렇게 고쳤다(문서가 코드보다 앞서면 안 된다).
+    ⚠ 두 단계는 여전히 `_BUFFER_TEXT`의 **부정문 후치 지시**로 갈린다.
+
+    ⚠ **이건 05 §4의 절반이다.** 나머지 절반인 **게이트 검출은 안 넣었다** —
+    *"프롬프트에 「쓰지 마라」를 적는 걸로는 못 막는다"* 가 이 저장소의 실측이고
+    (`gate.py`의 금칙어 주석), 실제 방어선은 게이트다. 다만 게이트에 넣으려면 **재생성
+    폭증 여부를 볼 빈도 표본**이 있어야 하는데 그 표본이 구조적으로 없다(99 #80).
+    ⇒ 그 표본을 만드는 것이 `runtime/draft_observation.py`다.
+    """
+    if buffer_level < 1:
+        return ""
+    pairs = [
+        rendered
+        for item in load_buffer_lexicon().replacements[:_BUFFER_TERM_LIMIT]
+        if (rendered := _renderable_pair(item)) is not None
+    ]
+    return "다음 표현은 오른쪽으로 바꿔 쓰세요: " + " · ".join(pairs)
+
+
+def _renderable_pair(item: Replacement) -> str | None:
+    """치환 쌍 1건의 문면 — 🔴 **마스킹이 불확실한 쌍은 뺀다**(전송 자체가 막힌다).
+
+    ━━ 🔴 이걸 왜 하나 (2026-08-19 실측) ━━
+
+    `redact()`의 「성씨 1자 + 이름 2자」 휴리스틱이 **사전 어휘 자체를 인명 후보로 잡는다** —
+    99 #77이 등재한 그 오탐인데 이번엔 대상이 **데이터 파일**이다. 실측 3조각::
+
+        `이번에는 결과가 나오지 않았습니다`   ← `이번에`
+        `이번에는 하지 못했습니다`            ← `이번에`
+        `이해력이 부족`                       ← `이해력`
+
+    그 쌍이 프롬프트에 실리면 전송 트립와이어가 `RedactionBlocked`를 내고 **모든 상담 초안
+    요청이 fail-closed로 죽는다**(실측: 회귀 25건 red).
+
+    🔴 **fail-closed를 우회하지 않는다.** 트립와이어를 끄거나 이 줄만 예외로 두는 것은
+    불변식 3을 무너뜨리는 일이다 — 대신 **문제되는 쌍을 안 싣는다.**
+
+    ⚠ **임의 제외가 아니다** — 제외 기준이 `redact()` 자신이라 **런타임에 파생**되고,
+    휴리스틱이 나아지면 그 쌍이 **자동으로 다시 실린다.** 코드에 어휘를 박지 않는다(03 §1).
+
+    ⚠ **대가: 그 3항은 프롬프트 축의 방어가 없다.** 게이트 축도 아직 없으므로(판정 ②)
+    **그 셋은 여전히 아무 데서도 안 막힌다.** 99 #79에 그 사실을 적었다 —
+    ✅가 아니라 ◐인 이유가 하나 더 늘었다.
+    """
+    rendered = f"{item.source}→{item.target}" if item.target else f"{item.source}(삭제)"
+    outcome = redact(rendered)
+    #: 🔴 **판정을 트립와이어와 **똑같이** 둔다** — `RedactionTripwireTraceHook.mask`가
+    #: `findings or uncertain`으로 막는다(`runtime/trace_masking.py`). 여기서 `uncertain`만
+    #: 보면 **`findings`가 있는 쌍이 통과해 전송에서 막힌다** — 2026-08-19에 실제로 그랬다
+    #: (`uncertain`만 걸렀더니 트립와이어 검사가 여전히 red였다).
+    #: ⚠ 두 기준이 갈리면 *"조립은 통과인데 전송이 죽는다"* 가 된다(99 #02 부류).
+    return None if (outcome.findings or outcome.uncertain) else rendered
 
 
 @lru_cache
@@ -74,6 +157,8 @@ def render_tone_rules(rule: ToneRule, context: DraftContext) -> str:
     axes = context.label_snapshot.as_axes()
     lines = [f"- {axis_rules[axis][value]}" for axis, value in axes.items()]
     lines.append(f"- {_BUFFER_TEXT[rule.buffer_level]}")
+    if buffer_terms := _buffer_replacements(rule.buffer_level):
+        lines.append(f"- {buffer_terms}")
     if rule.note:
         lines.append(f"- {rule.note}")
     return "\n".join(lines)

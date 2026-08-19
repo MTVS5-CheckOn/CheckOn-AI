@@ -48,6 +48,7 @@ from ai.contracts.composition import (
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError
 from ai.db.repositories.run_store import LlmCallCollector, default_llm_call_collector
+from ai.runtime.draft_observation import ORIGIN_DRAFT, observe_gated_draft
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,16 @@ def build_counsel_graph(
                 text, context, max_chars=max_chars, min_chars=min_chars
             )
             if gate.passed:
+                #: 🔴 **관측만 한다 — 차단하지 않는다**(99 #79·#80·#28). 게이트를 통과한
+                #: 본문에서 B군 어휘 적중과 출력측 마스킹 불확실을 **센다.** 여기서 나오는
+                #: 숫자가 「B군을 게이트에 넣어도 되나」의 유일한 판정 재료다 —
+                #: 실 LLM 산출을 레포로 안 옮기는 규율 때문에 그 표본이 달리 안 생긴다.
+                observe_gated_draft(
+                    text,
+                    origin=ORIGIN_DRAFT,
+                    tenant_id=tenant_id,
+                    execution_id=str(execution_context.execution_id),
+                )
                 # ④ record — **게이트 통과 직후** 본문을 영속한다. 순서가 곧 불변식 1이다
                 #    (LLM 산출물은 게이트를 거쳐야 저장된다).
                 #    저장을 **이 노드 안에서** 하는 이유 2개:

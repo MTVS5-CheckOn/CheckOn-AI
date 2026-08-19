@@ -33,10 +33,16 @@ _DOC_FORBIDDEN_SAMPLE = ("게으르", "산만하", "ADHD", "다른 아이들은"
 
 
 def test_term_counts_match_doc() -> None:
-    """05 §4 표제 '금칙·치환 53항' — A군 23(금칙 20 + 불규칙 활용 3) + B군 30."""
+    """05 §4 표제 '금칙·치환 53항' — A군 25(금칙 22 + 불규칙 활용 3) + B군 28.
+
+    🔴 **(8/19) 23/30 → 25/28 — 이동이지 증감이 아니다.** `혼자만`·`반 평균보다`가 B군에
+    있었는데 **`to`가 빈 문자열**이라 치환이 아니었다(이 파일 머리말: A군 = 금칙·치환 불가 /
+    B군 = 치환). 분류 오류를 정정해 A군으로 옮겼다 — **합계 53은 안 바뀐다.**
+    ⚠ 그 사이 B군은 소비처가 0곳이라 두 항이 **아무 데서도 안 막혔다**(99 #79·#81).
+    """
     lexicon = load_buffer_lexicon()
-    assert len(lexicon.forbidden) == 23  # 금칙 20 + 불규칙 활용 3
-    assert len(lexicon.replacements) == 30
+    assert len(lexicon.forbidden) == 25  # 금칙 22 + 불규칙 활용 3
+    assert len(lexicon.replacements) == 28
     assert len(lexicon.forbidden) + len(lexicon.replacements) == EXPECTED_TERM_COUNT == 53
 
 
@@ -50,7 +56,9 @@ def test_replacement_pairs_match_doc() -> None:
     by_source = {r.source: r.target for r in load_buffer_lexicon().replacements}
     assert by_source["못합니다"] == "아직 익숙하지 않습니다"
     assert by_source["최악"] == "가장 어려웠던"
-    assert by_source["혼자만"] == ""  # 비교 함의 삭제 — 빈 문자열이 정상
+    #: 🔴 `혼자만`은 8/19에 **A군으로 옮겼다** — `to`가 비어 치환이 아니었다.
+    #: 이제 B군에 없는 것이 정상이고, 게이트가 A군으로 잡는다(아래 별도 검사).
+    assert "혼자만" not in by_source
 
 
 # ── A군 검출: 현재 잡히는 활용형 ──────────────────────────────────
