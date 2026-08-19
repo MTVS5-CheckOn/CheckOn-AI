@@ -1,43 +1,64 @@
-version: stdict-t1-map-v2
+# 표준국어대사전 T1 어휘 근거 노드 map.
+#
+# 🔴 **왜 표제어를 손으로 적나.** 덤프에는 `cat=언어` sense 가 3,508 표제어에 걸쳐 있고
+# 그중 무엇이 **그 노드의 근거로 승인되는가**는 자동으로 정해지지 않는다. R-1 어휘 대조가
+# 이 목록을 정본으로 삼으므로, 승인 목록은 사람이 고르고 리뷰한다(fail-closed).
+#
+# ⚠ **표제어는 덤프 표기 그대로 적을 필요가 없다** — `normalize_headword()` 가 `^`·`-` 와
+#   끝 동형이의어 번호를 지우고 비교한다(`의존^명사` = `의존명사` = `의존^명사01`).
+# ⚠ **없는 표제어를 적어도 빌드는 안 깨진다** — 조용히 안 걸릴 뿐이다. 노드가 0건이 되면
+#   그때 `LexiconIndexBuildError` 가 난다. 목록을 고칠 때는 빌드 후 노드별 건수를 확인한다.
+# ⚠ **어문규범 근거 노드(11개)를 여기 넣지 마라** — `test_taxonomy_catalog.py` 가 두 근거
+#   모드의 노드 중복을 금지한다. 한 노드의 근거 출처는 하나여야 한다.
+#
+# version   이 목록의 버전. 바꾸면 올린다 — 색인 `version` 으로 그대로 나가고
+#           재현성 축(불변식 8)에 걸린다.
+# v3: 22 노드의 표제어를 35 → 110 으로 넓혔다. 종전에는 노드당 1~4 개라 실제 색인 entry
+#           가 노드당 중앙값 1 건이었고, 같은 근거로만 문항이 나왔다. `max_evidence_count: 8`
+#           이 종전에는 한 번도 닿지 않는 값이었다.
+#           🔴 **날짜를 손으로 적지 않는다** — 시점의 정본은 `git log --date=short` 다
+#           (`test_recorded_dates_have_passed` 가 손으로 적은 미래 날짜를 문다).
+
+version: stdict-t1-map-v3
 source_revision: stdict-20260805
 required_cat: 언어
 max_evidence_count: 8
 nodes:
   language.grammar.morpheme.concept:
     label: 형태소
-    headwords: [형태소]
+    headwords: [형태소, 실질^형태소, 형식^형태소, 자립^형태소, 의존^형태소, 어근, 접두사, 접미사]
     allowed_pos: [명사]
   language.grammar.word.formation:
     label: 단어 형성
-    headwords: [파생어, 합성어]
+    headwords: [파생어, 합성어, 단일어, 복합어, 파생법, 합성법]
     allowed_pos: [명사]
   language.grammar.parts_of_speech:
     label: 품사 체계
-    headwords: [품사]
+    headwords: [품사, 체언, 용언, 수식언, 관계언, 독립언]
     allowed_pos: [명사]
   language.grammar.noun:
     label: 명사
-    headwords: [명사]
+    headwords: [명사, 보통^명사, 고유^명사, 자립^명사, 의존^명사]
     allowed_pos: [명사]
   language.grammar.pronoun:
     label: 대명사
-    headwords: [대-명사01, 대-명사02]
+    headwords: [대-명사01, 대-명사02, 인칭^대명사, 지시^대명사, 재귀^대명사]
     allowed_pos: [명사]
   language.grammar.numeral:
     label: 수사
-    headwords: [수사]
+    headwords: [수사, 양수사, 서수사]
     allowed_pos: [명사]
   language.grammar.predicate:
     label: 용언
-    headwords: [용언]
+    headwords: [용언, 동사, 형용사, 본용언, 보조^용언, 보조^동사, 보조^형용사]
     allowed_pos: [명사]
   language.grammar.modifier:
     label: 관형사
-    headwords: [관형사]
+    headwords: [관형사, 지시^관형사, 성상^관형사, 수^관형사]
     allowed_pos: [명사]
   language.grammar.adverb:
     label: 부사
-    headwords: [부사]
+    headwords: [부사, 성분^부사, 문장^부사, 접속^부사, 지시^부사]
     allowed_pos: [명사]
   language.grammar.interjection:
     label: 감탄사
@@ -45,39 +66,42 @@ nodes:
     allowed_pos: [명사]
   language.grammar.particle:
     label: 조사
-    headwords: [조사]
+    headwords:
+      [조사, 격^조사, 보조사, 접속^조사, 주격^조사, 목적격^조사, 관형격^조사, 부사격^조사,
+       서술격^조사, 호격^조사]
     allowed_pos: [명사]
   language.grammar.ending:
     label: 어미
-    headwords: [어미]
+    headwords: [어미, 선어말^어미, 어말^어미, 연결^어미, 전성^어미, 종결^어미]
     allowed_pos: [명사]
   language.grammar.sentence.constituent:
     label: 문장 성분
-    headwords: [문장^성분, 주성분, 부속^성분, 독립^성분]
+    headwords:
+      [문장^성분, 주성분, 부속^성분, 독립^성분, 서술어, 목적어, 관형어, 부사어, 독립어]
     allowed_pos: [명사]
   language.grammar.sentence.structure:
     label: 문장 구조
-    headwords: [홑문장, 겹문장]
+    headwords: [홑문장, 겹문장, 안은-문장, 안긴-문장, 이어진-문장]
     allowed_pos: [명사]
   language.grammar.sentence.embedded:
     label: 안은문장
-    headwords: [안은-문장]
+    headwords: [안은-문장, 안긴-문장, 명사절, 관형절, 부사절, 서술절, 인용절]
     allowed_pos: [명사]
   language.grammar.sentence.connected:
     label: 이어진문장
-    headwords: [이어진-문장]
+    headwords: [이어진-문장, 대등적^연결^어미, 종속적^연결^어미]
     allowed_pos: [명사]
   language.grammar.honorific:
     label: 높임 표현
-    headwords: [주체^높임법, 객체^높임법, 상대^높임법]
+    headwords: [주체^높임법, 객체^높임법, 상대^높임법, 높임법, 경어법]
     allowed_pos: [명사]
   language.grammar.tense_aspect:
     label: 시간 표현
-    headwords: [시제, 동작상]
+    headwords: [시제, 동작상, 진행상, 완료상]
     allowed_pos: [명사]
   language.grammar.quotation:
     label: 인용 표현
-    headwords: [직접^화법02, 간접^화법]
+    headwords: [직접^화법02, 간접^화법, 인용절]
     allowed_pos: [명사]
   language.grammar.negation:
     label: 부정 표현
@@ -85,9 +109,9 @@ nodes:
     allowed_pos: [명사]
   language.grammar.causative_passive:
     label: 사동과 피동
-    headwords: [사동, 피동]
+    headwords: [사동, 피동, 사동문, 피동문, 사동법, 피동법]
     allowed_pos: [명사]
   language.grammar.speech_level:
     label: 종결 표현
-    headwords: [종결^어미]
+    headwords: [종결^어미, 평서문, 의문문, 명령문, 청유문, 감탄문]
     allowed_pos: [명사]
