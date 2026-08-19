@@ -39,6 +39,20 @@ _REAL_LLM_SKIPS: Final = frozenset(
             "tests.ai.integration.test_pg_real_llm_smoke",
             "test_t1_problem_generation_real_llm_roundtrip",
         ),
+        #: 🔴 **(8/19) 상담 축 실측 장치** — `tone_map` 24조합이 실 LLM 에서 갈리는지를
+        #: 재는 회차용이다(99 #106·#107·#108 이 여기서 나왔다). 옵트인 없이는 skip 이고
+        #: 기본 회귀에서는 deselect 된다.
+        #: ⚠ **이 목록에 넣는 것이 계약이다** — 안 넣으면 `pre_pr_verify` 가
+        #: *"예상 밖 skip"* 으로 막는다. 그 게이트의 값이 **조용한 skip 을 막는 것**이라
+        #: 새 실 LLM 검사는 여기 등록해야 한다(실제로 이 회차에 막혔다).
+        (
+            "tests.ai.integration.test_counsel_tone_smoke",
+            "test_b1_the_twenty_four_tone_combinations",
+        ),
+        (
+            "tests.ai.integration.test_counsel_tone_smoke",
+            "test_b2_reproducibility_of_one_combination",
+        ),
     }
 )
 
