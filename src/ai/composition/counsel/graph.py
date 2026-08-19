@@ -45,6 +45,12 @@ from ai.contracts.composition import (
     PlanOutcome,
     StudentResult,
 )
+from ai.contracts.counsel import (
+    REASON_CONTEXT_MISSING,
+    REASON_GATE_EXHAUSTED,
+    REASON_LLM_FAILED,
+    REASON_REDACTION_BLOCKED,
+)
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import LlmError
 from ai.db.repositories.run_store import LlmCallCollector, default_llm_call_collector
@@ -228,7 +234,7 @@ def build_counsel_graph(
                 StudentResult(
                     student_ref=student_ref,
                     status=DraftStatus.REJECTED_INSUFFICIENT,
-                    fail_reason="context_missing",
+                    fail_reason=REASON_CONTEXT_MISSING,
                 ),
                 llm_sent=False,  # 호출 자체가 없다 — 원가 0
             )
@@ -263,7 +269,7 @@ def build_counsel_graph(
                     StudentResult(
                         student_ref=student_ref,
                         status=DraftStatus.FAILED,
-                        fail_reason="redaction_blocked",
+                        fail_reason=REASON_REDACTION_BLOCKED,
                     ),
                     # 🔴 **전송 전** 차단이다 — 원가가 발생하지 않았으므로 세지 않는다.
                     # 앞 시도에서 전송이 있었다면 llm_sent가 이미 True다.
@@ -289,7 +295,7 @@ def build_counsel_graph(
                     StudentResult(
                         student_ref=student_ref,
                         status=DraftStatus.FAILED,
-                        fail_reason=f"llm_failed:{type(exc).__name__}",
+                        fail_reason=f"{REASON_LLM_FAILED}:{type(exc).__name__}",
                     ),
                     # 전송은 시도됐다(타임아웃·벤더 오류) — 원가가 발생할 수 있으므로 센다.
                     llm_sent=True,
@@ -356,7 +362,7 @@ def build_counsel_graph(
             StudentResult(
                 student_ref=student_ref,
                 status=DraftStatus.FAILED,
-                fail_reason=f"gate_exhausted:{last_reason}",
+                fail_reason=f"{REASON_GATE_EXHAUSTED}:{last_reason}",
             ),
             # 산출물은 없지만 전송 3회의 원가는 실제로 발생했다 — 0으로 기록하면
             # "원가가 있었는데 흔적이 없다"가 된다(㊻ⓑ가 막으려는 바로 그 상태).
