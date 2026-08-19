@@ -45,11 +45,24 @@ class CounselPackEnqueuer:
         context_store: ContextStore,
         new_id: Callable[[], UUID] = uuid4,
         now: Callable[[], datetime] = system_utc_now,
+        job_id: UUID | None = None,
     ) -> None:
+        """`job_id`를 주면 그 값으로 잡을 만든다 — 멱등 재시도가 **같은 잡**을 가리키게 한다.
+
+        🔴 **`new_id`로는 이걸 못 한다.** `new_id`는 이 클래스 안에서 **3번** 불린다
+        (입력 묶음 id · `job_id` · `execution_id`). 상수를 주면 셋이 **같은 값으로
+        붕괴**하고, 재시도 때는 `job_id` 중복에 닿기도 전에 `ContextStore.put`이
+        `ContextBundleConflict`를 던진다 — 같은 id에 `created_at`만 다른 전문이기
+        때문이다. 실측: 상수 `new_id` 2회차 = `ContextBundleConflict`.
+        ⇒ 유도값은 **`job_id` 한 자리에만** 꽂고 나머지 두 id는 계속 랜덤이다.
+        묶음 id가 랜덤이라 경합 시 고아 묶음 1행이 남지만, 그 대가로 중복은
+        **의미가 맞는 층**(`JobAlreadyExistsError`)에서 잡힌다.
+        """
         self._sv = supervisor
         self._contexts = context_store
         self._new_id = new_id
         self._now = now
+        self._job_id = job_id
 
     async def enqueue(
         self,
@@ -71,7 +84,7 @@ class CounselPackEnqueuer:
         )
         operation = OperationKind.COUNSEL_PACK_GENERATE
         job = WorkerJob(
-            job_id=self._new_id(),
+            job_id=self._job_id if self._job_id is not None else self._new_id(),
             execution_id=self._new_id(),
             tenant_id=tenant_id,
             worker_kind=WorkerKind.COUNSEL_PACK,

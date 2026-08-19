@@ -38,6 +38,7 @@ from typing import Any, Final
 from fastapi import APIRouter, Request, Response
 from pydantic import ValidationError
 
+from ai.agents.job_store import JobAlreadyExistsError
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
 from ai.api.version_scope import RouterScope
@@ -47,7 +48,7 @@ from ai.composition.counsel.assembly import (
     open_counsel_pack_runner,
     reset_default_memory_checkpointer,
 )
-from ai.composition.counsel.enqueue import CounselPackEnqueuer
+from ai.composition.counsel.enqueue import CounselPackEnqueuer, content_hash
 from ai.composition.counsel.labels import (
     LabelVocabularyError,
     labels_applied_of,
@@ -119,6 +120,28 @@ router = APIRouter()
 
 _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id", "Idempotency-Key")
 _POST_ENDPOINT = "POST /v1/counsel/drafts"
+
+#: 🔴 **한 번 정하면 못 바꾼다.** `job_id`는 이 네임스페이스에서 유도되므로, 값이 바뀌면
+#: 같은 `Idempotency-Key`가 **다른 job_id**로 풀려 과거 잡을 영영 못 찾는다(재시도가 새
+#: 잡을 만든다 = 이 PR이 닫은 창이 다시 열린다). 마이그레이션 없이 바꾸지 마라.
+#: ⚠ 리터럴을 박지 않고 **URL에서 유도**한다(03 §1) — 근거가 값 자체에 적혀 있어야
+#: "이 상수가 왜 이 값인가"를 나중에 되물을 필요가 없다.
+_JOB_ID_NAMESPACE = uuid.uuid5(
+    uuid.NAMESPACE_URL, "https://checkon.ai/ns/counsel-draft-job-id"
+)
+
+
+def _derive_job_id(*, tenant_id: str, endpoint: str, idempotency_key: str) -> uuid.UUID:
+    """멱등 스코프 → `job_id`. **재시도가 같은 잡을 가리키게** 하는 유일한 장치다.
+
+    🔴 **BE는 이 값을 계산하지 않는다.** BE는 같은 `Idempotency-Key`로 다시 보내기만 하고,
+    `job_id`는 응답에 실려 오는 **불투명한 값**으로 남는다. 유도를 상대에게 시키면
+    「두 언어가 같은 값을 내는가」 문제가 하나 더 생긴다(99 #50 Java 해시 갈림과 같은 계열).
+    **유도는 우리 안에서 하고 결과만 준다.**
+
+    ⚠ `tenant_id`가 스코프에 들어 있다 — 다른 테넌트가 같은 키를 써도 다른 잡이 된다.
+    """
+    return uuid.uuid5(_JOB_ID_NAMESPACE, f"{tenant_id}:{endpoint}:{idempotency_key}")
 
 
 def _refine_endpoint(job_id: str) -> str:
@@ -755,7 +778,7 @@ def _build_supervisor() -> Supervisor:
 
 
 async def _generate(
-    request: CounselDraftRequest, *, tenant_id: str
+    request: CounselDraftRequest, *, tenant_id: str, idempotency_key: str
 ) -> tuple[CounselDraftJobView, uuid.UUID | None]:
     """문의 1건 → 초안 1건. 워커는 기존 counsel_pack을 N=1로 재사용한다(99 D ㉛).
 
@@ -821,13 +844,52 @@ async def _generate(
 
     supervisor = _build_supervisor()
     context = _draft_context(request)
-    job = await CounselPackEnqueuer(
-        supervisor=supervisor, context_store=_context_store, now=_clock
-    ).enqueue(
-        tenant_id=tenant_id,
-        class_ref=request.class_ref,
-        contexts={request.student_ref: context},
+    contexts = {request.student_ref: context}
+    # 🔴 **재시도가 같은 잡을 가리킨다**(99 #76·#85 곱). 응답은 최악 225초인데 멱등 행은
+    #    실행 **뒤**에 써지므로, BE의 읽기 타임아웃이 먼저 터지면 재시도가 멱등 행이
+    #    생기기 전에 도착한다 — 종전에는 그때 **잡·LLM·초안이 한 번 더** 만들어졌다
+    #    (실측: 같은 키 동시 2발 → 서로 다른 job_id 2개, 멱등 행 1개).
+    # ⚠ 중복을 **막는** 방어를 쌓는 대신 재시도할 **이유를 없앴다** — `job_id`를 멱등
+    #    스코프에서 유도하면 두 번째 요청은 첫 번째와 **같은 잡**에 도착한다.
+    job_id = _derive_job_id(
+        tenant_id=tenant_id, endpoint=_POST_ENDPOINT, idempotency_key=idempotency_key
     )
+    existing = await supervisor.get(tenant_id=tenant_id, job_id=job_id)
+    if existing is None:
+        try:
+            job = await CounselPackEnqueuer(
+                supervisor=supervisor,
+                context_store=_context_store,
+                now=_clock,
+                job_id=job_id,
+            ).enqueue(
+                tenant_id=tenant_id,
+                class_ref=request.class_ref,
+                contexts=contexts,
+            )
+        except JobAlreadyExistsError:
+            # 선조회와 `add` 사이의 경합 — 상대가 방금 넣었다. **새 잡을 만들지 않는다.**
+            # 🔴 여기서 `None`이면 그 잡은 **다른 테넌트 것**이다(`get`에 tenant 술어가
+            #    걸려 있다 · 실측: InMemory·Pg 둘 다). 남의 잡을 보여주느니 500이 낫다.
+            raced = await supervisor.get(tenant_id=tenant_id, job_id=job_id)
+            if raced is None:
+                raise
+            existing = raced
+    if existing is not None:
+        # 🔴 **여기가 재시도다.** 멱등 행이 아직 없어 위쪽 hit 경로를 못 탔지만 잡은 이미
+        #    있다 — 두 경로는 「멱등 행의 유무」로 **겹치지 않는다**.
+        # ⚠ 같은 키에 다른 바디면 위쪽 hit 경로가 409를 낸다. 그런데 멱등 행이 없는
+        #   이 구간에는 대조할 body_hash가 없다 — 남아 있는 건 잡의 `payload_hash`뿐이라
+        #   **그걸로 댄다.** 묶음만 덮으므로 부분 방어다(99 #95).
+        # 🔴 **선조회로 찾았든 경합으로 찾았든 같은 검사를 받는다.** 종전에는 이 검사가
+        #    선조회 가지 안에만 있어서, 경합으로 들어온 요청은 바디가 달라도 **남의
+        #    초안을 받았다**(실측: 선조회를 지우면 in-flight 409 검사만 red).
+        if existing.payload_hash != content_hash(contexts):
+            raise IdempotencyConflict(
+                "같은 Idempotency-Key에 다른 바디(실행 중)",
+                {"idempotency_key": idempotency_key},
+            )
+        job = existing
     provider = require_counsel_provider()
     # 🔴 조립부를 경유한다 — 러너를 여기서 직접 만들면 `require_tracing_disabled`와
     # 체크포인터 선택(`_open_saver`)이 **서비스 경로에서만 빠진다**. 실제로 그랬다:
@@ -1063,7 +1125,9 @@ async def post_counsel_draft(request: Request, response: Response) -> dict[str, 
             "같은 Idempotency-Key에 다른 바디", {"idempotency_key": idempotency_key}
         )
 
-    view, execution_id = await _generate(draft_request, tenant_id=tenant_id)
+    view, execution_id = await _generate(
+        draft_request, tenant_id=tenant_id, idempotency_key=idempotency_key
+    )
     cached = _CachedView(
         view=view, execution_id=execution_id, correlation_id=uuid.uuid4()
     )
