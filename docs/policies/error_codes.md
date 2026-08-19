@@ -67,6 +67,7 @@
 | `llm_failed` | `llm_failed` | `graph.py` — `llm_failed:{예외클래스}`의 **접두만** 싣는다 | 장애 | *(위 표)* |
 | `gate_exhausted` | `gate_exhausted` | `graph.py` — `gate_exhausted:{게이트사유}`의 **접두만** | 장애 | *(위 표)* |
 | `job_no_result` | `llm_failed` | 라우터 `_wire_result` — 결과 계약 자체가 없다 | 장애 | `[BE 작성]` |
+| `draft_body_missing` | `llm_failed` | 라우터 `_wire_result` — **잡은 성공인데 초안 본문이 없다**(보존 만료·초안 저장소 휘발·`draft_id` 부재). 🔴 종전에는 `draft_status=generated`가 고정이라 **정상 성공이 500**이었다(99 #75) | 장애 | `[BE 작성]` |
 | 🔴 **잡 error_code 다섯** — `context_bundle_missing` · `context_hash_mismatch` · `tenant_mismatch` · `worker_internal_error` · `worker_recovery_exhausted` | `llm_failed` | 라우터가 `job.error_code`를 **그대로** 싣는다. 앞 넷은 `composition/counsel/worker.py`의 `ERROR_*` 상수, 마지막은 `contracts/agents.WORKER_RECOVERY_EXHAUSTED` | 장애 | `[BE 작성]` |
 | `unmapped:{값}` | `gate_exhausted` | `wire_status_for` — 파생표에 없는 `DraftStatus`가 왔다 | 방어 | `[BE 작성]` |
 

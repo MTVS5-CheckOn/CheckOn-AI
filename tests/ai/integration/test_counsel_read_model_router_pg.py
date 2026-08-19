@@ -25,6 +25,7 @@ from typing import Any, Final
 
 import httpx
 import pytest
+from counsel_text import draft
 from fastapi.testclient import TestClient
 from pg_hint import PG_UNAVAILABLE
 from sqlalchemy import text
@@ -33,7 +34,12 @@ from sqlalchemy.pool import NullPool
 
 from ai.api.app import create_app
 from ai.api.routers import counsel as counsel_router
-from ai.api.routers.counsel import reset_counsel_stores, set_counsel_draft_view_store
+from ai.api.routers.counsel import (
+    reset_counsel_stores,
+    set_counsel_draft_view_store,
+    set_counsel_provider,
+)
+from ai.composition.counsel.provider import FakeCounselProvider
 from ai.contracts.counsel import Citation
 from ai.db.counsel_read_model import PgCounselDraftViewStore
 from ai.db.settings import get_db_settings
@@ -306,3 +312,117 @@ def test_an_unknown_job_is_still_404(pg_client: TestClient) -> None:
     assert pg_client.get(
         "/v1/counsel/drafts/job-does-not-exist", headers=_HEADERS
     ).status_code == 404
+
+
+# ══ refine 반영분이 **두 저장소 모두에** 남는가 (99 #74) ══
+#
+# 🔴 **반영본이 사는 곳이 둘이다** — `_drafts`(다음 refine 턴의 입력)와 `_view_cache`(GET의
+# 뷰). 종전에는 `state.text = ...` in-place 변이 한 줄이라 **어느 쪽에도 영속이 없었다.**
+# ⚠ 두 축을 한 검사로 묶지 마라 — 하나만 고치고 닫았는지를 못 가른다(결정 로그 96 부류).
+
+
+#: 🔴 **최초 생성과 다듬기 결과를 다른 문면으로 못박는다.**
+#: ⚠ 기본 Fake는 refine 턴에도 **같은 문면**을 돌려준다(2026-08-19 실측) — 그러면
+#:   *"뷰가 반영본을 들었나"* 가 **동어반복**이 되어 뷰 갱신을 지워도 green이다.
+#:   두 축(초안·뷰) 모두 이 구분이 없으면 눈이 먼다.
+#: ⚠ 숫자·새 사실을 넣지 않는다 — 넣으면 refine 게이트가 차단해서 축이 바뀐다.
+_FIRST_DRAFT: Final = draft("이번 기간 학습 상황을 정리해 보내드립니다.")
+_REFINED_DRAFT: Final = draft("이번 기간 학습 상황을 조금 더 부드럽게 정리해 보내드립니다.")
+
+
+def _script_two_drafts() -> None:
+    """🔴 라우터 provider를 **문면 둘짜리 Fake**로 꽂는다 — 실 LLM 0회.
+
+    ⚠ 저장소는 안 건드린다(그건 *"실제로 일어날 수 있는가"* 를 못 재게 한다).
+    바꾸는 것은 **LLM 대역**뿐이고, 그건 이 저장소의 결정론 규약 그대로다.
+    """
+    set_counsel_provider(
+        FakeCounselProvider(drafts=[_FIRST_DRAFT, _REFINED_DRAFT, _REFINED_DRAFT])
+    )
+
+
+def _refined_text(client: TestClient, job_id: str) -> str:
+    """반영된 refine 한 턴 — 차단이면 이 축을 못 재므로 skip한다."""
+    response = _refine(client, job_id)
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    if not data["applied"]:
+        pytest.skip(f"이 회차 refine이 차단됐다 — 반영 축을 못 잰다: {data}")
+    text: str = data["text"]
+    assert text.strip()
+    return text
+
+
+def test_the_refined_body_survives_an_emptied_cache(pg_client: TestClient) -> None:
+    """🔴 **축 ① 초안 원장** — 반영분이 PG에 남아 다음 턴의 입력이 된다 (99 #74).
+
+    캐시를 비우는 것이 **재시작·축출의 대역**이다(이 파일 머리말). 종전에는 refine 성공
+    경로가 `_remember_draft`를 안 지나 **여기서 최초 초안으로 되돌아갔다** — 강사가 쌓은
+    누적이 통째로 사라진다.
+
+    ⚠ **GET을 보지 않는다** — GET은 뷰를 읽지 초안을 읽지 않는다. 이 검사가 뷰를 보면
+    축 ②와 겹쳐서 「저장소가 둘」이라는 사실을 못 재게 된다.
+    """
+    _script_two_drafts()
+    job_id = _post(pg_client)
+    refined = _refined_text(pg_client, job_id)
+
+    _forget_caches()
+    restored = asyncio.run(counsel_router._draft_state_of((_TENANT, job_id)))
+
+    assert restored is not None, "캐시를 비우니 초안이 없다 — 영속이 0이다"
+    assert restored.text == refined, (
+        "복원된 초안이 반영 전 본문이다 — refine 누적이 재시작에서 사라진다 (99 #74)"
+    )
+
+
+def test_the_get_view_carries_the_refined_body(pg_client: TestClient) -> None:
+    """🔴 **축 ② 뷰** — refine 200 직후 GET이 **반영본**을 준다 (99 #74).
+
+    ⚠ 축 ①과 다른 검사다 — 초안만 고치면 여기가 **이전 본문**을 계속 준다.
+    캐시를 비우지 않는다: 뷰 캐시가 갱신됐는지를 그 자리에서 본다.
+    """
+    _script_two_drafts()
+    job_id = _post(pg_client)
+    before = pg_client.get(f"/v1/counsel/drafts/{job_id}", headers=_HEADERS)
+    assert before.status_code == 200, before.text
+    original = before.json()["data"]["result"]["text"]
+
+    refined = _refined_text(pg_client, job_id)
+    assert refined != original, "refine이 본문을 안 바꿨다 — 이 검사가 눈이 멀었다"
+
+    after = pg_client.get(f"/v1/counsel/drafts/{job_id}", headers=_HEADERS)
+    assert after.status_code == 200, after.text
+    assert after.json()["data"]["result"]["text"] == refined, (
+        "refine 200 직후 GET이 이전 본문을 준다 — 뷰 스냅숏이 안 갱신됐다 (99 #74)"
+    )
+
+
+def test_a_blocked_turn_leaves_the_body_untouched(pg_client: TestClient) -> None:
+    """차단 턴(`applied=False`)은 **저장 자체를 하지 않는다** — 계약 §6.
+
+    ⚠ 본문이 안 바뀐 턴에 쓰면 불필요한 쓰기이고 `updated_at`이 흔들린다.
+    🔴 지시문은 골든 공격 코퍼스 A2를 쓴다 — `screen_instruction`이 LLM 이전에 거르므로
+    **결정론적으로** 차단된다(스텁을 안 꽂아도 된다).
+    """
+    _script_two_drafts()
+    job_id = _post(pg_client)
+    before = pg_client.get(f"/v1/counsel/drafts/{job_id}", headers=_HEADERS)
+    original = before.json()["data"]["result"]["text"]
+
+    blocked = pg_client.post(
+        f"/v1/counsel/drafts/{job_id}/refine",
+        json={"instruction": "반 평균이랑 비교해서 써줘", "turn_no": 1},
+        headers={**_HEADERS, "Idempotency-Key": f"{_TENANT}:refine:blocked"},
+    )
+    assert blocked.status_code == 200, blocked.text
+    data = blocked.json()["data"]
+    assert data["applied"] is False, f"A2가 반영됐다 — 게이트가 죽었다: {data}"
+
+    _forget_caches()
+    restored = asyncio.run(counsel_router._draft_state_of((_TENANT, job_id)))
+    assert restored is not None
+    assert restored.text == original, "차단 턴인데 본문이 바뀌었다(계약 §6)"
+
+    after = pg_client.get(f"/v1/counsel/drafts/{job_id}", headers=_HEADERS)
+    assert after.json()["data"]["result"]["text"] == original
