@@ -213,11 +213,21 @@ _WIRE_BY_STATUS: Final[dict[DraftStatus, WireDraftStatus]] = {
     DraftStatus.FAILED: WireDraftStatus.GATE_EXHAUSTED,
 }
 
+#: `graph.py`가 `fail_reason`으로 만드는 **접두** — 사유가 태어나는 마지막 자리다.
+#: 🔴 **여기가 정본이고 `graph.py`가 이 이름을 쓴다.** 종전에는 양쪽이 각자 리터럴이라
+#: `graph.py`에 새 사유를 넣어도 **어느 검사도 red가 아니었다**(PR-03이 라우터·워커만
+#: 잠갔다). 그 상태에서는 `WIRE_STATUS_REASONS` docstring의 약속이 **절반만 참**이다.
+#: ⚠ 접두와 상세를 잇는 `":"`는 여기 넣지 않는다 — `wire_status_for`의 `partition(":")`와
+#:   짝인 **형태**이지 어휘가 아니다.
+REASON_LLM_FAILED: Final = "llm_failed"
+REASON_REDACTION_BLOCKED: Final = "redaction_blocked"
+REASON_GATE_EXHAUSTED: Final = "gate_exhausted"
+
 #: `fail_reason` 접두 → 와이어 실패 판정. graph.py가 내는 접두가 원본이다.
 _FAILURE_WIRE: Final[dict[str, WireDraftStatus]] = {
-    "llm_failed": WireDraftStatus.LLM_FAILED,
-    "redaction_blocked": WireDraftStatus.LLM_FAILED,
-    "gate_exhausted": WireDraftStatus.GATE_EXHAUSTED,
+    REASON_LLM_FAILED: WireDraftStatus.LLM_FAILED,
+    REASON_REDACTION_BLOCKED: WireDraftStatus.LLM_FAILED,
+    REASON_GATE_EXHAUSTED: WireDraftStatus.GATE_EXHAUSTED,
 }
 
 
@@ -421,6 +431,9 @@ __all__ = [
     "ERROR_TENANT_MISMATCH",
     "ERROR_WORKER_INTERNAL",
     "REASON_CONTEXT_MISSING",
+    "REASON_GATE_EXHAUSTED",
+    "REASON_LLM_FAILED",
+    "REASON_REDACTION_BLOCKED",
     "REASON_DRAFT_BODY_MISSING",
     "REASON_JOB_NO_RESULT",
     "REASON_NO_CITABLE_EVIDENCE",
