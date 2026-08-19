@@ -18,6 +18,7 @@ from typing import Annotated, Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ai.contracts.agents import WORKER_RECOVERY_EXHAUSTED
 from ai.contracts.composition import DraftStatus
 from ai.contracts.gates import BlockedReason
 
@@ -220,6 +221,63 @@ _FAILURE_WIRE: Final[dict[str, WireDraftStatus]] = {
 }
 
 
+#: 라우터가 **직접** 만드는 사유 — `wire_status_for`를 안 지난다(`counsel.py`의 그 자리
+#: 주석이 스스로 그렇게 적어 뒀다). 값은 한 글자도 바뀌지 않았다.
+REASON_NO_DATA_TOPIC: Final = "no_data_topic"
+REASON_NO_CITABLE_EVIDENCE: Final = "no_citable_evidence"
+REASON_JOB_NO_RESULT: Final = "job_no_result"
+REASON_CONTEXT_MISSING: Final = "context_missing"
+REASON_DRAFT_BODY_MISSING: Final = "draft_body_missing"
+
+#: counsel 워커가 잡 `error_code`로 남기는 값 — 라우터가 **그대로** `status_reason`에 싣는다.
+#: ⚠ **정의를 여기로 옮겼다** — 종전에는 `composition/counsel/worker.py`가 갖고 있었는데,
+#: 그러면 아래 `WIRE_STATUS_REASONS`가 그 값을 **다시 타이핑**해야 한다(contracts는
+#: composition을 import할 수 없다 — 방향이 반대다). 사본을 늘리는 대신 집을 옮겼고
+#: `worker.py`가 여기서 가져다 쓴다. **값은 그대로다.**
+ERROR_CONTEXT_BUNDLE_MISSING: Final = "context_bundle_missing"
+ERROR_CONTEXT_HASH_MISMATCH: Final = "context_hash_mismatch"
+ERROR_TENANT_MISMATCH: Final = "tenant_mismatch"
+ERROR_WORKER_INTERNAL: Final = "worker_internal_error"
+
+#: `unmapped:{내부 status}`의 접두. 🔴 **집합의 멤버가 아니다** — 값이 아니라 **형태**다.
+UNMAPPED_REASON_PREFIX: Final = "unmapped"
+
+WIRE_STATUS_REASONS: Final[frozenset[str]] = frozenset(
+    {
+        REASON_NO_DATA_TOPIC,
+        REASON_NO_CITABLE_EVIDENCE,
+        REASON_JOB_NO_RESULT,
+        REASON_CONTEXT_MISSING,
+        REASON_DRAFT_BODY_MISSING,
+    }
+    #: 🔴 **리터럴을 다시 적지 않는다** — `graph.py`가 내는 접두는 이미 이 표의 키다
+    #: (`llm_failed`·`redaction_blocked`·`gate_exhausted`). 재타이핑하면 세 번째 사본이
+    #: 생겨 이 집합이 고치려는 병이 는다.
+    | set(_FAILURE_WIRE)
+    | {
+        ERROR_CONTEXT_BUNDLE_MISSING,
+        ERROR_CONTEXT_HASH_MISMATCH,
+        ERROR_TENANT_MISMATCH,
+        ERROR_WORKER_INTERNAL,
+        #: 🔴 양자 승인 파일(`contracts/agents.py`)에서 **읽기만** 한다.
+        WORKER_RECOVERY_EXHAUSTED,
+    }
+)
+"""`status_reason`의 **와이어 어휘 전수** — BE가 화면 매핑을 만드는 값 집합이다.
+
+🔴 **`unmapped:{값}`은 멤버가 아니다** — 접두라서 값이 아니고, `UNMAPPED_REASON_PREFIX`로
+따로 다룬다. 파생표에 없는 `DraftStatus`가 왔을 때의 **방어 형태**다.
+
+🔴 **`null`도 멤버가 아니다** — `generated`의 `status_reason`은 값이 아니라 **값의 부재**다.
+
+🔴 **이 집합을 늘릴 때는 `docs/policies/error_codes.md` §2.1 표에 행을 같이 넣어야 한다.**
+안 넣으면 `test_status_reason_vocabulary.py`의 **양방향** 대조가 red다 — 한쪽만 재면
+「문서에만 있는 유령 값」(8/8 `data_lt_2weeks`가 그랬다)을 못 잡는다.
+
+⚠ **모으기만 했다 — 값은 한 글자도 안 바꿨다.** 값 변경은 BE 통보가 선행이다.
+"""
+
+
 def wire_status_for(
     status: DraftStatus, fail_reason: str | None
 ) -> tuple[WireDraftStatus, str | None]:
@@ -358,6 +416,17 @@ class RefineResponse(BaseModel):
 
 
 __all__ = [
+    "ERROR_CONTEXT_BUNDLE_MISSING",
+    "ERROR_CONTEXT_HASH_MISMATCH",
+    "ERROR_TENANT_MISMATCH",
+    "ERROR_WORKER_INTERNAL",
+    "REASON_CONTEXT_MISSING",
+    "REASON_DRAFT_BODY_MISSING",
+    "REASON_JOB_NO_RESULT",
+    "REASON_NO_CITABLE_EVIDENCE",
+    "REASON_NO_DATA_TOPIC",
+    "UNMAPPED_REASON_PREFIX",
+    "WIRE_STATUS_REASONS",
     "BlockedReason",
     "Citation",
     "ContextFact",

@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Any, Final
+from typing import Any
 from uuid import UUID, uuid4
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -50,6 +50,12 @@ from ai.composition.counsel.stores import (
 )
 from ai.composition.counsel.versions import counsel_versions
 from ai.contracts.agents import WorkerJob, WorkerKind
+from ai.contracts.counsel import (
+    ERROR_CONTEXT_BUNDLE_MISSING,
+    ERROR_CONTEXT_HASH_MISMATCH,
+    ERROR_TENANT_MISMATCH,
+    ERROR_WORKER_INTERNAL,
+)
 from ai.contracts.execution import ExecutionContext
 from ai.db.repositories.run_store import (
     LlmCallCollector,
@@ -67,10 +73,11 @@ logger = logging.getLogger(__name__)
 #: snake_case·접두 생법). ⚠ 학생 단위 `fail_reason`(graph.py의 `context_missing` 등)과
 #: **문자열이 겹치지 않게** 접두를 붙였다 — 대시보드가 문자열로 집진하면 잡 장애와 학생
 #: 정상 스킵이 섞여 장애 오판이 된다.
-ERROR_CONTEXT_BUNDLE_MISSING: Final = "context_bundle_missing"
-ERROR_CONTEXT_HASH_MISMATCH: Final = "context_hash_mismatch"
-ERROR_TENANT_MISMATCH: Final = "tenant_mismatch"
-ERROR_WORKER_INTERNAL: Final = "worker_internal_error"
+#: 🔴 **정의가 `contracts/counsel.py`로 옮겨 갔다 — 값은 한 글자도 안 바뀌었다.**
+#: 이 값들은 라우터가 `status_reason`에 **그대로** 싣는 **와이어 어휘**라 그 어휘
+#: 전수(`WIRE_STATUS_REASONS`)와 같은 집에 있어야 한다. 여기 두면 contracts가
+#: composition을 import해야 하고(방향이 반대다) 전수 집합이 **리터럴을 다시 타이핑**하게
+#: 된다 — 사본이 셋이 되는 그 병이다. 이름은 여기서도 그대로 노출한다(`__all__`).
 
 
 class ContextHashMismatchError(ValueError):

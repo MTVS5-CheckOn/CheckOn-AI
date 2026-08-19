@@ -76,6 +76,11 @@ from ai.composition.counsel.versions import counsel_versions as _counsel_version
 from ai.contracts.agents import TERMINAL_PHASES, JobPhase, WorkerJob
 from ai.contracts.composition import DraftContext, EvidenceFact
 from ai.contracts.counsel import (
+    REASON_CONTEXT_MISSING,
+    REASON_DRAFT_BODY_MISSING,
+    REASON_JOB_NO_RESULT,
+    REASON_NO_CITABLE_EVIDENCE,
+    REASON_NO_DATA_TOPIC,
     Citation,
     CounselDraftJobView,
     CounselDraftRequest,
@@ -821,7 +826,7 @@ async def _generate(
             status=JobPhase.SUCCEEDED.value,
             result=CounselDraftResult(
                 draft_status=WireDraftStatus.TEMPLATE_ONLY,
-                status_reason="no_data_topic",  # error_codes §2.1 정본
+                status_reason=REASON_NO_DATA_TOPIC,  # error_codes §2.1 정본
                 labels_applied=applied,
                 generated_at=_clock(),
             ),
@@ -835,7 +840,7 @@ async def _generate(
             status=JobPhase.SUCCEEDED.value,
             result=CounselDraftResult(
                 draft_status=WireDraftStatus.REJECTED_INSUFFICIENT,
-                status_reason="no_citable_evidence",
+                status_reason=REASON_NO_CITABLE_EVIDENCE,
                 labels_applied=applied,
                 generated_at=_clock(),
             ),
@@ -1002,7 +1007,7 @@ async def _wire_result(
         #   같은 번역을 받는 것이 실제 질문이 된다 — 그때 재검한다.
         return CounselDraftResult(
             draft_status=WireDraftStatus.LLM_FAILED,
-            status_reason=job.error_code or "job_no_result",
+            status_reason=job.error_code or REASON_JOB_NO_RESULT,
             labels_applied=applied,
             generated_at=_clock(),
         )
@@ -1014,7 +1019,7 @@ async def _wire_result(
         # "다시 시도"를 그린다 — 인박스 계약 §4 매핑 표가 깨진다(점검 B-4).
         return CounselDraftResult(
             draft_status=WireDraftStatus.REJECTED_INSUFFICIENT,
-            status_reason="context_missing",
+            status_reason=REASON_CONTEXT_MISSING,
             labels_applied=applied,
             generated_at=_clock(),
         )
@@ -1073,7 +1078,7 @@ async def _wire_result(
         )
         return CounselDraftResult(
             draft_status=WireDraftStatus.LLM_FAILED,
-            status_reason="draft_body_missing",
+            status_reason=REASON_DRAFT_BODY_MISSING,
             labels_applied=applied,
             generated_at=_clock(),
         )
