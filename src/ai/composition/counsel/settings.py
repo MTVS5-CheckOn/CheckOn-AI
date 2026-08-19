@@ -59,6 +59,27 @@ class CounselSettings(BaseSettings):
     더 좁은 상한이 되고 이 값을 다시 계산해야 한다.
     """
 
+    counsel_poll_retry_after_seconds: int = Field(default=2, ge=1)
+    """비종단 GET 응답의 `Retry-After` 값(초) — **호출자에게 언제 다시 오라고 말한다.**
+
+    🔴 **폴링 주기를 코드가 아니라 설정이 정한다**(03 §1). counsel 은 **Kafka 완료 통지가
+    없어**(실측 2026-08-19: AI 쪽 프로듀서·컨슈머·outbox **0건** · `aiokafka` 의존성에도
+    없다) 폴링이 유일한 길이다. 상대가 자기 상수로 돌면 **우리가 인라인 실행을 바꿔도 그
+    주기는 안 따라온다** — 실제로 이번 회차에 POST 가 최대 3회 드레인하도록 바뀌어 응답이
+    최악 225s 까지 늘었는데(99 #21·#85) 어댑터 주기는 그대로였다.
+
+    **기본 2의 근거 — 지어낸 값이 아니라 이미 양쪽이 서 있는 값이다.**
+    ⓐ 같은 저장소 `api/routers/problem.py` 의 `poll_retry_after_seconds` 기본값이 **2**다
+      (같은 역할 · 실측 확인).
+    ⓑ 어댑터의 `checkon.ai.problem-generation.poll-interval` 기본값도 **2s** 다
+      (`checkon-kafka-adapter` `application.yaml` — 🔴 **이 Mac 에 해당 저장소 클론이 없어
+      직접 못 봤다.** 지시서 №1 의 [읽음] 실측을 인용한 것이다).
+    ⇒ 양쪽이 이미 2 로 서 있으므로 그 값을 그대로 쓴다.
+
+    🔴 **`ge=1` — 0·음수는 폴링 폭주다.** `Retry-After: 0` 은 「즉시 다시 오라」라서
+    어댑터가 쉬지 않고 때린다. 임계 조정이 아니라 **뜻이 안 되는 값**을 막는 것이다.
+    """
+
     counsel_lease_seconds: int = 300
     """잡 lease 유효 시간(초). 라우터가 같은 요청 안에서 lease→실행→succeed까지 끝내므로
     실제로는 만료 전에 반납된다 — 프로세스가 죽었을 때 recovery가 집어갈 여유값이다."""

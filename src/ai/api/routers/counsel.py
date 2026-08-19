@@ -73,7 +73,7 @@ from ai.composition.counsel.stores import (
     make_ref,
 )
 from ai.composition.counsel.versions import counsel_versions as _counsel_versions
-from ai.contracts.agents import JobPhase, WorkerJob
+from ai.contracts.agents import TERMINAL_PHASES, JobPhase, WorkerJob
 from ai.contracts.composition import DraftContext, EvidenceFact
 from ai.contracts.counsel import (
     Citation,
@@ -1245,7 +1245,9 @@ async def _restore_result(
 
 
 @router.get("/v1/counsel/drafts/{job_id}")
-async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
+async def get_counsel_draft(
+    job_id: str, request: Request, response: Response
+) -> dict[str, Any]:
     """결과 회수 — 잡 성공 ≠ 초안 존재(불변식 4).
 
     🔴 **캐시를 정본으로 삼지 않는다**(㉩) — 매번 잡 원장에서 현재 phase를 다시 읽는다.
@@ -1265,6 +1267,32 @@ async def get_counsel_draft(job_id: str, request: Request) -> dict[str, Any]:
         correlation_id=cached.correlation_id,
     )
     await _remember_view((tenant_id, job_id), refreshed)
+    # 🔴 **아직 안 끝났으면 언제 다시 오라고 말한다.** counsel 은 Kafka 완료 통지가 없어
+    #    호출자에게 폴링이 유일한 길인데, 주기를 안 말해 주면 상대가 **자기 상수로 돈다** —
+    #    그러면 우리가 인라인 실행을 바꿔도 그 주기는 안 따라온다(값은 설정 · 03 §1).
+    # 🔴 **`_can_report_result`가 아니다 — `cancelled` 하나가 다르다.**
+    #      `_REPORTABLE_PHASES` = {succeeded, failed}          ← "결과를 실을 수 있나"
+    #      `TERMINAL_PHASES`    = {succeeded, failed, cancelled} ← "폴링을 그만해도 되나"
+    #    취소된 잡은 **결과가 영영 없지만 폴링은 끝나야 한다.** 저걸 재사용하면 cancelled
+    #    응답에 `Retry-After`가 붙어 **어댑터가 죽은 잡을 영원히 폴링한다.** 묻는 질문이
+    #    다르므로 통합하지 않는다(복제가 아니라 **다른 판정**이다).
+    # ⚠ **`JobPhase(...)`로 감싸는 이유는 「지금 안 그러면 틀려서」가 아니다.**
+    #    `view.status`는 문자열(`NonEmptyStr`)이고 `TERMINAL_PHASES`는
+    #    `frozenset[JobPhase]`지만, **`JobPhase`가 `StrEnum`이라 맨 문자열 비교도 맞다**
+    #    (실측 2026-08-19: `"succeeded" in TERMINAL_PHASES` → True · hash도 같다).
+    # 🔴 **그래서 감싼다** — 맨 문자열 형태는 **`JobPhase`가 `StrEnum`이라는 사실에
+    #    말없이 기대고 있다.** 누가 `StrEnum` → `Enum`으로 바꾸면 비교가 **조용히 항상
+    #    True**가 되고, 그러면 **종단 응답에도 헤더가 붙어** 어댑터가 끝난 잡을 영원히
+    #    폴링한다. 감싸 두면 그 의존이 사라진다. ⚠ 행동으로는 두 형태를 구분할 수 없어
+    #    이 자리는 **소스 검사**가 지킨다(`test_counsel_poll_retry_after.py`).
+    # ⚠ 값이 enum 밖이면 `ValueError`지만 **도달 불가다** — `view.status`에 값이 들어가는
+    #   자리 전수(실측)가 `JobPhase(...).value` 파생이고, 영속 층이 이미
+    #   `JobPhase(parsed_view.view.status)`로 파싱한다(`db/counsel_draft_view.py`).
+    #   🔴 **방어 분기를 달지 않는다** — 도달 불가 경로의 방어는 죽은 분기다.
+    if JobPhase(view.status) not in TERMINAL_PHASES:
+        response.headers["Retry-After"] = str(
+            get_counsel_settings().counsel_poll_retry_after_seconds
+        )
     return success_envelope(
         data=view.model_dump(mode="json"),
         execution_id=refreshed.envelope_execution_id(),
