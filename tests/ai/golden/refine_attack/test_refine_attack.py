@@ -320,7 +320,9 @@ def test_turn_no_does_not_gate_anything(client: TestClient) -> None:
         response = client.post(
             f"/v1/counsel/drafts/{job_id}/refine",
             json={"instruction": "더 짧게 써줘", "turn_no": turn},
-            headers=_HEADERS,
+            #: 🔴 **턴마다 다른 멱등 키다**(99 #76) — 같은 키에 `turn_no`만 다른 바디를
+            #:   보내면 409가 맞고, 그건 이 검사의 축(턴 상한 판정 없음)이 아니다.
+            headers={**_HEADERS, "Idempotency-Key": f"idem-turn-{turn}"},
         )
         assert response.status_code == 200
         assert response.json()["data"]["applied"] is True
