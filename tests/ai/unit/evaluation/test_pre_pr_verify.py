@@ -32,6 +32,11 @@ _EXPECTED_SKIPS = (
         "tests.ai.integration.test_counsel_tone_smoke",
         "test_b2_reproducibility_of_one_combination",
     ),
+    #: 🔴 **(8/20) 2차 회차** — B군 빈도 축(#79 판정 재료).
+    (
+        "tests.ai.integration.test_counsel_tone_smoke",
+        "test_c1_frequency_sample_of_thirty",
+    ),
 )
 
 
