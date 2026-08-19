@@ -128,18 +128,26 @@ def _enqueue_decoy() -> None:
             _draft_context,
         )
         from ai.composition.counsel.enqueue import CounselPackEnqueuer  # noqa: PLC0415
+        from ai.composition.counsel.settings import (  # noqa: PLC0415
+            get_counsel_settings,
+        )
         from ai.contracts.counsel import CounselDraftRequest  # noqa: PLC0415
 
         request = CounselDraftRequest.model_validate(_request_body())
-        await CounselPackEnqueuer(
-            supervisor=_build_supervisor(),
-            context_store=counsel_router._context_store,
-            now=_clock,
-        ).enqueue(
-            tenant_id=_TENANT,
-            class_ref=request.class_ref,
-            contexts={"stu_decoy": _draft_context(request)},
-        )
+        #: 🔴 **K(`counsel_inline_drain_max`)만큼 넣는다** (99 #21 · 2026-08-19). POST가
+        #: 자기 잡이 끝날 때까지 유한 반복하게 바뀌어서 **decoy 1개로는 미종단이 안 된다** —
+        #: 두 번째 회전에 내 잡이 돌아간다. K개를 넣어야 회전이 다 소진된다.
+        #: ⚠ 리터럴을 박지 않는다 — K가 바뀌어도 이 대역이 따라간다.
+        for index in range(get_counsel_settings().counsel_inline_drain_max):
+            await CounselPackEnqueuer(
+                supervisor=_build_supervisor(),
+                context_store=counsel_router._context_store,
+                now=_clock,
+            ).enqueue(
+                tenant_id=_TENANT,
+                class_ref=request.class_ref,
+                contexts={f"stu_decoy{index}": _draft_context(request)},
+            )
 
     asyncio.run(enqueue())
 

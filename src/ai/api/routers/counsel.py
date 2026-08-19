@@ -847,19 +847,45 @@ async def _generate(
         run_store=_run_store,
     ) as runner:
         # 🔴 `run_next`는 `worker_kind + tenant_id`로만 lease한다 — **job_id를 지정해 집을
-        # 수 없다.** 큐에 남의 잡이 남아 있으면 이게 집어오는 건 내 잡이 아니다. 그래도
-        # 호출은 유지한다(큐를 비우는 역할이 있다) — 바꾼 것은 **결과를 어디서 읽는가**다.
-        ran = await runner.run_next(tenant_id=tenant_id)
-        if ran is not None and ran.job_id != job.job_id:
-            logger.info(
-                "counsel 러너가 다른 잡을 실행했다 mine=%s ran=%s — 결과는 내 잡에서 읽는다",
-                job.job_id,
-                ran.job_id,
-            )
+        # 수 없다.** 큐에 앞선 잡이 있으면 이게 집어오는 건 내 잡이 아니다.
+        # 🔴 **그래서 자기 잡이 끝날 때까지 유한 반복한다** (99 #21). 종전에는 **1회**만
+        # 불러서, 앞선 잡이 있으면 내 잡이 `queued`로 나갔다 — 그런데 counsel에는
+        # **배경 드레인이 없고 GET은 잡을 안 돌리므로**(실측: GET 경로에 `run_next` 0건)
+        # **BE가 폴링해도 영영 안 풀린다.**
+        # ⚠ 상한은 `counsel_inline_drain_max`다(불변식 6 · 근거는 그 필드 docstring —
+        #   lease 예산에서 역산). 🔴 **여기 리터럴을 박지 마라**(03 §1).
+        mine = await supervisor.get(tenant_id=tenant_id, job_id=job.job_id) or job
+        for _ in range(get_counsel_settings().counsel_inline_drain_max):
+            if _can_report_result(mine.phase):
+                break
+            try:
+                ran = await runner.run_next(tenant_id=tenant_id)
+            except Exception:  # noqa: BLE001 — 남의 잡 실패가 내 요청을 죽이면 안 된다
+                # 🔴 **조용히 삼키지 않는다.** 내 잡은 아직 안 돌았을 수 있으니 계속 돌되,
+                #    무엇이 터졌는지는 남긴다(`except: pass` 금지 · 03 §1).
+                logger.warning(
+                    "counsel 인라인 드레인 중 잡 실행 실패 mine=%s tenant=%s "
+                    "— 내 요청은 계속한다",
+                    job.job_id,
+                    tenant_id,
+                    exc_info=True,
+                )
+                continue
+            if ran is None:
+                # 큐가 비었다 — 더 돌 것이 없다. 🔴 남은 회전을 낭비하지 않는다.
+                break
+            if ran.job_id != job.job_id:
+                logger.info(
+                    "counsel 러너가 다른 잡을 실행했다 mine=%s ran=%s — 결과는 내 잡에서 읽는다",
+                    job.job_id,
+                    ran.job_id,
+                )
+            # 🔴 **매 회전마다 자기 잡을 다시 읽는다.** `ran`으로 판정하면 **남의 잡을 보고
+            #    끝났다고 읽는다** — 이 요청은 자기 잡의 결과만 읽는다.
+            mine = await supervisor.get(tenant_id=tenant_id, job_id=job.job_id) or mine
         # 🔴 **이 요청은 자기 잡의 결과만 읽는다.** 종전에는 `ran`(남의 잡일 수 있다)의
         # `result_ref`에서 본문을 꺼내 내 `job_id`·`citations`와 함께 반환했다 —
         # 다른 학생의 초안이 나가고 `_drafts`에도 등록돼 refine까지 오염됐다.
-        mine = await supervisor.get(tenant_id=tenant_id, job_id=job.job_id) or job
         view_job_id = str(job.job_id)
         if not _can_report_result(mine.phase):
             # 아직 안 돌았다(queued·leased·running·paused) 또는 취소됐다. **결과가 없다는
