@@ -200,6 +200,11 @@ def build_counsel_graph(
                 "emphasis_points": {},
                 "plan_outcome": PlanOutcome.REDACTION_BLOCKED,
             }
+        # 🔴 **(8/19) `ParseFailed`는 여기 안 온다** — `GatewayPlanner`가 잡아 `{}`로
+        #    수렴시킨다(빈 응답 = 모델이 **적법하게** 비워 둔 것 · `plan_outcome=ok`).
+        #    ⚠ 종전에는 여기로 떨어져 **정상 동작이 `llm_failed`로 계상**됐다 — 99 ㉲가
+        #    셋을 가르려고 만든 작업의 **절반이 도달 불가라 조용히 되돌아가 있었다.**
+        #    **여기 오는 것은 전송 장애다**(`timeout`·`provider_error`).
         except LlmError as exc:  # plan 실패 = 무강조 진행(초안은 계속 만든다)
             logger.info("plan 실패 — 무강조 진행 reason=%s", type(exc).__name__)
             return {"emphasis_points": {}, "plan_outcome": PlanOutcome.LLM_FAILED}
