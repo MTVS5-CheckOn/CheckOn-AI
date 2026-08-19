@@ -41,7 +41,11 @@ from __future__ import annotations
 import logging
 from typing import Final
 
-from ai.composition.buffer_lexicon import find_forbidden, load_buffer_lexicon
+from ai.composition.buffer_lexicon import (
+    find_forbidden,
+    replacement_probes,
+    replacement_source_of,
+)
 from ai.runtime.redaction import redact
 
 logger = logging.getLogger(__name__)
@@ -93,14 +97,11 @@ def observe_gated_draft(
     #: **종결형 자체를 놓친다.** 합집합으로 봐야 계수가 늘기만 하고 줄지 않는다.
     #: ⚠ 로그·반환값은 **`source`로 정규화**한다 — 적중 어휘 이름이 흔들리면 그 숫자를
     #:   읽는 쪽(다음 회차 게이트 판정 · 99 #79)이 두 이름을 같은 것으로 못 센다.
-    probes: dict[str, str] = {}
-    for item in load_buffer_lexicon().replacements:
-        probes.setdefault(item.source, item.source)
-        if item.stem:
-            probes.setdefault(item.stem, item.source)
+    #: 🔴 **게이트와 같은 목록을 본다** — 생성이 `buffer_lexicon.replacement_probes()` 한 곳이라
+    #: 두 층이 갈릴 수 없다(99 #79 로 게이트 축이 생기면서 이 공유가 필수가 됐다).
     seen: dict[str, None] = {}
-    for matched in find_forbidden(text, tuple(probes)):
-        seen.setdefault(probes[matched], None)
+    for matched in find_forbidden(text, replacement_probes()):
+        seen.setdefault(replacement_source_of(matched), None)
     hits = tuple(seen)
     if hits:
         logger.warning(

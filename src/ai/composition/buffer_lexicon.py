@@ -126,6 +126,47 @@ def _contains(text: str, stem: str, conjugating: frozenset[str]) -> bool:
     return any(v in text for v in _conjugated_variants(stem))
 
 
+def replacement_probes() -> tuple[str, ...]:
+    """B군을 **본문에서 찾을 때 쓰는 문자열 전량** — `source` ∪ `stem`.
+
+    🔴 **관측(`observe_gated_draft`)과 게이트가 같은 목록을 봐야 한다.** 두 층이 다른
+    목록을 보면 *"관측엔 안 잡히는데 게이트에 걸린다"* 가 나고, 그건 강사가 **원인을 볼
+    수 없는** 차단이다. ⇒ 목록 생성을 **한 곳**에 둔다(99 #02 · #108 이 밟은 자리).
+
+    🔴 **`stem or source` 가 아니라 합집합이다** — 좁힌 어간이 원본을 안 품는 경우가 있다
+    (`심각한` ⊄ `심각합니다`). `or` 로 갈면 종결형 자체를 놓친다(99 #84).
+
+    ⚠ 돌려주는 것은 **매칭용 문자열**이고 사람이 읽는 이름이 아니다 — 적중을 보고할 때는
+    `replacement_source_of()` 로 `source` 에 정규화한다.
+    """
+    probes: list[str] = []
+    for item in load_buffer_lexicon().replacements:
+        probes.append(item.source)
+        if item.stem:
+            probes.append(item.stem)
+    return tuple(probes)
+
+
+def replacement_source_of(probe: str) -> str:
+    """매칭된 probe → 사람이 읽는 `source`. 못 찾으면 그대로 돌려준다.
+
+    ⚠ 적중 이름이 흔들리면 그 숫자를 읽는 쪽이 `심각합니다` 와 `심각한` 을 **다른 것으로
+    센다**(99 #84).
+    """
+    for item in load_buffer_lexicon().replacements:
+        if probe in (item.source, item.stem):
+            return item.source
+    return probe
+
+
+def replacement_target_of(source: str) -> str:
+    """`source` → 권장 대체 표현(`to`). 삭제 항목이면 빈 문자열."""
+    for item in load_buffer_lexicon().replacements:
+        if item.source == source:
+            return item.target
+    return ""
+
+
 def find_forbidden(
     text: str,
     forbidden: tuple[str, ...],
@@ -213,6 +254,9 @@ def conjugating_terms() -> frozenset[str]:
 
 
 __all__ = [
+    "replacement_probes",
+    "replacement_source_of",
+    "replacement_target_of",
     "EXPECTED_TERM_COUNT",
     "BufferLexicon",
     "BufferLexiconError",
