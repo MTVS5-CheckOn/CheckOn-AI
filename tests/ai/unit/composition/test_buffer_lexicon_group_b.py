@@ -216,3 +216,91 @@ def test_an_uncertain_body_is_logged_not_blocked(
     logged = "\n".join(record.getMessage() for record in caplog.records)
     assert "마스킹 불확실" in logged, "출력측 마스킹 관측이 안 남았다 (99 #28의 표본)"
     assert "가정에서도 같은 방향으로" not in logged, "본문이 로그에 실렸다"
+
+
+# ── 잔여 1 — 쌍을 못 실어도 `from`은 살린다 (99 #83) ────────────────
+
+
+def test_a_from_only_term_rides_the_avoid_list() -> None:
+    """🔴 **쌍을 통째로 버리지 않는다** — `to`만 걸리는 항은 회피 목록으로 살린다.
+
+    ⚠ **조립된 프롬프트를 본다** — 함수를 직접 부르면 배선을 지워도 green이다
+    (PR-α의 고의 파괴 ②가 그 병이었다).
+    """
+    prompt = assemble_prompt(_context())
+
+    assert "쓰지 마세요" in prompt, "회피 목록 줄이 없다 — 조립 배선이 끊겼다"
+    assert "실패했습니다" in prompt, "`to`만 걸리는 항이 프롬프트에서 통째로 빠졌다"
+    assert "안 했습니다" in prompt
+
+
+def test_the_two_lists_are_separate_lines() -> None:
+    """🔴 치환 목록과 회피 목록을 **한 줄에 섞지 않는다.**
+
+    섞으면 화살표 없는 항을 LLM이 **치환 대상**으로 읽는다.
+    """
+    line = _buffer_replacements(1)
+    replace_line = next(ln for ln in line.split("\n") if "바꿔 쓰세요" in ln)
+    avoid_line = next(ln for ln in line.split("\n") if "쓰지 마세요" in ln)
+
+    assert "→" in replace_line
+    assert "→" not in avoid_line, f"회피 목록에 화살표가 섞였다: {avoid_line[:80]!r}"
+    assert "실패했습니다" not in replace_line, "쌍이 아닌 항이 치환 목록에 실렸다"
+
+
+def test_a_from_blocked_term_stays_out() -> None:
+    """⚠ `from`이 걸리는 항은 **여전히 못 싣는다** — 그 사실을 고정한다.
+
+    🔴 **「안 된다」를 검사로 박아 두면 나중에 휴리스틱이 나아졌을 때 red가 나서
+    자동 복귀가 눈에 보인다**(#04 규율 — 경계를 말했으면 그 자리에 red를 남긴다).
+
+    ⚠ **`다른 학생에 비해`도 여기 있다** — 8/19 지시서는 걸린 조각이 `지난달`(to)이라
+    봤으나 실측은 **`from`이 확정 검출**(`이름:⟪이름1⟫`)이다. ⇒ 그 항은 A군에도·
+    프롬프트에도·게이트에도 없다. **불변식 7 축에 남은 구멍이다**(99 #79·#83).
+    """
+    prompt = assemble_prompt(_context())
+
+    assert "이해력이 부족" not in prompt
+    assert "다른 학생에 비해" not in prompt, (
+        "🔴 `from`이 걸리는 항이 실렸다 — 휴리스틱이 나아졌다면 이 단정과 99 #83을 같이 고쳐라"
+    )
+
+
+# ── 잔여 2 — 계수는 「하한」이다 (99 #80) ──────────────────────────
+
+
+def test_the_hit_count_is_a_lower_bound() -> None:
+    """🔴 **종결형 등재 항의 다른 활용형은 안 잡힌다 — 계수가 하한임을 검사로 고정한다.**
+
+    ⚠ **원인은 「종성 결합 미적용」이 아니다** — `find_forbidden`은 부분 문자열로 보므로
+    **어간으로 등재된 항은 활용형도 잡는다**(아래 대조군). 진짜 원인은 B군 다수가
+    `~습니다` **종결형**으로 등재돼 다른 활용형은 **표면이 달라** 안 걸리는 것이다.
+
+    🔴 **이 숫자가 다음 회차 게이트 판정의 유일한 재료다**(99 #79) — 하한인 줄 모르고
+    읽으면 *"빈도가 낮으니 안전하다"* 로 **틀린 방향**으로 기운다.
+    ⚠ B군을 어간으로 재등재하면 이 검사가 red가 나서 **판정 재료가 바뀐 것을 알게 된다**
+    (#04 규율 — 경계를 말했으면 그 자리에 red를 남긴다 · 99 #84).
+    """
+    #: 🔴 미검출 — 등재가 종결형(`심각합니다`·`느립니다`·`약점입니다`)이다.
+    for body, entry in (
+        ("이번 주는 심각한 상황입니다.", "심각합니다"),
+        ("문제를 느려서 오래 붙잡고 있습니다.", "느립니다"),
+        ("추론이 약점이 되고 있습니다.", "약점입니다"),
+    ):
+        hits = observe_gated_draft(
+            body, origin=ORIGIN_DRAFT, tenant_id=_TENANT, execution_id=_RUN
+        )
+        assert entry not in hits, (
+            f"{entry!r}의 활용형이 잡힌다 — B군을 어간으로 재등재했다는 뜻이다. "
+            "계수가 더는 하한이 아니므로 99 #84와 이 검사를 같이 고쳐라"
+        )
+
+    #: ⚠ **대조군 — 어간으로 등재된 항은 활용형도 잡힌다.** 이게 없으면 위 단정이
+    #: *"관측이 아무것도 못 잡는다"* 와 구분되지 않는다.
+    caught = observe_gated_draft(
+        "과제를 게을리했습니다.",
+        origin=ORIGIN_DRAFT,
+        tenant_id=_TENANT,
+        execution_id=_RUN,
+    )
+    assert "게을리" in caught, "어간 등재 항의 활용형도 안 잡힌다 — 관측이 아예 눈이 멀었다"
