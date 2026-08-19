@@ -32,6 +32,7 @@ from ai.api.routers.counsel import (
 )
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.labels import snapshot_from_labels
+from ai.composition.counsel.settings import get_counsel_settings
 from ai.composition.counsel.stores import InMemoryContextStore
 from ai.contracts.composition import DraftContext, EvidenceFact
 from ai.db.store_factory import reset_shared_agent_runtime
@@ -106,7 +107,17 @@ def client() -> Iterator[TestClient]:
 
 
 def _leave_stale_job(store: InMemoryJobStore) -> None:
-    """다른 학생의 잡을 큐에 **먼저** 넣어 둔다(FIFO라 이게 먼저 lease된다)."""
+    """다른 학생의 잡을 큐에 **먼저** 넣어 둔다(FIFO라 이게 먼저 lease된다).
+
+    🔴 **`counsel_inline_drain_max`(K)만큼 넣는다** (99 #21 · 2026-08-19). POST가 자기 잡이
+    끝날 때까지 **유한 반복**하게 바뀌어서, 잔여가 **1개면 두 번째 회전에 내 잡이 돌아간다.**
+    K개를 넣어야 회전이 잔여로 다 소진되고 **내 잡이 `queued`로 남는다** — 이 검사가 재려는
+    상태다.
+
+    ⚠ **리터럴로 K를 박지 않는다** — 설정에서 읽으므로 K가 바뀌어도 이 검사가 따라간다.
+    ⚠ 이 검사의 축은 *"안 돌아간 잡을 장애로 보고하지 않는다"* 이고 **그건 그대로다** —
+    바뀐 것은 그 상태를 만드는 방법뿐이다.
+    """
     contexts = InMemoryContextStore()
     set_counsel_stores(context_store=contexts)
     supervisor = Supervisor(
@@ -115,15 +126,17 @@ def _leave_stale_job(store: InMemoryJobStore) -> None:
         priority_aging_interval=timedelta(seconds=60),
         clock=system_utc_now,
     )
-    asyncio.get_event_loop_policy().new_event_loop().run_until_complete(
-        CounselPackEnqueuer(
-            supervisor=supervisor, context_store=contexts
-        ).enqueue(
-            tenant_id="t1",
-            class_ref="cl_other",
-            contexts={"st_other": _other_context()},
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    for index in range(get_counsel_settings().counsel_inline_drain_max):
+        loop.run_until_complete(
+            CounselPackEnqueuer(
+                supervisor=supervisor, context_store=contexts
+            ).enqueue(
+                tenant_id="t1",
+                class_ref="cl_other",
+                contexts={f"st_other{index}": _other_context()},
+            )
         )
-    )
 
 
 def test_request_does_not_receive_another_students_draft(
