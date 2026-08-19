@@ -770,6 +770,18 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
   - 🔴 **FE가 각주(「이 문장의 근거」)로 렌더하면 화면이 거짓이 된다.** `cite_id`는 **순서 키**일 뿐이다(7/31 handoff ① 통보분과 같은 내용이며, 그때 통보한 것은 *앵커 미지원*이고 여기서 명시하는 것은 *목록이 본문과 무관하다*는 것이다).
   - **왜 이 형태인가:** 본문 인라인 앵커(`#Ln`)는 `#`이 counsel 게이트의 금지 기호라 **v1.1**이다(99 ㊳). 실측(8/7 · 4차 원문): 실 LLM 초안 본문 **5건 중 0건**에 `record_id`·`le_` 흔적이 남았다 ⇒ **본문에서 뽑아 거르는 것이 불가능**하다.
   - ⚠ **refine 반영 턴도 같은 목록을 재사용한다.** 강사가 *"이 부분 빼줘"* 로 그 근거를 지워도 목록은 그대로다.
+- 🔴 **`context.facts` 에 「기준선(baseline)」 행을 싣지 마세요** `[확정 · 8/19]`
+  - **위험신호 evidence 를 상담 재료로 쓰는 것 자체는 막지 않습니다.** 다만 그 목록에서
+    **`role=baseline` 인 행은 빼고** 보내세요 — 「이번 주 정답률 42%」는 보내고,
+    「직전 8주 평균 71%」는 **빼는** 것입니다.
+  - **왜:** counsel 게이트의 허용 숫자 집합(`allowed_numbers`)이 `context.facts` **전량**에서
+    나옵니다. 기준선 숫자가 그 집합에 들어가면 **LLM 이 그 숫자를 아무 자리에나 써도 게이트를
+    통과**합니다 — 방어가 그만큼 넓어집니다. 브리핑은 이미 `role=TRIGGER` 만 프롬프트에
+    싣는 필터가 있는데 **counsel 에는 그 필터가 없습니다.**
+  - ⚠ **AI 는 이 값을 받지 않습니다** — `ContextFact` 에 `role` 축을 열지 않았습니다
+    (`extra="forbid"` 라 보내면 400 입니다). **거르는 책임은 BE 에 있습니다.**
+  - 근거·규칙별 baseline 유무는 `part_a/14_evidence_fields.md` §3-3·§3-4′ 가 정본입니다
+    — 여기 복제하지 않습니다.
 - **`citations[]`는 ≥1이 타입 계약**이다. 인용 가능한 근거(`record_id`가 있는 fact)가 0건이면 **LLM 호출 전에** `rejected_insufficient`로 끊는다 — 게이트를 통과한 초안을 만들어 놓고 근거가 없어 버리는 낭비를 만들지 않는다.
 - **`refine` 차단도 200**이다(`applied:false` + `blocked_reason`). `GateRejected`를 5xx로 올리면 리뷰 반려(불변식 4 · error_codes §4).
 - 🔴 **차단 문구는 AI가 주지 않는다(8/5).** `blocked_reason` 8종에 대한 표시 문구는 `part_a/06_refine_policy.md` §4 표가 원본이며 **BE가 매핑**한다 — 초안 `draft_status`·classify 폴백과 같은 규약이다(`error_codes` §2.1 "백엔드 표시 문구" 열 · §2.7 규칙 3). ⚠ **종전 응답의 `message` 필드는 제거됐다.**
