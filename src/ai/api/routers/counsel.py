@@ -31,7 +31,7 @@ import logging
 import uuid
 from collections import OrderedDict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Any, Final
 
@@ -381,6 +381,62 @@ async def _remember_draft(key: tuple[str, str], state: _DraftState) -> None:
     """`_remember_view`와 **같은 순서** — 영속이 먼저다."""
     await _draft_view_store.save_draft(key, snapshot=_draft_to_snapshot(state))
     _drafts.put(key, state)
+
+
+async def _persist_refined_text(
+    key: tuple[str, str], state: _DraftState, text: str
+) -> None:
+    """refine 반영분을 **두 저장소 모두에** 남긴다 (99 #74).
+
+    🔴 **반영본이 사는 곳이 둘이다** — `_drafts`(다음 refine 턴의 입력)와
+    `_view_cache`(GET이 돌려줄 뷰). **앞만 고치면 refine 200 직후 GET이 이전 본문을 준다.**
+    저장소를 세지 않으면 절반을 고치고 닫았다고 읽는다(결정 로그 96 부류).
+
+    🔴 **종전에는 `state.text = ...` in-place 변이 한 줄이었다.** `_DraftState`가 frozen이
+    아니라 그게 통했고, `_remember_draft`를 안 지나 **영속이 0**이었다 — pg 백엔드에서
+    축출·재시작이면 누적이 통째로 최초 초안으로 되돌아간다.
+    ⚠ **규율은 함수에 살고 경로는 호출에 산다** — `_remember_draft`/`_remember_view`가
+    「영속 먼저」를 docstring으로 못박아 뒀는데 **refine 성공 경로만 그 함수를 안 지났다.**
+
+    ━━ 순서: 초안 → 뷰 ━━
+
+    뷰가 먼저 서고 초안이 실패하면 **「GET은 새 본문, refine은 옛 본문」**이 된다 —
+    다음 턴의 입력이 옛 본문이라 강사가 같은 지시를 두 번 하게 된다.
+
+    ⚠ 뷰가 없거나 `result`가 없으면 **뷰 갱신만 건너뛴다.** 조용히 지나가면 「안 일어난
+    일」과 「못 찾은 일」이 코드에서 안 갈린다 — 그래서 로그를 남긴다.
+    """
+    await _remember_draft(key, replace(state, text=text))
+
+    cached = await _cached_view_of(key)
+    result = cached.view.result if cached is not None else None
+    if cached is None or result is None:
+        logger.info(
+            "refine 반영분 뷰 갱신 건너뜀 — %s tenant=%s job=%s",
+            "뷰 없음" if cached is None else "뷰에 result 없음",
+            key[0],
+            key[1],
+        )
+        return
+
+    #: 🔴 `model_copy(update=...)`를 쓰지 않는다 — pydantic v2에서 그 경로는 validator를
+    #: 다시 안 돌린다. `_generated_must_be_grounded`가 안 돌면 **이 PR이 고치는 종류의
+    #: 결함(계약 위반이 조용히 나간다)을 새로 하나 만드는 것**이다. 생성자로 재구성한다.
+    refreshed_result = CounselDraftResult(
+        draft_status=result.draft_status,
+        text=text,
+        citations=result.citations,
+        labels_applied=result.labels_applied,
+        label_suggestions=result.label_suggestions,
+        status_reason=result.status_reason,
+        generated_at=result.generated_at,
+    )
+    refreshed_view = CounselDraftJobView(
+        job_id=cached.view.job_id,
+        status=cached.view.status,
+        result=refreshed_result,
+    )
+    await _remember_view(key, replace(cached, view=refreshed_view))
 
 
 def _view_to_snapshot(cached: _CachedView) -> dict[str, Any]:
@@ -893,9 +949,32 @@ async def _wire_result(
                 snapshot_hash=job.payload_hash,
             ),
         )
+    if record is None:
+        #: 🔴 **잡은 정상 성공인데 본문이 없다 — 500이 아니라 도메인 상태다** (99 #75).
+        #: 종전에는 `text=record.content if record else None`으로 «없을 수 있다»를 안다고
+        #: 말해 놓고 바로 윗줄이 `draft_status=GENERATED`를 고정해서,
+        #: `_generated_must_be_grounded`가 **반드시** ValueError를 던졌다 — 잡힌 정상 성공이
+        #: GET에서 500이 된다(불변식 4의 반대 방향 위반). **옆줄 둘이 서로를 몰랐다.**
+        #: ⚠ 바로 아래 `_restore_result`는 bundle·context 부재를 이미 막아 뒀다 —
+        #:   방어의 비대칭이지 새 설계가 아니다.
+        #: ⚠ `wire_status_for`를 경유하지 않는다 — 이 값은 내부 `DraftStatus`에서 오는 게
+        #:   아니라 **라우터가 만드는 것**이다(`job_no_result` 선례와 같은 자리).
+        logger.warning(
+            "초안 본문 부재 — draft_status=llm_failed/draft_body_missing "
+            "tenant=%s job=%s draft_id=%s",
+            tenant_id,
+            job_id,
+            student.draft_id,
+        )
+        return CounselDraftResult(
+            draft_status=WireDraftStatus.LLM_FAILED,
+            status_reason="draft_body_missing",
+            labels_applied=applied,
+            generated_at=_clock(),
+        )
     return CounselDraftResult(
         draft_status=WireDraftStatus.GENERATED,
-        text=record.content if record else None,
+        text=record.content,
         citations=citations,
         labels_applied=applied,
         generated_at=_clock(),
@@ -1200,7 +1279,9 @@ async def post_counsel_refine(job_id: str, request: Request) -> dict[str, Any]:
             refine_context, execution_id, swallow_errors=failed
         )
     if outcome.applied and outcome.text:
-        state.text = outcome.text  # 반영분만 승격 — 차단 턴은 직전 버전 유지(계약 §6)
+        #: 반영분만 승격 — 차단 턴은 직전 버전 유지(계약 §6)이라 **저장 자체를 안 한다**
+        #: (본문이 안 바뀐 턴에 쓰면 불필요한 쓰기 + `updated_at`이 흔들린다).
+        await _persist_refined_text((tenant_id, job_id), state, outcome.text)
         response = RefineResponse(
             applied=True, text=outcome.text, citations=state.citations
         )
