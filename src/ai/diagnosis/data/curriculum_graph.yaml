@@ -1,11 +1,22 @@
 # 수능 대비 고등 국어 5영역 커리큘럼 그래프 v1 초안.
 # 교육 내용·선수 관계·가중치는 전부 전문가 검수 대기이며 확정 교과 정본이 아니다.
+#
+# 🔴 **(2026-08-19) 노드 57개 전부에 2022 개정 성취기준 코드 근거를 붙였다.** 종전에는
+# 언어 33노드에 `source_refs` 가 **아예 없었고**, 4영역 24노드는 `area_specs.yaml`(우리가
+# 쓴 출제 규격)만 가리켰다 — **우리 문서가 우리 문서를 근거로 대는 순환**이었다. 이제
+# 모든 노드가 정본(교육부 고시 제2022-33호 [별책 5])의 성취기준 코드를 인용하고,
+# `curriculum_standards.yaml` 이 그 코드의 실재를 CI에서 대조한다.
+#
+# ⚠ **근거가 붙었다고 검수가 끝난 것이 아니다.** 「노드 ↔ 성취기준」 대응은 교과 판단이고
+# 여기 적힌 것은 **초안 매핑**이다. `review_status` 는 그대로 `expert_review_pending` 이다.
+# 붙기 전과 달라진 것은 **검수자가 무엇을 검수해야 하는지가 명시됐다**는 점이다.
+# ⚠ **성취기준 문면은 옮기지 않는다** — 코드만 인용한다(`curriculum_standards.yaml` 머리말).
 meta:
   graph_version: curriculum-five-area-v1
   taxonomy_version: v1
-  updated: 2026-08-11
+  updated: 2026-08-19
   review_status: expert_review_pending
-  scope_note: 기존 언어 33노드에 4영역 최소 분류축만 추가한 v1 초안 — 전문가 검수 대기
+  scope_note: 언어 33 + 4영역 24노드 전부에 2022 개정 성취기준 코드 근거를 붙인 v1 초안 — 매핑은 전문가 검수 대기
 nodes:
   - id: language.grammar.phoneme.system
     label: 음운 체계
@@ -13,192 +24,338 @@ nodes:
     type_affinity: [concept, fact]
     level: 1
     desc: 수능 문법의 자음·모음·음운 개념 기초 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.syllable.structure
     label: 음절 구조
     area_tag: language
     type_affinity: [concept, fact]
     level: 1
     desc: 음절의 구성과 음운 배열 제약 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.morpheme.concept
     label: 형태소
     area_tag: language
     type_affinity: [concept, fact]
     level: 1
     desc: 형태소의 개념과 분류 기준 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-04
+
   - id: language.grammar.word.formation
     label: 단어 형성
     area_tag: language
     type_affinity: [concept, infer]
     level: 2
     desc: 파생어·합성어 형성 원리 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-04
+
   - id: language.grammar.parts_of_speech
     label: 품사 체계
     area_tag: language
     type_affinity: [concept, fact]
     level: 1
     desc: 형태·기능·의미에 따른 품사 분류 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.noun
     label: 명사
     area_tag: language
     type_affinity: [concept, fact]
     level: 2
     desc: 명사의 기능과 하위 유형 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.pronoun
     label: 대명사
     area_tag: language
     type_affinity: [concept, fact]
     level: 2
     desc: 대명사의 지시·대용 기능 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.numeral
     label: 수사
     area_tag: language
     type_affinity: [concept, fact]
     level: 2
     desc: 수사의 수량·순서 표현 기능 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.predicate
     label: 동사와 형용사
     area_tag: language
     type_affinity: [concept, infer]
     level: 2
     desc: 용언의 활용과 동사·형용사 판별 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.modifier
     label: 관형사
     area_tag: language
     type_affinity: [concept, fact]
     level: 2
     desc: 관형사의 형태와 문장 기능 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.adverb
     label: 부사
     area_tag: language
     type_affinity: [concept, fact]
     level: 2
     desc: 부사의 수식 범위와 기능 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.interjection
     label: 감탄사
     area_tag: language
     type_affinity: [concept, fact]
     level: 2
     desc: 감탄사의 독립성과 담화 기능 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.particle
     label: 조사
     area_tag: language
     type_affinity: [concept, infer]
     level: 2
     desc: 격조사·보조사·접속조사의 기능 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+      - curriculum-2022:12화언01-04
+
   - id: language.grammar.ending
     label: 어미
     area_tag: language
     type_affinity: [concept, infer]
     level: 2
     desc: 선어말·어말 어미의 기능과 활용 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+      - curriculum-2022:12화언01-04
+
   - id: language.grammar.phonological_change
     label: 음운 변동
     area_tag: language
     type_affinity: [concept, infer]
     level: 2
     desc: 교체·탈락·첨가·축약의 상위 개념 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.alternation
     label: 음운 교체
     area_tag: language
     type_affinity: [concept, infer]
     level: 3
     desc: 환경에 따른 음운 교체 판별 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.deletion
     label: 음운 탈락
     area_tag: language
     type_affinity: [concept, infer]
     level: 3
     desc: 음운 탈락 유형과 적용 환경 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.addition
     label: 음운 첨가
     area_tag: language
     type_affinity: [concept, infer]
     level: 3
     desc: 음운 첨가 유형과 적용 환경 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.contraction
     label: 음운 축약
     area_tag: language
     type_affinity: [concept, infer]
     level: 3
     desc: 음운 축약 유형과 적용 환경 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.fortition
     label: 된소리되기
     area_tag: language
     type_affinity: [concept, infer]
     level: 3
     desc: 된소리되기 조건 판별 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.palatalization
     label: 구개음화
     area_tag: language
     type_affinity: [concept, infer]
     level: 3
     desc: 구개음화 환경과 표면형 분석 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.nasalization
     label: 비음화
     area_tag: language
     type_affinity: [concept, infer]
     level: 3
     desc: 비음화 환경과 연쇄 변동 분석 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.liquidization
     label: 유음화
     area_tag: language
     type_affinity: [concept, infer]
     level: 3
     desc: 유음화 환경과 예외 판별 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-02
+      - curriculum-2022:12화언01-02
+
   - id: language.grammar.sentence.constituent
     label: 문장 성분
     area_tag: language
     type_affinity: [concept, infer]
     level: 2
     desc: 주성분·부속성분·독립성분 판별 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.sentence.structure
     label: 문장 구조
     area_tag: language
     type_affinity: [concept, infer]
     level: 3
     desc: 홑문장과 겹문장의 구조 분석 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.sentence.embedded
     label: 안은문장
     area_tag: language
     type_affinity: [concept, infer, critic]
     level: 4
     desc: 명사절·관형절·부사절·서술절·인용절 분석 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.sentence.connected
     label: 이어진문장
     area_tag: language
     type_affinity: [concept, infer, critic]
     level: 4
     desc: 대등·종속 연결 관계 분석 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:12화언01-03
+
   - id: language.grammar.honorific
     label: 높임 표현
     area_tag: language
     type_affinity: [concept, infer, critic]
     level: 3
     desc: 주체·객체·상대 높임의 실현 분석 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-03
+      - curriculum-2022:12화언01-05
+
   - id: language.grammar.tense_aspect
     label: 시간 표현
     area_tag: language
     type_affinity: [concept, infer, critic]
     level: 3
     desc: 시제·동작상·시간 부사어의 관계 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-03
+      - curriculum-2022:12화언01-05
+
   - id: language.grammar.quotation
     label: 인용 표현
     area_tag: language
     type_affinity: [concept, infer, critic]
     level: 3
     desc: 직접·간접 인용 전환과 문장 성분 분석 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-03
+      - curriculum-2022:12화언01-05
+
   - id: language.grammar.negation
     label: 부정 표현
     area_tag: language
     type_affinity: [concept, infer, critic]
     level: 3
     desc: 짧은·긴 부정과 의미 중의성 분석 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-03
+      - curriculum-2022:12화언01-05
+
   - id: language.grammar.causative_passive
     label: 사동과 피동
     area_tag: language
     type_affinity: [concept, infer, critic]
     level: 3
     desc: 사동·피동 표현의 형식과 의미 분석 초안 — 전문가 검수 대기
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-03
+      - curriculum-2022:12화언01-05
+
   - id: language.grammar.speech_level
     label: 종결 표현
     area_tag: language
@@ -208,54 +365,79 @@ nodes:
 
   # 아래 24노드는 출처 단계 ①(area_specs)의 측정 대상을 행동영역과 교차한 최소 초안이다.
   # 영역 내부 선수 관계는 area_specs만으로 확정할 수 없어 신규 간선을 두지 않았다.
+    source_stage: official_public
+    source_refs:
+      - curriculum-2022:10공국1-04-03
+      - curriculum-2022:12화언01-05
+
   - id: reading.information.explicit
     label: 명시 정보 확인
     area_tag: reading
     type_affinity: [fact]
     level: 1
     desc: 지문에 명시된 정보의 일치 여부를 확인하는 독서 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures
+      - curriculum-2022:12독작01-03
+
   - id: reading.information.relation
     label: 정보 관계 파악
     area_tag: reading
     type_affinity: [fact, infer]
     level: 1
     desc: 문장·단락 사이의 인과·조건·대조 관계를 파악하는 독서 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures
+      - curriculum-2022:10공국2-02-02
+      - curriculum-2022:12독작01-03
+
   - id: reading.reasoning.inference
     label: 내용 추론
     area_tag: reading
     type_affinity: [infer]
     level: 2
     desc: 지문 정보를 결합해 생략된 전제와 결론을 추론하는 독서 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures
+      - curriculum-2022:12독작01-03
+
   - id: reading.reasoning.application
     label: 보기 적용
     area_tag: reading
     type_affinity: [infer, critic]
     level: 2
     desc: 지문의 원리와 관점을 보기 상황에 적용해 판단하는 독서 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures
+      - curriculum-2022:10공국1-02-02
+      - curriculum-2022:12독작01-13
+
   - id: reading.evaluation.argument
     label: 논지 비판
     area_tag: reading
     type_affinity: [critic]
     level: 2
     desc: 주장과 근거의 타당성·범위를 비판적으로 판단하는 독서 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures
+      - curriculum-2022:10공국1-02-01
+      - curriculum-2022:12독작01-04
+
   - id: reading.structure.organization
     label: 글의 구조 파악
     area_tag: reading
     type_affinity: [concept, infer]
     level: 1
     desc: 글의 전개 방식과 단락 기능을 파악하는 독서 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.reading.measures
+      - curriculum-2022:12독작01-05
 
   - id: literature.expression.technique
     label: 표현 방식
@@ -263,60 +445,77 @@ nodes:
     type_affinity: [fact, concept]
     level: 1
     desc: 시·소설 원문의 표현상 특징을 근거로 판별하는 문학 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
+    source_stage: official_public
     source_refs:
       - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
       - src/ai/problem_generation/data/literature_pool/index.json
+      - curriculum-2022:10공국1-05-02
+      - curriculum-2022:12문학01-06
+
   - id: literature.structure.composition
     label: 작품 구성
     area_tag: literature
     type_affinity: [fact, infer]
     level: 1
     desc: 시상 전개와 소설 장면 구성의 기능을 파악하는 문학 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
+    source_stage: official_public
     source_refs:
       - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
       - src/ai/problem_generation/data/literature_pool/index.json
+      - curriculum-2022:10공국1-05-03
+      - curriculum-2022:12문학01-06
+
   - id: literature.speaker.attitude
     label: 화자의 태도
     area_tag: literature
     type_affinity: [infer, critic]
     level: 2
     desc: 고전시가·현대시 원문에서 화자의 정서와 태도를 추론하는 문학 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
+    source_stage: official_public
     source_refs:
       - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
       - src/ai/problem_generation/data/literature_pool/index.json
+      - curriculum-2022:10공국1-05-03
+      - curriculum-2022:12문학01-07
+
   - id: literature.narrator.perspective
     label: 서술자의 관점
     area_tag: literature
     type_affinity: [concept, infer]
     level: 2
-    desc: 현대소설 원문에서 서술자와 시점의 효과를 파악하는 문학 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
+    desc: 고전·현대 소설 원문에서 서술자와 시점의 효과를 파악하는 문학 축 초안 — 전문가 검수 대기
+    source_stage: official_public
     source_refs:
       - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
       - src/ai/problem_generation/data/literature_pool/index.json
+      - curriculum-2022:10공국1-05-02
+      - curriculum-2022:10공국1-05-03
+
   - id: literature.emotion.theme
     label: 정서와 주제
     area_tag: literature
     type_affinity: [infer, critic]
     level: 2
-    desc: 시·소설 원문의 정서 흐름과 중심 의미를 근거로 감상하는 문학 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
+    desc: 시·소설·수필 원문의 정서 흐름과 중심 의미를 근거로 감상하는 문학 축 초안 — 전문가 검수 대기
+    source_stage: official_public
     source_refs:
       - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
       - src/ai/problem_generation/data/literature_pool/index.json
+      - curriculum-2022:10공국1-05-01
+      - curriculum-2022:12문학01-07
+
   - id: literature.context.external_reference
     label: 외적 준거 감상
     area_tag: literature
     type_affinity: [infer, critic]
     level: 2
     desc: 보기에 제시된 외적 준거를 시·소설 원문에 적용하는 문학 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
+    source_stage: official_public
     source_refs:
       - src/ai/problem_generation/data/area_specs.yaml#areas.literature.measures
       - src/ai/problem_generation/data/literature_pool/index.json
+      - curriculum-2022:10공국2-05-01
+      - curriculum-2022:12문학01-04
 
   - id: speech_writing.speech.strategy
     label: 말하기 전략
@@ -324,48 +523,71 @@ nodes:
     type_affinity: [fact, concept]
     level: 1
     desc: 발표·대화에 나타난 말하기 전략을 판별하는 화법 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures
+      - curriculum-2022:12화언01-09
+      - curriculum-2022:12화언01-10
+
   - id: speech_writing.speech.audience
     label: 청중 고려
     area_tag: speech_writing
     type_affinity: [infer, critic]
     level: 2
     desc: 청중의 요구와 반응을 고려한 말하기 방식을 판단하는 화법 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures
+      - curriculum-2022:10공국2-01-01
+      - curriculum-2022:12화언01-09
+
   - id: speech_writing.speech.interaction
     label: 담화 상호작용
     area_tag: speech_writing
     type_affinity: [fact, infer]
     level: 2
     desc: 담화 참여자의 역할과 상호작용 전략을 파악하는 화법 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures
+      - curriculum-2022:10공국1-01-01
+      - curriculum-2022:12화언01-11
+
   - id: speech_writing.writing.plan
     label: 글쓰기 계획
     area_tag: speech_writing
     type_affinity: [concept, infer]
     level: 1
     desc: 목적·독자·매체를 고려한 글쓰기 계획을 판단하는 작문 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures
+      - curriculum-2022:10공국1-03-01
+      - curriculum-2022:10공국2-03-01
+
   - id: speech_writing.writing.material
     label: 자료 활용
     area_tag: speech_writing
     type_affinity: [infer, critic]
     level: 2
     desc: 수집 자료의 성격과 글쓰기 목적에 맞는 활용 방안을 판단하는 작문 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures
+      - curriculum-2022:10공국2-03-03
+      - curriculum-2022:12독작01-10
+
   - id: speech_writing.writing.revision
     label: 고쳐쓰기
     area_tag: speech_writing
     type_affinity: [concept, critic]
     level: 2
     desc: 초고의 구성·표현을 목적에 맞게 고쳐 쓰는 방안을 판단하는 작문 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.speech_writing.measures
+      - curriculum-2022:10공국2-03-01
+      - curriculum-2022:12독작01-06
 
   - id: media.reception.information
     label: 매체 정보 파악
@@ -373,48 +595,72 @@ nodes:
     type_affinity: [fact]
     level: 1
     desc: 매체 자료에 제시된 정보와 표현 수단을 확인하는 매체 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.media.measures
+      - curriculum-2022:10공국1-06-01
+      - curriculum-2022:12매의01-04
+
   - id: media.reception.intent
     label: 생산 의도 추론
     area_tag: media
     type_affinity: [infer]
     level: 2
     desc: 매체 생산자의 구성·표현 선택에서 의도를 추론하는 매체 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.media.measures
+      - curriculum-2022:10공국1-06-01
+      - curriculum-2022:12매의01-03
+
   - id: media.reception.credibility
     label: 정보 신뢰성 판단
     area_tag: media
     type_affinity: [critic]
     level: 2
     desc: 매체 정보의 출처·근거·편향을 비판적으로 판단하는 매체 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.media.measures
+      - curriculum-2022:10공국2-06-01
+      - curriculum-2022:12매의01-04
+
   - id: media.production.structure
     label: 매체 자료 구성
     area_tag: media
     type_affinity: [concept, infer]
     level: 1
     desc: 매체 목적에 맞는 정보 배열과 화면 구성을 판단하는 매체 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.media.measures
+      - curriculum-2022:10공국1-06-02
+      - curriculum-2022:12매의01-06
+
   - id: media.production.expression
     label: 표현 수단 선택
     area_tag: media
     type_affinity: [concept, critic]
     level: 2
     desc: 댓글·하이퍼링크·실시간 채팅 등 매체 표현 수단의 효과를 판단하는 매체 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.media.measures
+      - curriculum-2022:10공국1-06-02
+      - curriculum-2022:12매의01-06
+
   - id: media.production.audience
     label: 수용자 고려
     area_tag: media
     type_affinity: [infer, critic]
     level: 2
     desc: 예상 수용자의 반응과 이용 맥락에 맞는 생산 방식을 판단하는 매체 축 초안 — 전문가 검수 대기
-    source_stage: area_specs
-    source_refs: [src/ai/problem_generation/data/area_specs.yaml#areas.media.measures]
+    source_stage: official_public
+    source_refs:
+      - src/ai/problem_generation/data/area_specs.yaml#areas.media.measures
+      - curriculum-2022:10공국2-06-01
+      - curriculum-2022:12매의01-06
+
 edges:
   - from: language.grammar.phoneme.system
     to: language.grammar.syllable.structure

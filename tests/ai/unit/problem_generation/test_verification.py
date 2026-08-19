@@ -29,8 +29,9 @@ from ai.problem_generation.domain.difficulty import (
     estimate_t1_difficulty,
     needs_difficulty_regeneration,
 )
+from ai.problem_generation.domain.external_corpus import ExternalCorpusIndex
 from ai.problem_generation.domain.policy import ReservedTypeTagWeight
-from ai.problem_generation.domain.rules import RuleValidator
+from ai.problem_generation.domain.rules import RuleValidationResult, RuleValidator
 from ai.problem_generation.infrastructure.config import (
     load_banned_topics,
     load_verify_config,
@@ -282,3 +283,96 @@ def test_difficulty_estimation_refuses_a_reserved_type_tag_item() -> None:
 
     with pytest.raises(ReservedTypeTagWeight):
         estimate_t1_difficulty(item=item, solve=_solve(), config=config)
+
+
+def _pack_with_passage(text: str) -> ContextPack:
+    pack = _context_pack()
+    return pack.model_copy(
+        update={
+            "retrieval_trace": {
+                **pack.retrieval_trace,
+                "passage_draft": {"passage_text": text},
+            }
+        }
+    )
+
+
+_EXTERNAL_PASSAGE = (
+    "지레는 받침점과 힘점, 작용점의 위치 관계에 따라 세 가지로 나뉜다. 받침점이 "
+    "가운데 있으면 1종 지레이고, 작용점이 가운데 있으면 2종 지레이며, 힘점이 가운데 "
+    "있으면 3종 지레다. 힘점이 받침점에서 멀수록 작은 힘으로 큰 물체를 들 수 있다."
+)
+_OWN_PASSAGE = (
+    "조선 후기의 상업 발달은 장시의 확산과 함께 진행되었다. 보부상은 장시를 돌며 "
+    "물화를 옮겼고, 이 과정에서 지역 간 가격 차이가 줄어들었다. 화폐 유통이 늘면서 "
+    "거래의 규모도 함께 커졌다."
+)
+
+
+def _external_validator() -> RuleValidator:
+    config = load_verify_config()
+    return RuleValidator(
+        load_banned_topics(),
+        duplicate_similarity_max=config.dup_similarity_max,
+        external_corpus=ExternalCorpusIndex((("corpus:1", _EXTERNAL_PASSAGE),)),
+        external_similarity_max=config.external_similarity_max,
+    )
+
+
+def _validate(
+    validator: RuleValidator, context_pack: ContextPack
+) -> RuleValidationResult:
+    return validator.validate(
+        item=_item(),
+        request=_request(),
+        type_tag=TypeTag.CONCEPT,
+        skill_node_id="grammar.node-1",
+        context_pack=context_pack,
+    )
+
+
+def test_r8_blocks_a_generated_passage_that_reuses_external_material() -> None:
+    result = _validate(_external_validator(), _pack_with_passage(_EXTERNAL_PASSAGE))
+
+    assert not result.passed
+    assert "R-8:외부_자료_유사" in result.failed_checks
+    assert result.external_reference_checked
+
+
+def test_r8_passes_an_independently_written_passage() -> None:
+    result = _validate(_external_validator(), _pack_with_passage(_OWN_PASSAGE))
+
+    assert result.passed
+    assert result.external_reference_checked
+
+
+def test_r8_without_a_corpus_is_recorded_as_unchecked_not_as_a_pass() -> None:
+    #: 06 §1 — "코퍼스 없이 여는 것을 금지한다". 미검사와 검사 후 통과는 구분돼야 한다.
+    validator = RuleValidator(
+        load_banned_topics(),
+        duplicate_similarity_max=load_verify_config().dup_similarity_max,
+    )
+
+    result = _validate(validator, _pack_with_passage(_EXTERNAL_PASSAGE))
+
+    assert result.passed
+    assert not result.external_reference_checked
+
+
+def test_r8_ignores_the_t3_work_span_quote() -> None:
+    #: T3 발췌는 버전이 고정된 만료 원문을 일부러 그대로 인용한 것이다 — 교과서와
+    #: 겹치는 것이 정상이고, 대조 대상에 넣으면 정상 동작이 표절로 잡힌다.
+    pack = _context_pack()
+    with_excerpt = pack.model_copy(
+        update={
+            "retrieval_trace": {
+                **pack.retrieval_trace,
+                "work_excerpt": {"quote": _EXTERNAL_PASSAGE},
+            }
+        }
+    )
+
+    result = _validate(_external_validator(), with_excerpt)
+
+    assert result.passed
+    assert result.external_reference_checked

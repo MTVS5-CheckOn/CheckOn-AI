@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from ai.contracts.graphrag import ContextPack
 from ai.contracts.problem_generation import GeneratedItem, ProblemRequest
 from ai.contracts.taxonomy import TypeTag
+from ai.problem_generation.domain.external_corpus import ExternalCorpusIndex
 from ai.problem_generation.domain.policy import BannedTopicsConfig
 
 _NORMALIZE_PATTERN = re.compile(r"[\W_]+", flags=re.UNICODE)
@@ -25,6 +26,13 @@ class RuleValidationResult(BaseModel):
     failed_checks: tuple[str, ...] = ()
     banned_topic: bool = False
     source_unverified: bool = False
+    external_reference_checked: bool = False
+    """R-8 외부 대조를 실제로 수행했는가.
+
+    🔴 **통과 여부가 아니라 「검사했는가」다.** 코퍼스가 주입되지 않으면 R-8은
+    수행되지 않는데, 그 사실이 결과에 남지 않으면 **검사한 통과와 검사 못 한 통과가
+    구분되지 않는다** — 06 §1이 금지하는 「코퍼스 없이 여는 것」이 바로 그 형태다.
+    """
 
     @model_validator(mode="after")
     def validate_result(self) -> Self:
@@ -48,11 +56,17 @@ class RuleValidator:
         banned_topics: BannedTopicsConfig,
         *,
         duplicate_similarity_max: float,
+        external_corpus: ExternalCorpusIndex | None = None,
+        external_similarity_max: float = 1.0,
     ) -> None:
         if not 0.0 <= duplicate_similarity_max <= 1.0:
             raise ValueError("dup_similarity_max는 0과 1 사이여야 한다")
+        if not 0.0 <= external_similarity_max <= 1.0:
+            raise ValueError("external_similarity_max는 0과 1 사이여야 한다")
         self._banned_topics = banned_topics
         self._duplicate_similarity_max = duplicate_similarity_max
+        self._external_corpus = external_corpus
+        self._external_similarity_max = external_similarity_max
 
     @property
     def banned_topics_version(self) -> str:
@@ -131,12 +145,44 @@ class RuleValidator:
             # 외부 대조는 R-8로 예약한다(06 §1).
             failed.append("R-6:세트내_중복")
 
+        # R-8은 **생성 자료**만 본다. T3 발췌는 버전이 고정된 만료 원문을 일부러 그대로
+        # 인용한 것이라 외부 코퍼스와 겹치는 것이 정상이며, 여기 넣으면 정상 동작이
+        # 표절로 잡힌다.
+        external_checked = self._external_corpus is not None
+        if self._external_corpus is not None:
+            for text in _generated_material_texts(context_pack):
+                match = self._external_corpus.closest(text)
+                if match is not None and (
+                    match.containment > self._external_similarity_max
+                ):
+                    failed.append("R-8:외부_자료_유사")
+                    break
+
         return RuleValidationResult(
             passed=not failed,
             failed_checks=tuple(failed),
             banned_topic=banned,
             source_unverified=source_unverified,
+            external_reference_checked=external_checked,
         )
+
+
+def _generated_material_texts(context_pack: ContextPack) -> tuple[str, ...]:
+    """R-8 대조 대상 — LLM이 만들어 낸 지문·자료 본문만 모은다."""
+
+    trace = context_pack.retrieval_trace
+    texts: list[str] = []
+    for key, field in (
+        ("passage_draft", "passage_text"),
+        ("source_material_draft", "material_text"),
+    ):
+        draft = trace.get(key)
+        if not isinstance(draft, dict):
+            continue
+        value = draft.get(field)
+        if isinstance(value, str) and value.strip():
+            texts.append(value)
+    return tuple(texts)
 
 
 def _allowed_evidence_refs(context_pack: ContextPack) -> frozenset[str] | None:

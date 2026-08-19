@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from ai.contracts.problem_generation import LiteratureGenre
 from ai.problem_generation.infrastructure.literature_pool import (
     DEFAULT_LITERATURE_POOL_ROOT,
     LiteraturePoolLoadError,
@@ -36,18 +37,30 @@ def _write_index(root: Path, raw: dict[str, Any]) -> None:
     )
 
 
-def test_bundled_literature_pool_loads_all_five_verified_works() -> None:
-    pool = load_literature_pool()
-
-    assert pool.schema_version == "literature-pool.v1"
-    assert len(pool.works) == 5
-    assert {work.metadata.slug for work in pool.works} == {
+# 최초 등재 5편은 리비전과 본문 해시가 박혀 있어 확장 수집에서 제외된다. 이 목록이
+# 줄어들면 고정 등재분이 덮어써진 것이므로 풀 규모와 별개로 지킨다.
+PINNED_SLUGS = frozenset(
+    {
         "cheongsan_byeolgok",
         "gwandong_byeolgok",
         "jindallaekkot",
         "memilkkot",
         "unsu_joeun_nal",
     }
+)
+
+
+def test_bundled_literature_pool_loads_every_indexed_work() -> None:
+    pool = load_literature_pool()
+    raw = json.loads(
+        (DEFAULT_LITERATURE_POOL_ROOT / "index.json").read_text(encoding="utf-8")
+    )
+
+    assert pool.schema_version == "literature-pool.v1"
+    assert len(pool.works) == len(raw["works"])
+    assert all(work.content for work in pool.works)
+    assert PINNED_SLUGS <= {work.metadata.slug for work in pool.works}
+    assert {work.metadata.genre for work in pool.works} == set(LiteratureGenre)
 
 
 def test_loader_rejects_content_hash_mismatch(tmp_path: Path) -> None:

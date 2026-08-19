@@ -57,14 +57,15 @@ from ai.diagnosis.diagnoser import DiagnosisConfig, diagnose
 from ai.diagnosis.skill_graph import load_skill_graph
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application import workflow as workflow_module
-from ai.problem_generation.application.literature_selector import LiteratureSelector
 from ai.problem_generation.application.passage_generator import generated_material_ref
-from ai.problem_generation.bootstrap import build_problem_workflow
+from ai.problem_generation.bootstrap import (
+    build_literature_selector,
+    build_problem_workflow,
+)
 from ai.problem_generation.infrastructure.config import load_verify_config
 from ai.problem_generation.infrastructure.graph_context import (
     AreaDelegatingGraphContextService,
 )
-from ai.problem_generation.infrastructure.literature_pool import load_literature_pool
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
     InMemoryProblemItemStore,
@@ -275,7 +276,7 @@ def _reading_item_json() -> str:
 
 
 def _literature_item_json() -> str:
-    excerpt = LiteratureSelector(load_literature_pool()).select(_literature_selection())
+    excerpt = build_literature_selector(load_verify_config()).select(_literature_selection())
     return GeneratedItem(
         area_tag=AreaTag.LITERATURE,
         type_tag=TypeTag.INFER,
@@ -649,7 +650,7 @@ async def _run_reading_smoke() -> None:
 
 
 async def _run_literature_smoke() -> None:
-    excerpt = LiteratureSelector(load_literature_pool()).select(_literature_selection())
+    excerpt = build_literature_selector(load_verify_config()).select(_literature_selection())
     generator_provider = FakeProvider(
         (_literature_item_json(),),
         name="fake-literature-generator",

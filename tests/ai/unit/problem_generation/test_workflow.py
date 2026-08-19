@@ -73,6 +73,7 @@ from ai.problem_generation.application.workflow import (
     graph_recursion_limit,
 )
 from ai.problem_generation.domain.identity import canonical_json, problem_item_id
+from ai.problem_generation.domain.literature import LiteraturePool
 from ai.problem_generation.domain.models import TargetPlan
 from ai.problem_generation.domain.policy import (
     DifficultyRange,
@@ -97,6 +98,32 @@ from ai.problem_generation.infrastructure.memory_store import (
 _GRAPH_VERSION = "curriculum-graph.v1"
 _TAXONOMY_VERSION = "taxonomy-v1"
 _SKILL_NODE_ID = "grammar.sentence-structure"
+
+
+#: 문학 풀은 계속 늘어나고, 어느 작품이 뽑히는지가 바뀌면 워크플로 배선과 무관한
+#: 이유로 이 스위트가 흔들린다. 배선을 보는 테스트는 최초 검증 5편에만 기댄다.
+_VERIFIED_POOL_SLUGS = frozenset(
+    {
+        "cheongsan_byeolgok",
+        "gwandong_byeolgok",
+        "jindallaekkot",
+        "memilkkot",
+        "unsu_joeun_nal",
+    }
+)
+
+
+def _verified_literature_pool() -> LiteraturePool:
+    pool = load_literature_pool()
+    return pool.model_copy(
+        update={
+            "works": tuple(
+                work
+                for work in pool.works
+                if work.metadata.slug in _VERIFIED_POOL_SLUGS
+            )
+        }
+    )
 
 
 class _WorkflowHarness:
@@ -164,7 +191,7 @@ class _WorkflowHarness:
             banned_topics=self.banned_topics,
             area_specs=area_specs,
         )
-        self.literature_selector = LiteratureSelector(load_literature_pool())
+        self.literature_selector = LiteratureSelector(_verified_literature_pool())
         self.cross_solver = BlindCrossSolver(gateway)
         self.workflow = ProblemGenerationWorkflow(
             diagnosis=self.diagnosis,
@@ -391,7 +418,7 @@ def test_literature_selection_reaches_generation_without_a_passage_llm_call() ->
         era="근대",
         concept_keywords=("달",),
     )
-    expected = LiteratureSelector(load_literature_pool()).select(selection)
+    expected = LiteratureSelector(_verified_literature_pool()).select(selection)
     harness = _WorkflowHarness(
         generator_steps=(
             _item_json(

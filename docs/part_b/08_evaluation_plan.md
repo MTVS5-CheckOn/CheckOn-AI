@@ -3,6 +3,7 @@
 > **지위:** member-B(염준영) 공식 평가 계획 v1. A의 `part_a/08_evaluation_plan.md` 증보 — 운영 규율(CI 3단·버전 연동·PR 규칙)은 A 문서 §8 준용, part_b 병렬 문서로 유지. A 문서 §1 트리 증보 요청은 [`09_integration_proposals.md`](09_integration_proposals.md) §1-4.
 >
 > **변경 이력**
+> - v1.5 (2026-08-19): **§14 문항 미리보기 러너(`ai.evaluation.problem_preview`) 신설.** 골든셋은 「깨졌는가」를 재고, 이 러너는 **「쓸 만한가」를 사람이 본다** — 다른 축이다. 🔴 **만들자마자 두 결함을 잡았다:** ⓐ 산문 발췌가 **문단 하나**라 「거짓말을 해?」 **9자**가 제시문으로 나왔다(소설 문단 104,259개 중앙값 41자 · 78%가 100자 미만 — **대화 한 줄이 한 문단**이다). 연속 문단을 하한까지 이어 붙이는 창으로 바꿨다(`verify_config.literature_excerpt_min_chars`). ⓑ 러너가 `LiteratureSelector` 를 **따로 조립**해 발췌 경계가 빠졌다 — 미리보기와 실제 출제가 다른 구간을 골랐다. 조립을 `bootstrap.build_literature_selector` 한 자리로 모으고 **통합 테스트 4곳의 이중 조립도 같이 걷어냈다**(같은 함정을 이미 밟고 있었다). ⚠ **집계 오독을 하나 기록해 둔다** — 문법 33노드를 「근거 0행 22개」로 읽었는데, 어문 규범 행이 없으면 `GrammarNormGraphContextService` 가 **어휘 색인으로 넘어간다.** 실제로는 **33노드 전부 근거가 있다**(중앙값 1 · 최대 7). 러너도 한쪽만 보여 주면 같은 오독을 부르므로 두 축을 다 출력한다.
 > - v1.4 (2026-07-29): `golden/problems/suneung_format/` 합성 포맷 코퍼스
 >   6건을 추가했다. 평가원 원문을 복제하지 않고 여러 줄 자료·기호 예문·텍스트
 >   표·옛한글·조합형 선지의 기존 계약 왕복과 공유 자료 문항군의 설계 간극을
@@ -224,6 +225,28 @@ FMT-1·FMT-2 합의 전 문자열 복제로 우회하지 않는다.
 | 환각·오생성 사고 0건 | 조작적 정의 = "승인·배포된 문항에서 R-1~R-4 위반 또는 정렬 오판 사후 발견" — 발견 시 해당 패턴을 §2·§3 코퍼스에 **즉시 증보** |
 
 - 골든셋 변경은 PR로만 · 실모델 평가 비용은 별도 예산 라인.
+
+## 14. 문항 미리보기 러너 (`ai.evaluation.problem_preview`)
+
+골든셋(§2~§11)이 **회귀**를 막는다면 이 러너는 **품질을 사람이 보는** 자리다. 저장은 전부
+in-memory라 PG 없이 돌고, 조립은 `build_problem_workflow` 정본을 그대로 쓴다 — 러너 전용
+우회 조립을 만들지 않는다(그렇게 만들었다가 실제로 발췌 경계가 빠졌다).
+
+```bash
+# LLM 없이 «무엇이 들어가는가»만 본다 — 문학 풀·규범·어휘 근거 검토용
+uv run python -m ai.evaluation.problem_preview --area literature --no-llm
+uv run python -m ai.evaluation.problem_preview --area literature --genre classical_prose --no-llm
+uv run python -m ai.evaluation.problem_preview --area language --node language.grammar.fortition --no-llm
+
+# 실 LLM으로 끝까지 — CHECKON_ALLOW_REAL_LLM=1 과 실 endpoint 가 필요하다(99 #32)
+uv run python -m ai.evaluation.problem_preview --area reading --count 2
+uv run python -m ai.evaluation.problem_preview --area literature --json --out preview.json
+```
+
+- `--no-llm` 은 **LLM 호출 0건**이다. 문학은 결정론 선택기가 고른 작품·리비전·구간을 그대로
+  찍어 주므로 **풀을 늘린 뒤 무엇이 뽑히는지** 확인하는 자리로 쓴다.
+- 실 LLM 모드는 전제가 없으면 **조용히 통과하지 않고 사유를 적고 멈춘다**.
+- `--out` 기본 위치는 `local_data/` 다 — **산출물은 커밋하지 않는다.**
 
 ## 13. OPEN 항목
 

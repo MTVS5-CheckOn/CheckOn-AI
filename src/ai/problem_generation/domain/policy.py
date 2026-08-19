@@ -193,6 +193,9 @@ class VerifyConfig(BaseModel):
     regen_max: int = Field(ge=0)
     transport_retry: int = Field(ge=0, le=1)
     dup_similarity_max: float = Field(ge=0.0, le=1.0)
+    external_similarity_max: float = Field(ge=0.0, le=1.0)
+    literature_excerpt_min_chars: int = Field(ge=1)
+    literature_excerpt_max_chars: int = Field(ge=1)
     cross_confidence_high: float = Field(ge=0.0, le=1.0)
     alignment_confidence_min: float = Field(ge=0.0, le=1.0)
     set_drop_ratio_max: float = Field(ge=0.0, le=1.0)
@@ -212,6 +215,8 @@ class VerifyConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_m2_scope(self) -> Self:
+        if self.literature_excerpt_min_chars > self.literature_excerpt_max_chars:
+            raise ValueError("발췌 창 하한이 상한보다 클 수 없다")
         if self.regen_max != 2:
             raise ValueError("M2 item_attempt는 최초 1회와 재생성 2회로 고정한다")
         if self.t1_light_mode:

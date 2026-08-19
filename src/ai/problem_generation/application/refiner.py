@@ -39,6 +39,7 @@ from ai.problem_generation.domain.difficulty import (
     estimate_t1_difficulty,
     needs_difficulty_regeneration,
 )
+from ai.problem_generation.domain.external_corpus import ExternalCorpusIndex
 from ai.problem_generation.domain.identity import canonical_json
 from ai.problem_generation.domain.policy import (
     AreaSpecs,
@@ -106,6 +107,7 @@ class ProblemItemRefiner:
         banned_topics: BannedTopicsConfig,
         area_specs: AreaSpecs,
         prompt: LoadedPromptTemplate | None = None,
+        external_corpus: ExternalCorpusIndex | None = None,
     ) -> None:
         self._gateway = gateway
         self._graph_context = graph_context
@@ -116,6 +118,8 @@ class ProblemItemRefiner:
         self._rules = RuleValidator(
             banned_topics,
             duplicate_similarity_max=verify_config.dup_similarity_max,
+            external_corpus=external_corpus,
+            external_similarity_max=verify_config.external_similarity_max,
         )
         self._cross_solver = BlindCrossSolver(gateway)
         if self._prompt.role is not ModelRole.GENERATOR:
