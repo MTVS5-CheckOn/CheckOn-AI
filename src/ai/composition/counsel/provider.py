@@ -390,17 +390,37 @@ class GatewayPlanner:
         redacted = redact(prompt)
         if redacted.uncertain:  # fail-closed — 불확실하면 LLM에 보내지 않는다(불변식 3)
             raise RedactionBlockedError("plan 프롬프트의 마스킹이 불확실하다")
-        result = await self._gateway.complete(
-            LLMRequest(
-                role=ModelRole.COUNSELOR,
-                prompt=redacted.masked_text,
-                prompt_id=PLAN_PROMPT_ID,
-                prompt_version=PLAN_PROMPT_VERSION,
-                generation_params=COUNSEL_GEN_PARAMS,
-            ),
-            execution_context,
-        )
+        try:
+            result = await self._gateway.complete(
+                LLMRequest(
+                    role=ModelRole.COUNSELOR,
+                    prompt=redacted.masked_text,
+                    prompt_id=PLAN_PROMPT_ID,
+                    prompt_version=PLAN_PROMPT_VERSION,
+                    generation_params=COUNSEL_GEN_PARAMS,
+                ),
+                execution_context,
+            )
+        except ParseFailed:
+            #: 🔴 **모델이 비워 뒀다 = 적법한 답이다** — 아래 ⓑ가 이미 그렇게 판정해 뒀는데
+            #: 그 줄이 **실행되지 않았다**(실측 8/19: 미실행). 실 provider는 빈 content를
+            #: `ParseFailed`로 올리고 게이트웨이는 그걸 **예외로 re-raise**하므로,
+            #: `result.outcome` 검사에는 애초에 안 온다 — `GatewayDraftWriter`에서
+            #: 확인한 것과 **정확히 같은 이유**다(99 #87 · 결정 로그 125).
+            #: ⚠ 그동안 이 사건은 `graph.py`의 `except LlmError`로 떨어져
+            #: **`plan_outcome=llm_failed`로 계상**됐다 — 정상 동작이 장애로 세어졌고,
+            #: 99 ㉲가 셋을 가르려고 만든 작업의 **절반이 조용히 되돌아가 있었다.**
+            #: 🔴 **`raise`가 아니라 `return {}`이다** — 판정을 새로 정하는 게 아니라
+            #: 이미 적혀 있던 판정을 **실행 가능하게** 만드는 것이다.
+            return {}
         # 🔴 **세 경우를 갈라 낸다**(종전에는 전부 `{}`였다 — 99 ㉲).
+        # ⚠ **(8/19 실측) 아래 ⓐ·ⓑ 두 검사는 실 경로에서 도달하지 않는다** — 게이트웨이가
+        #   실패를 **예외로 re-raise**하고 어느 provider도 `outcome != OK`인 `LLMResult`를
+        #   **반환하지 않기 때문**이다. 빈 응답은 위 `except ParseFailed`가 먼저 잡는다.
+        #   🔴 **그래도 지우지 않는다** — 게이트웨이 계약이 바뀌거나 다른 provider가
+        #   결과로 돌려주면 **여기가 유일한 방어**다. **결말을 위와 같게 맞춰 둔 것**이지
+        #   도달한다고 주장하는 게 아니다(도달 불가는 「지금 아무도 안 온다」이지
+        #   「결말이 달라도 된다」가 아니다).
         #    ⓐ outcome≠OK = **장애**다. 빈 값으로 삼키면 `GatewayDraftWriter`가 경고한
         #      바로 그 오분류가 plan 쪽에서 일어난다("장애가 게이트 실패로 오분류").
         if result.outcome is not CallOutcome.OK:
@@ -408,8 +428,13 @@ class GatewayPlanner:
         text = (result.text or "").strip()
         #    ⓑ 응답이 비었다 = **모델이 비워 뒀다**. 프롬프트가 *"인용할 근거가 없으면 그
         #      학생은 비워 두세요"* 라고 지시하므로 빈 응답은 적법한 답이고 사유는 `ok`다.
-        #      ⚠ writer는 빈 응답을 `LlmError`로 올린다 — **비대칭이 의도다.** 초안은
-        #      본문이 결과물이라 비면 실패지만, plan은 "고를 것이 없다"가 유효한 결과다.
+        #      🔴 **(8/19) 종전 주석 «writer는 빈 응답을 `LlmError`로 올린다 — 비대칭이
+        #      의도다»는 이제 거짓이다** — 99 #87이 writer도 빈 문자열로 수렴시켰다.
+        #      ⚠ **그런데 결말은 여전히 다르고, 다른 이유는 그 주석의 뒷문장 그대로다:**
+        #      writer의 빈 값은 게이트 `empty` → `gate_feedback` → **재생성(≤3)**으로 가고
+        #      (본문이 결과물이라 비면 다시 만들어야 한다), plan의 빈 값은 **무강조 진행
+        #      (재시도 0회)**이다("고를 것이 없다"가 유효한 결과라 다시 물을 이유가 없다).
+        #      ⇒ **수렴 형태는 같아졌고 후속 처리가 다르다.**
         if not text:
             return {}
         parsed = parse_plan_response(text, student_refs)
