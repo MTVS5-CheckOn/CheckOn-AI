@@ -142,6 +142,12 @@ async def _one(
     started = time.monotonic()
 
     plan_outcome = "ok"
+    #: 🔴 **(2차) 콜당 지연을 나눠 잰다** — 1차 원자료가 plan+write **합**이라 콜당 p95 를
+    #: 못 냈고, 그래서 `openai_timeout_s=45` 의 근거가 「잡당 max 의 1.8배」라는 **어림**에
+    #: 머물렀다(99 #106). 이 숫자가 그 어림을 실수로 바꾼다.
+    plan_seconds = 0.0
+    write_seconds: list[float] = []
+    plan_started = time.monotonic()
     try:
         emphasis_map = await planner.plan(
             contexts={context.student_ref: context},
@@ -152,6 +158,8 @@ async def _one(
     except Exception as exc:  # noqa: BLE001 — 사유를 집계에 남긴다
         plan_outcome = type(exc).__name__
         emphasis = ()
+    finally:
+        plan_seconds = round(time.monotonic() - plan_started, 2)
 
     max_chars = max_chars_for(context)
     min_chars = min_chars_for(context)
@@ -165,6 +173,7 @@ async def _one(
 
     for _ in range(_REGEN_MAX + 1):
         attempts += 1
+        write_started = time.monotonic()
         try:
             text = await writer.write(
                 context=context,
@@ -174,7 +183,11 @@ async def _one(
             )
         except Exception as exc:  # noqa: BLE001
             failure = type(exc).__name__
+            #: ⚠ **죽은 호출의 지연도 센다** — 타임아웃이 몇 초에 끊겼는지가 상한 판정의
+            #:   재료다. 성공분만 세면 «45로 올렸더니 안 죽는다»의 근거가 반쪽이다.
+            write_seconds.append(round(time.monotonic() - write_started, 2))
             break
+        write_seconds.append(round(time.monotonic() - write_started, 2))
         gate = check_counsel_gate(
             text, context, max_chars=max_chars, min_chars=min_chars
         )
@@ -211,6 +224,9 @@ async def _one(
         "buffer_hits": list(hits),
         "output_uncertain": bool(text) and redact(text).uncertain,
         "seconds": round(time.monotonic() - started, 2),
+        #: 🔴 콜당 분해(2차 신설) — `seconds` 는 합이라 콜당 p95 를 못 낸다.
+        "plan_seconds": plan_seconds,
+        "write_seconds": write_seconds,
         "_text": text,
     }
 
@@ -286,3 +302,46 @@ def test_b2_reproducibility_of_one_combination(_out: Path) -> None:
     _write_report(_out, "b2_reproducibility", rows)
 
     assert len(rows) == 3
+
+
+# ── 2차 회차 · 빈도 축 (#79 판정 재료) ────────────────────────────
+
+
+def test_c1_frequency_sample_of_thirty(_out: Path) -> None:
+    """🔴 **2차 · 같은 조합 × 30건** — B군 빈도의 상한을 좁힌다.
+
+    1차는 **상한만** 냈다: 적중 0건 · n=27 이면 참 비율의 95% 상한이 약 **11%** 다.
+    #79 가 필요한 판정은 *"게이트에 넣으면 재생성이 터지나"* = **「5% 미만인가」**인데
+    11% 로는 못 가른다.
+
+        n=27 · 0건 → 상한 약 11%     (1차)
+        n=57 · 0건 → 상한 약 5.2%    (1차 + 2차 합산)
+
+    ⇒ **30건이면 충분하고 그 이상은 이 판정에 필요 없다.**
+
+    🔴 **입력을 1차와 완전히 동일하게 둔다** — 합산해서 세려면 같은 분포여야 한다.
+    조합도 1차 B-2 와 같은 기본 조합이다.
+    ⚠ **톤 24조합은 다시 안 돈다** — 1차에서 완결됐다(24/24 서로 다름 ·
+    `anxious` 12/12 인사 vs `direct` 0/12).
+    """
+    import asyncio  # noqa: PLC0415
+
+    _skip_unless_opted_in()
+    writer, planner = _providers()
+    snapshot = LabelSnapshot(
+        comm=CommStyle.NARRATIVE,
+        sensitivity=Sensitivity.ANXIOUS,
+        interest=Interest.GRADE,
+        frequency=Frequency.MONTHLY,
+    )
+
+    async def run() -> list[dict[str, Any]]:
+        return [await _one(writer, planner, snapshot) for _ in range(30)]
+
+    rows = asyncio.run(run())
+    _write_report(_out, "c1_frequency_30", rows)
+
+    assert len(rows) == 30
+    #: 🔴 **절단 가드** — 전부 죽으면 빈도를 못 센다(중단 규칙: timeout 사망 0건이어야 한다).
+    alive = [r for r in rows if not r["failure"]]
+    assert alive, f"30건이 전부 실패했다: {[r['failure'] for r in rows][:5]}"
