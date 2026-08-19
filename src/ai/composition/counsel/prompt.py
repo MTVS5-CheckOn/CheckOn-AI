@@ -61,12 +61,6 @@ _BUFFER_TEXT: Final = {
 }
 
 
-#: 🔴 **한 줄에 실을 치환 쌍의 상한** — 어휘가 늘어도 프롬프트가 무한정 길어지지 않게.
-#: ⚠ 지금은 28항 전부가 들어간다(상한 위). 상한을 낮추려면 **무엇을 뺄지의 근거**가
-#: 먼저 있어야 하고 그건 99의 「30항을 가를 근거」와 같은 안건이다 — 임의로 자르지 마라.
-_BUFFER_TERM_LIMIT: Final = 64
-
-
 @lru_cache
 def _buffer_replacements(buffer_level: int) -> str:
     """완충 단계에 실을 **B군 치환 쌍 문면** — 05 §4의 「프롬프트 규칙」 축.
@@ -93,12 +87,23 @@ def _buffer_replacements(buffer_level: int) -> str:
     """
     if buffer_level < 1:
         return ""
-    pairs = [
-        rendered
-        for item in load_buffer_lexicon().replacements[:_BUFFER_TERM_LIMIT]
-        if (rendered := _renderable_pair(item)) is not None
-    ]
-    return "다음 표현은 오른쪽으로 바꿔 쓰세요: " + " · ".join(pairs)
+    pairs: list[str] = []
+    avoid: list[str] = []
+    for item in load_buffer_lexicon().replacements:
+        rendered = _renderable_pair(item)
+        if rendered is not None:
+            pairs.append(rendered)
+        elif not _blocked_by_tripwire(item.source):
+            #: 🔴 **쌍은 못 실어도 `from`은 살린다** — 쌍을 통째로 버리면 **멀쩡한 절반까지
+            #: 사라진다.** 실측(8/19): 버려진 4쌍 중 둘은 `to`만 걸리고 `from`은 멀쩡하다.
+            avoid.append(item.source)
+    lines = []
+    if pairs:
+        lines.append("다음 표현은 오른쪽으로 바꿔 쓰세요: " + " · ".join(pairs))
+    if avoid:
+        #: 🔴 **줄을 가른다** — 한 줄에 섞으면 화살표 없는 항을 LLM이 **치환 대상**으로 읽는다.
+        lines.append("다음 표현은 쓰지 마세요: " + " · ".join(avoid))
+    return "\n- ".join(lines)
 
 
 def _renderable_pair(item: Replacement) -> str | None:
@@ -122,18 +127,36 @@ def _renderable_pair(item: Replacement) -> str | None:
     ⚠ **임의 제외가 아니다** — 제외 기준이 `redact()` 자신이라 **런타임에 파생**되고,
     휴리스틱이 나아지면 그 쌍이 **자동으로 다시 실린다.** 코드에 어휘를 박지 않는다(03 §1).
 
-    ⚠ **대가: 그 3항은 프롬프트 축의 방어가 없다.** 게이트 축도 아직 없으므로(판정 ②)
-    **그 셋은 여전히 아무 데서도 안 막힌다.** 99 #79에 그 사실을 적었다 —
-    ✅가 아니라 ◐인 이유가 하나 더 늘었다.
+    ━━ 🔴 **쌍을 통째로 버리지 않는다** (8/19 잔여 수정) ━━
+
+    합성 문자열 하나로 재면 **멀쩡한 절반까지 버린다.** 실측 — 버려지는 4쌍의 내역::
+
+        실패했습니다   → 이번에는 결과가…   `to`만 걸린다   ⇒ 🔴 `from`을 회피 목록으로 살린다
+        안 했습니다    → 이번에는 하지…     `to`만 걸린다   ⇒ 🔴 `from`을 회피 목록으로 살린다
+        이해력이 부족  → 추론 단계에서…     **`from`이 걸린다**(`확인필요`)  ⇒ 못 살린다
+        다른 학생에 비해 → 지난달과 비교해  **`from`이 걸린다**(`이름:⟪이름1⟫`) ⇒ 못 살린다
+
+    ⚠ **`다른 학생에 비해`는 못 살린다** — 8/19 지시서는 걸린 조각이 `지난달`(to)이라 봤으나
+    실측은 **`from`이 확정 검출**(`이름`)이다. ⇒ 그 항은 **A군에도·프롬프트에도·게이트에도 없다**
+    (99 #79·#83). 불변식 7 축에 남은 구멍이고 이 PR로 안 닫힌다.
+
+    ⚠ **대가: 못 살린 2항은 프롬프트 축의 방어가 없다.** 게이트 축도 아직 없으므로(판정 ②)
+    **그 둘은 여전히 아무 데서도 안 막힌다.** 99 #79·#83에 적었다 — ✅가 아니라 ◐인 이유다.
     """
     rendered = f"{item.source}→{item.target}" if item.target else f"{item.source}(삭제)"
-    outcome = redact(rendered)
-    #: 🔴 **판정을 트립와이어와 **똑같이** 둔다** — `RedactionTripwireTraceHook.mask`가
-    #: `findings or uncertain`으로 막는다(`runtime/trace_masking.py`). 여기서 `uncertain`만
-    #: 보면 **`findings`가 있는 쌍이 통과해 전송에서 막힌다** — 2026-08-19에 실제로 그랬다
-    #: (`uncertain`만 걸렀더니 트립와이어 검사가 여전히 red였다).
-    #: ⚠ 두 기준이 갈리면 *"조립은 통과인데 전송이 죽는다"* 가 된다(99 #02 부류).
-    return None if (outcome.findings or outcome.uncertain) else rendered
+    return None if _blocked_by_tripwire(rendered) else rendered
+
+
+def _blocked_by_tripwire(text: str) -> bool:
+    """전송 트립와이어가 이 문면을 막는가 — 🔴 **판정을 훅과 똑같이 둔다.**
+
+    `RedactionTripwireTraceHook.mask`가 `findings **or** uncertain`으로 막는다
+    (`runtime/trace_masking.py`). 여기서 `uncertain`만 보면 **`findings`가 있는 조각이
+    통과해 전송에서 막힌다** — 2026-08-19에 실제로 그랬다.
+    ⚠ 두 기준이 갈리면 *"조립은 통과인데 전송이 죽는다"* 가 된다(99 #02 부류 · #83).
+    """
+    outcome = redact(text)
+    return bool(outcome.findings or outcome.uncertain)
 
 
 @lru_cache
