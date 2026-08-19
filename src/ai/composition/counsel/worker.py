@@ -198,13 +198,56 @@ class CounselPackRunner:
             return await self._fail(job, ERROR_WORKER_INTERNAL)
 
     async def _fail(self, job: WorkerJob, error_code: str) -> WorkerJob:
-        return await self._sv.fail(
-            tenant_id=job.tenant_id,
-            job_id=job.job_id,
-            lease_owner=self._lease_owner,
-            lease_generation=job.lease_generation,
-            error_code=error_code,
-        )
+        """잡을 `failed`로 수렴시킨다 — 🔴 **수렴이 실패해도 원인을 덮지 않는다.**
+
+        ⚠ 이 호출 자체가 raise 할 수 있다(fencing 거부·DB 장애). 그러면 **새 예외가 원인
+        예외를 교체하고** 밖으로 나가 진단이 뒤집힌다 — *"LLM 이 죽었다"* 가 *"수렴이
+        죽었다"* 로 읽힌다. ⇒ 수렴 실패를 **로그로 남기고 원인을 재던진다.**
+
+        ⚠ **잡 상태를 억지로 바꾸지 않는다** — 수렴이 실패한 것이지 잡이 끝난 게 아니다.
+        🔴 **안전망은 recovery 다** — `Supervisor.run_next`가 *"만료 작업을 먼저 회수한 뒤"*
+        lease 하므로(`recover_expired`), lease 가 만료되면 그 잡은 다시 잡힌다.
+
+        ━━ 🔴 **`pause` 자리에는 같은 방어를 안 걸었다 — 비대칭이 의도다** ━━
+
+        위 `except LlmCircuitOpenError:` 의 `self._sv.pause(...)` 도 raise 할 수 있다
+        (실측 8/19: `Supervisor.pause` → `_require_nonempty("checkpoint_ref")` ·
+        `store.pause` → `assert_job_transition` → `InvalidJobTransition`). 그런데 감싸지 않았다.
+
+        **왜 — 기본값에서 그 자리가 도달 불가라서다.** 서킷 카운터는 **학생 단위**로 오르는데
+        (`graph.py` 의 `consecutive["llm_failed"]`) counsel 라우터는 학생을 **1명만** 넣는다
+        (N=1) ⇒ 카운터가 **최대 1**이고 기본 임계는 **3**이다 ⇒ `LlmCircuitOpenError` 가
+        **안 난다**(실측 8/19: 기본값에서 write 가 매번 `LlmError` 여도 잡은 `succeeded` +
+        `draft_status=llm_failed` 로 끝나고 `paused` 가 안 났다 · 99 #08 ⓐ).
+        🔴 **도달 불가 경로에 방어를 달면 「죽은 분기」가 하나 는다** — 이 저장소가 반복해서
+        피해 온 형태다(㉴ 부류).
+
+        🔴 **다만 「도달 불가」로 단정하지 않는다 — 조건이 붙는다.**
+        `COUNSEL_LLM_FAILURE_CIRCUIT=1` 을 env 로 주면 **첫 실패에 열린다.**
+        그 값을 막는 `circuit >= 2` 기동 가드는 **별건**(paused 판정 PR)이고 아직 안 섰다.
+        ⇒ 지금 정확한 문장은 **「기본값에서 도달 불가 · env 로 열 수 있다」** 다(99 #89).
+
+        ⚠ **N>1 이 오면**(월별 벌크·Kafka) 그 자리에 `_fail` 과 **같은 규율**이 필요하다.
+        **그때 이 문단을 지우고 `pause` 도 감싸라.**
+        """
+        try:
+            return await self._sv.fail(
+                tenant_id=job.tenant_id,
+                job_id=job.job_id,
+                lease_owner=self._lease_owner,
+                lease_generation=job.lease_generation,
+                error_code=error_code,
+            )
+        except Exception:
+            #: 🔴 **원인을 덮지 않는다** — `logger.exception` 으로 수렴 실패를 남기고
+            #: `raise` 로 **원래 예외**를 그대로 올린다(bare `raise` 라 원인이 보존된다).
+            logger.exception(
+                "counsel_pack 잡 수렴 실패 — 잡이 종단으로 못 갔다 job=%s error_code=%s "
+                "(원인 예외를 그대로 올린다 · lease 만료 시 recovery 가 회수한다)",
+                job.job_id,
+                error_code,
+            )
+            raise
 
     async def _execute(self, job: WorkerJob) -> WorkerJob:
         """잡 하나를 실행한다.

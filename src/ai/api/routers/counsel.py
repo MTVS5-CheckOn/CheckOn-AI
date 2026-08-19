@@ -1115,7 +1115,20 @@ async def _refresh_view(
     except ValueError:  # 캐시 키가 UUID가 아니다 — 갱신 대상이 아니다
         return cached
     job = await _build_supervisor().get(tenant_id=tenant_id, job_id=job_uuid)
-    if job is None or job.phase.value == cached.status:
+    if job is None or (
+        job.phase.value == cached.status
+        #: 🔴 **결과가 있을 때만 조기 반환한다** (99 #88). 종전에는 phase 만 같으면
+        #: 돌아왔는데, **복원 실패분이 캐시에 굳어** 그 뒤로 영영 재시도되지 않았다:
+        #:     복원 실패 → `status` 만 갱신한 뷰를 캐시 → 다음 GET 은 phase 가 같아 조기 반환
+        #:     ⇒ `succeeded` + `result=null` 이 **영구 고정**된다(04 가 금지한 조합).
+        #: 저장소가 복구돼도 다시 시도하지 않는다.
+        #: ⚠ **「캐시에 안 쓴다」가 아니라 「조기 반환을 좁힌다」를 골랐다** — 안 쓰면
+        #:   `_remember_view` 호출 자리가 조건부가 되어 그 함수의 「영속 먼저」 규율이
+        #:   경로마다 갈린다(99 #74 가 고친 형태). 여기는 **읽는 쪽 조건**만 좁히면 된다.
+        #: ⚠ 대가: 종단인데 결과가 없는 잡은 **매 GET 마다 복원을 재시도**한다. 그건
+        #:   보존 기간이 지난 잡에 한정이고, 성공하면 그 뒤로는 캐시가 결과를 든다.
+        and (cached.result is not None or not _can_report_result(job.phase))
+    ):
         return cached
     if not _can_report_result(job.phase):
         # 아직 안 끝났거나 취소됐다 — **결과 없음이 정직한 표현**이다(POST와 같은 판정).

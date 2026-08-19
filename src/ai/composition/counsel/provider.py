@@ -312,6 +312,10 @@ class GatewayDraftWriter:
         # LlmError로 승격해 `llm_failed` 경로(서킷 포함)로 태운다(error_codes §3).
         if result.outcome is not CallOutcome.OK:
             raise LlmError(f"counselor 호출 실패 outcome={result.outcome.value}")
+        # ⚠ **(8/19) 여기는 축이 아니다** — 결손은 「빈 응답을 `LlmError` 로 올린다」가
+        #   아니라 **「빈 응답이 재생성 루프를 빠져나온다」**다(`graph.py` 의 `except LlmError`
+        #   가 `return _record(...)` 로 학생을 종결한다). **예외 종류가 아니라 흐름이 축**이라
+        #   이 한 줄로는 안 닫힌다 — 재생성 상한·서킷과 얽혀 별건이다(99 #87).
         text = (result.text or "").strip()
         if not text:
             raise LlmError("counselor 응답이 비었다")
