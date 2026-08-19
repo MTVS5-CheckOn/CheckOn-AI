@@ -21,7 +21,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
@@ -83,7 +85,12 @@ _PLACEHOLDER: Final = {
     #: 🔴 counsel `result.generated_at` 은 **실시간**이다(`_clock()`) — 정규화 안 하면
     #: 픽스처가 매 실행 흔들린다. ⚠ 기존 18개 픽스처에 이 키는 **0건**이라(실측)
     #: 여기 추가해도 그쪽 대조는 바뀌지 않는다.
-    "generated_at": "2026-01-01T00:00:00Z",
+    #: 🔴 **자리표시자는 원본의 형태를 지켜야 한다.** 종전 값(`…T00:00:00Z`)은 실제 응답의
+    #: **마이크로초를 감췄다**(`2026-08-19T08:59:45.176713Z`). 픽스처의 존재 이유가
+    #: 「BE 가 이 형태를 보고 만든다」인데 형태를 잘못 보여 주면, BE 가
+    #: `yyyy-MM-dd'T'HH:mm:ss'Z'` 패턴을 짜고 **픽스처로는 통과하고 운영에서 깨진다.**
+    #: ⚠ UUID 셋은 원래 형태를 지키고 있었다 — 이 키만 규율에서 빠져 있었다.
+    "generated_at": "2026-01-01T00:00:00.000000Z",
 }
 _BE_REQUIRED_FLOW_FIXTURES: Final = {
     "POST problems request": "post_problems.request",
@@ -1057,3 +1064,31 @@ def test_counsel_meta_versions_carry_every_key_on_all_three() -> None:
     for name, keys in zip(names, key_sets, strict=True):
         assert keys == key_sets[0], f"{name} 의 versions 키가 다른 곳과 갈렸다"
         assert "execution_id" in _counsel_fixture(name)["meta"], name
+
+
+def test_placeholders_keep_the_shape_of_what_they_replace() -> None:
+    """🔴 **자리표시자는 원본의 형태를 지킨다** — 값 하나 고치고 끝내지 않는다.
+
+    픽스처의 존재 이유는 「BE 가 **이 형태를 보고** 만든다」다. 자리표시자가 형태를 감추면
+    픽스처로는 통과하고 **운영에서 깨지는** 코드가 나온다 — 실제로 `generated_at` 이
+    `…T00:00:00Z` 라 **마이크로초를 감추고** 있었다(실제 응답: `…T08:59:45.176713Z`).
+
+    ⚠ 다음 사람이 또 형태를 깨뜨리지 않게 **검사로 못 박는다.**
+    """
+    generated_at = _PLACEHOLDER["generated_at"]
+
+    assert generated_at.endswith("Z"), (
+        f"UTC 표기가 아니다({generated_at!r}) — 실제 응답은 `Z` 로 끝난다. "
+        "`+00:00` 으로 바꾸면 BE 가 오프셋 표기를 기다린다"
+    )
+    assert re.fullmatch(r".*\.\d{6}Z", generated_at), (
+        f"마이크로초 자리가 없다({generated_at!r}) — BE 가 초 단위 패턴을 짜면 "
+        "픽스처로는 통과하고 운영에서 깨진다"
+    )
+    #: 🔴 모양만 맞고 **파싱이 안 되면** 아무 소용이 없다.
+    parsed = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    assert parsed.tzinfo is not None, generated_at
+
+    #: UUID 셋은 원래 형태를 지키고 있었다 — 회귀만 막는다.
+    for key in ("execution_id", "job_id", "set_id", "item_id"):
+        UUID(_PLACEHOLDER[key])
