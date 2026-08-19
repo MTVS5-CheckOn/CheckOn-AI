@@ -120,7 +120,7 @@ def test_gate_uses_buffer_lexicon_single_source() -> None:
     23항 = 금칙 20 + **불규칙 활용 3**(8/5 · 99 D ⑰ 해소). 활용형은 코드가 종성 결합으로
     처리하고, 코드로 만들 수 없는 르·여·으탈락 불규칙만 사전에 어간으로 등재했다.
     """
-    assert len(forbidden_terms()) == 23
+    assert len(forbidden_terms()) == 25  # 8/19 이동 — 혼자만·반 평균보다(99 #81)
 
 
 # ── 게이트: 길이·기호·토큰 ────────────────────────────────────────
