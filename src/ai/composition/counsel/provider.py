@@ -36,6 +36,7 @@ from ai.contracts.llm import (
     LLMRequest,
     LLMResult,
     ModelRole,
+    ParseFailed,
     TokenUsage,
 )
 from ai.llm.gateway import LlmGateway
@@ -297,28 +298,66 @@ class GatewayDraftWriter:
         )
         if redacted.uncertain:  # fail-closed — 불확실하면 LLM에 보내지 않는다
             raise RedactionBlockedError("상담 초안 프롬프트의 마스킹이 불확실하다")
-        result = await self._gateway.complete(
-            LLMRequest(
-                role=ModelRole.COUNSELOR,
-                prompt=redacted.masked_text,
-                prompt_id=PROMPT_ID,
-                prompt_version=PROMPT_VERSION,
-                generation_params=COUNSEL_GEN_PARAMS,
-            ),
-            execution_context,
-        )
-        # outcome≠OK를 빈 문자열로 삼키면 장애가 게이트 실패(`gate_exhausted:empty`)로
+        try:
+            result = await self._gateway.complete(
+                LLMRequest(
+                    role=ModelRole.COUNSELOR,
+                    prompt=redacted.masked_text,
+                    prompt_id=PROMPT_ID,
+                    prompt_version=PROMPT_VERSION,
+                    generation_params=COUNSEL_GEN_PARAMS,
+                ),
+                execution_context,
+            )
+        except ParseFailed:
+            #: 🔴 **여기가 축이다 — 반환된 `outcome`이 아니라 예외다.**
+            #: 실측(8/19): 게이트웨이는 실패를 **예외로 re-raise**하고(`llm/gateway.py`)
+            #: 어느 provider도 `outcome != OK`인 `LLMResult`를 **반환하지 않는다**
+            #: (전부 `outcome=CallOutcome.OK`로 반환하고 실패는 던진다 — `briefing.py`의
+            #: 주석이 그 규약을 이미 적어 뒀다). ⇒ 아래 `result.outcome` 검사들은
+            #: **실 경로에서 도달하지 않는다.**
+            #: ⚠ 그리고 `ParseFailed`는 `LlmError`의 **하위형**이라, 잡지 않으면
+            #: `graph.py`의 `except LlmError`가 학생을 그 자리에서 종결한다 — 그게 #87이다.
+            return ""
+        # 🔴 **(8/19 · 99 #87) 왜 빈 본문으로 수렴시키나** — 닿았는데 내용이 없는 것은
+        #    「전송 실패」가 아니라 **산출물 결함**이다.
+        #    실 provider는 빈 content를
+        #    `ParseFailed`로 올리고(`llm/providers/openai_compat.py`) 게이트웨이가
+        #    `outcome=parse_fail`로 적재하는데, 그 주석 자신이 *"상위 소비자의 재시도
+        #    예산(블록 ≤3)이 소진한다"* 고 **기대를 적어 뒀다.** counsel은 그 예산을
+        #    **0회** 썼다 — 빈 문자열로 수렴시키면 게이트가 `empty`로 잡고
+        #    `gate_feedback`을 붙여 재생성(≤`regen_max`)을 돈다.
+        # ⚠ **대가를 숨기지 않는다**: 모델이 **체계적으로** 빈 응답을 내면 호출이 최대
+        #   4배(초안 1 + 재생성 3)이고, 전송은 성공이라 **서킷이 안 열린다**(카운터가
+        #   0으로 초기화된다). 그래도 상한이 3이라 유계이고 끝은 `gate_exhausted`라
+        #   보이는 종단이다 — 종전에는 **일시적** 빈 응답도 못 살렸다.
+        # ⚠ **99 #54가 닫히면 이 판단을 다시 재야 한다** — 어댑터가 `finish_reason`을
+        #   읽어 절단(reasoning이 예산을 다 먹어 `content=""`)을 별도 outcome으로 남기면
+        #   절단은 `parse_fail`에서 빠져나가 재시도 대상이 아니게 된다.
+        # ⚠ **아래 두 검사는 현재 provider들로는 도달하지 않는다**(위 실측) — 그래도 지우지
+        #   않는다. 게이트웨이 계약이 「실패를 결과로 돌려주는」 쪽으로 바뀌거나 다른
+        #   provider가 그렇게 하면 **여기가 유일한 방어**다. 🔴 **다만 결말은 위 `except`와
+        #   같게 맞춰 둔다** — 같은 사건이 어디서 잡히느냐에 따라 다른 결말이면 그 자체가
+        #   갈림이다.
+        if result.outcome is CallOutcome.PARSE_FAIL:
+            return ""
+        # **전송 장애**를 빈 문자열로 삼키면 장애가 게이트 실패(`gate_exhausted:empty`)로
         # **오분류**된다 — 그러면 서킷 카운터도 안 오르고 알럿이 뜨지 않는다.
         # LlmError로 승격해 `llm_failed` 경로(서킷 포함)로 태운다(error_codes §3).
+        # 🔴 **문장을 좁힌 것이지 철회한 게 아니다** — `timeout`·`provider_error`·
+        #    `redaction_blocked`에 대해서는 여전히 참이다. 위에서 갈라 나간 `parse_fail`만
+        #    예외이고, 그 하나가 「모델에 못 닿았다」가 아닌 유일한 outcome이다.
         if result.outcome is not CallOutcome.OK:
             raise LlmError(f"counselor 호출 실패 outcome={result.outcome.value}")
-        # ⚠ **(8/19) 여기는 축이 아니다** — 결손은 「빈 응답을 `LlmError` 로 올린다」가
-        #   아니라 **「빈 응답이 재생성 루프를 빠져나온다」**다(`graph.py` 의 `except LlmError`
-        #   가 `return _record(...)` 로 학생을 종결한다). **예외 종류가 아니라 흐름이 축**이라
-        #   이 한 줄로는 안 닫힌다 — 재생성 상한·서킷과 얽혀 별건이다(99 #87).
+        # 🔴 **(8/19) `outcome=OK`인데 본문이 빈 경우 — 실 provider로는 도달하지 않는다.**
+        #   실측: `openai_compat.py`가 빈 content를 `ParseFailed`로 올리므로 여기 오기 전에
+        #   위 `parse_fail` 가지가 잡는다. **대역·다른 provider에서만 온다.**
+        #   ⚠ 그래도 지우지 않는다 — 도달 불가라고 **결말이 달라도 되는 건 아니다.**
+        #   `parse_fail`과 **같은 사건**(닿았는데 내용이 없다)이라 **같은 결말**로 수렴시킨다.
+        #   다르게 두면 *"어느 provider를 쓰는가"* 가 판정을 바꾼다.
         text = (result.text or "").strip()
         if not text:
-            raise LlmError("counselor 응답이 비었다")
+            return ""
         return text
 
 
