@@ -65,7 +65,9 @@ _CLEAN_BODIES: Final = (
 )
 
 #: 🔴 **보류 3항** — 낮추면 위 대조군을 오탐한다(실측 8/19). 이것이 **남은 하한**이다.
-_WITHHELD: Final = ("틀렸습니다", "느립니다", "안 했습니다")
+#: ⚠ **(8/20) `못합니다` 가 늘었다**(99 #108) — 그 stem 은 **우리가 준 치환문의 활용형**을
+#: 잡았다. 나머지 셋은 PR-08 의 정상 문장 오탐 보류다.
+_WITHHELD: Final = ("못합니다", "틀렸습니다", "느립니다", "안 했습니다")
 
 
 def _entry(source: str) -> Replacement:
@@ -109,16 +111,20 @@ def test_a_conjugated_form_is_counted_when_a_stem_was_given(
 def test_the_original_termination_form_is_still_counted() -> None:
     """🔴 **`stem or from` 이 아니라 둘 다 본다** — 좁힌 어간이 원본을 안 품는다.
 
-    실측: `못한` ⊄ `못합니다`. `or` 로 갈면 **종결형 자체를 놓쳐** 계수가 **줄어든다** —
+    실측: `심각한` ⊄ `심각합니다`. `or` 로 갈면 **종결형 자체를 놓쳐** 계수가 **줄어든다** —
     「하한을 고치러 와서 다른 하한을 만드는」 꼴이다.
+
+    ⚠ **(8/20) 표본을 `못합니다` → `심각합니다` 로 옮겼다** — 이 검사의 축은
+    **「합집합인가」**이지 특정 항이 아닌데, `못합니다` 의 stem 이 99 #108 로 **보류**가 되면서
+    표본이 사라졌다. 🔴 **축이 아니라 표본이 죽은 것이라 축을 지우지 않고 옮겼다.**
     """
-    assert _entry("못합니다").stem == "못한"
-    assert "못합니다" not in _entry("못합니다").stem
+    assert _entry("심각합니다").stem == "심각한"
+    assert "심각합니다" not in _entry("심각합니다").stem
 
     hits = observe_gated_draft(
-        "이 유형은 아직 못합니다.", origin=ORIGIN_DRAFT, tenant_id=_TENANT, execution_id=_RUN
+        "이 상황은 심각합니다.", origin=ORIGIN_DRAFT, tenant_id=_TENANT, execution_id=_RUN
     )
-    assert "못합니다" in hits, "stem 을 주면서 원본 종결형을 놓쳤다"
+    assert "심각합니다" in hits, "stem 을 주면서 원본 종결형을 놓쳤다"
 
 
 # ── 2 · 🔴 프롬프트가 안 바뀐다 ───────────────────────────────────

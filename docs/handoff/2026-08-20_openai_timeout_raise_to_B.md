@@ -53,6 +53,20 @@
   안 고쳐도 됩니다. **승우님께 통보 0회입니다.**
 - 배포 환경변수 `OPENAI_TIMEOUT_S=45`로 덮는 것은 진희님이 넣습니다.
 
+## ⚠ 부수 — `.env` 에 45를 넣으면 검사 하나가 red 입니다 (99 #109)
+
+`tests/ai/llm/test_openai_compat.py::test_default_timeout_is_total_15s` 가
+`OpenAiSettings().openai_timeout_s == 15.0` 을 단언합니다. `OpenAiSettings` 는
+`.env` 를 읽는 `BaseSettings` 라, 배포 판정대로 `.env` 에 `OPENAI_TIMEOUT_S=45` 를
+넣으면 **「기본값이 15인가」를 재려던 검사가 「현재 설정」을 보고 red** 가 됩니다.
+
+⚠ 실측(2026-08-20): **develop 기준으로도 red** 입니다 — A 쪽 변경과 무관합니다.
+
+🔴 **A 가 안 고쳤습니다** — `tests/ai/llm/` 은 `llm/` 축이라 B 소유입니다(02 §5).
+기본값을 45로 올리시면 그 단언도 45로 바뀌면 됩니다. 기본값을 안 올리기로 하시면,
+검사가 `.env` 와 무관해지도록 `OpenAiSettings.model_fields["openai_timeout_s"].default`
+를 보게 바꾸는 쪽이 의도에 맞습니다.
+
 ## 요청
 
 `openai_timeout_s: float = 15.0` → `45.0`.
