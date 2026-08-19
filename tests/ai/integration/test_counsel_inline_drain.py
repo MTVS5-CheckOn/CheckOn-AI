@@ -50,9 +50,13 @@ def _request_body() -> dict[str, Any]:
 
 @pytest.fixture(autouse=True)
 def _isolate() -> Iterator[None]:
+    #: 🔴 `get_counsel_settings` 는 `@lru_cache` 다 — 한 검사가 `K` 를 env 로 올리면
+    #: 안 비울 때 **다음 검사로 샌다**(그러면 상한 검사가 거짓 green 이다).
+    get_counsel_settings.cache_clear()
     reset_shared_agent_runtime()
     reset_counsel_stores()
     yield
+    get_counsel_settings.cache_clear()
     reset_shared_agent_runtime()
     reset_counsel_stores()
 
@@ -207,7 +211,18 @@ def test_another_jobs_failure_does_not_break_my_request(
 
     ⚠ 그렇다고 조용히 삼키지도 않는다 — 라우터가 `logger.warning`으로 남긴다.
     ⚠ **예외 뒤에도 계속 돈다** — 한 번 터졌다고 멈추면 내 잡이 영영 안 돈다.
+
+    🔴 **(8/20) 이 검사는 `K ≥ 2` 를 전제한다** — 「예외 뒤에도 **계속** 돈다」는 회전이
+    두 번 이상이어야 **관측할 수 있는 성질**이다. 기본 K가 1로 내려가면서(99 #106) 이
+    검사가 red 가 됐다.
+    ⇒ **단언을 약화하지 않고** 이 검사에서만 `K=2` 를 명시적으로 준다. 재는 것은
+    **기본값이 몇인가**가 아니라 **루프의 예외 처리**이고, 그 축은 K와 무관하게 살아 있어야
+    한다(K가 다시 올라갈 수 있다 — #85 ①).
+    ⚠ 기본값이 1이라 **그 `continue` 는 기본 설정에서 도달하지 않는다** — 죽은 코드가
+    아니라 «지금은 안 지나는 정상 분기»다(99 #103 ㉢ 부류).
     """
+    monkeypatch.setenv("COUNSEL_INLINE_DRAIN_MAX", "2")
+    get_counsel_settings.cache_clear()
     _enqueue_others(_k() - 1)
     #: ⚠ `getattr` 로 잡는다 — 라우터가 재수출하지 않는 이름이라 직접 참조는 mypy 가 막는다.
     original = getattr(counsel_router, "open_counsel_pack_runner")  # noqa: B009
@@ -247,4 +262,46 @@ def test_another_tenants_queue_is_not_drained() -> None:
 
     assert posted["status"] == "succeeded", (
         f"남의 테넌트 큐가 내 회전을 먹었다({posted['status']}) — 테넌트 스코프가 아니다"
+    )
+
+
+# ── 🔴 K=1 의 대가 — 앞선 잡 하나로 queued 다 (99 #106) ───────────
+
+
+def test_a_single_job_ahead_now_leaves_mine_queued() -> None:
+    """🔴 **K=1 의 대가를 못 박는다** — 앞선 잡이 **하나만** 있어도 내 잡이 `queued` 다.
+
+    종전에는 K=3 이라 앞선 잡 2개까지 버텼다. 실 지연 실측(99 #106)으로 콜당 상한이
+    15s → 45s 가 되면서 응답 예산(04 §2.4 · 300s)이 **K=1** 만 허용한다.
+
+    ⚠ **이 검사가 없으면 다음 사람이 「고착이 없다」로 읽는다.** 진짜 처방은 K 를 키우는
+    것이 아니라 **배경 드레인·비동기 워커**다(99 #85 ①) — 이 값은 응급처치다.
+    """
+    assert _k() == 1, f"이 검사는 기본 K=1 을 전제한다(지금 {_k()})"
+    _enqueue_others(1)
+    with TestClient(create_app()) as client:
+        posted = _post(client)
+
+    assert posted["status"] == "queued", (
+        f"앞선 잡 1개인데 내 잡이 돌았다({posted['status']}) — K 가 1이 아니다"
+    )
+
+
+def test_a_queued_job_still_tells_the_caller_when_to_come_back() -> None:
+    """PR-01 축이 살아 있다 — `queued` 여도 `Retry-After` 가 실린다.
+
+    ⚠ K=1 이라 `queued` 가 **더 자주** 나온다 ⇒ 이 헤더가 더 중요해졌다.
+    🔴 다만 **폴링이 잡을 돌리지는 않는다** — 그건 그대로다(99 #21).
+    """
+    _enqueue_others(1)
+    with TestClient(create_app()) as client:
+        posted = _post(client)
+        assert posted["status"] == "queued", posted
+        fetched = client.get(
+            f"/v1/counsel/drafts/{posted['job_id']}", headers=_HEADERS
+        )
+
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.headers.get("Retry-After"), (
+        "queued 인데 Retry-After 가 없다 — 호출자가 언제 다시 올지 모른다"
     )
