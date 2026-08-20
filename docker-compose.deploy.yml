@@ -1,0 +1,102 @@
+# 체크온 AI — **배포** 스택: migrate · app · cloudflared. 윈도우(WSL) 서버 전용이다.
+#
+# 🔴 로컬 개발 스택이 아니다 — cloudflared 가 공개 도메인을 열고 BE(승우님)가 그 주소로
+#    붙는다. 여기를 끊으면 상대 개발이 멈춘다. ⚠ 실 주소는 .env 의 PUBLIC_BASE_URL 이다
+#    (저장소에 남기지 않는다).
+# 🔴 db 는 여기 없다 — `docker-compose.yml`(공통)이 소유한다. 이 파일 하나만으로는 안 뜬다.
+#    .env 에 아래 한 줄이 있어야 두 파일이 이어진다:
+#      COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+#
+#   ./scripts/redeploy.sh                   # 권장 — 변경 감지·DDL·반영 검증까지 한다
+#   docker compose logs -f app
+#   curl http://localhost:9000/v1/health    # ⚠ 9000 이다(호스트 기준). 컨테이너 안이 8000.
+#
+# 🔴 컨테이너 안에서는 .env의 DATABASE_URL(localhost:5434)이 **틀린 값이다** — 그 주소는
+#    호스트 기준이다. 아래 두 서비스가 environment로 db:5432를 덮어쓴다(environment가
+#    env_file보다 이긴다). ⚠ .dockerignore가 .env를 이미지에서 빼는 것도 같은 이유다.
+
+x-app-env: &app-env
+  # .env의 API 키·LLM_PROVIDER·CHECKON_ALLOW_REAL_LLM 등을 그대로 넘긴다.
+  # 🔴 CHECKON_ALLOW_REAL_LLM이 없으면 서버가 기동되지 않는다(.env 주석 · 99 #58).
+  env_file:
+    - .env
+  environment:
+    # 컨테이너 네트워크 기준 주소로 교정 — 포트는 컨테이너 내부 5432다(호스트 5434 아님).
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-checkon}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 가 .env 에 없다}@db:5432/${POSTGRES_DB:-checkon_ai}
+
+
+services:
+
+  # 1회성 잡 — 스키마를 head까지 올리고 종료한다. app은 이게 **성공 종료**해야 뜬다.
+  # ⚠ restart 정책을 걸면 안 된다(정상 종료를 실패로 보고 무한 재기동한다).
+  #
+  # 🔴 **DDL 단계가 둘이다.** alembic 은 앱 소유 26테이블만 만든다 — LangGraph 체크포인트
+  #    4테이블(checkpoints·checkpoint_writes·checkpoint_blobs·checkpoint_migrations)은
+  #    LangGraph 가 소유해서 `db/models.py` 의 `Base.metadata` **밖**이다. 그래서
+  #    `alembic current == heads` 인데도 없을 수 있다.
+  #    ⚠ 2026-08-12 `STORE_BACKEND` 기본값이 `pg` 로 뒤집힌 뒤 이 명령이 필수가 됐는데
+  #      **아무도 안 돌렸고 8일간 counsel·problem_generation·import 프로브 잡이 전부
+  #      `worker_internal_error` 로 죽었다**(2026-08-20 발견). 기동은 정상이고 /v1/ready 도
+  #      200 이라 증상이 조용했다.
+  #    ⇒ 사람이 기억해야 하는 단계로 두지 않는다. app 이 migrate 성공을 기다리므로
+  #      여기 붙이면 **테이블 없이 뜨는 창 자체가 없다.** setup() 은 멱등이라 매번 돌아도 된다.
+  migrate:
+    build: .
+    <<: *app-env
+    command:
+      - "sh"
+      - "-c"
+      - "alembic upgrade head && python -m ai.agents.checkpointer"
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build: .
+    <<: *app-env
+    ports:
+      - "${APP_PORT:?APP_PORT 가 .env 에 없다 — BE 계약 포트 9000이고 Cloudflare 대시보드의 localhost:9000 과 짝이다}:8000"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        # 마이그레이션이 끝나기 전에 뜨면 첫 요청이 없는 테이블을 친다.
+        condition: service_completed_successfully
+    healthcheck:
+      # ⚠ slim 이미지에 curl이 없다 — venv의 python으로 확인한다.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/health').read()"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # 공개 터널 — BE(승우님) 실통신 경로. 주소는 .env 의 PUBLIC_BASE_URL.
+  #
+  # 🔴 **왜 컨테이너로 내렸나**(2026-08-14). 종전에는 Windows 서비스로 돌면서
+  #    Windows localhost:9000 → `netsh portproxy` → WSL IP → 컨테이너 순으로 들어왔다.
+  #    그 portproxy가 **WSL IP를 하드코딩**한다 — WSL IP는 재부팅하면 바뀔 수 있고,
+  #    바뀌면 도메인은 멀쩡한데 502만 돌아온다(제일 찾기 어려운 형태다). 앱과 같은
+  #    네임스페이스에 두면 그 다리 자체가 없어진다.
+  #
+  # ⚠ `network_mode: host` 인 이유 — 이 터널은 **원격 관리(토큰) 방식**이라 ingress 규칙이
+  #   로컬 파일이 아니라 Cloudflare 대시보드에 있고, 거기 `localhost:9000` 으로 적혀 있다.
+  #   host 네임스페이스를 쓰면 그 주소가 아래 app 의 9000 포트 매핑을 그대로 가리켜서
+  #   **대시보드를 손대지 않고** 옮길 수 있다. compose 네트워크로 바꾸려면 대시보드를
+  #   `http://app:8000` 으로 먼저 고쳐야 한다 — 순서를 뒤집으면 터널이 끊긴다.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    # --no-autoupdate: 컨테이너는 이미지 태그로 버전을 관리한다. 자체 업데이트가 돌면
+    #   재현 가능한 배포가 깨지고, 업데이트 중 커넥터가 잠깐 빠진다.
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN 이 .env 에 없다}"]
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+
