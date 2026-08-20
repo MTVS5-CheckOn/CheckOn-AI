@@ -1052,6 +1052,17 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 주 DB에 제한시간이 있는 경량 질의를 수행한다. 체크포인터가 별도 DB URL을 쓰면 그 연결도
 확인한다. migration·테이블 생성·실 LLM·외부 API 호출은 하지 않는다.
 
+🔴 **`ready`는 「DB에 접속된다」만 뜻한다 — 스키마 준비도, 잡 처리 가능성도 보지 않는다.**
+2026-08-12~08-20 배포에서 LangGraph 체크포인트 테이블이 0/4인 채로 **8일간 `200 ready`**
+였고, 그동안 counsel·problem_generation·import 프로브 잡은 전량
+`worker_internal_error`로 죽었다. ⚠ **이 엔드포인트로 배포 성공을 판정하지 마라** —
+BE·모니터링 모두 마찬가지다.
+
+⚠ 그렇다고 이 엔드포인트에 스키마 점검을 넣지 않는다. 배포 순서로 막는 것이 더 강하다 —
+`docker-compose.deploy.yml`의 `migrate`가 두 DDL(`alembic upgrade head` +
+`python -m ai.agents.checkpointer`)을 돌고, `app`이 그 **성공 종료**를 기다리므로
+테이블 없이 앱이 뜨는 창 자체가 없다. 그 배선은 `tests/ai/contract/test_deploy_compose_contract.py`가 고정한다.
+
 - 전부 준비됨: `200` + `data.status="ready"`.
 - 하나라도 미준비·제한시간 초과: `503 SERVICE_NOT_READY`.
 - 실패 `detail`에는 `unavailable_components`의 논리 이름만 싣는다. DB URL·계정·SQL·드라이버

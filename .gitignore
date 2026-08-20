@@ -47,8 +47,6 @@ briefing_preview_result.md
 .idea/
 .DS_Store
 
-docker-compose.yml
-docker-compose.yaml
 
 # 외부 데이터셋 원본·분석 산출물 — 레포에 반입하지 않는다(EdNet KT1은 CC BY-NC 4.0).
 local_data/
@@ -63,3 +61,6 @@ ppt/
 docs/part_a/examples/seed/learning_records.csv
 docs/part_a/examples/seed/detection_assignment_week_summaries.csv
 docs/part_a/examples/seed/checkon_seed.sql
+
+# 기계별 임시 조정 — 커밋하지 않는다(공통·배포 파일은 저장소가 소유한다).
+docker-compose.override.yml
