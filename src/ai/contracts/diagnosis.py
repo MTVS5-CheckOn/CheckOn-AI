@@ -43,6 +43,13 @@ class DiagnosisEvent(BaseModel):
     item_format: ItemFormat | None = None
     """분리 리포팅용이며 약점 판정 축에는 사용하지 않는다."""
 
+    chosen_no: int | None = Field(default=None, ge=1, le=5)
+    """학생이 고른 1-based 선지 번호. 비객관식이거나 미상이면 null이다.
+
+    **v1 약점 판정 축에는 쓰지 않는다.** 오개념 분리 리포팅을 위한 수신 필드이며,
+    정오 판정은 기존 `correct` 값을 그대로 사용한다.
+    """
+
     passage_ref: str | None = Field(default=None, min_length=1)
     """지문/자료 묶음 참조 — 같은 지문·도표·〈보기〉를 공유하는 문항이 같은 값을 갖고
     재출제 시에도 유지된다(`05_request_json.md` [A 확정 통보 2026-08-03 · 승우 합의]).

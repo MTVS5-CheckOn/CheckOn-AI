@@ -101,6 +101,27 @@ def test_event_rejects_unknown_field() -> None:
         DiagnosisEvent.model_validate(data)
 
 
+@pytest.mark.parametrize("chosen_no", [1, 5])
+def test_event_accepts_mcq_chosen_no(chosen_no: int) -> None:
+    data = _event().model_dump(mode="json")
+    data["chosen_no"] = chosen_no
+
+    assert DiagnosisEvent.model_validate(data).chosen_no == chosen_no
+
+
+def test_chosen_no_is_optional_for_unknown_or_non_mcq_event() -> None:
+    assert _event().chosen_no is None
+
+
+@pytest.mark.parametrize("chosen_no", [0, 6])
+def test_event_rejects_chosen_no_outside_mcq_range(chosen_no: int) -> None:
+    data = _event().model_dump(mode="json")
+    data["chosen_no"] = chosen_no
+
+    with pytest.raises(ValueError, match="chosen_no"):
+        DiagnosisEvent.model_validate(data)
+
+
 # ── passage_ref — 05 [A 확정 통보 2026-08-03] 수신 계약 ──────────────
 
 

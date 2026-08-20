@@ -297,6 +297,30 @@ def test_passage_ref_does_not_change_v1_verdicts() -> None:
     assert tagged.weakness_map == baseline.weakness_map
 
 
+def test_chosen_no_does_not_change_v1_verdicts() -> None:
+    """chosen_no는 P4 수신 필드일 뿐 v1 셀·노드 판정 축이 아니다."""
+
+    events = _events(
+        "chosen",
+        area_tag=AreaTag.LANGUAGE,
+        type_tag=TypeTag.CONCEPT,
+        total=12,
+        correct=4,
+    )
+    baseline = _diagnose(*events)
+    tagged = _diagnose(
+        *(
+            event.model_copy(update={"chosen_no": 2})
+            if not event.correct
+            else event
+            for event in events
+        )
+    )
+
+    assert baseline.weakness_map is not None
+    assert tagged.weakness_map == baseline.weakness_map
+
+
 def test_non_weak_cell_has_no_severity() -> None:
     result = _diagnose(*_boundary_events())
 
