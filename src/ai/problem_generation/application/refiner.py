@@ -21,7 +21,6 @@ from ai.contracts.problem_generation import (
     ReviewReason,
     SolveResult,
 )
-from ai.contracts.taxonomy import AreaTag
 from ai.llm.determinism import deterministic_params
 from ai.llm.gateway import LlmGateway
 from ai.llm.prompts.loader import LoadedPromptTemplate, load_prompt_template
@@ -135,8 +134,12 @@ class ProblemItemRefiner:
         instruction: str,
         execution_context: ExecutionContext,
     ) -> ProblemRefineOutcome:
-        if request.area_tag is not AreaTag.LANGUAGE:
-            raise NotImplementedError("현재 ai_refine은 language 문항만 지원한다")
+        # 🔴 **영역 제한을 없앴다(5영역).** 종전에는 여기서 `language` 만 통과시켜, 출제는
+        #   5영역이 열렸는데 수정은 언어 하나만 되는 구멍이 있었다. 수정 컨텍스트가 이제
+        #   생성 경로와 같은 축으로 갈리고(`graph_context`), 생성·저작물 트랙은 **원 문항이
+        #   이미 승인받은 근거만 재사용**한다 — 수정은 근거를 새로 조달하는 자리가 아니다.
+        # ⚠ 근거를 새로 지어내는 것은 여전히 막힌다(불변식 2) — 허용 집합이 원 문항의
+        #   것으로 닫혀 있어 `R-1:근거_참조_불일치` 가 잡는다.
         if original.skill_node_id is None:
             raise ValueError("수정할 문항에 skill_node_id가 없다")
 

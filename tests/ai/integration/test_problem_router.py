@@ -794,16 +794,28 @@ def test_step3_unsupported_revision_kind_is_rejected_before_revision_or_llm(
     assert len(run_store.runs) == 1
 
 
-def test_step3_non_language_revision_is_rejected_before_revision_or_llm() -> None:
+def test_step3_non_language_revision_reuses_the_items_approved_evidence() -> None:
+    """🔴 **비-language 문항도 수정된다** — 종전엔 400 으로 막혔다.
+
+    출제는 5영역이 열렸는데 수정은 언어 하나만 되는 구멍이었다. 수정 컴텍스트가
+    이제 생성 경로와 같은 축으로 갈리고, 생성·저작물 트랙은 **원 문항이 이미 승인받은
+    근거만 재사용**한다(새 근거 조달 없음).
+
+    ⚠ 근거를 새로 지어내는 것은 여전히 막힌다 — 허용 집합이 원 문항의 것으로 닫혀 있어
+    `R-1:근거_참조_불일치` 가 잡는다(불변식 2).
+    """
     material = SourceMaterialDraft(
         material_text="학생 A가 승인 근거를 활용해 발표 자료를 구성했다.",
         evidence_anchor_ids=("grammar:rule-1",),
     )
     run_store, _stores, generator, verifier = _prepare(
+        calls=2,  # 수정본도 교차 풀이를 재통과한다
         generator_steps=(
             material.model_dump_json(),
             _generated_item_json(area_tag=AreaTag.SPEECH_WRITING),
-        )
+            # 수정본 — 원 문항과 같은 승인 근거를 그대로 인용한다
+            _generated_item_json(area_tag=AreaTag.SPEECH_WRITING),
+        ),
     )
     body = _body(area_tag="speech_writing")
     body["passage"] = {
@@ -837,14 +849,13 @@ def test_step3_non_language_revision_is_rejected_before_revision_or_llm() -> Non
             headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
         )
 
-    assert rejected.status_code == 400
-    assert rejected.json()["error"]["detail"] == {
-        "reason": "revision_area_not_implemented"
-    }
-    assert detailed.json()["data"]["revisions"] == []
-    assert len(generator.requests) == 2
-    assert len(verifier.requests) == 1
-    assert len(run_store.runs) == 1
+    assert rejected.status_code == 200, rejected.text
+    assert detailed.json()["data"]["revisions"] != [], "수정 이력이 안 남았다"
+    # 생성 2회(자료·문항) + 수정 1회
+    assert len(generator.requests) == 3
+    assert len(verifier.requests) == 2
+    # 수정도 하나의 실행이라 원장이 하나 더 남는다(생성 1 + 수정 1)
+    assert len(run_store.runs) == 2
 
 
 def test_step3_prompt_injection_records_blocked_revision_without_llm_call() -> None:
