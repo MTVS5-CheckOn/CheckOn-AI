@@ -224,6 +224,23 @@ class CounselSettings(BaseSettings):
     정확히 그 형태였다(기동 정상 · `/v1/ready` 200 · 잡만 전부 실패). ⇒ `DrainHeartbeat` 가
     마지막 성공 시각을 들고 있고, 이 값을 넘으면 `stale` 이다."""
 
+    counsel_drain_heartbeat_seconds: float = Field(default=60.0, gt=0)
+    """드레인이 **살아 있다고 밖에 알리는** 주기(초).
+
+    🔴 **`stale` 만으로는 부족하다** — 그것은 프로세스 **안**의 판정이고, `drain.py` 밖에서
+    `DrainHeartbeat` 를 읽는 자리가 없다(2026-08-20 실측: 기동 60초 뒤에도 로그 **한 줄**).
+    ⇒ 밖에서 보면 「돌고 있는데 할 일이 없다」와 「멈췄다」가 **구분이 안 된다.**
+    관측 장치를 만들 때 **읽는 자리를 같이** 만들지 않으면 없는 것과 같다(결정 로그 59).
+
+    ⚠ 이 주기로 찍는 문면에는 `sweeps`(돈 횟수)와 `jobs_run`(처리한 잡 수)이 **둘 다**
+    들어가야 한다 — 하나만 있으면 위 두 상태가 여전히 안 갈린다:
+
+        sweeps 증가 · jobs_run 0   → 돌고 있는데 할 일이 없다(정상)
+        로그가 끊긴다              → 멈췄다
+        sweeps 고정 · 로그는 나온다 → 루프가 걸렸다
+
+    ⚠ 집계만 싣는다 — 본문·job_id·tenant_id 는 안 싣는다(`snapshot()` 규율 · 불변식 3)."""
+
     counsel_poll_retry_after_seconds: int = Field(default=2, ge=1)
     """비종단 GET 응답의 `Retry-After` 값(초) — **호출자에게 언제 다시 오라고 말한다.**
 

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Final
@@ -75,9 +76,7 @@ async def _body_the_sweep_respects_both_bounds(monkeypatch: pytest.MonkeyPatch) 
         return tenants[:limit]
 
     monkeypatch.setattr("ai.composition.counsel.drain.pending_tenants", fake_tenants)
-    settings = CounselSettings(
-        counsel_drain_tenants_per_sweep=3, counsel_drain_jobs_per_tenant=2
-    )
+    settings = CounselSettings(counsel_drain_tenants_per_sweep=3, counsel_drain_jobs_per_tenant=2)
     ran = await sweep_once(run_job=never_empty, settings=settings)
     assert ran == 6, f"3테넌트 × 2건이어야 하는데 {ran}건 돌았다"
     assert sorted(set(seen)) == ["t0", "t1", "t2"], "테넌트 상한을 넘었다"
@@ -199,7 +198,12 @@ def test_the_snapshot_carries_no_identifiers() -> None:
     beat.sweep_ok(2)
     snapshot = beat.snapshot()
     assert set(snapshot) == {
-        "sweeps", "jobs_run", "consecutive_errors", "last_error", "last_sweep_at", "stale",
+        "sweeps",
+        "jobs_run",
+        "consecutive_errors",
+        "last_error",
+        "last_sweep_at",
+        "stale",
     }
     assert snapshot["jobs_run"] == 2
 
@@ -224,3 +228,91 @@ def test_the_loop_backs_off_instead_of_spinning(monkeypatch: pytest.MonkeyPatch)
     asyncio.run(_body_the_loop_backs_off_instead_of_spinning(monkeypatch))
 
 
+# ── 🔴 밖에서 보이는가 — 주기 하트비트 (№24-W §A) ──────────────────────
+
+
+async def _drain_with_clock(
+    clock: _Clock, *, settings: CounselSettings, sweeps: int
+) -> DrainHeartbeat:
+    """스윕마다 시계를 1초씩 밀며 루프를 `sweeps` 바퀴 돌린다."""
+    beat = DrainHeartbeat(now=clock, started_at=clock.now)
+
+    async def tenants(_limit: int) -> list[str]:
+        clock.advance(1)
+        return []
+
+    async def unused(_tenant: str) -> object:  # pragma: no cover — 잡이 없다
+        raise AssertionError
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("ai.composition.counsel.drain.pending_tenants", tenants)
+        patch.setattr(asyncio, "sleep", _noop_sleep)
+        return await drain_forever(
+            run_job=unused, heartbeat=beat, settings=settings, max_sweeps=sweeps
+        )
+
+
+async def _noop_sleep(_seconds: float) -> None:
+    return None
+
+
+@pytest.mark.anyio
+async def test_the_heartbeat_log_carries_both_sweeps_and_jobs_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """🔴 **`jobs_run` 이 문면에 없으면 「할 일이 없다」와 「멈췄다」가 안 갈린다.**
+
+    `sweeps` 만 찍으면 *"돌고 있다"* 는 보이지만 *"일을 하고 있나"* 가 안 보이고,
+    `jobs_run` 만 찍으면 0 이 계속될 때 **루프가 도는 중인지 멈췄는지** 모른다.
+    이 검사가 이 커밋의 존재 이유다(§A-5 안전선).
+    """
+    clock = _Clock()
+    settings = CounselSettings(counsel_drain_heartbeat_seconds=3.0)
+    with caplog.at_level(logging.INFO, logger="ai.composition.counsel.drain"):
+        await _drain_with_clock(clock, settings=settings, sweeps=5)
+    beats = [r.getMessage() for r in caplog.records if "하트비트" in r.getMessage()]
+    assert beats, "주기 하트비트가 한 번도 안 찍혔다 — 밖에서 드레인을 볼 수 없다"
+    assert "'sweeps'" in beats[0], f"문면에 sweeps 가 없다: {beats[0]}"
+    assert "'jobs_run'" in beats[0], (
+        f"문면에 jobs_run 이 없다: {beats[0]} — 「돌고 있는데 할 일이 없다」와 "
+        "「멈췄다」가 구분되지 않는다"
+    )
+
+
+@pytest.mark.anyio
+async def test_the_heartbeat_period_comes_from_settings(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """주기가 설정에서 온다 — 하드코딩이면 값을 바꿔도 로그 수가 안 갈린다(03 §1)."""
+    counts = []
+    for period in (2.0, 100.0):
+        caplog.clear()
+        clock = _Clock()
+        with caplog.at_level(logging.INFO, logger="ai.composition.counsel.drain"):
+            await _drain_with_clock(
+                clock,
+                settings=CounselSettings(counsel_drain_heartbeat_seconds=period),
+                sweeps=6,
+            )
+        counts.append(sum(1 for r in caplog.records if "하트비트" in r.getMessage()))
+    assert counts[0] > counts[1], (
+        f"주기를 2초와 100초로 바꿨는데 하트비트 수가 안 갈린다({counts}) — 하드코딩이다"
+    )
+
+
+@pytest.mark.anyio
+async def test_the_heartbeat_log_carries_no_identifiers(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """🔴 관측이 본문·job_id·tenant_id 를 안 싣는다 — 불변식 3."""
+    clock = _Clock()
+    with caplog.at_level(logging.INFO, logger="ai.composition.counsel.drain"):
+        await _drain_with_clock(
+            clock,
+            settings=CounselSettings(counsel_drain_heartbeat_seconds=2.0),
+            sweeps=4,
+        )
+    beats = [r.getMessage() for r in caplog.records if "하트비트" in r.getMessage()]
+    assert beats
+    for forbidden in ("tenant", "job_id", "text", "student", "parent"):
+        assert forbidden not in beats[0], f"하트비트 문면에 `{forbidden}` 이 실렸다: {beats[0]}"

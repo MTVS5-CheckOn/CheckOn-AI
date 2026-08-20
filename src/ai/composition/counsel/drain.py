@@ -192,6 +192,11 @@ async def drain_forever(
     resolved = settings or get_counsel_settings()
     beat = heartbeat or DrainHeartbeat()
     sweeps = 0
+    #: 🔴 **밖에서 볼 수 있게 주기로 찍는다.** `stale` 은 프로세스 안의 판정이고, 이 모듈
+    #: 밖에서 `DrainHeartbeat` 를 읽는 자리가 없다 — 정상 동작 중엔 기동 로그 한 줄이
+    #: 전부였다(2026-08-20 실측). 그러면 「할 일이 없다」와 「멈췄다」가 안 갈린다.
+    #: ⚠ 주기는 설정이다(03 §1). 시계는 `beat.now` 를 쓴다 — 검사가 구동할 수 있어야 한다.
+    last_beat_log_at = beat.now()
     while not (stop is not None and stop.is_set()):
         if max_sweeps is not None and sweeps >= max_sweeps:
             break
@@ -208,6 +213,13 @@ async def drain_forever(
             await asyncio.sleep(resolved.counsel_drain_error_backoff_seconds)
             continue
         beat.sweep_ok(ran)
+        if (beat.now() - last_beat_log_at).total_seconds() >= (
+            resolved.counsel_drain_heartbeat_seconds
+        ):
+            #: 🔴 `sweeps` 와 `jobs_run` 이 **둘 다** 실린다(`snapshot()`) — 하나만으로는
+            #: 「돌고 있는데 할 일이 없다」와 「멈췄다」가 안 갈린다.
+            logger.info("counsel 드레인 하트비트 %s", beat.snapshot())
+            last_beat_log_at = beat.now()
         if beat.is_stale(settings=resolved):
             #: 🔴 성공했는데 stale 이면 **한 바퀴가 상한보다 오래 걸린다**는 뜻이다.
             logger.warning("counsel 드레인: 한 바퀴가 stale 상한을 넘었다 %s", beat.snapshot())

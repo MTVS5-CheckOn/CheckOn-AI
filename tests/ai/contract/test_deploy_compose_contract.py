@@ -125,3 +125,45 @@ def test_the_contract_values_have_no_silent_fallback(variable: str) -> None:
         f"`${{{variable}:?사유}}` 형태가 없다. 사유 문면까지 있어야 다음 사람이 "
         "무엇을 채워야 하는지 안다"
     )
+
+
+#: 배경 드레인 워커 — `app` 과 같은 이미지로 큐를 돈다(99 #85 ① · #126 ③).
+_DRAIN_SERVICE: Final = "counsel-drain"
+
+
+def test_the_drain_waits_for_migrate_to_succeed() -> None:
+    """드레인도 체크포인트 테이블을 쓴다 — 없으면 8/12 형태로 조용히 죽는다."""
+    depends_on = _service(_DEPLOY_COMPOSE, _DRAIN_SERVICE).get("depends_on") or {}
+    condition = (depends_on.get("migrate") or {}).get("condition")
+    assert condition == "service_completed_successfully", (
+        f"{_DRAIN_SERVICE}.depends_on.migrate.condition이 {condition!r}이다. "
+        "드레인은 `open_checkpointer`를 타는 축을 돌린다 — DDL 전에 뜨면 잡을 집는 족족 "
+        "`worker_internal_error`로 죽는다"
+    )
+
+
+def test_the_drain_shares_the_container_side_database_url() -> None:
+    """🔴 YAML 병합(`<<`)은 서비스가 제 `environment:` 를 선언하면 **통째로 밀린다**.
+
+    `x-app-env` 가 `DATABASE_URL` 을 컨테이너 기준(`db:5432`)으로 교정하는데, 서비스가
+    자기 `environment:` 를 쓰면 그 교정이 사라지고 `.env` 의 `localhost:5434`(호스트 기준)
+    가 그대로 간다 ⇒ 드레인은 컨테이너 안에서 **아무 데도 못 붙는다.**
+    ⚠ 증상이 조용하다 — 컨테이너는 뜨고 재시작만 반복한다.
+
+    ⚠ **문법이 아니라 결과를 본다.** `yaml.safe_load` 는 `<<` 를 **펼쳐서** 읽으므로
+    「`environment:` 키가 있는가」로는 앵커에서 온 것과 제가 쓴 것을 못 가른다
+    (초판이 그렇게 짰다가 red 로 잡혔다) — 두 서비스의 **값이 같은지**로 잠근다.
+    """
+    app_url = (_service(_DEPLOY_COMPOSE, "app").get("environment") or {}).get("DATABASE_URL")
+    drain_url = (_service(_DEPLOY_COMPOSE, _DRAIN_SERVICE).get("environment") or {}).get(
+        "DATABASE_URL"
+    )
+    assert app_url, "app 의 DATABASE_URL 교정이 사라졌다 — x-app-env 앵커를 확인하라"
+    assert "@db:" in app_url, (
+        f"app 의 DATABASE_URL 이 컨테이너 기준이 아니다({app_url!r}) — 호스트 주소는 "
+        "컨테이너 안에서 아무 데도 못 붙는다"
+    )
+    assert drain_url == app_url, (
+        f"{_DRAIN_SERVICE} 의 DATABASE_URL 이 app 과 다르다({drain_url!r}). 자기 "
+        "`environment:` 블록으로 공용 앵커를 덮은 것이다 — 값을 더해야 하면 앵커에 넣어라"
+    )
