@@ -474,8 +474,14 @@ def test_vendor_extra_body_is_not_sent_by_default() -> None:
 
 
 def test_default_timeout_is_total_15s() -> None:
-    """기본 상한은 15s(전체 기준) — v2 프리뷰 실측 반영으로 10s에서 상향."""
-    assert OpenAiSettings().openai_timeout_s == 15.0
+    """기본 상한은 15s(전체 기준) — v2 프리뷰 실측 반영으로 10s에서 상향.
+
+    🔴 **`_env_file=None`으로 `.env`를 끊는다.** 종전에는 그냥 `OpenAiSettings()`였는데
+    그건 **선언 기본값이 아니라 이 기기의 `.env` 값**을 읽는다 — 운영에서 타임아웃을
+    올리면 이 검사가 빨개졌고, 검사 이름이 말하는 「기본값」과 보는 값이 달랐다.
+    ⚠ 같은 함정을 `env_files.py`가 이미 한 번 기록했다(작업 디렉터리 의존 · 99 #73).
+    """
+    assert OpenAiSettings(_env_file=None).openai_timeout_s == 15.0
 
 
 def test_settings_surface_is_openai_only() -> None:

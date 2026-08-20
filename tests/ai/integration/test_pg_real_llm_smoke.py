@@ -818,7 +818,7 @@ def test_unavailable_reason_reports_only_categorical_failure_metadata() -> None:
     record = LlmCallRecord(
         role=ModelRole.GENERATOR,
         prompt_id="pg.items.v1",
-        prompt_version="v4",
+        prompt_version="v5",
         provider="local-generator",
         model=None,
         usage=None,
@@ -851,7 +851,7 @@ async def _fake_cli_observation() -> RealLlmSmokeObservation:
             role=ModelRole.GENERATOR,
             prompt="[마스킹 통과 프롬프트]",
             prompt_id="pg.items.v1",
-            prompt_version="v4",
+            prompt_version="v5",
         ),
         _execution_context(),
     )

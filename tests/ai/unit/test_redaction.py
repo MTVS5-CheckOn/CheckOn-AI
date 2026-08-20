@@ -113,9 +113,23 @@ def test_findings_do_not_leak_original_values() -> None:
     assert "김서연" not in joined and "5678" not in joined
 
 
-def test_uncertain_marks_flag() -> None:
+def test_single_candidate_is_masked_without_stopping_transmission() -> None:
+    """후보 1개 — 값은 지우되 전송은 막지 않는다.
+
+    `policies/masking_redaction.md` §2 [A 확정 7/23]: **1개면 그 토큰만**,
+    **2개 이상이면 문장 통째 + `uncertain=True`**. 종전 구현은 1개에도 플래그를 세워
+    스펙보다 넓게 막았고, 그 때문에 한국어 산문으로 도는 출제 경로가 사실상 닫혀 있었다.
+    """
     result = redact("서연이가 왔어요")
     assert "⟪확인필요⟫" in result.masked_text
+    assert "서연" not in result.masked_text
+    assert result.uncertain is False
+
+
+def test_two_candidates_in_one_sentence_stop_transmission() -> None:
+    """후보 2개 — 밀도 규칙대로 문장 통째가 `⟪확인필요⟫`가 되고 전송이 멈춘다."""
+    result = redact("서연이가 민준이랑 왔어요")
+    assert result.masked_text.strip() == "⟪확인필요⟫"
     assert result.uncertain is True
 
 

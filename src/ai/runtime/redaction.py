@@ -224,9 +224,23 @@ class _Redactor:
         self.emitted[token] = label
         return token
 
-    def _uncertain_token(self) -> str:
+    def _uncertain_marker(self) -> str:
+        """`⟪확인필요⟫` 토큰만 만든다 — **전송 중단 신호(`uncertain`)는 세우지 않는다.**
+
+        🔴 **토큰과 트립와이어는 다른 축이다.** 토큰은 *"이 자리의 값을 지웠다"* 이고
+        `uncertain`은 *"판단이 안 서니 전송을 멈춰라"* 다. 값이 이미 지워진 자리까지
+        전송을 멈추면 **안전해진 텍스트를 못 보낸다.**
+
+        ⚠ 밀도 규칙의 정본은 `policies/masking_redaction.md` §2 **[A 확정 7/23]** 이다 —
+        후보 **1개면 토큰만**, **2개 이상이면 문장 통째 + `uncertain=True`**.
+        """
         token = f"⟪{self.cfg.tokens['uncertain']}⟫"
         self.emitted[token] = self.cfg.tokens["uncertain"]
+        return token
+
+    def _uncertain_token(self) -> str:
+        """`⟪확인필요⟫` + **전송 중단 신호**."""
+        token = self._uncertain_marker()
         self.uncertain = True
         return token
 
@@ -359,8 +373,18 @@ class _Redactor:
         if len(matches) >= self.cfg.density_threshold:
             return self._uncertain_token()
         if len(matches) == 1:
+            # 🔴 **후보 1개는 토큰만 바꾸고 전송을 막지 않는다** — `policies/masking_redaction.md`
+            #   §2 [A 확정 7/23]이 `uncertain=True`를 **2개 이상에만** 붙였다. 종전 구현은
+            #   1개에도 플래그를 세워 **스펙보다 넓게 막았다** — 스펙 갭이 아니라 구현
+            #   갭이고, 같은 문서가 8/5에 기록한 그 부류다.
+            # ⚠ **마스킹은 그대로다** — 후보 값은 여전히 `⟪확인필요⟫`로 치환되어 LLM에
+            #   나가지 않는다(불변식 3). 바뀌는 것은 「이미 지운 자리 때문에 전송을
+            #   멈출 것인가」뿐이다.
+            # 🔴 실측(문학 풀 문장 35,861개): 후보 0개 89.1% · **1개 9.4%** · 2개 이상 1.5%.
+            #   종전엔 그 9.4%가 전송을 막아 한국어 산문으로 도는 출제 경로가 사실상
+            #   닫혀 있었다.
             match = matches[0]
-            return sentence[: match.start(1)] + self._uncertain_token() + sentence[match.end(1) :]
+            return sentence[: match.start(1)] + self._uncertain_marker() + sentence[match.end(1) :]
         return sentence
 
     def _name_candidates(self, sentence: str) -> list[re.Match[str]]:

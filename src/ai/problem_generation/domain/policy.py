@@ -191,6 +191,15 @@ class VerifyConfig(BaseModel):
 
     version: str = Field(min_length=1)
     regen_max: int = Field(ge=0)
+    source_redaction_retry_max: int = Field(default=5, ge=0, le=10)
+    """생성 자료가 마스킹 불확실일 때 다시 뽑는 횟수 상한.
+
+    🔴 **`regen_max`(문항 시도)와 다른 축이라 따로 둔다.** `regen_max`는 M2 문항 시도
+    계약이라 아래 validator가 2로 못박는데, 자료 조달은 그 계약이 아니다. 같은 값을
+    쓰면 문항 계약을 건드리지 않고는 자료 재시도를 못 늘린다.
+    ⚠ 상한을 두는 이유는 불변식 6이다 — 자료 생성은 LLM 호출이라 무한이면 비용이 샌다.
+    """
+
     transport_retry: int = Field(ge=0, le=1)
     dup_similarity_max: float = Field(ge=0.0, le=1.0)
     external_similarity_max: float = Field(ge=0.0, le=1.0)

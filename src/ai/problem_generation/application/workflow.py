@@ -85,6 +85,7 @@ from ai.problem_generation.domain.difficulty import (
 )
 from ai.problem_generation.domain.external_corpus import ExternalCorpusIndex
 from ai.problem_generation.domain.identity import (
+    canonical_json,
     item_stem_hash,
     problem_item_id,
     request_hash,
@@ -107,6 +108,7 @@ from ai.problem_generation.domain.rules import (
     has_reference_data,
 )
 from ai.runtime.errors import DomainException
+from ai.runtime.redaction import redact
 
 type DiagnosisCallable = Callable[[ProblemRequest], Awaitable[DiagnosisResult]]
 
@@ -371,19 +373,42 @@ class ProblemGenerationWorkflow:
                     request.area_tag
                 ) and not has_reference_data(context_pack):
                     raise GraphContextReferenceInsufficient
+                # 🔴 **보낼 수 없는 자료를 문항 생성으로 넘기지 않는다.**
+                #   생성 자료에 인명 후보가 한 문장에 둘 이상 들어가면 전송 직전에
+                #   `RedactionBlocked` 가 나고 슬롯이 통째 드롭된다. 그런데 **자료는 세트당
+                #   한 번만 만들어지므로** 문항 재시도로는 같은 자료가 다시 온다 — 걸러야
+                #   하는 자리가 여기다.
+                # ⚠ 마스킹 규칙을 무르는 게 아니라 **보낼 수 있는 자료를 고르는** 것이다 —
+                #   문학 선택기의 `sendable_spans` 와 같은 패턴이다.
+                # 🔴 재생성이 다른 결과를 낸다는 근거는 `llm/determinism.py` 에 있다 —
+                #   같은 seed 로도 출력이 갈린다(8/13 실측 · 8회에 3종). seed 축은 안 건드린다.
+                # ⚠ 상한은 `regen_max` 를 따른다(불변식 6). 소진되면 숨기지 않고 올린다.
+                # ⚠ 재생성 횟수는 `AI_RUN` 의 LLM 호출 수로 관측된다 — 이 모듈에는 로거가
+                #   없고, 관측 하나 때문에 모듈 규약을 넓히지 않는다.
+                attempts = self._verify_config.source_redaction_retry_max + 1
                 if isinstance(passage_request, PassageRequest):
-                    draft = await self._passage_generator.generate(
-                        passage_request=passage_request,
+                    for _ in range(attempts):
+                        draft = await self._passage_generator.generate(
+                            passage_request=passage_request,
+                            context_pack=context_pack,
+                            execution_context=execution_context,
+                        )
+                        # ⚠ **원문이 아니라 직렬화 형태로 본다** — 프롬프트에는 draft 가
+                        #   `canonical_json` 으로 실린다. 원문에서는 문단이 개행으로
+                        #   갈리지만 JSON 안에서는 이스케이프돼 문장 경계가 달라지고,
+                        #   원문만 보면 통과한 자료가 실제로는 막힌다(실측).
+                        if not redact(canonical_json(draft.model_dump(mode="json"))).uncertain:
+                            return _checked_update(state, passage_draft=draft)
+                    raise RedactionBlocked("생성 지문이 재생성 상한까지 마스킹 불확실하다")
+                for _ in range(attempts):
+                    material = await self._source_material_generator.generate_source_material(
+                        source_request=passage_request,
                         context_pack=context_pack,
                         execution_context=execution_context,
                     )
-                    return _checked_update(state, passage_draft=draft)
-                material = await self._source_material_generator.generate_source_material(
-                    source_request=passage_request,
-                    context_pack=context_pack,
-                    execution_context=execution_context,
-                )
-                return _checked_update(state, source_material_draft=material)
+                    if not redact(canonical_json(material.model_dump(mode="json"))).uncertain:
+                        return _checked_update(state, source_material_draft=material)
+                raise RedactionBlocked("생성 자료가 재생성 상한까지 마스킹 불확실하다")
 
             work_selection = request.work_selection
             if work_selection is not None and state.work_excerpt is None:
@@ -485,14 +510,23 @@ class ProblemGenerationWorkflow:
                 )
             # 생성은 파싱 실패와 서비스 실패가 같은 재생성 예산을 쓴다.
             # 교차 풀이는 파싱 실패만 재시도하므로 아래 교차 풀이 분기와 의도적으로 다르다.
+            # 🔴 첫 차단에 드롭하지 않고 재생성 예산을 쓴다 — 아래 교차 풀이 분기와 같은 규율.
+            #   생성 프롬프트에 실리는 한국어 문면이 밀도 규칙에 걸리면 막히는데, 다시 뽑으면
+            #   대개 풀린다. 종전에는 예산을 한 번도 안 쓰고 슬롯을 통째 버렸다.
+            # ⚠ 규칙을 무르는 게 아니다 — 막힌 프롬프트는 한 번도 전송되지 않는다.
             except RedactionBlocked:
+                feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+                    failed_checks=("generator:RedactionBlocked",),
+                )
                 if state.fallback_ref is not None:
                     return await self._restore_fallback(state)
-                return await self._finalize_drop(
-                    state,
-                    reason=ProblemFailureReason.GENERATION_EXHAUSTED,
-                    detail="redaction 불확실로 생성 호출이 차단됨",
-                )
+                if state.item_attempt == PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT:
+                    return await self._finalize_drop(
+                        state,
+                        reason=ProblemFailureReason.GENERATION_EXHAUSTED,
+                        detail="redaction 불확실로 생성 호출이 차단됨 — 시도 소진",
+                    )
+                return {}
             except LlmError as error:
                 feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
                     failed_checks=(f"generator:{type(error).__name__}",),
@@ -535,14 +569,27 @@ class ProblemGenerationWorkflow:
                     execution_context=execution_context,
                 )
             # 교차 풀이는 ParseFailed만 재시도한다. LlmError보다 반드시 먼저 잡아야 한다.
+            # 🔴 **redaction 차단을 첫 판에 확정으로 읽지 않는다.**
+            #   교차 풀이 프롬프트에는 **방금 생성된 문항 본문**이 실린다. 그 한국어 문장에
+            #   인명 후보가 한 문장에 둘 이상 들어가면 전송이 막히는데, 그건 **이 문항의
+            #   표현 문제**이지 검증 불가가 아니다 — 문항을 다시 뽑으면 대개 풀린다.
+            # ⚠ 그래서 `ParseFailed` 와 **같은 자리**에 둔다: 시도 예산을 쓰고, 소진됐을 때만
+            #   `verification_unavailable` 로 확정한다(불변식 6 · 상한은 그대로).
+            # ⚠ 마스킹을 무르는 게 아니다 — 차단된 프롬프트는 **한 번도 전송되지 않는다.**
             except RedactionBlocked:
+                feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+                    failed_checks=("verifier:RedactionBlocked",),
+                    previous_stem_hash=item_stem_hash(item),
+                )
                 if state.fallback_ref is not None:
                     return await self._restore_fallback(state)
-                return await self._finalize_verification_unavailable(
-                    state,
-                    item=item,
-                    detail="교차 풀이 redaction 불확실",
-                )
+                if state.item_attempt == PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT:
+                    return await self._finalize_verification_unavailable(
+                        state,
+                        item=item,
+                        detail="교차 풀이 redaction 불확실 — 시도 소진",
+                    )
+                return {}
             except ParseFailed as error:
                 feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
                     failed_checks=(f"verifier:{type(error).__name__}",),
@@ -906,10 +953,17 @@ class ProblemGenerationWorkflow:
                 if result.source_unverified
                 else ProblemFailureReason.GENERATION_EXHAUSTED
             )
+            # ⚠ **어느 규칙이 떨어졌는지 싣는다.** 종전 문구는 "규칙 검증 실패"뿐이라
+            #   `R-1:기준_자료_없음`(자료가 없다)과 `R-1:근거_참조_불일치`(모델이 승인 밖
+            #   ref 를 인용했다)를 **응답만 보고 가를 수 없었다** — 원인이 정반대인데
+            #   같은 문장이 나왔다. 검사명은 규칙 식별자라 개인정보가 아니다.
             return await self._finalize_drop(
                 state,
                 reason=reason,
-                detail="규칙 검증 실패로 생성 시도 소진",
+                detail=(
+                    "규칙 검증 실패로 생성 시도 소진: "
+                    + ", ".join(result.failed_checks)
+                ),
             )
         return {}
 
