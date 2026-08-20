@@ -98,6 +98,10 @@ if [ $PULL -eq 1 ]; then
         echo "    ⚠ 경로에 공백이 있다 — ! 와 따옴표가 **둘 다** 필요하다."
         echo "      빼먹으면 \"/mnt/c/Program: not found\" 가 나고 인증 실패로 위장한다."
         echo "  · non-fast-forward → 로컬 커밋이 원격과 분기했다. 직접 정리한 뒤 다시 실행하라."
+        echo "  · no tracking information → **새로 만든 로컬 브랜치**다(2026-08-20 실측)."
+        echo "    받을 원격이 없는 것이지 배포가 막힌 게 아니다. 둘 중 하나를 골라라:"
+        echo "      git push -u origin $(git branch --show-current)   # 올리고 추적을 건다(권장)"
+        echo "      ./scripts/redeploy.sh --no-pull                   # 로컬 코드 그대로 반영만"
         exit 1
     fi
     AFTER=$(git rev-parse --short HEAD)
