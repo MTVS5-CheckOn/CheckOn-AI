@@ -12,7 +12,7 @@ from ai.contracts.graphrag import (
     GraphContextRequest,
     GraphContextService,
 )
-from ai.contracts.llm import LLMRequest, ModelRole, RedactionBlocked
+from ai.contracts.llm import LLMRequest, ModelRole
 from ai.contracts.problem_generation import (
     DifficultyBand,
     GeneratedItem,
@@ -202,7 +202,18 @@ class ProblemItemRefiner:
         )
         redacted = redact(prompt_text)
         if redacted.uncertain:
-            raise RedactionBlocked("문항 수정 프롬프트의 개인정보 마스킹이 불확실하다")
+            # 🔴 **게이트 거부는 에러가 아니다(불변식 4).** 종전에는 여기서 `RedactionBlocked`
+            #   를 올렸고 라우터의 `except LlmError` 가 `domain_error_for` 로 넘겨 **HTTP 500**
+            #   이 나갔다 — 실측(2026-08-20 종단): 5영역 대화 2턴 중 **3건이 500**이었다.
+            # 🔴 **같은 사유인데 결과가 갈리고 있었다.** 바로 위에서 **강사 지시**가 마스킹
+            #   불확실이면 `PII_EXPOSURE` 로 정상 반환하는데 **프롬프트 전체**가 걸리면 500이다.
+            #   강사에게는 둘 다 「마스킹 때문에 못 고쳤다」인데 한쪽만 장애로 보인다.
+            # ⚠ 마스킹을 무르는 게 아니다 — 차단된 프롬프트는 **한 번도 전송되지 않는다.**
+            #   바뀌는 것은 그 사실을 500으로 알릴지 200 + 차단 사유로 알릴지다.
+            return ProblemRefineOutcome(
+                applied=False,
+                blocked_reason=BlockedReason.PII_EXPOSURE,
+            )
         result = await self._gateway.complete(
             LLMRequest(
                 role=ModelRole.GENERATOR,

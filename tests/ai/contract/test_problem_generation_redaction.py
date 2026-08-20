@@ -103,12 +103,15 @@ def _blocks_uncertain_redaction(node: ast.AST) -> bool:
         and test.attr == "uncertain"
     ):
         return False
+    # 🔴 **불변식은 「게이트웨이를 안 부른다」이지 「예외를 올린다」가 아니다.**
+    #   종전엔 `raise RedactionBlocked` **한 형태만** 인정해서, 같은 fail-closed 를
+    #   `return`(정상 차단 결과)으로 구현하면 red 가 됐다 — 그런데 refine 경로는
+    #   **예외를 올리면 HTTP 500** 이 되어 불변식 4(게이트 거부는 에러가 아니다)를 깨뜨렸다.
+    #   실측(2026-08-20 종단): 5영역 대화 2턴 중 3건이 500.
+    # ⚠ `raise` 와 `return` 둘 다 인정하되, **그 분기에서 반드시 빠져나가야** 한다 —
+    #   분기 안에서 그냥 통과하면 아래 게이트웨이 호출로 내려간다.
     return any(
-        isinstance(child, ast.Raise)
-        and isinstance(child.exc, ast.Call)
-        and isinstance(child.exc.func, ast.Name)
-        and child.exc.func.id == "RedactionBlocked"
-        for child in ast.walk(node)
+        isinstance(child, ast.Raise | ast.Return) for child in ast.walk(node)
     )
 
 
