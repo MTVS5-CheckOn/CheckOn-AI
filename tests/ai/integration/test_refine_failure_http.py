@@ -190,7 +190,7 @@ def test_instruction_pii_is_still_two_hundred() -> None:
         ).json()["data"]["job_id"]
         response = client.post(
             f"/v1/counsel/drafts/{job_id}/refine",
-            json={"instruction": "서연이가 힘들대요 라고 써줘", "turn_no": 1},
+            json={"instruction": "서연이가 민준이랑 힘들대요 라고 써줘", "turn_no": 1},
             headers=_HEADERS,
         )
     assert response.status_code == 200, response.text
@@ -208,7 +208,13 @@ def test_instruction_pii_is_still_two_hundred() -> None:
 #: 🔴 **실측 오탐 어절**(`provider.py` 대역 문면 주석 ⓐ′) — 「성씨 1자+이름 2자」 휴리스틱이
 #: 평범한 활용형을 인명 후보로 잡는다. 2026-08-19 재현: `redact(...).uncertain is True`.
 #: ⚠ **실명을 넣지 않는다** — 넣으면 *"진짜 실명을 막는가"* 라는 **다른 축**을 재게 된다.
-_FALSE_POSITIVE_BODY: Final = draft("가정에서도 같은 방향으로 지켜봐 주시면 좋겠습니다.")
+#: 🔴 한 문장에 인명 후보 **둘** — 밀도 규칙상 그래야 `uncertain`이 선다
+#: (`policies/masking_redaction.md` §2 [A 확정 7/23] · 후보 1개는 토큰만 바꾸고 전송은
+#: 막지 않는다). 종전 문면은 후보 1개짜리라 구현이 스펙보다 넓게 막던 시절에만 오탐으로
+#: 잡혔다 — 이 파일이 보려는 것(「오탐이어도 5xx가 아니다」)은 그대로 두고 조건만 맞췄다.
+_FALSE_POSITIVE_BODY: Final = draft(
+    "서연이가 민준이랑 왔습니다. 가정에서도 같은 방향으로 지켜봐 주시면 좋겠습니다."
+)
 
 
 class _RedactingWriter(FakeCounselProvider):
@@ -314,7 +320,7 @@ def test_the_three_subjects_stay_split() -> None:
         ).json()["data"]["job_id"]
         by_instruction = client.post(
             f"/v1/counsel/drafts/{job_id}/refine",
-            json={"instruction": "서연이가 힘들대요 라고 써줘", "turn_no": 1},
+            json={"instruction": "서연이가 민준이랑 힘들대요 라고 써줘", "turn_no": 1},
             headers={**_HEADERS, "Idempotency-Key": "idem-split-a"},
         )
     assert by_instruction.status_code == 200

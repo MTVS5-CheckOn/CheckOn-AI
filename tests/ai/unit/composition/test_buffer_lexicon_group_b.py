@@ -218,7 +218,14 @@ def test_an_uncertain_body_is_logged_not_blocked(
     HITL이 있고(강사 승인 뒤 발송) `redact()` 오탐이 실측돼 있어(99 #77) 차단·변형 둘 다
     미탐보다 비싸다. ⇒ 계수만 한다. **차단하면 red다.**
     """
-    body = "가정에서도 같은 방향으로 지켜봐 주시면 좋겠습니다. " * 6
+    # 🔴 한 문장에 인명 후보 **둘** — 밀도 규칙상 그래야 `uncertain`이 선다
+    #   (`policies/masking_redaction.md` §2 [A 확정 7/23]). 종전 문면은 후보 1개짜리라
+    #   구현이 스펙보다 넓게 막던 시절에만 불확실로 잡혔다. 검사의 의도(「불확실해도
+    #   차단하지 않고 계수만 한다」)는 그대로 두고 불확실을 만드는 조건만 맞췄다.
+    body = (
+        "민준이가 서연이와 함께 왔습니다. "
+        + "가정에서도 같은 방향으로 지켜봐 주시면 좋겠습니다. " * 6
+    )
     with caplog.at_level(logging.WARNING, logger="ai.runtime.draft_observation"):
         returned = observe_gated_draft(
             body, origin=ORIGIN_DRAFT, tenant_id=_TENANT, execution_id=_RUN

@@ -1,6 +1,12 @@
 # M2 T1 파일럿 기본값. 잠정값 변경 시 golden/problems/를 함께 개정한다.
 version: verify-config.v1
 regen_max: 2
+# 생성 자료(지문·담화·매체자료)가 마스킹 불확실일 때 다시 뽑는 횟수 상한.
+# 🔴 regen_max(문항 시도 계약 · 2 고정)와 다른 축이라 따로 둔다 — 자료는 세트당 한 번만
+# 만들어져서, 여기서 못 거르면 문항을 몇 번 다시 뽑아도 같은 자료가 다시 온다.
+# 실측: 지문 1회 차단 확률이 낮지 않다. 3회(=regen_max+1)로는 3연속 차단이 났고,
+# 6회(=5+1)로도 독서에서 소진이 관측돼 8로 올렸다(상한은 모델 검증이 10까지 허용).
+source_redaction_retry_max: 8
 transport_retry: 1
 dup_similarity_max: 0.8
 # R-8 외부 대조 상한 — 생성 지문의 8자 shingle 중 외부 자료 한 건과 겹치는 비율.

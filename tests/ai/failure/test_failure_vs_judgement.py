@@ -174,7 +174,7 @@ def test_pii_in_the_instruction_stays_a_judgement() -> None:
     (이 테스트를 처음 쓸 때 전자를 넣어 헛돌았다 — 실측으로 정정했다.)
     """
     writer = _Boom(LlmError("호출되면 안 된다"))
-    outcome = _refine(writer, instruction="서연이가 힘들대요 라고 써줘")
+    outcome = _refine(writer, instruction="서연이가 민준이랑 힘들대요 라고 써줘")
     assert outcome.applied is False
     assert outcome.blocked_reason is not None
     assert outcome.blocked_reason.value == "pii_exposure"

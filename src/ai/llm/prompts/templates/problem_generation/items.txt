@@ -24,7 +24,8 @@ $response_schema_json
 3. 정답은 하나만 성립해야 하고 모든 오답 선지에 why_wrong을 작성한다.
    정답 선지의 why_wrong은 null이다.
 4. rationale은 evidence의 승인된 근거만 사용한다.
-5. evidence는 최소 1개이며 ContextPack의 EvidencePack 앵커만 참조한다.
+5. evidence는 최소 1개이며 ref는 ContextPack의 retrieval_trace.allowed_evidence_refs
+   값을 그대로 복사한다.
 6. 위 JSON Schema의 required·enum·길이·개수·중첩 구조·필드 설명과
    additionalProperties 제약을 모두 만족하는 JSON 객체 하나만 반환한다.
 7. 예시 인물이 필요하면 사람 이름을 쓰지 않고 학생 A·갑·을 같은 비인명 표기를 쓴다.
