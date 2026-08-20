@@ -44,6 +44,7 @@ from openai import (
     AsyncOpenAI,
     OpenAIError,
 )
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ai.contracts.execution import ExecutionContext
@@ -74,8 +75,15 @@ class OpenAiSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
-    openai_api_key: str = "missing"
-    """OpenAI API 키. 실호출은 명시적 opt-in과 유효한 scope를 모두 요구한다."""
+    openai_api_key: SecretStr = SecretStr("missing")
+    """OpenAI API 키. 실호출은 명시적 opt-in과 유효한 scope를 모두 요구한다.
+
+    🔴 **`SecretStr` 인 이유는 `repr` 이다.** 평문 `str` 이면 이 설정 객체가 찍히는 모든
+    자리에 키가 그대로 나온다 — pytest 실패 메시지의 assertion 표현이 대표적이고, 그건
+    **CI 빌드 로그에 남는다**(A 실측 2026-08-20 · 99 #122). `SecretStr` 은 pydantic 이
+    `repr` 을 `SecretStr('**********')` 로 가려 준다.
+    ⚠ **값을 쓸 때만** `.get_secret_value()` 로 푼다 — 푸는 자리를 하나로 좁혀 둔다.
+    """
 
     openai_model: str = "gpt-5.4-mini"
     """서버·벤더에 등록된 모델명 — 실제 값은 `OPENAI_MODEL`로 주입."""
@@ -285,7 +293,7 @@ def build_openai_compat_provider(
         AsyncOpenAI,
         denied_client_factory=_DeniedOpenAIClient,
         base_url=resolved.openai_base_url,
-        api_key=resolved.openai_api_key,
+        api_key=resolved.openai_api_key.get_secret_value(),
         timeout_s=resolved.openai_timeout_s,
     )
     return OpenAICompatProvider(name=name, settings=resolved, client=client)
