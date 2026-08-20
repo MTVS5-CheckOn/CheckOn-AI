@@ -1,0 +1,44 @@
+schema_version: llm-call-timeouts.v1
+
+# 호출 자리별 콜당 상한(초) — 키는 `LLMRequest.prompt_id`다.
+#
+# 🔴 **왜 role 이 아니라 prompt_id 인가.** counsel 의 plan 과 write 는 둘 다
+#   `ModelRole.COUNSELOR` 라 role 로는 못 가른다 — 저장소가 이미 그렇게 적어 뒀다
+#   (`composition/counsel/provider.py` FakeCounselLlmProvider docstring).
+#   그런데 둘의 실측 지연은 5배 차이다(plan p95 5.4s · write p95 26.8s · A 실측 8/20).
+#   ⇒ role 축으로 표를 만들면 **가르고 싶은 두 자리가 한 칸에 들어간다.**
+#
+# 🔴 **비어 있는 것이 현재 계약이다.** 여기 값이 없으면 provider 의 전역 상한
+#   (`OPENAI_TIMEOUT_S`, 운영 90초)이 그대로 간다 — 즉 이 파일이 비면 **오늘과 같다.**
+#   값을 채우는 것은 별건이고, 자리마다 소유자가 다르다:
+#
+#     composition/briefing          detect 브리핑    A 소유 — 지금은 `composition/provider.py`
+#                                                    의 `BRIEFING_CALL_TIMEOUT_S = 15` 국소 주입
+#     composition/counsel_plan      counsel plan     A 소유 — 실측 p95 5.4s
+#     composition/counsel_*(write)  counsel write    A 소유 — 실측 p95 26.8s
+#     pg.items.v1 · pg.cross_solve.v1 · pg.passage.v1 · pg.source_material.v1 · pg.refine.v1
+#                                   출제             B 소유 — 🔴 **콜당 실측이 없다**
+#     classify.inquiry.v1           분류             B 소유 — 콜당 실측 없음
+#
+# ⚠ **값을 지어내서 넣지 마라.** 상한은 「이 정도면 되겠지」가 아니라 실측 p95 에서
+#   나온다. 근거 없는 상한은 정상 호출을 죽이고(짧으면) 아무것도 안 막는다(길면).
+#   실측이 없는 자리는 **비워 두는 것이 정직한 상태**다 — 전역 상한이 받는다.
+#
+# ⚠ 값을 넣을 때는 근거를 같은 줄 주석에 남긴다. 예:
+#     composition/counsel_plan: 30.0   # 실측 p95 5.4s × 여유 — A 판정 2026-mm-dd
+call_timeouts:
+  # 🔴 아래 두 자리만 채운다 — 나머지는 표본이 얇어 **비워 둔다**(아래 「보류」).
+  #   측정: 로컬 실 LLM(gpt-5.4-mini · api.openai.com) · 5영역 × 4회 = 20회 · 2026-08-20
+  #   러너: `python -m ai.evaluation.problem_preview --area <영역> --count 1 --json`
+  #   상한 산정: p95 × 2 — p95 는 「정상인데 느린」 자리라 그대로 쓰면 5% 를 죽인다.
+  #   ⚠ 전역 상한(`OPENAI_TIMEOUT_S`, 운영 90초)보다 커지면 의미가 없다 — 게이트웨이는
+  #     조이기만 하고 늘리지 못한다.
+  pg.items.v1: 40.0          # 실측 n=37 · p50 12.8s · p95 19.9s · max 29.6s → p95×2
+  pg.cross_solve.v1: 16.0    # 실측 n=22 · p50  5.0s · p95  7.9s · max  9.3s → p95×2
+
+# 🔴 **보류 — 표본이 얇어 값을 안 넣는다(n<10).**
+#   얇은 표본의 p95 는 사실상 최댓값이라 근거가 안 된다. 빈 칸은 전역 상한이 받는다.
+#     pg.passage.v1          n=6  p50 10.9s p95 12.3s   ← 독서 4회분뿐
+#     pg.source_material.v1  n=8  p50  9.1s p95 12.9s   ← 화작·매체 8회분
+#     pg.refine.v1           n=0                        ← preview 에 수정 경로가 없다(구조적)
+#     composition/* · classify.*                     ← A 소유 또는 콜당 실측 없음

@@ -1,5 +1,6 @@
 """역할 기반 LLM provider 라우팅·전송 재시도·호출 기록."""
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable, Mapping
@@ -23,6 +24,7 @@ from ai.contracts.llm import (
     RedactionBlocked,
     TokenUsage,
 )
+from ai.llm.call_timeouts import CallTimeoutTable, load_call_timeouts
 from ai.llm.settings import LlmSettings
 from ai.runtime.tracing import active_tracing_env_names, external_tracing_active
 
@@ -119,6 +121,7 @@ class LlmGateway:
         transport_retry: Mapping[ModelRole, int] | None = None,
         trace_masking_hook: TraceMaskingHook | None = None,
         settings: LlmSettings | None = None,
+        call_timeouts: CallTimeoutTable | None = None,
     ) -> None:
         #: 기동 가드 판정은 external_tracing_active() 단일 정본이다. settings는 호출
         #: 호환을 위해 남기며 가드에 관여하지 않는다(09 §2-16 후속 1 · §1-9 A-11).
@@ -143,6 +146,10 @@ class LlmGateway:
         self._trace_masking_hook = trace_masking_hook or _NO_OP_TRACE_MASKING_HOOK
         #: role별 전송 재시도(생성자 주입 — 호출별 금지). 미지정 role은 기본 1회.
         self._transport_retry = self._validated_transport_retry(transport_retry)
+        #: 호출 자리별 콜당 상한 — 정본은 `llm/call_timeouts.yaml`, 축은 `prompt_id` 다.
+        #: 🔴 **주입을 열어 둔 것은 검사를 위해서다** — 조립부 4곳은 아무것도 안 넘기고
+        #:  정본 표를 그대로 쓴다(그중 3곳은 A 소유 파일이라 건드리지 않는다).
+        self._call_timeouts = call_timeouts or load_call_timeouts()
         #: recorder 적재 실패 누적 — 조용한 누락 방지(09 §1-10 ②). 호출은 성공 유지.
         self.record_failures = 0
         self._validate_provider_assignment()
@@ -218,6 +225,35 @@ class LlmGateway:
                 return await self._complete_once(provider, masked_request, context)
         raise RuntimeError("LLM 전송 재시도 흐름이 결과 없이 종료됐다.")
 
+    async def _complete_within_cap(
+        self,
+        provider: LLMProvider,
+        request: LLMRequest,
+        context: ExecutionContext,
+    ) -> LLMResult:
+        """등록된 자리면 그 상한으로 조이고, 아니면 provider 전역 상한을 그대로 둔다.
+
+        🔴 **조이기만 한다 — 늘리지 못한다.** provider 는 자기 클라이언트를 생성 시점의
+        `openai_timeout_s` 로 이미 묶어 둔다. 여기 값을 더 크게 적어도 그쪽이 먼저 끈는다
+        — 그게 맞는 동작이다(전역 상한은 상한이지 권고값이 아니다).
+
+        🔴 **상한 초과를 `LlmTimeout` 으로 바꿔 올린다.** provider 가 직접 끈을 때와
+        똑같은 예외여야 ⓐ `complete()` 의 전송 재시도 대상이 되고 ⓑ 원장 outcome 이
+        `TIMEOUT` 으로 같이 적힌다. 그냥 `TimeoutError` 를 흘리면 **같은 사건이 두 가지
+        모양으로 원장에 남는다.**
+        """
+
+        cap_s = self._call_timeouts.get(request.prompt_id)
+        if cap_s is None:
+            return await provider.complete(request, context)
+        try:
+            async with asyncio.timeout(cap_s):
+                return await provider.complete(request, context)
+        except TimeoutError as error:
+            raise LlmTimeout(
+                f"LLM 타임아웃(자리별 상한 {cap_s}s · prompt_id={request.prompt_id})"
+            ) from error
+
     async def _complete_once(
         self,
         provider: LLMProvider,
@@ -226,7 +262,7 @@ class LlmGateway:
     ) -> LLMResult:
         started_at = time.monotonic()
         try:
-            result = await provider.complete(request, context)
+            result = await self._complete_within_cap(provider, request, context)
         except Exception as error:
             self._record(
                 LlmCallRecord(
