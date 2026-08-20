@@ -112,9 +112,12 @@ def build_problem_providers(
     assert resolved.openai_base_url is not None
     assert resolved.openai_api_key is not None
     assert resolved.openai_model is not None
+    #: 🔴 `SecretStr` 을 그대로 넘긴다 — 여기서 `.get_secret_value()` 로 풀면 받는 쪽이
+    #:  다시 `SecretStr` 로 감싸는 동안 **평문 `str` 이 한 번 생긴다**(99 #122).
+    #:  푸는 자리는 클라이언트 생성 한 곳(`build_openai_compat_provider`)으로만 좁힌다.
     verifier_settings = OpenAiSettings(
         openai_base_url=resolved.openai_base_url,
-        openai_api_key=resolved.openai_api_key.get_secret_value(),
+        openai_api_key=resolved.openai_api_key,
         openai_model=resolved.openai_model,
         openai_timeout_s=resolved.openai_timeout_s,
         _env_file=None,

@@ -45,6 +45,7 @@ from ai.llm.providers.openai_compat import (
     OpenAiSettings,
     build_openai_compat_provider,
 )
+from ai.problem_generation.provider import ProblemProviderSettings
 
 _REQ = httpx.Request("POST", "http://local/v1/chat/completions")
 
@@ -482,6 +483,67 @@ def test_default_timeout_is_total_15s() -> None:
     ⚠ 같은 함정을 `env_files.py`가 이미 한 번 기록했다(작업 디렉터리 의존 · 99 #73).
     """
     assert OpenAiSettings(_env_file=None).openai_timeout_s == 15.0
+
+
+_LEAK_CANARY: Final = "sk-svcacct-canary-must-not-appear"
+
+
+def test_api_key_never_appears_in_a_settings_repr() -> None:
+    """설정 객체를 찍어도 키가 안 나온다 — 유출 경로는 `repr`이었다(99 #122).
+
+    🔴 **A 가 실측한 경로가 이것이다**(2026-08-20): pytest 가 실패하면 assertion 표현에
+    설정 객체가 통째로 실리고, 그 안에 `openai_api_key='sk-...'` 가 **평문으로** 나왔다.
+    CI 에서 나면 빌드 로그에 영구히 남는다.
+    ⚠ 그래서 이 검사는 「`SecretStr` 타입인가」를 묻지 않는다 — **타입은 수단이고 계약은
+    「찍어도 안 나온다」** 이다. 다른 수단으로 바꿔도 이 단언은 그대로 서야 한다.
+
+    🔴 **사건 그대로의 층을 재현하려다 한 번 실패했다 — 기록해 둔다.** 처음엔
+    `pytest.raises(AssertionError)` 로 **실패 메시지에 키가 실리는가** 를 재려 했는데,
+    그 검사는 **평문 `str` 코드에서도 green 이었다** — pytest 가 assertion 설명을
+    길이로 잘라 카나리가 잘려 나간다. ⇒ **대상을 재는 것처럼 보이지만 안 재는 검사**였고,
+    그건 없는 것보다 나쁘다(99 #124 「가드가 green 이었다」와 같은 형태). 그래서 지웠다.
+    ⇒ 유출 경로의 뿌리는 `repr` 하나이므로 **여기서 한 번 닫으면 렌더러는 안 센다.**
+    """
+
+    settings = OpenAiSettings.model_validate(
+        {
+            "openai_base_url": "http://local/v1",
+            "openai_api_key": _LEAK_CANARY,
+            "openai_model": "test-model",
+        }
+    )
+
+    assert _LEAK_CANARY not in repr(settings)
+    assert _LEAK_CANARY not in str(settings)
+    assert _LEAK_CANARY not in repr(settings.openai_api_key)
+    #: 🔴 감춰지기만 하고 **값이 사라지면** 실호출이 죽는다 — 둘 다 단언한다.
+    assert settings.openai_api_key.get_secret_value() == _LEAK_CANARY
+
+
+def test_the_pg_verifier_boundary_hands_over_the_secret_unwrapped_nowhere() -> None:
+    """PG verifier 설정 → `OpenAiSettings` 경계에서도 평문 `str`이 안 생긴다(99 #122).
+
+    🔴 **선행 커밋이 「닫았다」고 적고 안 닫았던 자리다.** `provider.py` 가 경계에서
+    `.get_secret_value()` 로 풀어 넘기고 있었다 — 받는 쪽이 다시 감싸므로 위험은 작지만
+    **푸는 자리가 둘이 되면 다음에 하나를 놓친다.** 자리가 하나임을 검사가 센다.
+    """
+
+    resolved = ProblemProviderSettings.model_validate(
+        {
+            "openai_base_url": "http://local/v1",
+            "openai_api_key": _LEAK_CANARY,
+            "openai_model": "test-model",
+        }
+    )
+    verifier_settings = OpenAiSettings(
+        openai_base_url=resolved.openai_base_url,
+        openai_api_key=resolved.openai_api_key,
+        openai_model=resolved.openai_model,
+        _env_file=None,
+    )
+
+    assert _LEAK_CANARY not in repr(verifier_settings)
+    assert verifier_settings.openai_api_key.get_secret_value() == _LEAK_CANARY
 
 
 def test_settings_surface_is_openai_only() -> None:

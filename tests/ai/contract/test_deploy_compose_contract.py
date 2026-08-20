@@ -16,7 +16,7 @@ counsel·problem_generation·import 프로브 잡이 전량 `worker_internal_err
 ⚠ **YAML을 정규식으로 읽지 않는다** — `yaml.safe_load`로 파싱해서 단언한다.
 들여쓰기·따옴표·리스트 표기 변주에 안 깨져야 가드다.
 
-관련: `docs/99_open_items.md` #117·#127·#128·#129 · 결정 로그 141 ·
+관련: `docs/99_open_items.md` #117·#129·#130·#131 · 결정 로그 142 ·
 `src/ai/agents/checkpointer.py` 머리말.
 """
 

@@ -112,6 +112,12 @@ _FACTORIES: Final[tuple[tuple[str, type, type], ...]] = (
 #: 🔴 위반을 세지 않고 **위반이 아닌 것을 사유와 함께 열거**한다(fail-closed). 새 분기가
 #: 생기면 여기에도 표에도 없으므로 red다.
 _UNCALLED_BRANCHES: Final[dict[str, str]] = {
+    "ai.composition.counsel.drain::_run_forever_with_real_stores": (
+        "🔴 **별도 프로세스의 진입점이다**(`python -m ai.composition.counsel.drain`) — 앱이 "
+        "부르지 않는다. 그 분기는 팩토리를 고르는 것이 아니라 **`memory` 면 기동을 거부**한다"
+        "(다른 프로세스의 잡을 볼 수 없으므로 배경 드레인이 뜻을 잃는다) ⇒ 위 표의 "
+        "(pg타입, memory타입) 모양에 안 맞는다. 그 거부는 `test_counsel_drain.py` 가 든다"
+    ),
     "ai.composition.counsel.assembly::_open_saver": (
         "pg 분기가 AsyncPostgresSaver **커넥션**을 여는 async 컨텍스트다 — DB 없이 못 부른다. "
         "수명 규약(pg=요청 스코프·memory=프로세스 공용)은 그 파일의 전용 검사가 든다"

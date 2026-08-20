@@ -8,6 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ai.runtime.env_files import ENV_FILES
@@ -23,6 +24,38 @@ class DbSettings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://localhost/checkon_ai"
     """async 드라이버(asyncpg) URL. 실배포는 .env로 주입."""
+
+    db_pool_size: int = Field(default=5, ge=1)
+    """SQLAlchemy 커넥션 풀 크기 — 🔴 종전에는 **명시가 없어** 기본값에 맡겨져 있었다.
+
+    ⚠ 값 자체가 №20 ⑤ 의 범인은 **아니었다**(아래 참조). 다만 «몇 개를 쓰는지 아무도 안
+    적어 뒀다»가 관계식을 못 세우게 하고 있었다."""
+
+    db_max_overflow: int = Field(default=10, ge=0)
+    """풀을 넘겼을 때 임시로 더 여는 수. `db_pool_size + db_max_overflow` 가 **프로세스 하나의
+    SQLAlchemy 커넥션 상한**이다."""
+
+    db_max_connections: int = Field(default=100, ge=1)
+    """PG 의 `max_connections` — 🔴 **우리가 정하는 값이 아니라 서버에서 읽어 적는 값**이다.
+
+    실측(8/20 · 로컬): **100**. 관계식이 이 값을 넘지 않는지 검사가 지킨다.
+    ⚠ 배포 값이 다르면 여기서 덮어야 한다(`DB_MAX_CONNECTIONS`)."""
+
+    app_workers: int = Field(default=1, ge=1)
+    """앱 프로세스(uvicorn worker) 수 — 관계식의 곱이다.
+
+    🔴 **№20 ⑤ 의 진짜 범인은 SQLAlchemy 풀이 아니었다.** `store_backend=pg` 는 잡마다
+    `AsyncPostgresSaver` 커넥션을 **새로** 열고(`counsel/assembly.py` — 요청 스코프),
+    그건 **풀 밖**이다. 동시 300건이 곧 커넥션 300 시도였고 `TooManyConnectionsError` 가 났다.
+    ⇒ 관계식은 **그 항을 포함해야 한다**:
+
+        앱 워커 × (pool_size + max_overflow)          ← SQLAlchemy
+      + 앱 워커 × 동시 요청당 체크포인터 커넥션        ← 🔴 풀 밖
+      + 배경 드레인 동시성                             ← `counsel_drain_concurrency`
+      ≤ PG max_connections
+
+    ⚠ **동시 요청당 체크포인터 커넥션에 상한이 없다** — 그게 남은 결함이고 99 #127 이다.
+    이 회차는 **드레인 몫만** 상한을 갖는다(세마포어)."""
 
     agent_checkpoint_database_url: str | None = None
     """LangGraph PostgresSaver용 psycopg URL.

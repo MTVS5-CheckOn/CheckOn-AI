@@ -197,6 +197,19 @@ class AreaDelegatingGraphContextService:
         return await self._grammar.resolve_generation_context(request)
 
     async def resolve_revision_context(self, request: GraphContextRequest) -> ContextPack:
+        # 🔴 **생성 경로와 같은 축으로 가른다.** 종전에는 무조건 문법 서비스로 위임해
+        #   비-language 문항이 `NotImplementedError` 로 막혔다 — 출제는 5영역이 열렸는데
+        #   **수정은 언어 하나만 되는** 구멍이었다.
+        area_tag = request.locked_fields.area_tag
+        if uses_generated_source_base(area_tag) or uses_selected_work_source_base(
+            area_tag
+        ):
+            if (
+                request.current_item_snapshot is None
+                or request.redacted_instruction is None
+            ):
+                raise ValueError("문항 수정 컨텍스트에는 현재 문항과 마스킹된 지시가 필요하다")
+            return _reused_evidence_revision_context(request)
         return await self._grammar.resolve_revision_context(request)
 
     async def resolve_verification_context(
@@ -234,6 +247,56 @@ def _empty_base_context(request: GraphContextRequest) -> ContextPack:
     return ContextPack(
         context_pack_id=uuid5(NAMESPACE_URL, f"context:{digest}"),
         operation=GraphContextOperation.GENERATE,
+        tenant_id=request.tenant_id,
+        target_source=request.target_source,
+        weakness_map_id=request.weakness_map_id,
+        target_skill_node_ids=request.target_skill_node_ids,
+        locked_fields=request.locked_fields,
+        pedagogy_paths=(f"skill:{request.locked_fields.skill_node_id}",),
+        evidence_pack_id=uuid5(NAMESPACE_URL, f"evidence:{digest}"),
+        current_item_snapshot=request.current_item_snapshot,
+        redacted_instruction=request.redacted_instruction,
+        policy_constraints=request.policy_constraints,
+        retrieval_trace=trace,
+        context_pack_hash=f"sha256:{digest}",
+    )
+
+
+def _reused_evidence_revision_context(request: GraphContextRequest) -> ContextPack:
+    """생성 트랙·저작물 트랙 문항의 **수정** 컨텍스트 — 근거를 새로 만들지 않는다.
+
+    🔴 **수정은 근거를 새로 조달하는 자리가 아니다.** 원 문항의 evidence 는 생성 때 이미
+    R-1 을 통과한 승인분이고, 그 자료(생성 지문·매체 자료·만료 작품 발췌)는 세트에 고정돼
+    있다. 그러므로 수정본이 인용할 수 있는 것은 **그 앵커 그대로**다.
+
+    ⚠ 여기서 `_empty_base_context` 를 쓰면 안 된다 — 허용 근거가 0건이 돼 수정본이
+    `R-1:기준_자료_없음` 으로 전량 폐기된다. 생성 때는 자료를 **뒤이어 만들어 붙이지만**
+    수정 때는 붙일 자료가 이미 있다.
+    ⚠ 새 ref 를 지어내는 것은 여전히 막힌다 — 허용 집합이 원 문항의 것으로 닫혀 있어
+    `R-1:근거_참조_불일치` 가 잡는다(불변식 2).
+    """
+    snapshot = request.current_item_snapshot or {}
+    raw = snapshot.get("evidence")
+    anchors: list[dict[str, object]] = [
+        {"ref": entry["ref"], "kind": entry.get("kind"), "quote": entry.get("quote")}
+        for entry in (raw if isinstance(raw, list) else [])
+        if isinstance(entry, dict) and entry.get("ref")
+    ]
+    trace: dict[str, object] = {
+        "allowed_evidence_refs": [anchor["ref"] for anchor in anchors],
+        "evidence_anchors": anchors,
+    }
+    canonical = _canonical(
+        {
+            "operation": GraphContextOperation.REFINE.value,
+            "request": request.model_dump(mode="json"),
+            "trace": trace,
+        }
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return ContextPack(
+        context_pack_id=uuid5(NAMESPACE_URL, f"context:{digest}"),
+        operation=GraphContextOperation.REFINE,
         tenant_id=request.tenant_id,
         target_source=request.target_source,
         weakness_map_id=request.weakness_map_id,
