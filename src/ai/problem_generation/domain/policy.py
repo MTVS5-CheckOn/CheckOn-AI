@@ -6,7 +6,10 @@ from typing import Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ai.contracts.problem_generation import DifficultyBand
+from ai.contracts.problem_generation import (
+    MISCONCEPTION_TAGS_CONTEXT_KEY,
+    DifficultyBand,
+)
 from ai.contracts.taxonomy import V1_TYPE_TAGS, AreaTag, TypeTag
 
 #: 자료 조달 능력이 구현된 영역만 명시적으로 연다. 새 영역은 기본 미지원이어야 하므로
@@ -380,3 +383,13 @@ class MisconceptionTagsConfig(BaseModel):
         """영역의 닫힌 오개념 어휘를 반환한다."""
 
         return self.areas[area]
+
+    def validation_context(self) -> dict[str, object]:
+        """GeneratedItem 계약 검증기에 주입할 영역별 닫힌 어휘를 반환한다."""
+
+        return {
+            MISCONCEPTION_TAGS_CONTEXT_KEY: {
+                area.value: frozenset(tag.id for tag in tags)
+                for area, tags in self.areas.items()
+            }
+        }

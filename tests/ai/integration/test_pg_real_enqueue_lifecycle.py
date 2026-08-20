@@ -401,7 +401,7 @@ async def _run_problem_generation(
         run_store=PgRunStore(sessionmaker=sessions, clock=lambda: _NOW),
         call_log=LlmCallCollector(),
         verify_config_version="verify-config.v1",
-        prompt_version="v5",
+        prompt_version="v6",
         lease_owner="worker-g3-pg",
         now=lambda: _NOW,
     )

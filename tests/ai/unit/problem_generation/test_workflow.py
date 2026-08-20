@@ -83,6 +83,7 @@ from ai.problem_generation.domain.policy import (
 from ai.problem_generation.infrastructure.config import (
     load_area_specs,
     load_banned_topics,
+    load_misconception_tags,
     load_verify_config,
 )
 from ai.problem_generation.infrastructure.graph_context import (
@@ -181,7 +182,11 @@ class _WorkflowHarness:
         self.verify_config = config
         self.banned_topics = load_banned_topics()
         area_specs = load_area_specs()
-        self.generator = ProblemGenerator(gateway, area_specs=area_specs)
+        self.generator = ProblemGenerator(
+            gateway,
+            area_specs=area_specs,
+            misconception_tags=load_misconception_tags(),
+        )
         self.passage_generator = PassageGenerator(
             gateway,
             banned_topics=self.banned_topics,
@@ -249,7 +254,7 @@ class _WorkflowHarness:
                 engine_version="engine-v1",
                 schema_version="schema-v1",
                 contract_version="contract-v1",
-                prompt_version="v5",
+                prompt_version="v6",
                 graph_version=_GRAPH_VERSION,
                 taxonomy_version=_TAXONOMY_VERSION,
                 verify_config_version="verify-config.v1",
@@ -281,6 +286,17 @@ def _item_json(
                     else f"{marker}의 고유 선지 {no}"
                 ),
                 why_wrong=None if no == 1 else f"{no}번은 근거와 다르다.",
+                misconception_tag=(
+                    None
+                    if no == 1
+                    else {
+                        AreaTag.LANGUAGE: "application_target_substitution",
+                        AreaTag.MEDIA: "expression_means_substitution",
+                        AreaTag.LITERATURE: "interpretation_exaggeration",
+                        AreaTag.READING: "scope_shift",
+                        AreaTag.SPEECH_WRITING: "source_purpose_mismatch",
+                    }[area_tag]
+                ),
             )
             for no in range(1, 6)
         ),
@@ -536,6 +552,7 @@ def test_generator_prompt_uses_schema_derived_from_generated_item_contract() -> 
     assert '"additionalProperties":false' in schema_json
     assert '"minItems":5' in schema_json
     assert '"maxItems":5' in schema_json
+    assert '"misconception_tag"' in schema_json
     assert '"enum":["fact","infer","critic","concept","apply"]' in schema_json
     assert "⟪확인필요⟫" not in schema_json
 

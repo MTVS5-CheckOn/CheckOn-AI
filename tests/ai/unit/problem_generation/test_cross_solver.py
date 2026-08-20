@@ -50,6 +50,7 @@ def test_cross_solver_sends_only_blind_item() -> None:
                 no=no,
                 text=f"선지 {no}",
                 why_wrong=None if no == 1 else f"오답 근거 {no}",
+                misconception_tag=None if no == 1 else "application_target_substitution",
             )
             for no in range(1, 6)
         ),
@@ -93,6 +94,7 @@ def test_cross_solver_sends_only_blind_item() -> None:
     assert '"rationale"' not in blind_json
     assert '"evidence"' not in blind_json
     assert '"why_wrong"' not in blind_json
+    assert '"misconception_tag"' not in blind_json
     assert "비공개 해설 원문" not in prompt
     assert "grammar:rule-1" not in prompt
     generation_params = provider.requests[0].generation_params
@@ -139,6 +141,7 @@ def test_cross_solver_blocks_generated_item_with_person_name(
                 no=no,
                 text=f"선지 {no}",
                 why_wrong=None if no == 1 else f"오답 근거 {no}",
+                misconception_tag=None if no == 1 else "application_target_substitution",
             )
             for no in range(1, 6)
         ),

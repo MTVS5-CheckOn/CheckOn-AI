@@ -8,11 +8,19 @@ v1은 객관식 5지선다만 처리한다. ItemFormat.SHORT·ESSAY는 공용 en
 뿐이며 이 계약에는 답안·채점 필드나 처리 분기를 선반영하지 않는다.
 """
 
+from collections.abc import Collection, Mapping
 from enum import StrEnum
 from typing import Annotated, Final, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from ai.contracts.gates import BlockedReason
 from ai.contracts.taxonomy import (
@@ -21,6 +29,8 @@ from ai.contracts.taxonomy import (
     ItemFormat,
     TypeTag,
 )
+
+MISCONCEPTION_TAGS_CONTEXT_KEY: Final = "misconception_tags"
 
 
 class PassageDomain(StrEnum):
@@ -293,6 +303,11 @@ class Choice(BaseModel):
         min_length=1,
         description="정답 선지는 null, 모든 오답 선지는 비어 있지 않은 오답 사유.",
     )
+    misconception_tag: str | None = Field(
+        default=None,
+        min_length=1,
+        description="정답 선지는 null, 모든 오답 선지는 영역별 닫힌 어휘의 오개념 라벨.",
+    )
 
 
 class Answer(BaseModel):
@@ -380,15 +395,38 @@ class GeneratedItem(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_choices(self) -> Self:
+    def validate_choices(self, info: ValidationInfo) -> Self:
         numbers = {choice.no for choice in self.choices}
         if numbers != {1, 2, 3, 4, 5}:
             raise ValueError("선지 번호는 중복 없이 1부터 5까지여야 한다")
         if self.answer.correct_no not in numbers:
             raise ValueError("정답 번호가 선지 범위를 벗어났다")
+
+        vocabulary: Mapping[str, Collection[str]] | None = None
+        if isinstance(info.context, Mapping):
+            candidate = info.context.get(MISCONCEPTION_TAGS_CONTEXT_KEY)
+            if isinstance(candidate, Mapping):
+                vocabulary = candidate
+
         for choice in self.choices:
-            if choice.no != self.answer.correct_no and choice.why_wrong is None:
+            if choice.no == self.answer.correct_no:
+                if choice.why_wrong is not None:
+                    raise ValueError("정답 선지의 why_wrong은 null이어야 한다")
+                if choice.misconception_tag is not None:
+                    raise ValueError("정답 선지의 misconception_tag는 null이어야 한다")
+                continue
+            if choice.why_wrong is None:
                 raise ValueError("모든 오답 선지에는 why_wrong이 필요하다")
+            if choice.misconception_tag is None:
+                raise ValueError("모든 오답 선지에는 misconception_tag가 필요하다")
+            if (
+                vocabulary is not None
+                and choice.misconception_tag not in vocabulary.get(self.area_tag.value, ())
+            ):
+                raise ValueError(
+                    f"{self.area_tag.value} 영역 어휘에 없는 misconception_tag: "
+                    f"{choice.misconception_tag}"
+                )
         return self
 
 

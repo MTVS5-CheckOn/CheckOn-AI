@@ -199,7 +199,7 @@ def _execution_context() -> ExecutionContext:
             engine_version="engine-v1",
             schema_version="schema-v1",
             contract_version="contract-v1",
-            prompt_version="v5",
+            prompt_version="v6",
             graph_version=_GRAPH_VERSION,
             taxonomy_version=_TAXONOMY_VERSION,
             verify_config_version="verify-config.v1",
@@ -219,6 +219,7 @@ def _generated_item_json() -> str:
                 no=no,
                 text=f"문장 구조에 대한 선택지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 문법 근거와 다르다.",
+                misconception_tag=None if no == 1 else "application_target_substitution",
             )
             for no in range(1, 6)
         ),
@@ -259,6 +260,7 @@ def _reading_item_json() -> str:
                 no=no,
                 text=f"비문학 독해 선택지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 글의 핵심 내용과 달라요.",
+                misconception_tag=None if no == 1 else "scope_shift",
             )
             for no in range(1, 6)
         ),
@@ -288,6 +290,7 @@ def _literature_item_json() -> str:
                 no=no,
                 text=f"문학 작품 선택지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 원문과 다르다.",
+                misconception_tag=None if no == 1 else "narration_method_substitution",
             )
             for no in range(1, 6)
         ),
@@ -376,6 +379,14 @@ def _source_material_item_json(area_tag: AreaTag, skill_node_id: str) -> str:
                 no=no,
                 text=f"자료 활용 방식에 대한 선택지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 승인 근거와 다르다.",
+                misconception_tag=(
+                    None
+                    if no == 1
+                    else {
+                        AreaTag.MEDIA: "expression_means_substitution",
+                        AreaTag.SPEECH_WRITING: "source_purpose_mismatch",
+                    }[area_tag]
+                ),
             )
             for no in range(1, 6)
         ),

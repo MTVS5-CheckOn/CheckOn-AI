@@ -206,6 +206,7 @@ def test_generator_hydrates_omitted_quote_from_approved_context() -> None:
                 no=no,
                 text=f"선택지 {no}",
                 why_wrong=None if no == 1 else "근거와 다르다.",
+                misconception_tag=None if no == 1 else "adjacent_change_type_confusion",
             )
             for no in range(1, 6)
         ),
@@ -246,6 +247,7 @@ def test_generator_replaces_model_quote_with_approved_context_quote() -> None:
                 no=no,
                 text=f"선택지 {no}",
                 why_wrong=None if no == 1 else "근거와 다르다.",
+                misconception_tag=None if no == 1 else "adjacent_change_type_confusion",
             )
             for no in range(1, 6)
         ),

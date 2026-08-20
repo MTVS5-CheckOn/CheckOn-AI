@@ -140,7 +140,12 @@ def _item() -> GeneratedItem:
         skill_node_id="grammar.node-1",
         stem="다음 중 옳은 것을 고르시오.",
         choices=tuple(
-            Choice(no=no, text=f"선지 {no}", why_wrong=None if no == 1 else f"오답 {no}")
+            Choice(
+                no=no,
+                text=f"선지 {no}",
+                why_wrong=None if no == 1 else f"오답 {no}",
+                misconception_tag=None if no == 1 else "application_target_substitution",
+            )
             for no in range(1, 6)
         ),
         answer=Answer(correct_no=1),

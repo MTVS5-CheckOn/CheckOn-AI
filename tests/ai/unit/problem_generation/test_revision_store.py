@@ -42,6 +42,7 @@ def _item(stem: str) -> GeneratedItem:
                 no=no,
                 text=f"선지 {no}",
                 why_wrong=None if no == 1 else "승인 근거와 다르다.",
+                misconception_tag=None if no == 1 else "application_target_substitution",
             )
             for no in range(1, 6)
         ),

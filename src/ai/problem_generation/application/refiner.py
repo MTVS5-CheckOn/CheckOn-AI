@@ -44,6 +44,7 @@ from ai.problem_generation.domain.identity import canonical_json
 from ai.problem_generation.domain.policy import (
     AreaSpecs,
     BannedTopicsConfig,
+    MisconceptionTagsConfig,
     VerifyConfig,
 )
 from ai.problem_generation.domain.rules import RuleValidator
@@ -106,6 +107,7 @@ class ProblemItemRefiner:
         verify_config: VerifyConfig,
         banned_topics: BannedTopicsConfig,
         area_specs: AreaSpecs,
+        misconception_tags: MisconceptionTagsConfig,
         prompt: LoadedPromptTemplate | None = None,
         external_corpus: ExternalCorpusIndex | None = None,
     ) -> None:
@@ -114,6 +116,7 @@ class ProblemItemRefiner:
         self._verify_config = verify_config
         self._banned_topics = banned_topics
         self._area_specs = area_specs
+        self._misconception_tags = misconception_tags
         self._prompt = prompt or load_prompt_template(_REFINE_PROMPT_ID)
         self._rules = RuleValidator(
             banned_topics,
@@ -193,7 +196,8 @@ class ProblemItemRefiner:
         prompt_text = self._prompt.render(
             {
                 "area_spec_block": render_area_spec(
-                    self._area_specs.spec_for(original.area_tag)
+                    self._area_specs.spec_for(original.area_tag),
+                    self._misconception_tags.tags_for(original.area_tag),
                 ),
                 "context_pack_json": canonical_json(context.model_dump(mode="json")),
                 "current_item_json": canonical_json(original.model_dump(mode="json")),
@@ -238,7 +242,12 @@ class ProblemItemRefiner:
             )
             try:
                 revised = hydrate_evidence_quotes(
-                    parse(require_successful_text(result), GeneratedItem), context
+                    parse(
+                        require_successful_text(result),
+                        GeneratedItem,
+                        context=self._misconception_tags.validation_context(),
+                    ),
+                    context,
                 )
                 break
             except (ParseFailed, FieldMissing):

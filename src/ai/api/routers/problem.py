@@ -69,6 +69,7 @@ from ai.problem_generation.enqueue import ProblemGenerationEnqueuer
 from ai.problem_generation.infrastructure.config import (
     load_area_specs,
     load_banned_topics,
+    load_misconception_tags,
     load_verify_config,
 )
 from ai.problem_generation.infrastructure.graph_context import (
@@ -1079,6 +1080,7 @@ async def post_problem_item_revision(
                 verify_config=verify_config,
                 banned_topics=load_banned_topics(),
                 area_specs=load_area_specs(),
+                misconception_tags=load_misconception_tags(),
                 external_corpus=resolve_external_corpus(),
             )
             try:

@@ -50,6 +50,7 @@ from ai.contracts.problem_generation import (
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.llm.structured import parse
+from ai.problem_generation.infrastructure.config import load_misconception_tags
 
 SET_ID = UUID("00000000-0000-4000-8000-000000000010")
 ITEM_ID = UUID("00000000-0000-4000-8000-000000000011")
@@ -91,6 +92,7 @@ def _item() -> GeneratedItem:
                 no=no,
                 text=f"선지 {no}",
                 why_wrong=None if no == 2 else f"선지 {no}가 틀린 이유",
+                misconception_tag=None if no == 2 else "adjacent_change_type_confusion",
             )
             for no in range(1, 6)
         ),
@@ -399,6 +401,33 @@ def test_every_wrong_choice_requires_why_wrong() -> None:
     data["choices"][0]["why_wrong"] = None
     with pytest.raises(ValueError, match="why_wrong"):
         GeneratedItem.model_validate(data)
+
+
+def test_every_wrong_choice_requires_misconception_tag() -> None:
+    data = _item().model_dump(mode="json")
+    data["choices"][0]["misconception_tag"] = None
+
+    with pytest.raises(ValueError, match="misconception_tag"):
+        GeneratedItem.model_validate(data)
+
+
+def test_correct_choice_forbids_misconception_tag() -> None:
+    data = _item().model_dump(mode="json")
+    data["choices"][1]["misconception_tag"] = "adjacent_change_type_confusion"
+
+    with pytest.raises(ValueError, match="정답 선지의 misconception_tag"):
+        GeneratedItem.model_validate(data)
+
+
+def test_misconception_tag_must_belong_to_item_area_vocabulary() -> None:
+    data = _item().model_dump(mode="json")
+    data["choices"][0]["misconception_tag"] = "scope_shift"
+
+    with pytest.raises(ValueError, match="language 영역 어휘에 없는"):
+        GeneratedItem.model_validate(
+            data,
+            context=load_misconception_tags().validation_context(),
+        )
 
 
 def test_generated_item_requires_evidence() -> None:
