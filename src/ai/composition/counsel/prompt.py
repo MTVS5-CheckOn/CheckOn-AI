@@ -32,7 +32,7 @@ _PROMPT_PATH: Final = (
 )
 
 PROMPT_ID: Final = "composition/counsel_pack"
-PROMPT_VERSION: Final = "0.3"
+PROMPT_VERSION: Final = "0.4"
 """🔴 **0.2 → 0.3 (8/19).** 완충 단계 문면에 **B군 치환 어휘 28항**이 들어간다 (99 #79).
 
 ⚠ **「컨텍스트 파생 문면」이 아니다.** 05 §6-3의 예외는 강조점·지시·피드백처럼 **그 요청에서

@@ -107,9 +107,10 @@ def test_prompt_reflects_doc_parameters(key: str) -> None:
     prompt = assemble_prompt(_context(key))
     assert key in prompt  # 조합 키가 문면에 실린다
     assert f"1. {first_block}" in prompt  # 05 §2 '구성'의 첫 블록
-    assert f"문단마다 {sentences}문장" in prompt  # 05 §2 '길이'
-    # ⚠ PROMPT_VERSION 0.2에서 지시문 어휘가 "블록당" → "문단마다"로 바뀌었다.
-    #   값(문장 수)은 그대로 tone_map에서 나온다 — 바뀐 건 어휘뿐이다.
+    assert f"{sentences}문장" in prompt  # 05 §2 '길이'
+    # ⚠ 지시문 어휘는 세 번 바뀌었다 — "블록당"(0.1) → "문단마다"(0.2) → "…문장 안팎"(0.4).
+    # 🔴 **어구를 박지 않는다** — 이 검사가 재는 것은 「tone_map 의 값이 프롬프트에 실리는가」이지
+    #   특정 문구가 아니다. 어구를 박으면 프롬프트를 다듬을 때마다 이 검사가 이유 없이 red 다.
     assert _BUFFER_MARK[buffer_level] in prompt  # 05 §4 적용 단계
 
 
@@ -151,12 +152,8 @@ def test_frequency_axis_changes_sentence_count() -> None:
     frequent = _DOC_EXPECTED["data.anxious.grade.frequent"][1]
     monthly = _DOC_EXPECTED["data.anxious.grade.monthly"][1]
     assert frequent < monthly
-    assert f"문단마다 {frequent}문장" in assemble_prompt(
-        _context("data.anxious.grade.frequent")
-    )
-    assert f"문단마다 {monthly}문장" in assemble_prompt(
-        _context("data.anxious.grade.monthly")
-    )
+    assert f"{frequent}문장" in assemble_prompt(_context("data.anxious.grade.frequent"))
+    assert f"{monthly}문장" in assemble_prompt(_context("data.anxious.grade.monthly"))
 
 
 def test_sensitivity_axis_changes_buffer_level() -> None:
