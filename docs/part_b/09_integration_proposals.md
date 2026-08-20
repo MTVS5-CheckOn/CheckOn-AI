@@ -2024,6 +2024,79 @@ LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
 
 ---
 
+### 2-27. `04`가 코드·공용 정본과 갈렸다 — area enum 6→5 · v1 지원 범위 language→5영역 `[B 실측 · 2026-08-20 · A 반영 요청]`
+
+> ⚠ **이 절은 제안이다** — `04_api_contract.md`는 공용 문서라 B가 직접 고치지 않는다.
+> 계기: A가 8/20에 「문서·docstring에 적힌 숫자가 실제 설정과 안 묶여 있으면 값이 바뀔 때
+> 조용히 갈린다」며 B 쪽을 훑어보라고 했다. 훑었고, **두 건 나왔다.**
+
+#### ① area enum — `04`만 6영역이다
+
+    공용 정본  policies/taxonomy.md §1   **출제 5영역** · `speech`·`writing` → `speech_writing`
+                                         (표제에 「2026-08-09 B 확정 개정」으로 명시돼 있다)
+    코드      contracts/taxonomy.py:17   `AreaTag` — **5값** · docstring이 병합 사유까지 적고 있다
+    코드      problem_generation/domain/policy.py:16  `SUPPORTED_AREAS` — **5값**
+
+    🔴 04:649   `// 수능 6영역 enum (Open-11 확정 7/15): reading·literature·speech·writing·language·media`
+    🔴 04:1149  `**area 값(수능 6영역): reading·literature·speech·writing·language·media**`
+    🔴 `04` 전체에 `speech_writing`이 **0회** 나온다(실측: `grep -c` → 0).
+
+⇒ 🔴 **BE가 `04`를 보고 만들면 없는 enum 값을 보낸다.** `area_tag="speech"`·`"writing"`은
+파싱에서 죽고(400), 그때 BE는 **자기가 본 문서가 틀렸다는 것을 모른다.**
+⚠ 학습 이벤트 수신(§1149)은 출제보다 먼저 닿는 경로라 **이쪽이 더 급하다.**
+
+**제안 — 문면 정정(2곳)**
+
+| 자리 | 현재 | 제안 |
+| --- | --- | --- |
+| 04:649 | `수능 6영역 enum … reading·literature·speech·writing·language·media` | `출제 5영역 enum(2026-08-09 개정) … reading·literature·speech_writing·language·media` |
+| 04:1149 | 〈같은 6값 나열〉 | 〈같은 5값 나열 + 「종전 `speech`·`writing`은 `speech_writing`으로 병합됐다」 한 줄〉 |
+
+⚠ **이력을 지우지 말 것을 권한다** — `Open-11 확정 7/15`은 당시 사실이다. 그 문장을 남기고
+「8/9 개정으로 대체」를 붙이는 편이 `policies/taxonomy.md`의 서술법과 같다.
+
+#### ② v1 지원 범위 — `04`는 language 하나라는데 코드는 5영역이 열려 있다
+
+    🔴 04:305   「🔴 **v1은 `area_tag=language` + `passage` 없음만**」
+    🔴 04:912   `"area_tag": "language",   // 🔴 v1은 language만 — 아래 「v1 지원 한계」`
+
+    코드      SUPPORTED_AREAS = {language, reading, literature, speech_writing, media}  — **5개**
+              _SOURCE_REQUEST_SHAPES가 영역별 자료 요청 형태를 표로 닫아 둔다
+              (language(F,F) · reading(T,F) · literature(F,T) · speech_writing(T,F) · media(T,F))
+
+⇒ 🔴 **방향이 ①과 반대다.** ①은 「문서가 없는 것을 약속」이고 이건 「문서가 있는 것을 숨김」이다.
+BE·FE가 `04`만 보면 **독서·문학·화작·매체 출제를 화면에 안 낸다** — 되는 기능이 안 팔린다.
+⚠ 반대로 **열렸다고만 적으면 또 틀린다** — 영역마다 허용되는 자료 요청 **조합이 다르고**,
+그 밖은 400 `source_procurement_not_implemented`다(04:971은 이미 이 게이트를 정확히 적고 있다).
+
+**제안 — 04:305·912를 「영역 하나」가 아니라 「영역×자료요청 조합 표」로 바꾼다**
+
+| `area_tag` | `passage` | `work_selection` | v1 |
+| --- | --- | --- | --- |
+| `language` | 없음 | 없음 | ✅ |
+| `reading` | **있음** | 없음 | ✅ |
+| `literature` | 없음 | **있음** | ✅ |
+| `speech_writing` | **있음** | 없음 | ✅ |
+| `media` | **있음** | 없음 | ✅ |
+| 그 밖 모든 조합 | — | — | 🔴 400 `source_procurement_not_implemented` (잡 0건·AI_RUN 0건) |
+
+⚠ 이 표의 정본은 문서가 아니라 `problem_generation/domain/policy.py::_SOURCE_REQUEST_SHAPES`다.
+⇒ 🔴 **문서에 값을 복사해 두면 또 갈린다.** 이번 건이 정확히 그 병이다
+(〈v1=language〉가 참이었던 시점이 있고, 그 뒤 코드가 움직였는데 문면은 안 움직였다).
+⇒ 제안: 문면 정정과 **함께** 그 표를 코드에서 넘겨보는 검사를 B가 단다 —
+`04`의 표를 파싱해 `_SOURCE_REQUEST_SHAPES`와 대조하면 다음엔 **갈리는 순간 red가 된다.**
+⚠ 단 그 검사는 `04`의 표 형식에 의존하므로 **문면을 먼저 확정해 주셔야 붙일 수 있다.**
+
+#### 확인 명령 (리뷰어가 직접 돌릴 것)
+
+```bash
+grep -c "speech_writing" docs/04_api_contract.md
+```
+
+```bash
+grep -n "SUPPORTED_AREAS" -A 9 src/ai/problem_generation/domain/policy.py
+```
+
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
 | 번호 | 항목 | B 권고안 | 담당 | 관련 part_b |
@@ -2039,6 +2112,7 @@ LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
 | **B-14** `[신규]` `[P1]` | **LangGraph counsel_pack 노드 state의 `emphasis_points`에 근거 라벨·수치·`record_id`가 실측 등재된다.** alias와 논리 참조라 실명·연락처는 없어 **불변식 3 해소 판정은 유지**하지만, 학습 정보의 IP·프라이버시 노출면은 남는다. 프롬프트는 트레이스에 실리지 않고 briefing은 span 0건이며, mapping_probe와 P2 실적용 결과는 미확인이다 | **`TRACING=false` 유지가 전제.** P1 ✅ PR #48 · 동의어 4종 확장 머지 완료(#59 · `5d8e1a4`) — **develop 가드는 더 이상 `LANGCHAIN_TRACING_V2` 등으로 우회되지 않는다** · P1' ✅ PR #51 · 부속 실측 ✅ PR #51 · 판정 소스 단일화 ✅ (A-11 PR #61 + B의 OR 제거) · **P2 ☐ serde·클라이언트 은닉만 미완.** 넷 중 하나라도 미완이면 TRACING을 켜지 않는다 | A+B | §2-16 · `01` §5 · `langgraph_state` §1.2·§2.4 |
 | **B-9** `[신규]` | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** — 검증 통과 문항이 미검증 문항으로 대체될 수 있는 미정의 동작 | `07` §4의 "마지막 검증본 유지"를 생성 경로에 대칭 적용 제안. 확정 전 `difficulty_regen_enabled=false` 유지 | B 초안 → A+B | `10` §4.1 C3 |
 | **BE-11** `(구 B-10)` | ✅ **A 판정 완료 — RLS 구현 부재는 문서 표현을 앱 계층 격리로 정정해 해소.** RLS 실도입 여부는 백엔드 합의 안건으로 이관 | 도입 시 `db/session.py`·`db/store_factory.py` 연결·역할 설계와 함께 기존 26+B 8테이블에 일괄 적용. 현재 B 8테이블은 기존 패턴 준수 | **BE** | §2-4.5 |
+| **B-15** `[신규]` | **`04`가 코드·공용 정본과 갈렸다 — ① area enum이 `04`에만 6값(`speech_writing` 0회) ② 「v1은 language만」이 코드(5영역 개방)와 반대로 갈렸다** | ① 04:649·1149 문면 정정(이력 보존) ② 04:305·912를 「영역×자료요청 조합 표」로 교체. 문면 확정 후 B가 대조 검사를 단다 | A(+B) | §2-27 |
 | **W1** `[신규]` | **다중 목표·다중 measured area 세트** — M2 와이어프레임 Step 1은 셀 여러 개를 담고 개수를 각각 지정하나, `05` §4.1은 **v1 단일 영역 제한** | 요청 분할 vs 요청 형식 확장 중 택일. 협업설명서도 "회의 결정 필요"로 등재 | A+B+제품 | `05` §4.1 · `10` §6 |
 | **W2** `[신규]` | 화면이 **셀에 `suspect`를 표시**하나 `04` §4의 셀 verdict는 `unknown\|weak\|ok` 3종이고 `suspect`는 **노드** verdict | 셀 verdict 확장 vs 화면이 노드 verdict를 셀에 투영 중 택일 | B(+FE) | `04` §4·§5.1 |
 | **W3** `[신규]` | 완료 알림 payload — 화면 문서는 수량(통과·검토·폐기)을 알림에 싣고, §2-1은 `result_ref` 조회로 얻는다 | §2-1 유지 권고(알림 경량화) | BE+B | §2-1 |
