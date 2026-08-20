@@ -31,9 +31,10 @@ import logging
 import uuid
 from collections import OrderedDict
 from collections.abc import Mapping
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, replace
 from datetime import timedelta
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from fastapi import APIRouter, Request, Response
 from pydantic import ValidationError
@@ -86,7 +87,7 @@ from ai.composition.counsel.stores import (
     make_ref,
 )
 from ai.composition.counsel.versions import counsel_versions as _counsel_versions
-from ai.contracts.agents import TERMINAL_PHASES, JobPhase, WorkerJob
+from ai.contracts.agents import TERMINAL_PHASES, JobPhase, WorkerJob, WorkerKind
 from ai.contracts.composition import DraftContext, EvidenceFact, StudentResult
 from ai.contracts.counsel import (
     REASON_CONTEXT_MISSING,
@@ -130,6 +131,10 @@ from ai.runtime.errors import (
     SnapshotInvalid,
     domain_error_for,
 )
+from ai.runtime.tracing import require_tracing_disabled
+
+if TYPE_CHECKING:  # 타입 전용 — 런타임 import 를 늘리지 않는다
+    from ai.composition.counsel.worker import CounselPackRunner
 
 logger = logging.getLogger(__name__)
 
@@ -989,23 +994,44 @@ async def _generate(
             )
         job = existing
     provider = require_counsel_provider()
-    # 🔴 조립부를 경유한다 — 러너를 여기서 직접 만들면 `require_tracing_disabled`와
-    # 체크포인터 선택(`_open_saver`)이 **서비스 경로에서만 빠진다**. 실제로 그랬다:
-    # `LANGSMITH_TRACING=true`여도 이 엔드포인트는 그냥 돌았다.
-    async with open_counsel_pack_runner(
-        supervisor=supervisor,
-        context_store=_context_store,
-        step_sink=_step_sink,
-        draft_store=_draft_store,
-        pack_store=_pack_store,
-        planner=provider,
-        writer=provider,
-        regen_max=_REGEN_MAX,
-        lease_owner=_LEASE_OWNER,
-        # 실행 원장은 라우터와 **같은 인스턴스**를 쓴다 — 워커가 기본 팩토리로 따로 만들면
-        # 테스트가 주입한 저장소를 우회해 적재를 관측할 수 없다.
-        run_store=_run_store,
-    ) as runner:
+    # 🔴 **추적 fail-closed 를 러너 개폐에서 떼어 낸다**(㉒-a · 불변식 3).
+    #    종전에는 러너를 여는 것이 곧 이 검사였다 — 아래처럼 **필요할 때만** 열면 그 검사가
+    #    POST 에서 통째로 빠진다. 러너를 한 번도 안 여는 요청에도 이 줄은 돈다.
+    #    ⚠ 리터럴을 박지 않는다 — 조립부(`assembly.py`)와 같은 값이어야 한다.
+    require_tracing_disabled(WorkerKind.COUNSEL_PACK.value)
+    async with AsyncExitStack() as stack:
+        # 🔴 **러너를 미리 열지 않는다**(99 #127 셋째 항). `counsel_inline_drain_max`가 0인
+        #    운영값에서 이 요청은 러너를 **한 번도 쓰지 않는데**, 여는 것만으로
+        #    `assembly._open_saver` → `open_checkpointer`가 돌아 **pg 백엔드에서 체크포인터
+        #    커넥션 하나가 열렸다 닫혔다.** 인라인 드레인을 걷은 뒤로 그 비용을 **모든
+        #    POST 가** 냈다.
+        # ⚠ 조립부를 경유하는 것은 그대로다 — 러너를 여기서 직접 만들면 체크포인터
+        #   선택(`_open_saver`)이 서비스 경로에서만 빠진다.
+        # ⚠ **최대 한 번만 연다.** 드레인과 결과 조회가 둘 다 필요해도 같은 러너를 쓴다.
+        runner: CounselPackRunner | None = None
+
+        async def _runner() -> CounselPackRunner:
+            nonlocal runner
+            if runner is None:
+                runner = await stack.enter_async_context(
+                    open_counsel_pack_runner(
+                        supervisor=supervisor,
+                        context_store=_context_store,
+                        step_sink=_step_sink,
+                        draft_store=_draft_store,
+                        pack_store=_pack_store,
+                        planner=provider,
+                        writer=provider,
+                        regen_max=_REGEN_MAX,
+                        lease_owner=_LEASE_OWNER,
+                        # 실행 원장은 라우터와 **같은 인스턴스**를 쓴다 — 워커가 기본
+                        # 팩토리로 따로 만들면 테스트가 주입한 저장소를 우회해 적재를
+                        # 관측할 수 없다.
+                        run_store=_run_store,
+                    )
+                )
+            return runner
+
         # 🔴 `run_next`는 `worker_kind + tenant_id`로만 lease한다 — **job_id를 지정해 집을
         # 수 없다.** 큐에 앞선 잡이 있으면 이게 집어오는 건 내 잡이 아니다.
         # 🔴 **그래서 자기 잡이 끝날 때까지 유한 반복한다** (99 #21). 종전에는 **1회**만
@@ -1019,7 +1045,7 @@ async def _generate(
             if _can_report_result(mine.phase):
                 break
             try:
-                ran = await runner.run_next(tenant_id=tenant_id)
+                ran = await (await _runner()).run_next(tenant_id=tenant_id)
             except Exception:  # noqa: BLE001 — 남의 잡 실패가 내 요청을 죽이면 안 된다
                 # 🔴 **조용히 삼키지 않는다.** 내 잡은 아직 안 돌았을 수 있으니 계속 돌되,
                 #    무엇이 터졌는지는 남긴다(`except: pass` 금지 · 03 §1).
@@ -1057,8 +1083,10 @@ async def _generate(
                 ),
                 job.execution_id,
             )
+        # 🔴 **여기서만 러너가 다시 필요하다** — 멱등 재시도로 **이미 끝난 잡**을 만났을 때다.
+        #    K=0 이어도 이 갈래는 살아 있어야 한다(위 조기 반환을 지나온 요청이다).
         result = await _wire_result(
-            await runner.result_of(mine.result_ref, tenant_id=tenant_id)
+            await (await _runner()).result_of(mine.result_ref, tenant_id=tenant_id)
             if mine.result_ref
             else None,
             mine,
