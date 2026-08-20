@@ -76,6 +76,29 @@ services:
       retries: 5
       start_period: 20s
 
+  # 배경 드레인 워커 — 큐에 남은 잡을 돈다(99 #85 ① · #126 ③ 고착 해소).
+  #
+  # 🔴 migrate 를 기다린다 — 체크포인트 테이블이 없으면 8/12 형태로 **조용히** 죽는다.
+  #    (2026-08-12~20 실측: 기동은 정상이고 /v1/ready 도 200 인데 잡만 전량 실패했다.)
+  #
+  # 🔴 `environment:` 블록을 넣지 마라. YAML 병합(`<<`)은 **없는 키만** 채운다 —
+  #    여기 `environment:` 를 쓰면 x-app-env 의 DATABASE_URL 교정이 통째로 덮이고,
+  #    드레인이 .env 의 localhost:5434 를 쓴다(컨테이너 안에선 틀린 주소다).
+  #    ⚠ STORE_BACKEND=pg 는 .env 에 있어 env_file 로 들어온다 — 여기 다시 적지 않는다.
+  #
+  # ⚠ 동시성은 COUNSEL_DRAIN_CONCURRENCY(기본 4). 커넥션이 빡빡하면 낮춘다 —
+  #   관계식은 99 #136 참조(app_workers 항이 실제와 안 이어져 있다는 것도 거기 있다).
+  counsel-drain:
+    build: .
+    <<: *app-env
+    command: ["python", "-m", "ai.composition.counsel.drain"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
   # 공개 터널 — BE(승우님) 실통신 경로. 주소는 .env 의 PUBLIC_BASE_URL.
   #
   # 🔴 **왜 컨테이너로 내렸나**(2026-08-14). 종전에는 Windows 서비스로 돌면서
