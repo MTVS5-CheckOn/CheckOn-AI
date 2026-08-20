@@ -1,14 +1,14 @@
 # AI–BE/Adapter 문제출제 통신 명세
 
-- 기준 AI 커밋: `7bc3d6592c6ccd48432ba941053a0673a922dca6`
-- 기준 브랜치: `codex/problem-studio-mvp-closeout`
-- 확정일: 2026-08-14
+- 기준 AI 커밋: `d1316992bb2e84159d3ad5a34332eb913626957c`
+- 기준 브랜치: `codex/diagnosis-misconception-report-p5`
+- 확정일: 2026-08-20
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 문서 개정: BE 적대적 대조 질의 8건 반영
 
 ## 1. 범위와 결론
 
-이 문서는 Step1 진단부터 Step4 문항 수정까지 Backend와 Adapter가 AI FastAPI를 호출하는 계약을 고정한다.
+이 문서는 Step1 진단부터 Step7 수정 결과 재조회까지 Backend와 Adapter가 AI FastAPI를 호출하는 계약을 고정한다.
 
 - AI 영상 MVP 추가 구현은 없다.
 - 시연 중 AI 프로세스를 재시작하지 않는다.
@@ -22,9 +22,8 @@
 기준 커밋의 검증 결과는 다음과 같다.
 
 - Ruff 통과
-- Mypy 470파일 통과
-- offline 3,325 passed / 19 skipped / 2 xfailed
-- PostgreSQL integration 158 passed / 실 LLM 보호 skip 3
+- Mypy 514파일 통과
+- offline 3,632 passed / 20 skipped / 172 deselected / 3 xfailed
 - FakeProvider 기준 커리큘럼 57노드 중 56노드 HTTP 생성·게이트·PG 저장·재조회 완주
 - `language.grammar.fortition` 1노드는 A 소유 redaction 오탐으로 제외
 
@@ -79,16 +78,48 @@ AI 내부에서 `tenant_id`, `student_ref`, `target_ref`는 UUID가 아니라 �
 
 ```json
 {
-  "student_ref": "student-id",
+  "student_ref": "st_0123456789abcdef0123456789abcdef",
   "period": {
     "from_date": "2026-06-17",
     "to_date": "2026-08-12"
   },
-  "as_of": "2026-08-12T09:00:00+00:00",
-  "snapshot_hash": "sha256:...",
-  "events": []
+  "as_of": "2026-08-12T09:00:00Z",
+  "snapshot_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "events": [
+    {
+      "event_id": "submission-correct-001",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "item_format": "mcq",
+      "chosen_no": 1,
+      "skill_node_id": "language.grammar.sentence.structure",
+      "correct": true,
+      "occurred_at": "2026-08-01T09:00:00Z",
+      "tag_confirmed": true
+    },
+    {
+      "event_id": "submission-wrong-002",
+      "area_tag": "language",
+      "type_tag": "concept",
+      "item_format": "mcq",
+      "chosen_no": 2,
+      "misconception_tag": "application_target_substitution",
+      "skill_node_id": "language.grammar.sentence.structure",
+      "correct": false,
+      "occurred_at": "2026-08-01T09:05:00Z",
+      "tag_confirmed": true
+    }
+  ]
 }
 ```
+
+위 JSON은 `DiagnosisRequestBody.model_validate(...).model_dump_json(exclude_none=True)`의 실제 출력이다.
+
+- `chosen_no`: 1-based `1..5`. 비객관식이거나 선택 번호를 알 수 없으면 `null` 또는 생략한다.
+- `misconception_tag`: 오답일 때 Step5 문항 스냅숏의 `choices[].misconception_tag`를 복사한다. 정답이면 `null` 또는 생략한다.
+- BE는 저장된 `answer.correct_no`와 `chosen_no`를 대조해 `correct`를 확정한 뒤 전송한다. AI 진단 입력에는 `correct_no`가 없으므로 이 대조를 AI에 미룰 수 없다.
+- `misconception_tag`가 있는데 `chosen_no`가 없거나, `correct=true`인데 라벨이 있으면 `400 INVALID_SCHEMA`다.
+- 라벨이 이벤트 영역의 YAML 닫힌 어휘를 벗어나면 `400 INVALID_SCHEMA`다.
 
 정상 응답:
 
@@ -100,7 +131,13 @@ AI 내부에서 `tenant_id`, `student_ref`, `target_ref`는 UUID가 아니라 �
 - `data.weakness_map.snapshot_hash`
 - `data.weakness_map.cells`
 - `data.weakness_map.nodes`
+- `data.misconceptions.by_area`
+- `data.misconceptions.by_node`
+- `data.misconceptions.excluded_missing_chosen_no`
+- `data.misconceptions.excluded_missing_misconception_tag`
 - `data.grid`
+
+`data.misconceptions`는 리포팅 전용이다. `weakness_map.cells`·`nodes`·`propagated`·`overall_low` 판정에는 영향을 주지 않는다. `chosen_no`가 없는 오답 이벤트와 라벨이 없는 오답 이벤트는 집계하지 않고 각각의 제외 건수에만 반영한다.
 
 Backend는 `weakness_map.nodes`의 키인 `skill_node_id`와 `snapshot_hash`를 원문 그대로 보존한다.
 
@@ -259,11 +296,114 @@ Adapter의 전체 child 관찰 상한은 21분이다. 이는 Adapter 정책이�
 - `skill_node_id`
 - `stem`
 - `choices[]`
+- `choices[].why_wrong`
+- `choices[].misconception_tag`
 - `answer.correct_no`
 - `rationale`
 - `evidence[]`
 
 `data.available_actions`가 `refine`을 포함할 때만 수정 버튼을 활성화한다. Backend가 영역을 하드코딩해 수정 가능 여부를 결정하지 않는다.
+
+정답 선지의 `why_wrong`·`misconception_tag`는 `null`이고, 오답 네 선지는 두 필드가 모두 비어 있지 않다. BE는 학생 제출의 `chosen_no`로 선택한 `choices[].no`를 찾고 그 선지의 `misconception_tag`를 다음 Step1 진단 이벤트에 복사한다.
+
+전체 응답 예시 — `tests/ai/contract/fixtures/http/get_problem_items.detail.json`의 실제 HTTP 산출:
+
+```json
+{
+  "data": {
+    "set_id": "00000000-0000-4000-8000-000000000050",
+    "job_id": "00000000-0000-4000-8000-0000000000b0",
+    "slot_index": 0,
+    "item_id": "00000000-0000-4000-8000-000000000010",
+    "status": "needs_review",
+    "current_revision_no": 0,
+    "available_actions": ["refine"],
+    "item": {
+      "area_tag": "language",
+      "type_tag": "concept",
+      "item_format": "mcq",
+      "skill_node_id": "grammar.sentence-structure",
+      "stem": "문장 성분의 개념과 종류를 설명한 것으로 옳은 것을 고르시오.",
+      "choices": [
+        {
+          "no": 1,
+          "text": "문장 구조 선택지 1",
+          "why_wrong": null,
+          "misconception_tag": null
+        },
+        {
+          "no": 2,
+          "text": "문장 구조 선택지 2",
+          "why_wrong": "2번은 문법 근거와 다르다.",
+          "misconception_tag": "application_target_substitution"
+        },
+        {
+          "no": 3,
+          "text": "문장 구조 선택지 3",
+          "why_wrong": "3번은 문법 근거와 다르다.",
+          "misconception_tag": "application_target_substitution"
+        },
+        {
+          "no": 4,
+          "text": "문장 구조 선택지 4",
+          "why_wrong": "4번은 문법 근거와 다르다.",
+          "misconception_tag": "application_target_substitution"
+        },
+        {
+          "no": 5,
+          "text": "문장 구조 선택지 5",
+          "why_wrong": "5번은 문법 근거와 다르다.",
+          "misconception_tag": "application_target_substitution"
+        }
+      ],
+      "answer": {"correct_no": 1},
+      "rationale": "승인된 문법 근거에 따르면 1번이 옳다.",
+      "evidence": [
+        {
+          "kind": "grammar_rule",
+          "ref": "grammar:rule-1",
+          "quote": null
+        }
+      ]
+    },
+    "cross_solve": {
+      "chosen": 1,
+      "reasoning": "문법 근거를 독립적으로 확인했다.",
+      "confidence": 0.95,
+      "multiple_answers_possible": false,
+      "target_skill_node_id": "grammar.sentence-structure",
+      "measured_skill_node_id": "grammar.sentence-structure",
+      "aligned": true,
+      "alignment_confidence": 0.95,
+      "alignment_reason": "목표 문법 노드와 일치한다."
+    },
+    "verification": {
+      "rule_validation": "passed",
+      "blind_cross_solve": "passed",
+      "release_decision": "needs_review"
+    },
+    "revisions": [],
+    "review_reason": "manual_target_first",
+    "failure_reason": null
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "v6",
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": "v1",
+      "verify_config": "verify-config.v1",
+      "difficulty_calib": null
+    }
+  }
+}
+```
 
 캐시 유실 시 `data.job_id`는 키 자체가 생략된다. `null`이나 임의 UUID를 기대하지 않는다. Adapter는 Step2에서 저장한 `job_id`를 사용한다.
 
@@ -291,7 +431,7 @@ Adapter→Backend normalized event만으로 read model을 완성할 경우에는
 - `revision_kind`는 현재 `ai_refine`만 지원한다.
 - `instruction`은 비어 있을 수 없다.
 - extra 필드는 허용하지 않는다.
-- 현재 수정 지원 영역은 `language`다.
+- `ai_refine`은 `language`·`reading`·`literature`·`speech_writing`·`media` 5영역을 모두 지원한다.
 - `job_id`는 필요하지 않다.
 - 캐시 유실 후에도 PG의 `problem_set.request` 원 요청 정본을 사용한다.
 
@@ -518,6 +658,7 @@ Adapter→Backend가 본문을 Kafka로 전달해야 한다면 참조형, slot �
 - [ ] 비종단 상태에서만 `Retry-After`를 polling 간격에 반영
 - [ ] `job_id`·`execution_id` 영속 저장
 - [ ] `correct_option_index` 파생 및 AI 원문 answer 보존
+- [ ] Step5 `choices[].why_wrong`·`misconception_tag`를 손실 없이 Backend에 전달
 - [ ] dropped 슬롯과 `failure_reason`·`failure_detail`·`status_counts` 보존
 - [ ] terminal 참조 이벤트 또는 합의된 normalized event를 결과 Outbox와 같은 트랜잭션으로 저장
 - [ ] 본문을 Kafka에 싣는다면 byte 상한·chunk 순서·재조립 규칙을 별도 계약으로 고정
@@ -532,6 +673,9 @@ Adapter→Backend가 본문을 Kafka로 전달해야 한다면 참조형, slot �
 - [ ] 수정 버튼을 `available_actions`로 판정
 - [ ] `REVISION_CONFLICT`의 `current_revision_no`로 재시도
 - [ ] `tag_confirmed`·`skill_node_id` 연결 보강
+- [ ] 학생 제출의 `chosen_no`를 1-based로 보존하고 저장된 `answer.correct_no`와 대조해 `correct` 확정
+- [ ] 선택한 오답 선지의 `misconception_tag`를 Step1 이벤트에 복사하고 정답이면 생략
+- [ ] `data.misconceptions`의 영역·노드별 빈도와 제외 건수를 별도 리포트로 저장
 
 ### 8.5 BE/Adapter 시연 범위 확장
 
@@ -581,6 +725,8 @@ Backend·Adapter 작업은 다음이 모두 충족되면 인수한다.
 - [ ] 목록 이후 각 slot detail을 조회해 실제 문항 본문을 확보함
 - [ ] dropped 슬롯을 임의 문항으로 대체하지 않음
 - [ ] 1-based 정답 원문을 보존하고 0-based index를 정확히 파생함
+- [ ] 선택 오답의 `chosen_no`와 `misconception_tag`가 다음 diagnosis 요청까지 동일하게 전달됨
+- [ ] `data.misconceptions`를 weakness 판정값과 섞지 않고 별도 리포트로 보존함
 - [ ] 수정 가능 여부를 `available_actions`로 판정함
 - [ ] stale revision과 revision in progress를 구분함
 - [ ] tenant·request·idempotency 경계를 보존함
@@ -592,13 +738,13 @@ Backend·Adapter 작업은 다음이 모두 충족되면 인수한다.
 ### 12.1 재현 정본
 
 - 저장소: `https://github.com/MTVS5-CheckOn/CheckOn-AI.git`
-- 원격 브랜치: `codex/problem-studio-mvp-closeout`
-- full SHA: `7bc3d6592c6ccd48432ba941053a0673a922dca6`
+- 원격 브랜치: `codex/diagnosis-misconception-report-p5`
+- full SHA: `d1316992bb2e84159d3ad5a34332eb913626957c`
 - immutable tag·CI artifact: 현재 없음
 
 ```powershell
 git fetch origin
-git switch --detach 7bc3d6592c6ccd48432ba941053a0673a922dca6
+git switch --detach d1316992bb2e84159d3ad5a34332eb913626957c
 docker start checkon-ai-db-1
 $env:STORE_BACKEND="memory"
 uv run --frozen python -m ai.evaluation.pre_pr_verify
@@ -608,6 +754,16 @@ uv run --frozen python -m ai.evaluation.pre_pr_verify
 
 ### 12.2 책임 경계
 
-AI 영상 MVP 코드는 기준 커밋 `7bc3d6592c6ccd48432ba941053a0673a922dca6`에서 고정한다. Backend나 Adapter 편의를 위해 AI 계약을 임의로 변경하지 않는다.
+AI 오개념 연동 계약은 기준 커밋 `d1316992bb2e84159d3ad5a34332eb913626957c`에서 고정한다. Backend나 Adapter 편의를 위해 AI 계약을 임의로 변경하지 않는다.
 
 실제 통신을 불가능하게 만드는 BLOCKER가 코드와 fixture로 입증될 때만 소유자·최소 처방·승인 범위를 분리해 AI 변경을 요청한다.
+
+### 12.3 확정 서명표
+
+| 주체 | 확정 책임 | 서명 상태 | 기준 |
+| --- | --- | --- | --- |
+| AI / member-B 염준영 | `chosen_no`·`misconception_tag` 수신, 닫힌 어휘 검증, 별도 빈도 리포트, Step5 원문 제공 | 확정 | `d1316992bb2e84159d3ad5a34332eb913626957c` · 2026-08-20 |
+| Kafka–HTTP Adapter | Step5 원문 필드 무손실 전달, 참조형 이벤트·REST 재조회 경계 유지 | 연동 계약 확정 | 본 문서 §3 Step5 · §6.1 · §8.3 |
+| Backend | 저장 정답과 선택 번호 대조, 선택 오답 라벨 복사, diagnosis 리포트 별도 저장 | 연동 계약 확정 | 본 문서 §3 Step1 · §8.4 · §11 |
+
+표의 “연동 계약 확정”은 구현 완료를 뜻하지 않는다. 완료 판정은 §11 인수 기준의 E2E 증적으로만 한다.
