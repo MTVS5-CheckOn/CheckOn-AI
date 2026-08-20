@@ -322,3 +322,44 @@ def test_the_drain_concurrency_is_bounded() -> None:
     assert "커넥션" in doc, (
         "드레인 동시성 docstring 에 「커넥션 수와 같다」는 관계가 사라졌다"
     )
+
+
+def test_the_third_connection_term_is_named_even_though_it_is_unbounded() -> None:
+    """🔴 **식은 셋인데 잠근 것은 둘이다** — 그 사실이 어딘가 적혀 있어야 한다 (99 #127).
+
+    ⚠ №21 보고가 *"두 항만 잠금"* 이라 적었고 №22 작업 0-6 이 그것을 물었다. 답:
+
+        앱워커 × (pool + overflow)        ← 잠긴다(설정)
+      + 앱워커 × 동시요청당 체크포인터    ← 🔴 **상한 없다** (요청 수가 곧 커넥션 수)
+      + 드레인 동시성                     ← 잠긴다(세마포어)
+
+    🔴 **가운데 항은 `counsel_inline_drain_max` 가 0 이 되면 사라진다** — POST 가 잡을 안
+    돌리면 체크포인터를 안 연다. ⇒ ⓓ 가 커넥션 관계도 함께 닫는다.
+    ⚠ 이 검사는 **값을 재는 것이 아니라 「그 사실이 문면에 있는가」를 잰다** — 말없이
+    사라지면 다음 사람이 «세 항이 다 잠겼다» 로 읽는다.
+    """
+    import inspect
+
+    from ai.composition.counsel import drain
+    from ai.db.settings import DbSettings
+
+    doc = inspect.getsource(DbSettings)
+    assert "체크포인터" in doc and "풀 밖" in doc, (
+        "커넥션 관계식에서 「체크포인터는 풀 밖」이라는 항이 사라졌다"
+    )
+    assert "커넥션 몫이 앱과 갈린다" in (drain.__doc__ or ""), (
+        "드레인 docstring 에서 커넥션 몫 조건(#128 ③)이 사라졌다"
+    )
+
+
+def test_the_drain_docstring_carries_every_deployment_condition() -> None:
+    """🔴 **compose 는 저장소 밖이라 정의에는 검사가 못 닿는다** — 조건만이라도 안에 둔다.
+
+    ⚠ 99 #128 은 「결함」이 아니라 **「알려진 한계」**다. 배포 파일이 밖에 있는 것은 운영
+    방식의 선택이고, 그 대신 **닿을 수 있는 만큼**(조건·식·절차)을 덮는다.
+    """
+    from ai.composition.counsel import drain
+
+    doc = drain.__doc__ or ""
+    for condition in ("migrate", "restart", "커넥션 몫", "env_file"):
+        assert condition in doc, f"배포 조건 「{condition}」이 드레인 docstring 에서 사라졌다"

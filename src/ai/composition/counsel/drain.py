@@ -29,6 +29,27 @@ Kafka 완료 통지를 기다리는데 통지는 잡이 끝나야 나오고, 잡
      `is_stale()` 이 판정한다. **이걸 빠뜨리면 8/12 체크포인터를 한 층 더 쌓는 것**이다
      (그때도 기동은 정상이었고 `/v1/ready` 는 200 이었다).
 
+━━ 🔴 **배포에서 이 워커가 갖춰야 하는 것 넷** (99 #128 · №22 §A) ━━
+
+⚠ **compose 파일은 저장소 밖이다** — 배포 스택은 진희님 맥에서 관리해 노션을 거쳐 윈도우
+AI 서버에 적용한다(`.gitignore:50-51` 이 `docker-compose*.yml` 을 막는다). ⇒ **정의에는
+검사가 못 닿는다.** 그래서 **조건은 여기 적는다** — `agents/checkpointer.py` 가 배포 단계를
+자기 docstring 에 적은 선례와 같은 형태다.
+
+  ① 🔴 **`migrate` 성공을 기다린다**(`condition: service_completed_successfully`).
+     체크포인트 테이블이 없으면 드레인이 **8/12 와 같은 형태로 죽는다** — 기동은 정상이고
+     잡만 전부 `worker_internal_error` 다(99 #39 ⓖ).
+  ② 🔴 **`restart: unless-stopped`** — 죽으면 자동 복구. ⚠ 그래도 `DrainHeartbeat` 가
+     필요하다: **재기동을 반복하며 아무 잡도 못 도는 상태**는 restart 로 안 잡힌다.
+  ③ 🔴 **커넥션 몫이 앱과 갈린다**(99 #127). 드레인 동시성 × 1(체크포인터)이 이 워커의
+     몫이고, 앱 몫과 합쳐 PG `max_connections` 안에 들어와야 한다.
+     ⇒ `tests/ai/contract/test_timeout_budget_relations.py` 가 그 식을 든다.
+  ④ **`env_file` 이 앱과 같다** — `CHECKON_ALLOW_REAL_LLM`·`OPENAI_*` 가 없으면
+     기동에 실패하거나 **조용히 fake 로 돈다**(후자가 더 나쁘다 · 99 #37 선례).
+
+⚠ **맥에서는 compose 를 안 쓴다** — 로컬은 `db` 하나만 띄우고 앱은 호스트에서 돈다.
+⇒ 드레인도 호스트 프로세스다: `uv run --frozen python -m ai.composition.counsel.drain`.
+
 ⚠ **드레인은 recovery 도 겸한다.** 실측(8/20 · №21 작업 0-4): 로컬 PG 에 `running` 7 ·
 `leased` 6 이 방치돼 있었다 — lease 는 만료됐는데 **회수 주체가 없었다**(`recover_expired`
 는 누가 lease 를 시도할 때만 돈다). 드레인이 그 자리다.
