@@ -9,7 +9,7 @@
     회전마다 `lease_next` 로 새로 잡고 종단 전이로 놓는다). K 를 정하는 것은 lease 가
     아니라 **「POST 가 HTTP 연결을 얼마나 쥐는가」**이고 그 상한은 04 §2.4 의 **300s** 다.
 
-⇒ `K × 5콜 × 45s ≤ 300s` ⇒ **K = 1**.
+⇒ `K × 5콜 × 90s ≤ 480s` ⇒ **K = 1**. (8/20: 콜당 45→90 · 예산 300→480 · 99 ㉪)
 
 ⚠ **대가를 검사로 못 박는다** — K=1 이면 앞선 잡이 **하나만** 있어도 내 잡이 `queued` 다.
 없으면 다음 사람이 「고착이 없다」로 읽는다.
@@ -24,12 +24,19 @@ from typing import Final
 
 import pytest
 
-from ai.composition.counsel.settings import CounselSettings, get_counsel_settings
+from ai.composition.counsel.settings import (
+    LLM_CALL_TIMEOUT_S,
+    RESPONSE_BUDGET_S,
+    WORST_CALLS_PER_DRAFT,
+    CounselSettings,
+    get_counsel_settings,
+)
 
-#: 도출식이 쓰는 값들 — 🔴 **여기 리터럴을 박지 않는다.** 정본에서 읽어 온다.
-_WORST_CALLS_PER_JOB: Final = 5  # plan 1 + write (regen_max 3 + 1)
-#: 04 §2.4 `/drafts` — *"작업 총 5분 초과 시 failed"*.
-_RESPONSE_BUDGET_S: Final = 300
+#: 🔴 **종전에는 이 둘이 여기 박힌 리터럴이었다(5 · 300).** 그래서 콜당 상한이 45→90 이
+#: 돼도 이 파일은 **영원히 green** 이었다 — 문면의 45 와 여기 300 이 둘 다 아무것과도
+#: 안 묶여 있었기 때문이다(99 ㉪). ⇒ 정본(`settings`)에서 가져온다.
+_WORST_CALLS_PER_JOB: Final = WORST_CALLS_PER_DRAFT
+_RESPONSE_BUDGET_S: Final = RESPONSE_BUDGET_S
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +75,11 @@ def test_the_derivation_in_the_docstring_matches_the_actual_values() -> None:
     k = CounselSettings().counsel_inline_drain_max
     timeout = _timeout_in(doc)
     assert timeout is not None, "도출식에서 콜당 상한을 못 읽었다"
+    #: 🔴 **문면의 콜당이 정본과 같은가** — 종전에는 이 줄이 없어서 문면의 45 가
+    #:   실 상한 90 과 갈려도 안 걸렸다(99 ㉪ · 이 PR 이 고친 축).
+    assert timeout == LLM_CALL_TIMEOUT_S, (
+        f"도출식의 콜당 상한({timeout}s)이 정본 LLM_CALL_TIMEOUT_S({LLM_CALL_TIMEOUT_S}s)와 다르다"
+    )
 
     #: ⓐ 식이 쓰는 숫자가 실제 K 와 맞는가 — 결론 줄을 문면에서 읽는다.
     stated = re.search(r"⇒ \*\*K = ⌊\d+ / \d+⌋ = (\d+)\*\*", doc)
