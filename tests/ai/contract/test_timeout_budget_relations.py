@@ -333,8 +333,13 @@ def test_the_third_connection_term_is_named_even_though_it_is_unbounded() -> Non
       + 앱워커 × 동시요청당 체크포인터    ← 🔴 **상한 없다** (요청 수가 곧 커넥션 수)
       + 드레인 동시성                     ← 잠긴다(세마포어)
 
-    🔴 **가운데 항은 `counsel_inline_drain_max` 가 0 이 되면 사라진다** — POST 가 잡을 안
-    돌리면 체크포인터를 안 연다. ⇒ ⓓ 가 커넥션 관계도 함께 닫는다.
+    🔴 **~~가운데 항은 `counsel_inline_drain_max` 가 0 이 되면 사라진다~~ (8/21 정정)** —
+    **K=0 은 그 항을 안 없앴다.** 라우터가 러너를 **조건 없이** 열었고 여는 것 자체가
+    `_open_saver` → `open_checkpointer` 다. K 는 그 **안쪽 루프의 회전 수**일 뿐이었다.
+    ⚠ 이 문장은 저장소 산문을 **재지 않고 옮긴 것**이다(로그 146).
+    🔴 **(8/21 해소)** 러너를 `AsyncExitStack` 으로 **필요할 때만** 연다 ⇒ 이제 실제로
+    적재만 하는 POST 는 체크포인터를 안 연다. 그 성질은
+    `tests/ai/integration/test_counsel_runner_is_opened_lazily.py` 가 잰다.
     ⚠ 이 검사는 **값을 재는 것이 아니라 「그 사실이 문면에 있는가」를 잰다** — 말없이
     사라지면 다음 사람이 «세 항이 다 잠겼다» 로 읽는다.
     """
