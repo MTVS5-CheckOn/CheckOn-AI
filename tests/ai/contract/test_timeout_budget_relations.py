@@ -1,0 +1,159 @@
+"""콜당 상한 · 콜 수 · 예산 · lease · 04 문면이 **한 몸으로 선다** (99 ㉪).
+
+🔴 **이 파일이 있는 이유** — `openai_timeout_s` 가 **15 → 45 → 90** 으로 두 번 바뀌는
+동안 딸린 계산이 **두 번 다** 안 따라왔다:
+
+  ⓐ K 유도식(`counsel_inline_drain_max` docstring) · ⓑ `counsel_lease_seconds` ·
+  ⓒ `docs/04_api_contract.md` 의 네 자리 · ⓓ BE 향 read timeout 권고.
+
+⚠ **기존 가드가 왜 못 잡았나** — `test_inline_drain_bound.py` 는 docstring 이 **자기 안에서**
+일관적인지만 봤다(문면의 «콜당 45s» ↔ 문면의 «K=1»). 그 45 는 **아무것과도 안 묶인 리터럴**이라
+실 상한이 90 이 돼도 **영원히 green** 이다. ⇒ 여기서 **바깥과 묶는다.**
+
+🔴 **콜당 상한의 진짜 정본은 배포 env `OPENAI_TIMEOUT_S` 다.** 그걸 읽어 오지 않는 이유는
+`OpenAiSettings()` 가 `.env` 를 타서 **검사가 환경에 의존**하기 때문이다(99 #109 가 그 형태다).
+⇒ `LLM_CALL_TIMEOUT_S` 는 **사본**이고, 이 파일은 「사본이 문서·계산과 갈리지 않는가」를 잰다.
+**env 와 사본이 갈린 것은 여기서 못 잡는다** — 그건 배포 축이다(99 ㉪).
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+from typing import Final
+
+import pytest
+
+from ai.api.routers.counsel import _REGEN_MAX
+from ai.composition.counsel.assembly import DEFAULT_REGEN_MAX
+from ai.composition.counsel.settings import (
+    LLM_CALL_TIMEOUT_S,
+    RESPONSE_BUDGET_S,
+    WORST_CALLS_PER_DRAFT,
+    WORST_CALLS_PER_REFINE,
+    CounselSettings,
+)
+
+_CONTRACT: Final = pathlib.Path("docs/04_api_contract.md")
+
+
+@pytest.fixture(scope="module")
+def contract_text() -> str:
+    return _CONTRACT.read_text(encoding="utf-8")
+
+
+# ━━ 검사 2 — 잡당 최악 ≤ lease ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def test_the_worst_job_fits_inside_the_lease() -> None:
+    """🔴 **깨지면 「회수가 느려진다」가 아니라 「같은 잡이 두 번 돈다」이다.**
+
+    lease 가 잡당 최악보다 짧으면 만료되는 것은 **죽은 잡이 아니라 아직 실행 중인 잡**이고,
+    `Supervisor.run_next` 가 *"만료 작업을 먼저 회수한 뒤"* lease 하므로 recovery 가 그걸
+    다시 집는다 ⇒ LLM 비용 2배 · 학부모에게 갈 초안이 두 벌.
+
+    ⚠ 종전 docstring 은 이 관계를 *"이미 만족한다"* 고만 적어 뒀고, 콜당이 45→90 이 되자
+    **450 > 300 으로 조용히 깨졌다**(99 ㉪).
+    """
+    worst = WORST_CALLS_PER_DRAFT * LLM_CALL_TIMEOUT_S
+    lease = CounselSettings().counsel_lease_seconds
+    assert worst <= lease, (
+        f"잡당 최악 {worst}s 가 lease({lease}s)를 넘는다 — 실행 중인 잡의 lease 가 만료돼 "
+        "recovery 가 같은 잡을 다시 집는다(중복 실행)"
+    )
+
+
+def test_the_response_budget_holds_both_counsel_paths() -> None:
+    """예산은 초안(5콜)뿐 아니라 **refine(4콜)** 도 담아야 한다 — 99 ㉫ 가 빠뜨렸던 축."""
+    for label, calls in (("draft", WORST_CALLS_PER_DRAFT), ("refine", WORST_CALLS_PER_REFINE)):
+        worst = calls * LLM_CALL_TIMEOUT_S
+        assert worst <= RESPONSE_BUDGET_S, (
+            f"{label} 최악 {worst}s 가 응답 예산({RESPONSE_BUDGET_S}s)을 넘는다"
+        )
+
+
+# ━━ 콜 수 상수가 실제 `regen_max` 와 묶여 있다 ━━━━━━━━━━━━━━━━━━━━━
+
+
+def test_the_call_counts_are_tied_to_the_actual_regen_budget() -> None:
+    """🔴 **예산 상수가 `regen_max` 와 묶인다** — 안 묶으면 예산이 콜 수를 안 따라간다.
+
+    ⚠ `settings.py` 가 `DEFAULT_REGEN_MAX` 를 import 하면 순환이다(`assembly` → `settings`).
+    ⇒ 리터럴로 두고 **여기서 묶는다.** `_REGEN_MAX` 를 바꾸면 이 검사가 red 다.
+    """
+    assert _REGEN_MAX == DEFAULT_REGEN_MAX, (
+        f"라우터({_REGEN_MAX})와 조립부({DEFAULT_REGEN_MAX})의 재생성 상한이 갈렸다"
+    )
+    #: 재생성 N회 = 시도 N+1회(`range(regen_max + 1)` — 두 경로 공통).
+    assert WORST_CALLS_PER_REFINE == _REGEN_MAX + 1, (
+        f"refine 최악 콜 수({WORST_CALLS_PER_REFINE}) ≠ regen_max+1({_REGEN_MAX + 1})"
+    )
+    #: 초안은 그 앞에 `plan` 1콜이 더 붙는다. refine 에는 없다(강조점을 이어받는다).
+    assert WORST_CALLS_PER_DRAFT == WORST_CALLS_PER_REFINE + 1, (
+        f"초안 최악({WORST_CALLS_PER_DRAFT})이 refine({WORST_CALLS_PER_REFINE}) + plan 1 이 아니다"
+    )
+
+
+# ━━ 검사 4 — 04 문서 ↔ settings 코드 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def _one(pattern: str, text: str, what: str) -> int:
+    found = re.findall(pattern, text)
+    assert found, f"04 에서 {what} 를 못 읽었다 (패턴: {pattern})"
+    values = {int(v) for v in found}
+    assert len(values) == 1, f"04 안에서 {what} 가 서로 다르다: {sorted(values)}"
+    return values.pop()
+
+
+def test_the_contract_numbers_match_the_settings(contract_text: str) -> None:
+    """🔴 **문서와 코드가 갈리는 것이 이 회차의 원인이다** — 그 둘을 잇는다.
+
+    ⚠ 04 안에만 같은 숫자가 흩어진 자리가 넷이었다(:115 · §2.4 비동기 · §2.4 동기 · §5).
+    한 자리만 고치는 것을 막으려면 **문서 안의 일관성도** 같이 봐야 한다(`_one`).
+    """
+    assert _one(r"콜당 상한 (\d+)초", contract_text, "콜당 상한") == LLM_CALL_TIMEOUT_S
+    assert _one(r"콜당 상한은 (\d+)초", contract_text, "콜당 상한(refine 절)") == LLM_CALL_TIMEOUT_S
+    assert _one(r"응답 예산 (\d+)초", contract_text, "응답 예산") == RESPONSE_BUDGET_S
+    assert (
+        _one(r"최악 (\d+)초까지 걸릴 수 있다", contract_text, "counsel POST 최악")
+        == WORST_CALLS_PER_DRAFT * LLM_CALL_TIMEOUT_S
+    )
+    calls = _one(r"콜당 상한 \d+초 × 최악 (\d+)콜", contract_text, "최악 콜 수")
+    assert calls == WORST_CALLS_PER_DRAFT
+
+
+def test_the_refine_budget_table_matches_the_code(contract_text: str) -> None:
+    """refine 행의 콜 수·소요가 코드와 같다 — 99 ㉫ 가 만든 표다."""
+    row = re.search(
+        r"\| `POST /counsel/drafts/\{job_id\}/refine` \| \*\*(\d+)콜\*\*.*?\| \*\*(\d+)초\*\*",
+        contract_text,
+    )
+    assert row is not None, "04 에 refine 예산 행이 없다"
+    assert int(row.group(1)) == WORST_CALLS_PER_REFINE
+    assert int(row.group(2)) == WORST_CALLS_PER_REFINE * LLM_CALL_TIMEOUT_S
+
+    draft = re.search(
+        r"\| `POST /counsel/drafts` \| \*\*(\d+)콜\*\*.*?\| \*\*(\d+)초\*\*", contract_text
+    )
+    assert draft is not None, "04 에 초안 예산 행이 없다"
+    assert int(draft.group(1)) == WORST_CALLS_PER_DRAFT
+    assert int(draft.group(2)) == WORST_CALLS_PER_DRAFT * LLM_CALL_TIMEOUT_S
+
+
+# ━━ 검사 5 — refine 타임아웃 문면이 04 에 있다 ━━━━━━━━━━━━━━━━━━━━
+
+
+def test_the_contract_tells_backend_about_the_refine_timeout(contract_text: str) -> None:
+    """⚠ **종전에는 `/drafts` 에만 안내가 있었다** — 실측(refine 18.4s)이 찾았다(99 ㉫).
+
+    두 경로가 **같은 콜당 상한을 쓴다**는 사실이 문서에 없으면 BE 는 refine 을 짧은
+    타임아웃으로 부르고, 게이트 재생성이 붙는 턴에서 끊긴다.
+    """
+    assert "refine` 도 같은 LLM 예산을 씁니다" in contract_text, (
+        "04 에 refine 읽기 타임아웃 절이 없다"
+    )
+    section = contract_text.split("refine` 도 같은 LLM 예산을 씁니다", 1)[1][:1200]
+    assert "read timeout" in section, "refine 절이 BE read timeout 을 안 말한다"
+    assert str(RESPONSE_BUDGET_S) in section, (
+        f"refine 절의 권고값이 응답 예산({RESPONSE_BUDGET_S}s)과 다르다"
+    )
