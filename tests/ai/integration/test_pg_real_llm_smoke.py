@@ -494,7 +494,10 @@ async def run_real_llm_smoke(
     outcome = await workflow.run(_request(area_tag), _execution_context())
     duration_s = time.perf_counter() - started
     if not isinstance(outcome, ProblemSetResult):
-        raise AssertionError(f"{area_tag.value} 실측이 ProblemSetResult로 끝나지 않았다")
+        raise AssertionError(
+            f"{area_tag.value} 실측이 ProblemSetResult로 끝나지 않았다: "
+            f"{type(outcome).__name__}: {outcome.status_reason}"
+        )
 
     frozen_records = tuple(records)
     if not generator.completions and _role_is_unavailable(

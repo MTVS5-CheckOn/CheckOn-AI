@@ -43,7 +43,7 @@ def test_the_scan_finds_registered_response_schemas() -> None:
     models = _contract_models()
     assert names, "프롬프트 registry를 0건 훑었다 — 검사 경로가 끊겼다"
     assert models, "contracts BaseModel을 0건 훑었다 — 검사 경로가 끊겼다"
-    assert len(names) == 6, "등재 프롬프트 수가 바뀌었다 — 새 응답 스키마도 이 가드가 봐야 한다"
+    assert len(names) == 7, "등재 프롬프트 수가 바뀌었다 — 새 응답 스키마도 이 가드가 봐야 한다"
 
 
 def test_every_registered_response_schema_is_a_unique_contract_model() -> None:

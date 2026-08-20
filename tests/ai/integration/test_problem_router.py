@@ -36,6 +36,8 @@ from ai.contracts.problem_generation import (
     GeneratedItem,
     ItemResult,
     LiteratureGenre,
+    MisconceptionCheckResult,
+    MisconceptionChoiceCheck,
     PassageDraft,
     ProblemRequest,
     ProblemSetResult,
@@ -234,6 +236,41 @@ def _solve_result_json() -> str:
     ).model_dump_json()
 
 
+def _misconception_check_json(
+    *,
+    inconsistent: frozenset[int] = frozenset(),
+) -> str:
+    return MisconceptionCheckResult(
+        checks=tuple(
+            MisconceptionChoiceCheck(
+                choice_no=no,
+                consistent=no not in inconsistent,
+                reason="오답 사유와 오개념 라벨이 일치한다.",
+            )
+            for no in range(2, 6)
+        )
+    ).model_dump_json()
+
+
+def _expand_verifier_steps(steps: tuple[str, ...]) -> tuple[str, ...]:
+    expanded: list[str] = []
+    for index, step in enumerate(steps):
+        expanded.append(step)
+        try:
+            SolveResult.model_validate_json(step)
+        except ValueError:
+            continue
+        if index + 1 < len(steps):
+            try:
+                MisconceptionCheckResult.model_validate_json(steps[index + 1])
+            except ValueError:
+                pass
+            else:
+                continue
+        expanded.append(_misconception_check_json())
+    return tuple(expanded)
+
+
 def _providers(
     *,
     calls: int = 1,
@@ -248,7 +285,9 @@ def _providers(
         name="explicit-test-generator",
     )
     verifier = FakeProvider(
-        verifier_steps or tuple(_solve_result_json() for _ in range(calls)),
+        _expand_verifier_steps(
+            verifier_steps or tuple(_solve_result_json() for _ in range(calls))
+        ),
         name="explicit-test-verifier",
     )
     return (
@@ -480,11 +519,38 @@ def test_problem_router_roundtrip_and_prompt_version_ledger_match() -> None:
     assert len(run_store.runs) == 1
     run = next(iter(run_store.runs.values()))
     assert run.prompt_version == prompt_version
-    assert {call.prompt_version for call in run_store.calls} == {"v6"}
+    assert {call.prompt_version for call in run_store.calls} == {"v1", "v6"}
     assert len(posted.json()["meta"]["versions"]) == 10
     assert len(generator.requests) == 1
-    assert len(verifier.requests) == 1
+    assert len(verifier.requests) == 2
     assert default_llm_call_collector().evicted_runs == 0
+
+
+def test_misconception_gate_rejection_returns_status_instead_of_5xx() -> None:
+    inconsistent = _misconception_check_json(inconsistent=frozenset({2}))
+    run_store, _stores, _generator, _verifier = _prepare(
+        generator_steps=tuple(_generated_item_json() for _ in range(3)),
+        verifier_steps=tuple(
+            step
+            for _ in range(3)
+            for step in (_solve_result_json(), inconsistent)
+        ),
+    )
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        fetched = client.get(
+            f"/v1/problems/{posted.json()['data']['job_id']}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+
+    assert posted.status_code == 202
+    assert fetched.status_code == 200
+    payload = fetched.json()["data"]
+    assert payload["status"] == "succeeded"
+    assert payload["result"]["status"] == "failed"
+    assert payload["result"]["items"][0]["status"] == "dropped"
+    assert len(run_store.runs) == 1
 
 
 def test_curriculum_matrix_has_exact_five_area_distribution() -> None:
@@ -604,7 +670,7 @@ def test_runnable_56_nodes_generate_persist_and_roundtrip_over_http(node: GraphN
     assert stored_items[0].item.evidence[0].ref == evidence_ref
     assert len(run_store.runs) == 1
     assert len(generator.requests) == len(source_steps) + 1
-    assert len(verifier.requests) == 1
+    assert len(verifier.requests) == 2
 
 
 def test_step3_list_and_detail_return_saved_item_and_cross_solve() -> None:
@@ -736,7 +802,8 @@ def test_step3_ai_refine_revalidates_persists_and_replays_idempotently() -> None
         "base_revision_no": 0,
         "current_revision_no": 1,
     }
-    assert len(generator.requests) == len(verifier.requests) == 2
+    assert len(generator.requests) == 2
+    assert len(verifier.requests) == 4
     assert len(run_store.runs) == 2
     assert detailed.status_code == 200
     assert detailed.json()["data"]["current_revision_no"] == 1
@@ -773,7 +840,8 @@ def test_step3_memory_mode_keeps_job_payload_request_path() -> None:
 
     assert revised.status_code == 200, revised.text
     assert revised.json()["data"]["revision"]["revision_no"] == 1
-    assert len(generator.requests) == len(verifier.requests) == 2
+    assert len(generator.requests) == 2
+    assert len(verifier.requests) == 4
 
 
 @pytest.mark.parametrize("revision_kind", ["teacher_direct", "rollback"])
@@ -812,7 +880,8 @@ def test_step3_unsupported_revision_kind_is_rejected_before_revision_or_llm(
         "reason": "revision_kind_not_implemented"
     }
     assert detailed.json()["data"]["revisions"] == []
-    assert len(generator.requests) == len(verifier.requests) == 1
+    assert len(generator.requests) == 1
+    assert len(verifier.requests) == 2
     assert len(run_store.runs) == 1
 
 
@@ -875,7 +944,7 @@ def test_step3_non_language_revision_reuses_the_items_approved_evidence() -> Non
     assert detailed.json()["data"]["revisions"] != [], "수정 이력이 안 남았다"
     # 생성 2회(자료·문항) + 수정 1회
     assert len(generator.requests) == 3
-    assert len(verifier.requests) == 2
+    assert len(verifier.requests) == 4
     # 수정도 하나의 실행이라 원장이 하나 더 남는다(생성 1 + 수정 1)
     assert len(run_store.runs) == 2
 
@@ -909,7 +978,8 @@ def test_step3_prompt_injection_records_blocked_revision_without_llm_call() -> N
     assert revision["verifications_passed"] is False
     assert revision["blocked_reason"] == "prompt_injection"
     assert revision["result_snapshot"] is None
-    assert len(generator.requests) == len(verifier.requests) == 1
+    assert len(generator.requests) == 1
+    assert len(verifier.requests) == 2
     assert len(run_store.runs) == 2
 
 
@@ -957,7 +1027,8 @@ def test_step3_three_turn_ping_pong_revalidates_every_revision() -> None:
     detail = detailed.json()["data"]
     assert detail["current_revision_no"] == 3
     assert [revision["revision_no"] for revision in detail["revisions"]] == [1, 2, 3]
-    assert len(generator.requests) == len(verifier.requests) == 4
+    assert len(generator.requests) == 4
+    assert len(verifier.requests) == 8
     assert len(run_store.runs) == 4
 
 
@@ -999,7 +1070,8 @@ def test_idempotent_replay_does_not_recall_confirmed_slots() -> None:
         replay = client.post("/v1/problems", headers=_HEADERS, json=body)
 
     assert first.status_code == replay.status_code == 202
-    assert len(generator.requests) == len(verifier.requests) == 2
+    assert len(generator.requests) == 2
+    assert len(verifier.requests) == 4
     for type_tag in ("infer", "concept"):
         assert sum(
             f'"type_tag":"{type_tag}"' in request.prompt

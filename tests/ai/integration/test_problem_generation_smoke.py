@@ -35,6 +35,8 @@ from ai.contracts.problem_generation import (
     LiteratureGenre,
     MediaSourceKind,
     MediaSourceRequest,
+    MisconceptionCheckResult,
+    MisconceptionChoiceCheck,
     PassageDomain,
     PassageDraft,
     PassageRequest,
@@ -332,6 +334,19 @@ def _solve_result_json() -> str:
     ).model_dump_json()
 
 
+def _misconception_check_json() -> str:
+    return MisconceptionCheckResult(
+        checks=tuple(
+            MisconceptionChoiceCheck(
+                choice_no=no,
+                consistent=True,
+                reason="오답 사유와 오개념 라벨이 일치한다.",
+            )
+            for no in range(2, 6)
+        )
+    ).model_dump_json()
+
+
 def _source_material_request(area_tag: AreaTag, skill_node_id: str) -> ProblemRequest:
     source_request: SourceMaterialRequest
     if area_tag is AreaTag.SPEECH_WRITING:
@@ -496,7 +511,7 @@ async def _run_source_material_smoke(
         name=f"fake-{area_tag.value}-generator",
     )
     verifier_provider = FakeProvider(
-        (_source_material_solve_json(skill_node_id),),
+        (_source_material_solve_json(skill_node_id), _misconception_check_json()),
         name=f"fake-{area_tag.value}-verifier",
     )
     gateway = LlmGateway(
@@ -531,7 +546,7 @@ async def _run_source_material_smoke(
         "pg.source_material.v1",
         "pg.items.v1",
     ]
-    assert len(verifier_provider.requests) == 1
+    assert len(verifier_provider.requests) == 2
     stored = await item_store.list_all()
     assert len(stored) == 1
     assert stored[0].item is not None
@@ -544,7 +559,7 @@ async def _run_smoke() -> None:
         name="fake-generator",
     )
     verifier_provider = FakeProvider(
-        (_solve_result_json(),),
+        (_solve_result_json(), _misconception_check_json()),
         name="fake-verifier",
     )
     gateway = LlmGateway(
@@ -586,7 +601,7 @@ async def _run_smoke() -> None:
     assert second.model_dump_json() == first_json
     assert await item_store.list_all() == stored_after_first
     assert len(generator_provider.requests) == 1
-    assert len(verifier_provider.requests) == 1
+    assert len(verifier_provider.requests) == 2
 
 
 async def _run_reading_smoke() -> None:
@@ -596,7 +611,7 @@ async def _run_reading_smoke() -> None:
         name="fake-generator",
     )
     verifier_provider = FakeProvider(
-        (_solve_result_json(),),
+        (_solve_result_json(), _misconception_check_json()),
         name="fake-verifier",
     )
     gateway = LlmGateway(
@@ -652,12 +667,12 @@ async def _run_reading_smoke() -> None:
     stored = await item_store.list_all()
     assert stored[0].item is not None
     assert stored[0].item.evidence[0].quote == passage.passage_text
-    assert len(verifier_provider.requests) == 1
+    assert len(verifier_provider.requests) == 2
 
     second = await workflow.run(request, execution_context)
     assert second == first
     assert len(generator_provider.requests) == 2
-    assert len(verifier_provider.requests) == 1
+    assert len(verifier_provider.requests) == 2
 
 
 async def _run_literature_smoke() -> None:
@@ -667,7 +682,7 @@ async def _run_literature_smoke() -> None:
         name="fake-literature-generator",
     )
     verifier_provider = FakeProvider(
-        (_literature_solve_json(),),
+        (_literature_solve_json(), _misconception_check_json()),
         name="fake-literature-verifier",
     )
     gateway = LlmGateway(

@@ -16,6 +16,8 @@ from ai.contracts.problem_generation import (
     EvidenceAnchor,
     EvidenceKind,
     GeneratedItem,
+    MisconceptionCheckResult,
+    MisconceptionChoiceCheck,
     ProblemItemStatus,
     ProblemRequest,
     SolveResult,
@@ -77,6 +79,19 @@ def _solve() -> SolveResult:
     )
 
 
+def _misconception_check() -> MisconceptionCheckResult:
+    return MisconceptionCheckResult(
+        checks=tuple(
+            MisconceptionChoiceCheck(
+                choice_no=no,
+                consistent=True,
+                reason="오답 사유와 오개념 라벨이 일치한다.",
+            )
+            for no in range(2, 6)
+        )
+    )
+
+
 def _request() -> ProblemRequest:
     return ProblemRequest(
         request_id="request-refine",
@@ -133,7 +148,10 @@ def test_ai_refine_applies_only_after_rule_and_blind_cross_solve() -> None:
     original = _item("음운 변동을 추론한 것으로 옳은 것을 고르시오.")
     revised = _item("음운 변동의 결과를 추론한 것으로 가장 적절한 것을 고르시오.")
     generator = FakeProvider((revised.model_dump_json(),), name="refine-generator")
-    verifier = FakeProvider((_solve().model_dump_json(),), name="refine-verifier")
+    verifier = FakeProvider(
+        (_solve().model_dump_json(), _misconception_check().model_dump_json()),
+        name="refine-verifier",
+    )
 
     outcome = asyncio.run(
         _refiner(generator, verifier).refine(
@@ -151,7 +169,8 @@ def test_ai_refine_applies_only_after_rule_and_blind_cross_solve() -> None:
     assert outcome.review_reason is None
     assert outcome.difficulty_est is not None
     assert outcome.difficulty_band is not None
-    assert len(generator.requests) == len(verifier.requests) == 1
+    assert len(generator.requests) == 1
+    assert len(verifier.requests) == 2
     assert "발문을 조금 더 명확하게" in generator.requests[0].prompt
 
 

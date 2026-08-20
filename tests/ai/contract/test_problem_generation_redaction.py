@@ -20,6 +20,7 @@ _PROBLEM_GENERATION = _SRC / "problem_generation"
 #: 새 호출 지점이 생기면 이 목록을 늘리기 전에 계층이 맞는지 먼저 본다.
 _EXPECTED_GATEWAY_CALLS = frozenset(
     {
+        ("problem_generation/application/cross_solver.py", "check_misconceptions"),
         ("problem_generation/application/cross_solver.py", "solve"),
         ("problem_generation/application/generator.py", "generate"),
         ("problem_generation/application/passage_generator.py", "generate"),
