@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
 import httpx
 import pytest
@@ -56,9 +57,15 @@ def _counsel_background_drain(
     original = TestClient.post
 
     def post(
-        self: TestClient, url: str, *args: object, **kwargs: object
+        self: TestClient,
+        url: str,
+        *args: Any,  # noqa: ANN401 — 원본 위임
+        **kwargs: Any,  # noqa: ANN401 — 원본 위임
+
     ) -> httpx.Response:
-        response = original(self, url, *args, **kwargs)
+        #: 🔴 `*args`·`**kwargs` 를 `object` 로 두면 원본 시그니처(`headers`·`json` 등)에
+        #: 못 넘긴다 — 대역은 **원본을 그대로 위임**하는 것이 일이므로 `Any` 가 맞다.
+        response: httpx.Response = original(self, url, *args, **kwargs)
         if response.status_code == 202 and str(url).endswith(_COUNSEL_POST):
             headers = kwargs.get("headers") or {}
             tenant = headers.get("X-Tenant-Id") if isinstance(headers, dict) else None
