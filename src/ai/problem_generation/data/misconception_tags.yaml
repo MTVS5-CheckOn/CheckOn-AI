@@ -1,0 +1,83 @@
+# 오개념 라벨은 area_specs.yaml의 각 영역 distractors 문장에서 추출한다.
+# 라벨을 추가하거나 뜻을 바꿀 때도 반드시 해당 문구를 근거로 남긴다.
+
+version: misconception-tags.v1
+
+areas:
+  language:
+    # 근거: "적용 대상 단어를 바꾼 선지"
+    - id: application_target_substitution
+      label_ko: 적용 대상 바꿔치기
+      description: 규칙이 적용되는 단어나 형태를 다른 대상으로 잘못 바꿔 이해함.
+    # 근거: "변동의 종류를 인접한 것으로 바꾼 선지"
+    - id: adjacent_change_type_confusion
+      label_ko: 인접 변동 유형 혼동
+      description: 음운 변동의 종류를 교체·탈락·축약·첨가 중 인접한 개념으로 혼동함.
+    # 근거: "순서를 뒤바꾼 선지"
+    - id: process_order_reversal
+      label_ko: 적용 순서 뒤바꿈
+      description: 둘 이상의 규칙이나 변동이 적용되는 순서를 반대로 이해함.
+
+  media:
+    # 근거: "매체 특성과 무관한 일반 독해 진술"
+    - id: medium_agnostic_reading
+      label_ko: 매체 특성 배제
+      description: 매체 형식의 기능을 고려하지 않고 일반 독해만으로 정보를 해석함.
+    # 근거: "사용된 표현 수단을 다른 수단으로 바꾼 진술"
+    - id: expression_means_substitution
+      label_ko: 표현 수단 바꿔치기
+      description: 자료에 실제 사용된 표현 수단을 다른 매체 표현 수단으로 잘못 식별함.
+    # 근거: "수용자 반응을 생산자 의도로 뒤바꾼 진술"
+    - id: audience_intent_reversal
+      label_ko: 수용자·생산자 뒤바꿈
+      description: 수용자의 반응과 생산자의 의도를 서로 바꾸어 이해함.
+
+  literature:
+    # 근거: "실재하는 표현을 근거로 삼되 해석을 과장한 선지"
+    - id: interpretation_exaggeration
+      label_ko: 해석 과장
+      description: 작품에 실제 있는 표현이 뒷받침하는 범위를 넘어 의미를 과장함.
+    # 근거: "화자·서술자의 태도를 인접 정서로 바꾼 선지"
+    - id: adjacent_emotion_confusion
+      label_ko: 인접 정서 혼동
+      description: 화자나 서술자의 태도를 체념·달관·연민·비판 중 인접한 정서로 혼동함.
+    # 근거: "시점·서술 방식을 바꾼 선지"
+    - id: narrative_viewpoint_substitution
+      label_ko: 서술 시점 바꿔치기
+      description: 작품에 쓰인 서술 시점을 다른 시점으로 잘못 파악함.
+    # 근거: "시점·서술 방식을 바꾼 선지"
+    - id: narration_method_substitution
+      label_ko: 서술 방식 바꿔치기
+      description: 작품에 쓰인 서술 방식을 다른 방식으로 잘못 파악함.
+
+  reading:
+    # 근거: "인과·조건·범위 한정어를 바꾼 선지"
+    - id: causal_flip
+      label_ko: 인과 뒤집기
+      description: 원인과 결과의 관계 또는 인과 연결 방향을 반대로 이해함.
+    # 근거: "인과·조건·범위 한정어를 바꾼 선지"
+    - id: condition_shift
+      label_ko: 조건 변경
+      description: 지문이 제시한 성립 조건을 누락하거나 다른 조건으로 바꾸어 이해함.
+    # 근거: "인과·조건·범위 한정어를 바꾼 선지"
+    - id: scope_shift
+      label_ko: 범위 한정 변경
+      description: 모두·일부와 같은 범위 한정어를 바꾸어 적용 범위를 잘못 이해함.
+    # 근거: "두 단락의 정보를 잘못 결합한 선지"
+    - id: cross_paragraph_merge
+      label_ko: 단락 정보 오결합
+      description: 서로 다른 단락의 정보를 관계없는 방식으로 결합하여 이해함.
+
+  speech_writing:
+    # 근거: "전략의 이름은 맞으나 해당 발화에 없는 선지"
+    - id: absent_strategy_attribution
+      label_ko: 없는 전략 귀속
+      description: 전략의 개념은 알지만 해당 발화에 사용되지 않은 전략을 사용됐다고 판단함.
+    # 근거: "고쳐쓰기 방향을 반대로 제시한 선지"
+    - id: revision_direction_reversal
+      label_ko: 고쳐쓰기 방향 반전
+      description: 구체화와 일반화처럼 고쳐쓰기의 목적과 방향을 반대로 이해함.
+    # 근거: "자료의 성격과 활용 목적이 어긋난 선지"
+    - id: source_purpose_mismatch
+      label_ko: 자료·목적 불일치
+      description: 자료의 성격과 그 자료를 활용하려는 글쓰기 목적의 관계를 잘못 연결함.

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 from ai.problem_generation.domain.policy import (
     AreaSpecs,
     BannedTopicsConfig,
+    MisconceptionTagsConfig,
     VerifyConfig,
 )
 
@@ -17,6 +18,7 @@ _DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 _DEFAULT_VERIFY_CONFIG_PATH = _DATA_ROOT / "verify_config.yaml"
 _DEFAULT_BANNED_TOPICS_PATH = _DATA_ROOT / "pg_banned_topics.yaml"
 _DEFAULT_AREA_SPECS_PATH = _DATA_ROOT / "area_specs.yaml"
+_DEFAULT_MISCONCEPTION_TAGS_PATH = _DATA_ROOT / "misconception_tags.yaml"
 
 #: R-1 문법 대조 정본 — 패키지에 동봉한다. 절대 경로·외부 마운트를 쓰지 않는다.
 #: 자료가 없으면 R-1 대조가 불가능해 T1 전체와 T2 어휘 문항이 발행 차단되므로
@@ -67,6 +69,14 @@ def load_area_specs(path: Path = _DEFAULT_AREA_SPECS_PATH) -> AreaSpecs:
     """
 
     return _load_yaml_model(path, AreaSpecs, "출제 규격")
+
+
+def load_misconception_tags(
+    path: Path = _DEFAULT_MISCONCEPTION_TAGS_PATH,
+) -> MisconceptionTagsConfig:
+    """영역별 닫힌 오개념 어휘를 엄격히 로드한다."""
+
+    return _load_yaml_model(path, MisconceptionTagsConfig, "오개념 어휘")
 
 
 def _load_yaml_model[ModelT: BaseModel](

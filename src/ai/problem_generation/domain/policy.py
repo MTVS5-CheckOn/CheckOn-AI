@@ -333,3 +333,50 @@ class AreaSpecs(BaseModel):
     def spec_for(self, area: AreaTag) -> AreaSpec:
         """규격을 꺼낸다 — 검증이 전수를 보장하므로 여기서 `KeyError`는 안 난다."""
         return self.areas[area]
+
+
+class MisconceptionTagDefinition(BaseModel):
+    """오답이 드러내는 오개념 하나의 닫힌 어휘 정의."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
+    label_ko: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+
+
+class MisconceptionTagsConfig(BaseModel):
+    """영역별 오개념 어휘 — `data/misconception_tags.yaml`의 엄격한 스키마."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: str = Field(min_length=1)
+    areas: dict[
+        AreaTag,
+        tuple[MisconceptionTagDefinition, ...],
+    ]
+
+    @model_validator(mode="after")
+    def validate_coverage_and_unique_ids(self) -> Self:
+        missing = sorted(tag.value for tag in AreaTag if tag not in self.areas)
+        if missing:
+            raise ValueError(f"오개념 어휘가 없는 영역: {missing}")
+
+        invalid_counts = {
+            area.value: len(tags)
+            for area, tags in self.areas.items()
+            if not 3 <= len(tags) <= 6
+        }
+        if invalid_counts:
+            raise ValueError(f"영역별 오개념 라벨은 3~6개여야 한다: {invalid_counts}")
+
+        ids = [tag.id for tags in self.areas.values() for tag in tags]
+        duplicate_ids = sorted({tag_id for tag_id in ids if ids.count(tag_id) > 1})
+        if duplicate_ids:
+            raise ValueError(f"중복된 오개념 라벨 id: {duplicate_ids}")
+        return self
+
+    def tags_for(self, area: AreaTag) -> tuple[MisconceptionTagDefinition, ...]:
+        """영역의 닫힌 오개념 어휘를 반환한다."""
+
+        return self.areas[area]
