@@ -117,13 +117,21 @@ def test_a_finished_job_is_not_asked_to_be_polled_again() -> None:
 
     🔴 있으면 어댑터가 **끝난 잡을 계속 폴링한다.** problem 축의 같은 단언은
     `test_http_fixtures.py` 가 든다.
+
+    ⚠ **종단을 만드는 주체가 바뀌었다**(K=0 · 2026-08-20) — 종전에는 POST 가 그 자리에서
+    끝냈고 여기서 `posted["status"] == "succeeded"` 를 단언했다. 지금은 POST 가 **적재만**
+    하고 배경 워커가 끝낸다(검사에서는 `conftest.py` 의 대역). 🔴 **이 검사의 축은
+    「종단 GET 에 헤더가 없는가」이지 「POST 가 언제 끝나는가」가 아니다.**
     """
     with TestClient(create_app()) as client:
         posted = _post(client)
-        assert posted["status"] == "succeeded", posted
         fetched = _get(client, posted["job_id"])
 
     assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["data"]["status"] == "succeeded", (
+        f"배경 드레인 대역이 잡을 안 끝냈다 — 이 검사가 종단을 관측하지 못한다: "
+        f"{fetched.json()['data']['status']}"
+    )
     assert "Retry-After" not in fetched.headers, (
         f"끝난 잡에 Retry-After={fetched.headers.get('Retry-After')} 가 붙었다 — "
         "어댑터가 안 멈춘다"
@@ -133,6 +141,7 @@ def test_a_finished_job_is_not_asked_to_be_polled_again() -> None:
 # ── 2 · 비종단 응답은 언제 다시 오라고 말한다 ──────────────────────
 
 
+@pytest.mark.no_counsel_drain
 def test_an_unfinished_job_says_when_to_come_back() -> None:
     """비종단(`queued`) GET 은 `Retry-After` 로 **주기를 말한다** — 이 PR 의 본체.
 
@@ -157,6 +166,7 @@ def test_an_unfinished_job_says_when_to_come_back() -> None:
 # ── 3 · 취소된 잡은 폴링을 멈추게 한다 (함정 A 의 계약) ────────────
 
 
+@pytest.mark.no_counsel_drain
 def test_a_cancelled_job_stops_the_polling() -> None:
     """🔴 `cancelled` GET 에는 `Retry-After` 가 **없다.**
 
@@ -201,6 +211,7 @@ def test_a_cancelled_job_stops_the_polling() -> None:
 # ── 4 · 값은 설정에서 오지 리터럴이 아니다 ─────────────────────────
 
 
+@pytest.mark.no_counsel_drain
 def test_the_interval_comes_from_settings_not_a_literal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

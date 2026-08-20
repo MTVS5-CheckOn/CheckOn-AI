@@ -164,7 +164,9 @@ def test_a_retry_after_the_job_finished_returns_the_result_without_a_new_job(
         )
         first = _post(client)
         assert first.status_code == 202, first.text
-        assert first.json()["data"]["status"] == "succeeded", first.text
+        #: 🔴 K=0 — POST 는 적재만 한다. 이 검사의 축은 **재시도가 새 잡을 안 만드는가**이지
+        #:   POST 가 언제 끝나는가가 아니다(2026-08-20).
+        assert first.json()["data"]["status"] == "queued", first.text
         monkeypatch.undo()
 
         before = _jobs_added()

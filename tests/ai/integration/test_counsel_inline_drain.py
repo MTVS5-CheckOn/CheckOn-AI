@@ -8,7 +8,13 @@
 (실측 2026-08-19: `get_counsel_draft` 경로에 `run_next` **0건**). ⇒ **BE가 폴링해도 영영
 안 풀린다.** 재현(같은 날): 앞선 잡 2개 → POST `queued` → GET 2회 폴링해도 `queued`.
 
-⇒ **POST가 자기 잡이 끝날 때까지 유한 반복한다**(상한 `counsel_inline_drain_max`).
+⇒ 종전 처방은 **POST가 자기 잡이 끝날 때까지 유한 반복**하는 것이었다(상한 `K`).
+
+🔴 **2026-08-20 · K = 0 — 그 처방을 걷었다.** 배경 드레인(`composition/counsel/drain.py`)이
+배포에 떠 있으므로 **POST는 적재만 하고 큐는 워커가 돈다**(99 #85 ① · #137).
+⇒ 이 파일의 축이 뒤집혔다: *"POST가 끝내는가"* 가 아니라 **"적재만 하고, 그 뒤 결국
+풀리는가"** 다. ⚠ #21의 병(*"폴링해도 영영 안 풀린다"*)은 **여전히 이 파일이 지킨다** —
+푸는 주체가 라우터에서 워커로 옮겨갔을 뿐이다. 검사에서는 `conftest.py`의 대역이 그 자리다.
 
 🔴 **검사는 전부 라우터를 통해서 잰다** — 내부 함수를 직접 부르면 배선을 지워도 green이다
 (PR-α에서 고의 파괴가 두 번 헛돌았다).
@@ -59,6 +65,10 @@ def _isolate() -> Iterator[None]:
     get_counsel_settings.cache_clear()
     reset_shared_agent_runtime()
     reset_counsel_stores()
+
+
+#: 🔴 앞선 잡을 몇 개 쌓을지는 **시나리오 상수**다 — 운영값 `K` 와 묶지 않는다(로그 153).
+_JOBS_AHEAD: Final = 2
 
 
 def _k() -> int:
@@ -116,17 +126,19 @@ def _get(client: TestClient, job_id: str) -> dict[str, Any]:
 # ── ① 재현 그대로 — 앞선 잡이 있어도 내 결과가 온다 ────────────────
 
 
-def test_my_job_runs_even_when_others_are_queued_ahead() -> None:
-    """🔴 **0-9 재현을 그대로 검사로.** 앞선 잡이 있어도 내 POST 가 자기 결과를 받는다.
+def test_my_job_is_resolved_even_when_others_are_queued_ahead() -> None:
+    """🔴 **0-9 재현을 그대로 검사로.** 앞선 잡이 있어도 내 잡이 **결국** 풀린다.
 
-    ⚠ 종전에는 `queued`로 나갔고 **GET 폴링으로도 안 풀렸다**(배경 드레인이 없다).
+    ⚠ 종전에는 `queued`로 나가고 **GET 폴링으로도 안 풀렸다**(푸는 주체가 없었다 · 99 #21).
+    🔴 지금 푸는 주체는 **배경 드레인**이다 — POST 는 적재만 한다.
     """
-    _enqueue_others(_k() - 1)
+    #: 🔴 앞선 잡 수는 **이 검사의 시나리오 상수**다 — K(운영값)에서 유도하지 않는다.
+    #:   K 로 유도하면 K=0 에서 0건이 되어 검사가 **조용히 무의미**해진다(99 로그 153).
+    _enqueue_others(_JOBS_AHEAD)
     with TestClient(create_app()) as client:
         posted = _post(client)
-        assert posted["status"] == "succeeded", (
-            f"앞선 잡이 있다고 내 잡이 안 돌았다({posted['status']}) — "
-            "이걸 풀 주체가 없어서 폴링해도 영영 안 풀린다 (99 #21)"
+        assert posted["status"] == "queued", (
+            f"K=0 인데 POST 가 잡을 돌렸다({posted['status']}) — 적재만 해야 한다"
         )
         got = _get(client, posted["job_id"])
 
@@ -135,11 +147,16 @@ def test_my_job_runs_even_when_others_are_queued_ahead() -> None:
     assert got["result"]["draft_status"] == "generated", got["result"]
 
 
-def test_a_plain_post_still_answers_in_place() -> None:
-    """🔴 회귀 — 큐가 빈 정상 단발 POST 가 여전히 그 자리에서 결과를 받는다."""
+def test_a_plain_post_only_enqueues() -> None:
+    """🔴 큐가 비어 있어도 POST 는 **적재만** 한다 — K=0 의 성질이다.
+
+    ⚠ 종전에는 그 자리에서 `succeeded` 를 돌려줬다. 🔴 **계약이 바뀐 자리다**(04 · apidog):
+    `queued` = 워커가 돌 것이다(폴링하라) · `succeeded` = 결정이 이미 났다(폴링 불필요 —
+    거부·템플릿 단축 경로만 그렇다).
+    """
     with TestClient(create_app()) as client:
         posted = _post(client)
-    assert posted["status"] == "succeeded", posted
+    assert posted["status"] == "queued", posted
 
 
 # ── ② 상한 — 무한이 아니다 (불변식 6) ─────────────────────────────
@@ -169,7 +186,9 @@ def test_the_bound_comes_from_settings_not_a_literal() -> None:
     **경로가 설정을 지나는지**만 본다.
     """
     settings = get_counsel_settings()
-    assert settings.counsel_inline_drain_max >= 1
+    #: 🔴 **값을 단정하지 않는다** — 값과 상한(`K ≤ ⌊예산/잡당최악⌋`)의 관계는
+    #:   `tests/ai/unit/composition/test_inline_drain_bound.py` 가 잰다. 여기는 **경로**만.
+    assert settings.counsel_inline_drain_max >= 0
     assert "counsel_inline_drain_max" in type(settings).model_fields
 
 
@@ -256,44 +275,45 @@ def test_another_tenants_queue_is_not_drained() -> None:
     실측(2026-08-19): 구현이 `job.tenant_id == tenant_id`로 거른다. **이게 판정 ⓑ의
     유계 근거다** — 스코프가 아니면 K 회전이 남의 테넌트 큐까지 돈다.
     """
-    _enqueue_others(_k(), tenant_id="t_intruder")
+    _enqueue_others(_JOBS_AHEAD, tenant_id="t_intruder")
     with TestClient(create_app()) as client:
         posted = _post(client)
+        got = _get(client, posted["job_id"])
 
-    assert posted["status"] == "succeeded", (
-        f"남의 테넌트 큐가 내 회전을 먹었다({posted['status']}) — 테넌트 스코프가 아니다"
+    #: 🔴 드레인이 **내 테넌트만** 돈다 — 스코프가 아니면 남의 큐를 먼저 먹고 내 잡이 안 푼다.
+    assert got["status"] == "succeeded", (
+        f"남의 테넌트 큐가 내 회전을 먹었다({got['status']}) — 테넌트 스코프가 아니다"
     )
 
 
 # ── 🔴 K=1 의 대가 — 앞선 잡 하나로 queued 다 (99 #106) ───────────
 
 
-def test_a_single_job_ahead_now_leaves_mine_queued() -> None:
-    """🔴 **K=1 의 대가를 못 박는다** — 앞선 잡이 **하나만** 있어도 내 잡이 `queued` 다.
+def test_the_cost_of_k_zero_is_that_every_post_is_queued() -> None:
+    """🔴 **K=0 의 대가를 못 박는다** — 앞선 잡이 **하나도 없어도** 내 잡이 `queued` 다.
 
-    종전에는 K=3 이라 앞선 잡 2개까지 버텼다. 실 지연 실측(99 #106)으로 콜당 상한이
-    15s → 45s 가 되면서 응답 예산(04 §2.4 · 300s)이 **K=1** 만 허용한다.
+    종전(K=1)의 대가는 *"앞선 잡 하나면 queued"* 였다. 🔴 지금은 **항상** 그렇고,
+    그래서 **`Retry-After` 폴링이 유일한 길**이다(바로 아래 검사).
 
-    ⚠ **이 검사가 없으면 다음 사람이 「고착이 없다」로 읽는다.** 진짜 처방은 K 를 키우는
-    것이 아니라 **배경 드레인·비동기 워커**다(99 #85 ①) — 이 값은 응급처치다.
+    ⚠ 이 검사가 없으면 다음 사람이 「POST 가 가끔 결과를 준다」로 읽는다.
     """
-    assert _k() == 1, f"이 검사는 기본 K=1 을 전제한다(지금 {_k()})"
-    _enqueue_others(1)
+    assert _k() == 0, f"이 검사는 기본 K=0 을 전제한다(지금 {_k()})"
     with TestClient(create_app()) as client:
         posted = _post(client)
 
     assert posted["status"] == "queued", (
-        f"앞선 잡 1개인데 내 잡이 돌았다({posted['status']}) — K 가 1이 아니다"
+        f"K=0 인데 POST 가 결과를 줬다({posted['status']}) — 인라인이 살아 있다"
     )
 
 
+@pytest.mark.no_counsel_drain
 def test_a_queued_job_still_tells_the_caller_when_to_come_back() -> None:
     """PR-01 축이 살아 있다 — `queued` 여도 `Retry-After` 가 실린다.
 
-    ⚠ K=1 이라 `queued` 가 **더 자주** 나온다 ⇒ 이 헤더가 더 중요해졌다.
-    🔴 다만 **폴링이 잡을 돌리지는 않는다** — 그건 그대로다(99 #21).
+    🔴 K=0 이라 `queued` 가 **항상** 나온다 ⇒ 이 헤더가 유일한 안내다.
+    🔴 다만 **폴링이 잡을 돌리지는 않는다** — 그건 그대로다(99 #21). 배경 워커가 돈다.
+    ⚠ `no_counsel_drain` — 대역이 돌면 `queued` 를 관측할 수 없다.
     """
-    _enqueue_others(1)
     with TestClient(create_app()) as client:
         posted = _post(client)
         assert posted["status"] == "queued", posted

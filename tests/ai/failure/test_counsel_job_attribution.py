@@ -159,6 +159,8 @@ def test_request_does_not_receive_another_students_draft(
     )
 
 
+#: 🔴 대역이 돌면 내 잡이 끝나 버려 **미실행 잡**이라는 관측 대상이 사라진다.
+@pytest.mark.no_counsel_drain
 def test_unrun_job_is_not_reported_as_llm_failed(
     client: TestClient, shared_queue: InMemoryJobStore
 ) -> None:

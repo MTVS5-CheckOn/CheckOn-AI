@@ -201,6 +201,7 @@ def _late_success(client: TestClient) -> str:
     return job_id
 
 
+@pytest.mark.no_counsel_drain
 def test_the_late_success_scenario_is_produced_at_all() -> None:
     """🔴 절단 가드 — 늦은 성공이 안 만들어지면 아래 둘은 아무것도 안 본다."""
     with TestClient(create_app()) as client:
@@ -211,6 +212,7 @@ def test_the_late_success_scenario_is_produced_at_all() -> None:
         assert job_id
 
 
+@pytest.mark.no_counsel_drain
 def test_a_missing_body_is_a_domain_state_not_a_500() -> None:
     """🔴 **본문이 없으면 200 + `llm_failed`/`draft_body_missing`** — 500이 아니다.
 
@@ -235,6 +237,7 @@ def test_a_missing_body_is_a_domain_state_not_a_500() -> None:
         assert result["text"] is None, result
 
 
+@pytest.mark.no_counsel_drain
 def test_the_healthy_late_success_is_still_generated() -> None:
     """⚠ 뒤집기 — 행이 남아 있으면 종전대로 `generated`다.
 
