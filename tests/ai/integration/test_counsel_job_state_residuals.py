@@ -20,6 +20,7 @@ from typing import Any, Final
 
 import httpx
 import pytest
+from counsel_drain import drain_once
 from counsel_text import DEFAULT_DRAFT
 from fastapi.testclient import TestClient
 
@@ -94,6 +95,7 @@ class _Exploding(FakeCounselProvider):
         raise RuntimeError("원인-표식")
 
 
+@pytest.mark.no_counsel_drain
 def test_a_convergence_failure_preserves_the_cause(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -118,10 +120,15 @@ def test_a_convergence_failure_preserves_the_cause(
         response = client.post(
             "/v1/counsel/drafts", json=_request_body(), headers=_HEADERS
         )
-
-    #: ⚠ 요청 자체는 산다 — 인라인 드레인이 잡 실행 실패를 삼키고 계속한다(99 #21).
-    #:   이 검사의 축은 **원인이 보존되는가**이지 HTTP 코드가 아니다.
-    assert response.status_code == 202, response.text
+        #: ⚠ 요청 자체는 산다 — K=0 이므로 POST 는 **적재만** 하고 잡 실행을 안 탄다.
+        #:   이 검사의 축은 **원인이 보존되는가**이지 HTTP 코드가 아니다.
+        assert response.status_code == 202, response.text
+        #: 🔴 **잡을 돌리는 주체가 배경 워커로 옮겨갔다**(K=0 · 2026-08-20). 종전에는
+        #:   라우터의 인라인 루프가 돌리고 `except` 로 삼켰다 — 지금 그 자리가 없으므로
+        #:   여기서 한 회전을 직접 돌린다. 🔴 **수렴 실패가 밖으로 나오는 것이 정상이다**
+        #:   (배포에서는 `composition/counsel/drain.py` 가 같은 예외를 받는다).
+        with pytest.raises(RuntimeError, match="수렴-실패"):
+            drain_once(_HEADERS["X-Tenant-Id"])
 
     #: 🔴 **수렴 실패가 남는다** — 조용히 삼키면 「잡이 종단으로 못 갔다」가 어디에도 없다.
     messages = "\n".join(record.getMessage() for record in caplog.records)
@@ -192,6 +199,7 @@ def _drain() -> None:
     asyncio.run(run())
 
 
+@pytest.mark.no_counsel_drain
 def test_a_failed_restore_is_retried_on_the_next_get() -> None:
     """🔴 **복원 실패가 캐시에 굳지 않는다** — 저장소가 살아나면 다음 GET 이 결과를 준다.
 

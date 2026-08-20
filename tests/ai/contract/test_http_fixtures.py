@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
@@ -705,26 +706,41 @@ def _enqueue_counsel_jobs_ahead(count: int) -> None:
     asyncio.run(enqueue())
 
 
+@pytest.mark.no_counsel_drain
 def test_counsel_post_request_and_accepted_responses() -> None:
-    """① POST — 요청 예시 · 202(워커가 돈 쪽) · 202(`queued`).
+    """① POST — 요청 예시 · 202(`succeeded`) · 202(`queued`).
 
     🔴 **202 의 `data` 는 항상 2키다**(`job_id`·`status`) — 초안 실물은 절대 안 실린다.
     그 단언은 아래 `test_counsel_data_keys_differ_across_the_three_endpoints` 가 든다.
+
+    ━━ 🔴 **2026-08-20 · `status` 가 무엇으로 갈리는지가 바뀌었다** (K=0 · BE 계약) ━━
+
+        "succeeded"  =  **결정이 이미 났다** — 워커도 LLM 도 안 탄 확정이다
+                        (근거 0건 → `rejected_insufficient` · 무관 문의 → `template_only`).
+                        🔴 **폴링할 것이 없다.**
+        "queued"     =  **워커가 돌 것이다.** 🔴 GET 으로 폴링하라
+                        (`Retry-After` 헤더가 주기를 준다).
+
+    ⚠ 종전에는 `succeeded` 가 *"POST 가 그 자리에서 잡을 돌려 끝냈다"* 였다 — K=0 으로
+      그 경로가 사라졌으므로, `succeeded` 픽스처는 **단축 경로**로 굽는다
+      (`api/routers/counsel.py:840·849` — enqueue 이전에 돌아간다).
+    ⚠ `no_counsel_drain` — 대역이 돌면 `queued` 를 관측할 수 없다.
     """
     _prepare_counsel()
     body = _counsel_body()
 
+    #: 🔴 근거 0건 — 라우터가 잡을 만들기 **전에** 정직한 거부로 끊는다(불변식 2·4).
+    decided_body = {**body, "context": {**body["context"], "facts": []}}
     with TestClient(create_app()) as client:
         succeeded = client.post(
-            "/v1/counsel/drafts", headers=_counsel_headers(), json=body
+            "/v1/counsel/drafts", headers=_counsel_headers(), json=decided_body
         )
 
     assert succeeded.status_code == 202, succeeded.text
     assert succeeded.json()["data"]["status"] == "succeeded", succeeded.json()
 
-    # `queued` — 앞선 잡을 상한(K)만큼 쌓으면 회전이 전부 그쪽에 쓰인다.
+    #: `queued` — 정상 요청은 **항상** 적재만 된다(K=0). 앞선 잡을 쌓을 필요가 없다.
     _prepare_counsel()
-    _enqueue_counsel_jobs_ahead(get_counsel_settings().counsel_inline_drain_max)
     with TestClient(create_app()) as client:
         queued = client.post(
             "/v1/counsel/drafts",

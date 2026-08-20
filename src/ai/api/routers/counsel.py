@@ -80,13 +80,14 @@ from ai.composition.counsel.stores import (
     AgentStepSink,
     ContextStore,
     CounselPackResultRecord,
+    DraftRecord,
     DraftResultStore,
     PackResultStore,
     make_ref,
 )
 from ai.composition.counsel.versions import counsel_versions as _counsel_versions
 from ai.contracts.agents import TERMINAL_PHASES, JobPhase, WorkerJob
-from ai.contracts.composition import DraftContext, EvidenceFact
+from ai.contracts.composition import DraftContext, EvidenceFact, StudentResult
 from ai.contracts.counsel import (
     REASON_CONTEXT_MISSING,
     REASON_DRAFT_BODY_MISSING,
@@ -408,17 +409,97 @@ async def _cached_view_of(key: tuple[str, str]) -> _CachedView | None:
     return restored
 
 
+def _make_draft_state(
+    *,
+    context: DraftContext,
+    pack: CounselPackResultRecord,
+    student: StudentResult,
+    record: DraftRecord,
+    job: WorkerJob,
+) -> _DraftState:
+    """refine 대상 상태를 만드는 **유일한 자리**.
+
+    ⚠ 종전에는 `_generate` 안에서만 만들었다 — 그래서 그 줄을 안 지나는 경로
+    (`counsel_inline_drain_max=0`: POST 가 잡을 안 돌린다)에서는 **refine 대상이
+    아예 생기지 않았다.** 만드는 자리를 하나로 두고 호출자를 둘로 둔다(99 #02).
+    """
+    return _DraftState(
+        context=context,
+        citations=citations_of_context(context),
+        text=record.content,
+        #: 🔴 최초 생성이 고른 강조점을 refine 이 이어받는다(99 ㉮).
+        emphasis=tuple(pack.emphasis_points.get(student.student_ref, ())),
+        #: 🔴 refine 원장이 쓸 입력 스냅숏(99 ㉭) — 워커가 쓴 값과 **같은 값**이다.
+        snapshot_hash=job.payload_hash,
+    )
+
+
+async def _draft_state_from_job(key: tuple[str, str]) -> _DraftState | None:
+    """🔴 **잡 결과에서 되살린다** — `_restore_result`(GET)와 **같은 정본**이다.
+
+    ⚠ 이 갈래가 없으면 refine 대상은 **한 곳의 쓰기**(`_generate`)에만 매달린다.
+    그 쓰기를 안 지나는 경로가 생기는 순간(K=0) 또는 캐시가 축출되는 순간
+    **조용히 사라진다** — 실측 2026-08-20: K=1 에서도 `_drafts` 를 비우면 refine 이
+    404 였다. 파생 가능한 상태를 캐시에만 두면 캐시가 **정본**이 된다.
+
+    ⇒ 되살릴 수 있으면 캐시는 **최적화**로 돌아간다. 축출돼도 답이 안 바뀐다.
+    ⚠ **하나라도 없으면 `None`이다** — 반쯤 되살린 상태로 refine 하면 게이트가
+    다른 컨텍스트 위에서 돈다(`_restore_result`와 같은 규율).
+    """
+    tenant_id, job_id = key
+    try:
+        job_uuid = uuid.UUID(job_id)
+    except ValueError:  # 캐시 키가 UUID가 아니다 — 잡이 없는 확정 경로다
+        return None
+    job = await _build_supervisor().get(tenant_id=tenant_id, job_id=job_uuid)
+    if job is None or not _can_report_result(job.phase):
+        return None
+    bundle = await _context_store.get(job.payload_ref, tenant_id=tenant_id)
+    if bundle is None:
+        return None
+    #: N=1 — 묶음의 학생이 하나다(`_generate`가 문의 1건으로 만든다).
+    context = next(iter(bundle.contexts.values()), None)
+    if context is None:
+        return None
+    pack = (
+        await _pack_store.get(job.result_ref, tenant_id=tenant_id)
+        if job.result_ref
+        else None
+    )
+    if pack is None or not pack.results:
+        return None
+    student = pack.results[0]
+    if not student.draft_id:
+        return None
+    record = await _draft_store.get(
+        make_ref(DRAFT_SCHEME, student.draft_id), tenant_id=tenant_id
+    )
+    if record is None:
+        #: 잡은 성공인데 본문이 없다 — 도메인 상태다(99 #75). refine 대상은 아니다.
+        return None
+    state = _make_draft_state(
+        context=context, pack=pack, student=student, record=record, job=job
+    )
+    #: 🔴 **되살린 값은 다시 영속하지 않는다** — 읽기 복원이지 쓰기가 아니다
+    #: (`_cached_view_of`와 같은 규율). 캐시에만 얹는다.
+    _drafts.put(key, state)
+    return state
+
+
 async def _draft_state_of(key: tuple[str, str]) -> _DraftState | None:
-    """refine 대상 초안 — 캐시 → 없으면 PG."""
+    """refine 대상 초안 — 캐시 → PG 읽기 모델 → 🔴 **잡 결과에서 복원**.
+
+    🔴 세 번째 갈래가 이 자리의 요점이다. 앞의 둘은 **누가 미리 써 줬을 때만** 답한다.
+    """
     hit = _drafts.get(key)
     if hit is not None:
         return hit
     _, snapshot = await _draft_view_store.load(key)
-    if snapshot is None:
-        return None
-    restored = _draft_from_snapshot(snapshot)
-    _drafts.put(key, restored)
-    return restored
+    if snapshot is not None:
+        restored = _draft_from_snapshot(snapshot)
+        _drafts.put(key, restored)
+        return restored
+    return await _draft_state_from_job(key)
 
 
 async def _remember_view(key: tuple[str, str], cached: _CachedView) -> None:
@@ -1057,18 +1138,8 @@ async def _wire_result(
         # 키를 얻을 계약 경로가 없었다(호출하면 404 확정 · 99 D).
         await _remember_draft(
             (tenant_id, job_id),
-            _DraftState(
-                context=context,
-                citations=citations,
-                text=record.content,
-                # 🔴 최초 생성이 고른 강조점을 refine이 이어받는다(99 ㉮). 값이 state 밖으로
-                #    나오는 경로는 결과 계약뿐이다 — `pack.emphasis_points`(㉲와 같은 자리).
-                emphasis=tuple(pack.emphasis_points.get(student.student_ref, ())),
-                # 🔴 refine 원장이 쓸 입력 스냅숏(99 ㉭). **워커가 쓴 값과 같은 값**이다
-                #    (`worker.py`의 `input_snapshot_hash=job.payload_hash` ·
-                #    `payload_hash = content_hash(contexts)`) — 그래서 POST와 refine의
-                #    `AI_RUN.input_snapshot_hash`가 **일치**한다. 같은 스냅숏 위의 다음 턴이다.
-                snapshot_hash=job.payload_hash,
+            _make_draft_state(
+                context=context, pack=pack, student=student, record=record, job=job
             ),
         )
     if record is None:

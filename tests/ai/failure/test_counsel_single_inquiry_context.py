@@ -136,12 +136,22 @@ def test_rejection_happens_before_the_llm_call(client: TestClient) -> None:
 
 
 def test_graph_context_missing_converges_to_rejected(client: TestClient) -> None:
-    """🔴 잡은 succeeded, 초안은 rejected_insufficient — 화면 매핑이 깨지지 않는다."""
+    """🔴 잡은 succeeded — **실패가 아니다**(불변식 4).
+
+    ⚠ **2026-08-20 · K=0 으로 축이 하나 바뀌었다.** 결과는 이제 잡이 끝난 **뒤**
+    저장소에서 복원된다(`_restore_result`). 이 검사가 주입한 결함(`_DroppingContextStore`)은
+    그 복원의 입력인 **학생 컨텍스트까지 지운다** ⇒ `result` 는 **없다**.
+    🔴 **「없다」와 「실패」는 다르다** — 반쯤 되살린 결과를 내는 쪽이 계약 위반이다
+    (`_restore_result` 의 규율: *"하나라도 없으면 None"*).
+    ⇒ 와이어 파생(`context_missing` → `rejected_insufficient`)은 바로 아래 **순수 검사**가
+      들고, 여기서는 **잡이 종단으로 정직하게 갔는가**를 든다.
+    """
     set_counsel_stores(context_store=_DroppingContextStore())
     data = _result(client, _BASE)
-    assert data["status"] == "succeeded"
-    assert data["result"]["draft_status"] == "rejected_insufficient"
-    assert data["result"]["status_reason"] == "context_missing"
+    assert data["status"] == "succeeded", data
+    assert data["result"] is None, (
+        f"복원 입력이 없는데 결과가 실렸다 — 반쯤 되살린 결과다: {data['result']}"
+    )
 
 
 def test_context_missing_maps_to_insufficient_not_failed() -> None:

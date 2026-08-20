@@ -55,9 +55,16 @@ def test_the_bound_comes_from_settings_not_a_literal(
     assert get_counsel_settings().counsel_inline_drain_max == 7
 
 
-def test_the_default_bound_is_one() -> None:
-    """기본 K = 1 — 실 지연 실측에서 역산했다(99 #106)."""
-    assert CounselSettings().counsel_inline_drain_max == 1
+def test_the_default_bound_is_zero_because_the_worker_took_over() -> None:
+    """🔴 기본 K = 0 — **예산 계산의 결과가 아니다.**
+
+    ⌊480 / 450⌋ = 1 이므로 역산식은 0을 **도출하지 못한다**. 0은 「배경 드레인
+    (`composition/counsel/drain.py` · 99 #137·#85 ①)이 생겼으니 인라인을 끈다」는
+    **별개 판단**이다. 식은 상한만 주고 그 안에서 값을 고른다 —
+    `test_the_derivation_...`이 그 관계(`K ≤ ⌊예산/잡당최악⌋`)를 잰다.
+    ⚠ 이름을 같이 고쳤다. 값만 0으로 바꾸면 이름이 거짓말이 된다(99 ㊒).
+    """
+    assert CounselSettings().counsel_inline_drain_max == 0
 
 
 def test_the_derivation_in_the_docstring_matches_the_actual_values() -> None:
@@ -84,8 +91,10 @@ def test_the_derivation_in_the_docstring_matches_the_actual_values() -> None:
     #: ⓐ 식이 쓰는 숫자가 실제 K 와 맞는가 — 결론 줄을 문면에서 읽는다.
     stated = re.search(r"⇒ \*\*K = ⌊\d+ / \d+⌋ = (\d+)\*\*", doc)
     assert stated is not None, "도출식의 결론 줄을 못 읽었다"
-    assert int(stated.group(1)) == k, (
-        f"docstring 이 말하는 K({stated.group(1)})와 실제 K({k})가 다르다"
+    #: 🔴 문면의 결론은 **상한**이다 — 실제 K 는 그 안에서 고른 값이다(로그 154).
+    #: ⚠ 문면이 상한을 **틀리게** 적으면 아래 ⓑ 가 잡는다.
+    assert k <= int(stated.group(1)), (
+        f"docstring 이 말하는 상한 K≤{stated.group(1)} 을 실제 K({k})가 넘는다"
     )
     #: ⓑ 🔴 **그 전제가 그 K를 실제로 함의하는가** — 상한만 보면 안 된다.
     #:   실측(고의 파괴 1-③): docstring 의 콜당을 45→15 로 낮춰도 `K=1` 은 예산 안이라
@@ -94,8 +103,11 @@ def test_the_derivation_in_the_docstring_matches_the_actual_values() -> None:
     #:   ⇒ **K = ⌊예산 / 잡당최악⌋** 를 그대로 잰다.
     per_job = _WORST_CALLS_PER_JOB * timeout
     implied = _RESPONSE_BUDGET_S // per_job
-    assert implied == k, (
-        f"도출식이 K={implied} 를 함의하는데 실제 K는 {k} 다 "
+    #: 🔴 **`==` 가 아니라 `<=` 다** (2026-08-20 · 99 로그 154). 식은 **상한**을 준다 —
+    #: 값을 확정하면 그 값을 못 바꾼다(K=0 은 ⌊480/450⌋=1 이라 구조적으로 못 담긴다).
+    #: ⚠ 상한이 살아 있으므로 **K=10 은 여전히 red** 다 — 불변식 6은 그대로다.
+    assert k <= implied, (
+        f"도출식이 상한 K≤{implied} 를 함의하는데 실제 K는 {k} 다 "
         f"(콜당 {timeout}s · 잡당 {per_job}s · 예산 {_RESPONSE_BUDGET_S}s) — "
         "숫자 하나만 고치고 결론을 안 고친 것이다"
     )
@@ -117,10 +129,11 @@ def _timeout_in(doc: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def test_the_cost_of_k_one_is_written_down() -> None:
-    """🔴 **대가가 문면에 있다** — K=1 이면 앞선 잡 **하나**로 `queued` 가 된다.
+def test_the_reason_for_zero_is_written_down() -> None:
+    """🔴 **0 을 고른 근거가 문면에 있다** — 예산이 아니라 배경 드레인이다.
 
-    ⚠ 이 단언이 없으면 다음 사람이 「고착이 없다」로 읽고 #85 ① 을 안 연다.
+    ⚠ 이 단언이 없으면 다음 사람이 예산이 바뀔 때 **식으로 K 를 다시 계산해서**
+    인라인을 되살린다 — 그 순간 POST 예산이 다시 잡 최악에 묶인다.
     """
     doc = inspect.getsource(CounselSettings)
     assert "응급처치" in doc, "K=1 이 응급처치라는 판정이 사라졌다"
