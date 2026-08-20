@@ -240,12 +240,36 @@ fi
 grn "  일치 ($(docker compose config --format json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["services"]["app"]["environment"]))') 키)"
 
 # ── 6) 공개 경로 — 승우님이 실제로 보는 주소로 확인한다
+#
+# 🔴 **HTTP 코드와 curl 종료코드를 합치지 마라.** 종전에는 이랬다:
+#        C=$(curl ... -w '%{http_code}' "$URL" || echo 000)
+#    curl 이 **헤더(200)를 찍고 본문 전송 중에 죽으면** 두 출력이 이어붙어 `200000` 이
+#    된다(2026-08-20 실측 — 화면에 그대로 찍혔다). 판정은 우연히 맞지만 **문면이 거짓말**이라
+#    읽는 사람이 원인을 못 찾는다. 그날 app 로그에는 `"GET /openapi.json" 200 OK` 가
+#    멀쩡히 남아 있었고, 늦은 것은 **본문 전송**이었다.
+#    ⇒ 코드와 종료코드를 **따로** 들고, 실패 문면에 **둘 다** 찍는다.
+#
+# 🔴 **한 번 보고 판정하지 않는다.** app 을 방금 재생성한 직후라 엣지가 잠깐 느릴 수 있다.
+#    단발 지연으로 배포 전체가 exit 1 이 되면 **「배포는 됐는데 실패로 보고」** 가 되고,
+#    그것이 반복되면 «그 빨간 줄은 원래 나는 거야» 가 되어 **진짜 실패를 놓친다.**
+#    ⚠ 재시도는 **덮어주기가 아니다** — 3회를 다 실패하면 그대로 exit 1 이다.
 step "공개 엔드포인트"
 FAIL=0
 for p in /v1/health /v1/ready /openapi.json; do
-    C=$(curl -s -m 15 -o /dev/null -w '%{http_code}' "${DOMAIN}${p}" || echo 000)
-    if [ "$C" = "200" ]; then printf '  %s  %s\n' "$C" "$p"
-    else red "  ${C}  ${p}"; FAIL=1; fi
+    C=""; RC=1
+    for attempt in 1 2 3; do
+        #: -m 30 — 15 는 재생성 직후 본문 전송에 빠듯했다(같은 날 실측).
+        C=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "${DOMAIN}${p}")
+        RC=$?
+        [ "$RC" -eq 0 ] && [ "$C" = "200" ] && break
+        [ "$attempt" -lt 3 ] && sleep 3
+    done
+    if [ "$RC" -eq 0 ] && [ "$C" = "200" ]; then
+        printf '  %s  %s%s\n' "$C" "$p" "$([ "$attempt" -gt 1 ] && echo "  (${attempt}회째)")"
+    else
+        red "  실패  ${p}  — HTTP=${C:-없음} · curl 종료=${RC} · 3회 시도"
+        FAIL=1
+    fi
 done
 [ $FAIL -eq 1 ] && { red "공개 경로 실패 — 터널을 확인하라: docker compose logs cloudflared --tail 30"; exit 1; }
 
