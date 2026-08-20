@@ -51,7 +51,7 @@
       "schema": "0.1",
       "contract": "0.1",
       "threshold": null,
-      "prompt": "v4",
+      "prompt": "v5",
       "graph": "curriculum-five-area-v1",
       "taxonomy": null,
       "verify_config": "verify-config.v1",

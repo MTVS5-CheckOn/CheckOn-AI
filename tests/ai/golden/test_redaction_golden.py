@@ -76,8 +76,23 @@ def test_deterministic(case: RedactionCase) -> None:
     assert first.uncertain == second.uncertain
 
 
-def test_uncertain_flag_set_when_confirm_token_present() -> None:
-    """⟪확인필요⟫가 있으면 uncertain=True(소비자 fail-closed 근거)."""
+def test_uncertain_flag_never_stands_without_its_token() -> None:
+    """`uncertain=True`면 반드시 `⟪확인필요⟫`가 있다 — **역은 성립하지 않는다.**
+
+    🔴 **토큰과 트립와이어는 다른 축이다.** `policies/masking_redaction.md` §2
+    [A 확정 7/23]은 후보가 **1개면 그 토큰만**, **2개 이상이면 문장 통째 + `uncertain=True`**
+    로 갈랐다. 그러므로 토큰이 있어도 `uncertain`이 False인 경우가 **정상**이다.
+
+    ⚠ 종전 단정은 `uncertain == (토큰 존재)`였다 — 그건 **구현을 베낀 것**이고, 그 구현은
+    후보 1개에도 플래그를 세워 스펙보다 넓게 막았다. 그 결과 한국어 산문으로 도는 출제
+    경로가 사실상 닫혀 있었다(실측: 문학 풀 문장의 9.4%가 후보 1개).
+
+    🔴 **마스킹이 줄지 않는다는 보증은 이 검사가 아니라 `must_absent` 계열이 든다**
+    (미탐 0 게이트) — 여기는 「플래그가 근거 없이 서지 않는가」만 본다.
+    """
     for case in CORPUS:
         result = redact(case.text)
-        assert result.uncertain == ("⟪확인필요⟫" in result.masked_text)
+        if result.uncertain:
+            assert "⟪확인필요⟫" in result.masked_text, (
+                f"uncertain인데 토큰이 없다: {case.text!r}"
+            )
