@@ -64,3 +64,11 @@ docs/part_a/examples/seed/checkon_seed.sql
 
 # 기계별 임시 조정 — 커밋하지 않는다(공통·배포 파일은 저장소가 소유한다).
 docker-compose.override.yml
+
+# 🔴 추적 밖 로컬 산출물 — 무시 규칙이 없으면 pull 이 «덮어쓴다»며 중단한다.
+#   2026-08-20 실측: 로컬에만 있던 Dockerfile·.dockerignore 가 develop 신규 파일과
+#   이름이 겹쳐 `git pull` 이 Aborting 했다. 규칙에 없는 로컬 파일은 그 사고를 반복한다.
+# Codex 워크트리 — 도구가 만든다
+.codex/
+# 덮어쓰기 전 로컬 백업 보관소
+.local-backup/
