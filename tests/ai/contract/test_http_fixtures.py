@@ -230,6 +230,7 @@ def _generated_item_json() -> str:
                 no=no,
                 text=f"문장 구조 선택지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 문법 근거와 다르다.",
+                misconception_tag=None if no == 1 else "application_target_substitution",
             )
             for no in range(1, 6)
         ),

@@ -201,6 +201,17 @@ def _generated_item_json(
                 no=no,
                 text=f"문장 구조 선택지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 문법 근거와 다르다.",
+                misconception_tag=(
+                    None
+                    if no == 1
+                    else {
+                        AreaTag.LANGUAGE: "application_target_substitution",
+                        AreaTag.MEDIA: "expression_means_substitution",
+                        AreaTag.LITERATURE: "interpretation_exaggeration",
+                        AreaTag.READING: "scope_shift",
+                        AreaTag.SPEECH_WRITING: "source_purpose_mismatch",
+                    }[area_tag]
+                ),
             )
             for no in range(1, 6)
         ),
@@ -410,6 +421,17 @@ def _matrix_item_json(
                 no=no,
                 text=f"{node.label} 선택지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 승인 근거와 다르다.",
+                misconception_tag=(
+                    None
+                    if no == 1
+                    else {
+                        AreaTag.LANGUAGE: "application_target_substitution",
+                        AreaTag.MEDIA: "expression_means_substitution",
+                        AreaTag.LITERATURE: "interpretation_exaggeration",
+                        AreaTag.READING: "scope_shift",
+                        AreaTag.SPEECH_WRITING: "source_purpose_mismatch",
+                    }[node.area_tag]
+                ),
             )
             for no in range(1, 6)
         ),
@@ -454,11 +476,11 @@ def test_problem_router_roundtrip_and_prompt_version_ledger_match() -> None:
     assert fetched.json()["data"]["status"] == "succeeded"
     assert fetched.json()["data"]["result"]["outcome"] == "problem_set"
     prompt_version = posted.json()["meta"]["versions"]["prompt"]
-    assert prompt_version == "v5"
+    assert prompt_version == "v6"
     assert len(run_store.runs) == 1
     run = next(iter(run_store.runs.values()))
     assert run.prompt_version == prompt_version
-    assert {call.prompt_version for call in run_store.calls} == {"v5"}
+    assert {call.prompt_version for call in run_store.calls} == {"v6"}
     assert len(posted.json()["meta"]["versions"]) == 10
     assert len(generator.requests) == 1
     assert len(verifier.requests) == 1
@@ -1279,7 +1301,7 @@ class _ExplodingWorkflow:
             LlmCallRecord(
                 role=ModelRole.GENERATOR,
                 prompt_id="pg.items.v1",
-                prompt_version="v5",
+                prompt_version="v6",
                 provider="failure-provider",
                 model="failure-model",
                 usage=None,
@@ -1334,7 +1356,7 @@ def test_problem_ledger_survives_every_failure_kind(
             run_store=run_store,
             call_log=collector,
             verify_config_version="verify-config.v1",
-            prompt_version="v5",
+            prompt_version="v6",
             lease_owner="problem-router",
         )
         with pytest.raises(expected):
@@ -1373,7 +1395,7 @@ def test_failed_path_ledger_error_does_not_replace_the_original_error() -> None:
             run_store=_FailingRunStore(),
             call_log=collector,
             verify_config_version="verify-config.v1",
-            prompt_version="v5",
+            prompt_version="v6",
             lease_owner="problem-router",
         )
         with pytest.raises(LlmUpstreamTimeout):

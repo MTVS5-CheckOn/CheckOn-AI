@@ -19,27 +19,32 @@
         {
           "no": 1,
           "text": "문장 구조 선택지 1",
-          "why_wrong": null
+          "why_wrong": null,
+          "misconception_tag": null
         },
         {
           "no": 2,
           "text": "문장 구조 선택지 2",
-          "why_wrong": "2번은 문법 근거와 다르다."
+          "why_wrong": "2번은 문법 근거와 다르다.",
+          "misconception_tag": "application_target_substitution"
         },
         {
           "no": 3,
           "text": "문장 구조 선택지 3",
-          "why_wrong": "3번은 문법 근거와 다르다."
+          "why_wrong": "3번은 문법 근거와 다르다.",
+          "misconception_tag": "application_target_substitution"
         },
         {
           "no": 4,
           "text": "문장 구조 선택지 4",
-          "why_wrong": "4번은 문법 근거와 다르다."
+          "why_wrong": "4번은 문법 근거와 다르다.",
+          "misconception_tag": "application_target_substitution"
         },
         {
           "no": 5,
           "text": "문장 구조 선택지 5",
-          "why_wrong": "5번은 문법 근거와 다르다."
+          "why_wrong": "5번은 문법 근거와 다르다.",
+          "misconception_tag": "application_target_substitution"
         }
       ],
       "answer": {
@@ -83,7 +88,7 @@
       "schema": "0.1",
       "contract": "0.1",
       "threshold": null,
-      "prompt": "v5",
+      "prompt": "v6",
       "graph": "curriculum-five-area-v1",
       "taxonomy": "v1",
       "verify_config": "verify-config.v1",

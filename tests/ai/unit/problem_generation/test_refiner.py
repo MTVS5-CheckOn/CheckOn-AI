@@ -28,6 +28,7 @@ from ai.problem_generation.application.refiner import ProblemItemRefiner
 from ai.problem_generation.infrastructure.config import (
     load_area_specs,
     load_banned_topics,
+    load_misconception_tags,
     load_verify_config,
 )
 
@@ -53,6 +54,7 @@ def _item(stem: str) -> GeneratedItem:
                 no=no,
                 text=f"음운 변동 선택지 {no}",
                 why_wrong=None if no == 1 else "승인 근거와 다르다.",
+                misconception_tag=None if no == 1 else "adjacent_change_type_confusion",
             )
             for no in range(1, 6)
         ),
@@ -124,6 +126,7 @@ def _refiner(generator: FakeProvider, verifier: FakeProvider) -> ProblemItemRefi
         verify_config=load_verify_config(),
         banned_topics=load_banned_topics(),
         area_specs=load_area_specs(),
+        misconception_tags=load_misconception_tags(),
     )
 
 def test_ai_refine_applies_only_after_rule_and_blind_cross_solve() -> None:

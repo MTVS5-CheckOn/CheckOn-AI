@@ -69,6 +69,7 @@ def _item() -> GeneratedItem:
                 no=no,
                 text=f"선지 {no}",
                 why_wrong=None if no == 1 else f"오답 근거 {no}",
+                misconception_tag=None if no == 1 else "application_target_substitution",
             )
             for no in range(1, 6)
         ),

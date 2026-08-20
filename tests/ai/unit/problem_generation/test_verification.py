@@ -69,6 +69,7 @@ def _item(*, evidence_refs: tuple[str, ...] = ("grammar:rule-1",)) -> GeneratedI
                 no=no,
                 text=f"고유한 선지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 규칙과 다르다.",
+                misconception_tag=None if no == 1 else "application_target_substitution",
             )
             for no in range(1, 6)
         ),

@@ -23,6 +23,7 @@ from ai.problem_generation.domain.policy import SUPPORTED_AREAS, AreaSpecs
 from ai.problem_generation.infrastructure.config import (
     VerificationConfigError,
     load_area_specs,
+    load_misconception_tags,
 )
 
 _SPECS_PATH = (
@@ -86,6 +87,14 @@ def test_the_rendered_block_is_plain_text_not_json() -> None:
     assert "영역: 언어" in block
     assert "발문 정형:" in block
     assert "오답 설계:" in block
+
+
+def test_item_area_block_carries_the_closed_misconception_vocabulary() -> None:
+    tags = load_misconception_tags().tags_for(AreaTag.LANGUAGE)
+    block = render_area_spec(load_area_specs().spec_for(AreaTag.LANGUAGE), tags)
+
+    assert "오개념 라벨(오답 선지마다 하나 선택):" in block
+    assert all(tag.id in block for tag in tags)
 
 
 def test_speech_and_writing_are_one_area_now() -> None:

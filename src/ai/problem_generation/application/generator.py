@@ -36,7 +36,12 @@ from ai.problem_generation.domain.models import (
     RetryContext,
     SchemaValidationIssue,
 )
-from ai.problem_generation.domain.policy import AreaSpec, AreaSpecs
+from ai.problem_generation.domain.policy import (
+    AreaSpec,
+    AreaSpecs,
+    MisconceptionTagDefinition,
+    MisconceptionTagsConfig,
+)
 from ai.runtime.redaction import redact
 
 _ITEM_PROMPT_ID = "pg.items.v1"
@@ -90,7 +95,10 @@ def schema_issues_from_field_missing(
     return tuple(issues)
 
 
-def render_area_spec(spec: AreaSpec) -> str:
+def render_area_spec(
+    spec: AreaSpec,
+    misconception_tags: tuple[MisconceptionTagDefinition, ...] | None = None,
+) -> str:
     """영역 규격 → 프롬프트에 실을 평문 블록 (순수 함수).
 
     🔴 **JSON으로 안 싣는다.** 나머지 셋(`context_pack`·`generation_input`·`retry_context`)은
@@ -100,12 +108,20 @@ def render_area_spec(spec: AreaSpec) -> str:
     """
 
     forms = "\n".join(f"  - {form}" for form in spec.stem_forms)
+    misconception_block = ""
+    if misconception_tags is not None:
+        rendered_tags = "\n".join(
+            f"- {tag.id} — {tag.label_ko}: {tag.description}"
+            for tag in misconception_tags
+        )
+        misconception_block = f"\n오개념 라벨(오답 선지마다 하나 선택):\n{rendered_tags}"
     return (
         f"영역: {spec.label_ko}\n"
         f"측정 대상: {spec.measures}\n"
         f"발문 정형:\n{forms}\n"
         f"오답 설계: {spec.distractors.strip()}\n"
         f"피할 것: {spec.avoid.strip()}"
+        f"{misconception_block}"
     )
 
 
@@ -118,6 +134,7 @@ class ProblemGenerator:
         prompt: LoadedPromptTemplate | None = None,
         *,
         area_specs: AreaSpecs,
+        misconception_tags: MisconceptionTagsConfig,
     ) -> None:
         """`area_specs`는 **주입 전용이다** — 여기서 파일을 읽지 않는다.
 
@@ -130,6 +147,7 @@ class ProblemGenerator:
         self._gateway = gateway
         self._prompt = prompt or load_prompt_template(_ITEM_PROMPT_ID)
         self._area_specs = area_specs
+        self._misconception_tags = misconception_tags
         if self._prompt.role is not ModelRole.GENERATOR:
             raise ValueError("문항 생성 프롬프트 role은 generator여야 한다")
         if self._prompt.response_schema_name != GeneratedItem.__name__:
@@ -164,7 +182,8 @@ class ProblemGenerator:
         prompt_text = self._prompt.render(
             {
                 "area_spec_block": render_area_spec(
-                    self._area_specs.spec_for(request.area_tag)
+                    self._area_specs.spec_for(request.area_tag),
+                    self._misconception_tags.tags_for(request.area_tag),
                 ),
                 "context_pack_json": canonical_json(
                     context_pack.model_dump(mode="json")
@@ -191,7 +210,11 @@ class ProblemGenerator:
             ),
             execution_context,
         )
-        item = parse(require_successful_text(result), GeneratedItem)
+        item = parse(
+            require_successful_text(result),
+            GeneratedItem,
+            context=self._misconception_tags.validation_context(),
+        )
         return hydrate_evidence_quotes(item, context_pack)
 
 

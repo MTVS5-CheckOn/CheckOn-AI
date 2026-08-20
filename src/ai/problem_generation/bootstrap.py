@@ -34,6 +34,7 @@ from ai.problem_generation.infrastructure.aihub_corpus import (
 from ai.problem_generation.infrastructure.config import (
     load_area_specs,
     load_banned_topics,
+    load_misconception_tags,
     load_verify_config,
 )
 from ai.problem_generation.infrastructure.literature_pool import load_literature_pool
@@ -103,10 +104,15 @@ def build_problem_workflow(
     resolved_verify_config = verify_config or load_verify_config()
     resolved_banned_topics = banned_topics or load_banned_topics()
     area_specs = load_area_specs()
+    misconception_tags = load_misconception_tags()
     return ProblemGenerationWorkflow(
         diagnosis=diagnosis,
         graph_context=graph_context,
-        generator=ProblemGenerator(gateway, area_specs=area_specs),
+        generator=ProblemGenerator(
+            gateway,
+            area_specs=area_specs,
+            misconception_tags=misconception_tags,
+        ),
         passage_generator=PassageGenerator(
             gateway,
             banned_topics=resolved_banned_topics,

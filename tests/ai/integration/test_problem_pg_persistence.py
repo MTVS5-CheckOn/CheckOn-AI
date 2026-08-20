@@ -198,6 +198,14 @@ def _generated_source_item_json(
                 no=no,
                 text=f"생성 자료 선택지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 생성 자료와 다르다.",
+                misconception_tag=(
+                    None
+                    if no == 1
+                    else {
+                        AreaTag.MEDIA: "expression_means_substitution",
+                        AreaTag.SPEECH_WRITING: "source_purpose_mismatch",
+                    }[area_tag]
+                ),
             )
             for no in range(1, 6)
         ),
@@ -225,6 +233,7 @@ def _flow_item_json() -> str:
                 no=no,
                 text=f"음운 체계 선택지 {no}",
                 why_wrong=None if no == 1 else f"{no}번은 승인 근거와 다르다.",
+                misconception_tag=None if no == 1 else "adjacent_change_type_confusion",
             )
             for no in range(1, 6)
         ),
