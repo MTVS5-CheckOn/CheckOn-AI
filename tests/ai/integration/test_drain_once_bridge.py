@@ -131,7 +131,9 @@ from ai.api.app import app
 from ai.api.routers.counsel import reset_counsel_stores
 from ai.db.store_factory import reset_shared_agent_runtime
 
-REQ = json.load(open("tests/ai/contract/fixtures/http/post_counsel_drafts.request.json"))
+REQ = json.load(
+    open("tests/ai/contract/fixtures/http/post_counsel_drafts.request.json", encoding="utf-8")
+)
 H = {"X-Tenant-Id": "t_k0", "X-Request-Id": "k0", "Idempotency-Key": "k0"}
 reset_shared_agent_runtime()
 reset_counsel_stores()
