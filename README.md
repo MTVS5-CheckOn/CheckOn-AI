@@ -118,3 +118,17 @@ src/ai/
 | 염준영 (member-B) | 진단·출제 | diagnosis · problem_generation · llm/ |
 
 경계 규칙: 상대 capability 내부 파일 직접 수정 금지 — `contracts/`에 PR로. `docs/02_ownership.md` §4의 양자 승인 12곳은 두 명 승인 필수.
+
+### counsel 배경 드레인 (99 #85 ① · №21)
+
+`POST /v1/counsel/drafts` 는 잡을 큐에 넣고, **배경 드레인이 그 잡을 돌린다.**
+로컬은 compose 를 안 쓰므로 **터미널 하나에서** 직접 띄운다:
+
+```bash
+uv run --frozen python -m ai.composition.counsel.drain    # STORE_BACKEND=pg 필요
+```
+
+⚠ **`STORE_BACKEND=memory` 에서는 기동을 거부한다** — 다른 프로세스의 잡을 볼 수 없어
+배경 드레인이 뜻을 잃는다.
+🔴 **배포(윈도우)는 compose 서비스로 띄운다** — 정의는 저장소 밖이고(`.gitignore`),
+그 워커가 갖춰야 할 조건 넷은 `ai/composition/counsel/drain.py` docstring 에 있다(99 #128).
