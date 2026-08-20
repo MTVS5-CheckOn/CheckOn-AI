@@ -167,7 +167,8 @@ def test_prompt_reflects_tone_rule() -> None:
     rule = tone_rule_for(context)
     prompt = assemble_prompt(context)
     assert "data.anxious.grade.frequent" in prompt
-    assert f"문단마다 {rule.sentences_per_block}문장" in prompt  # 0.2 어휘
+    assert f"{rule.sentences_per_block}문장" in prompt
+    # 🔴 **어구를 박지 않는다** — 재는 것은 「tone_map 의 값이 실리는가」이지 문구가 아니다.
     for block in rule.blocks:
         assert block in prompt
 

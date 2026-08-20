@@ -293,9 +293,11 @@ def test_no_combination_leaks_internal_terms_into_its_own_prompt(key: str) -> No
 def test_prompt_version_was_promoted() -> None:
     """프롬프트 문면이 바뀌었으므로 버전이 오른다(05 §6-3).
 
+    ⚠ **0.3 → 0.4 (8/20)** — 지향 문구·페르소나·중복 금지·형식 규칙이 들어갔다.
+    실 LLM 24조합 A/B 로 확정했다(밋밋함·기계적 반복·톤 세 축).
     ⚠ **0.2 → 0.3 (8/19)** — 완충 단계 문면에 B군 치환 어휘 28항이 들어갔다(99 #79).
     🔴 **「컨텍스트 파생 문면」이 아니다** — 05 §6-3의 예외는 강조점·지시·피드백처럼 그
     요청에서 나오는 값이고, 이건 **데이터 파일에서 오는 고정 어휘**가 모든 요청에 새로
     실리는 것이다(같은 컨텍스트라도 0.2와 0.3의 프롬프트가 다르다).
     """
-    assert PROMPT_VERSION == "0.3"
+    assert PROMPT_VERSION == "0.4"
