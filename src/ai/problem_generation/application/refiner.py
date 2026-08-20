@@ -12,8 +12,9 @@ from ai.contracts.graphrag import (
     GraphContextRequest,
     GraphContextService,
 )
-from ai.contracts.llm import LLMRequest, ModelRole
+from ai.contracts.llm import FieldMissing, LLMRequest, ModelRole, ParseFailed
 from ai.contracts.problem_generation import (
+    PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT,
     DifficultyBand,
     GeneratedItem,
     ProblemItemStatus,
@@ -214,20 +215,40 @@ class ProblemItemRefiner:
                 applied=False,
                 blocked_reason=BlockedReason.PII_EXPOSURE,
             )
-        result = await self._gateway.complete(
-            LLMRequest(
-                role=ModelRole.GENERATOR,
-                prompt=redacted.masked_text,
-                prompt_id=self._prompt.prompt_id,
-                prompt_version=self._prompt.version,
-                response_schema_name=self._prompt.response_schema_name,
-                generation_params=deterministic_params(),
-            ),
-            execution_context,
-        )
-        revised = hydrate_evidence_quotes(
-            parse(require_successful_text(result), GeneratedItem), context
-        )
+        # 🔴 **파싱 실패를 첫 판에 500으로 올리지 않는다 — 생성 경로와 같은 규율.**
+        #   `parse()` 가 던지는 `ParseFailed`·`FieldMissing` 은 라우터의 `except LlmError`
+        #   가 `domain_error_for` 로 넘겨 **500 INTERNAL** 이 된다. 그런데 생성 경로는 같은
+        #   예외에 **재생성 예산을 쓰고**(workflow `except LlmError`) 소진돼야 도메인 결과로
+        #   끝낸다 — 같은 사건인데 수정 쪽만 장애로 나가는 비대칭이었다.
+        #   실측(2026-08-20 종단 · speech_writing 8회): **2회가 500**, 나머지는 200.
+        # ⚠ 상한은 문항 시도 계약(`PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT`)을 따른다(불변식 6).
+        # ⚠ 소진되면 **정상 차단**으로 끝낸다 — 게이트 거부는 에러가 아니다(불변식 4).
+        revised = None
+        for _ in range(PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT):
+            result = await self._gateway.complete(
+                LLMRequest(
+                    role=ModelRole.GENERATOR,
+                    prompt=redacted.masked_text,
+                    prompt_id=self._prompt.prompt_id,
+                    prompt_version=self._prompt.version,
+                    response_schema_name=self._prompt.response_schema_name,
+                    generation_params=deterministic_params(),
+                ),
+                execution_context,
+            )
+            try:
+                revised = hydrate_evidence_quotes(
+                    parse(require_successful_text(result), GeneratedItem), context
+                )
+                break
+            except (ParseFailed, FieldMissing):
+                continue
+        if revised is None:
+            return ProblemRefineOutcome(
+                applied=False,
+                blocked_reason=BlockedReason.ANSWER_INTEGRITY,
+                failed_checks=("refine:ParseFailed",),
+            )
         rule_result = self._rules.validate(
             item=revised,
             request=request,
