@@ -33,6 +33,11 @@ from ai.composition.counsel.settings import (
     WORST_CALLS_PER_REFINE,
     CounselSettings,
 )
+from ai.composition.provider import (
+    BRIEFING_BUDGET_S,
+    BRIEFING_CALL_TIMEOUT_S,
+    DETECT_HTTP_TIMEOUT_S,
+)
 
 _CONTRACT: Final = pathlib.Path("docs/04_api_contract.md")
 
@@ -157,3 +162,52 @@ def test_the_contract_tells_backend_about_the_refine_timeout(contract_text: str)
     assert str(RESPONSE_BUDGET_S) in section, (
         f"refine 절의 권고값이 응답 예산({RESPONSE_BUDGET_S}s)과 다르다"
     )
+
+
+# ━━ detect 축 — 🔴 §G 가 counsel 에만 세운 관계를 여기에도 세운다 (99 #124) ━━
+
+
+def test_the_worst_briefing_fits_inside_the_backend_timeout() -> None:
+    """🔴 **좌변이 「총 예산」만이면 꼬리를 빼먹는다** — 그게 이 결함의 형태였다.
+
+    `briefing.py` 의 예산 검사는 **호출 시작 전에만** 돈다(*"호출 전, 매 반복"* · 실측 8/20).
+    ⇒ 마지막 호출은 예산 직전에 시작해 **콜당 상한만큼 더** 쓴다. 전역 상한이 45→90 이
+    됐을 때 이 축의 최악이 조용히 45+90 = **135s** 가 됐고 04 의 BE **60s** 를 넘었다.
+    ⚠ **아무도 안 봤다** — 99 ㉪ 는 counsel 만 봤다.
+    """
+    worst = BRIEFING_BUDGET_S + BRIEFING_CALL_TIMEOUT_S
+    assert worst <= DETECT_HTTP_TIMEOUT_S, (
+        f"브리핑 최악 {worst}s 가 BE 타임아웃({DETECT_HTTP_TIMEOUT_S}s)을 넘는다 — "
+        "장애 때 BE 가 끊겨 폴백 문구조차 못 받는다"
+    )
+
+
+def test_the_briefing_does_not_ride_the_global_call_timeout() -> None:
+    """🔴 **브리핑은 provider 전역 상한을 안 탄다** — 그 주입이 실제로 서는지 잰다.
+
+    ⚠ 상수만 재면 「값은 맞는데 주입을 안 했다」를 못 잡는다 ⇒ **조립된 provider 의
+    실효 타임아웃**을 본다. 선례: `problem_generation/provider.py` 가 verifier 에 같은
+    형태로 자기 `OpenAiSettings` 를 준다.
+    """
+    from ai.composition.provider import BriefingSettings, build_brief_provider
+
+    provider = build_brief_provider(BriefingSettings(llm_provider="openai_compat"))
+    #: 🔴 실효값을 본다 — 상수만 재면 「값은 맞는데 주입을 안 했다」를 못 잡는다.
+    effective = getattr(provider, "_settings").openai_timeout_s  # noqa: B009 — 실효값 확인
+    assert effective == float(BRIEFING_CALL_TIMEOUT_S), (
+        f"브리핑 provider 의 실효 타임아웃이 {effective}s 다 — "
+        f"{BRIEFING_CALL_TIMEOUT_S}s 주입이 안 섰다(전역을 그대로 탄다)"
+    )
+
+
+def test_the_detect_contract_numbers_match_the_code(contract_text: str) -> None:
+    """04 §2.4 `/detect` 행의 세 숫자가 코드 정본과 같다 — §G 의 「04 ↔ 코드」를 이 축에도."""
+    assert _one(r"문장화 총 예산 (\d+)s", contract_text, "브리핑 총 예산") == int(BRIEFING_BUDGET_S)
+    assert (
+        _one(r"LLM 호출당 (\d+)s 상한", contract_text, "브리핑 콜당 상한")
+        == BRIEFING_CALL_TIMEOUT_S
+    )
+    be = _one(r"타임아웃 (\d+)s \[A 확정", contract_text, "detect BE 타임아웃")
+    assert be == DETECT_HTTP_TIMEOUT_S
+    stated = _one(r"최악 (\d+) \+ \d+ = \d+s", contract_text, "최악 좌변")
+    assert stated == int(BRIEFING_BUDGET_S)

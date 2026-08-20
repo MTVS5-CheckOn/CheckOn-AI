@@ -41,7 +41,7 @@ from ai.api.version_scope import RouterScope
 from ai.composition.briefing import BRIEF_GEN_PARAMS, make_brief
 from ai.composition.briefing import PROMPT_VERSION as BRIEF_PROMPT_VERSION
 from ai.composition.briefing_context import build_contexts
-from ai.composition.provider import build_brief_gateway, build_brief_provider
+from ai.composition.provider import BRIEFING_BUDGET_S, build_brief_gateway, build_brief_provider
 from ai.contracts.detection import (
     CONSENT_GRANTED,
     OBSERVED_ONLY_MIN_WEEKS,
@@ -124,7 +124,10 @@ _run_store: RunStore = build_run_store()
 #: LLM 호출은 gateway(role=narrator, 전송 재시도 0) 경유 — 어댑터 직결 종료(03_coding_rules §2).
 _brief_provider: LLMProvider | None = None
 _brief_gateway: LlmGateway | None = None
-_BRIEFING_BUDGET_S = 45.0
+#: 🔴 **정본은 `composition/provider.py` 다** — 콜당 상한과 **같은 자리**에 있어야
+#: 「총 예산 + 콜당 ≤ BE 타임아웃」이 한 눈에 보인다(99 #124). 종전에는 이 값만 여기
+#: 있고 콜당 상한은 provider 전역이라, 전역이 45→90 이 됐을 때 **아무도 안 봤다.**
+_BRIEFING_BUDGET_S = BRIEFING_BUDGET_S
 #: 신호별 브리핑 LLM 호출 동시 실행 상한 — 세마포어(v3 병렬화).
 #: ⚠ 원래 근거는 "팀 로컬 서버 부하 배려"였는데 그 서버는 폐기됐다(99 ⓟ). 값은 그대로
 #: 두되 근거가 바뀐다 — 외부 API에서는 **동시성이 rate limit 표면**이다(99 ⓡ).

@@ -39,6 +39,40 @@ from ai.runtime.trace_masking import RedactionTripwireTraceHook
 #: 04 §2.4 예산(브리핑 45s·호출당 15s)에 재시도가 얹히면 병렬 예산이 깨진다. 09 §1-10 ①.
 _NARRATOR_TRANSPORT_RETRY = 0
 
+#: ━━ 🔴 **detect 축 예산 관계의 단일 정본** (99 #124) ━━
+#:
+#: counsel 이 콜당 상한을 45 → **90s** 로 올렸을 때(99 ㉪) **이 축도 같이 움직였는데
+#: 아무도 안 봤다** — `OPENAI_TIMEOUT_S` 는 provider 전역이라 브리핑도 그 값을 탄다.
+#: 실측(8/20): 예산 검사는 **호출 전에만** 돌므로(`briefing.py` — 시작한 호출을 안 끊는다)
+#: `t=44.9s` 에 시작한 콜이 90s 를 쓰면 **총 ~135s** 다 ⇒ 04 의 BE 60s 를 끊어 먹는다.
+#: 🔴 **그때가 정확히 장애 때다** — 폴백 문구조차 BE 에 못 간다.
+
+#: 브리핑 **콜당** LLM 상한(초) — 🔴 provider 전역(`OPENAI_TIMEOUT_S`)을 **안 쓴다.**
+#:
+#: ⚠ **왜 전역과 다른 값을 쓰나** — counsel 은 4문단 글이고 브리핑은 **문장 하나**다
+#: (실측: narrator 응답 토큰 중앙 **28**). 같은 상한을 쓸 이유가 없고, 쓰면 예산이 깨진다.
+#: 🔴 **근거는 원장 실측이다**(2026-08-20 · `local_data/*llm_smoke_raw.json` s1 · **n=147** ·
+#: 7회차): 콜당 min 0.19s · p50 **0.97s** · p90 1.56s · p95 2.02s · **max 5.76s**.
+#: ⇒ 15s 는 실측 max 의 **2.6배**다.
+#: ⚠ **표본 절단을 명시적으로 배제했다**(99 #110 의 순환): 이 회차들은 상한 15s 시절인데
+#: **15s 초과 0/147** 이고 `llm_failed` 21건은 지연 p50 **0.22s**(벤더 미도달 — 즉시 실패)라
+#: **타임아웃으로 잘린 표본이 아니다.** 예산 소진(`budget_exhausted`) 은 **0건**이다.
+BRIEFING_CALL_TIMEOUT_S: int = 15
+
+#: 브리핑 문장화 **총** 예산(초) — 04 §2.4 `/detect` 정본. `api/routers/detect.py` 가 쓴다.
+BRIEFING_BUDGET_S: float = 45.0
+
+#: `/detect` 의 BE read timeout(초) — 04 §2.4 정본.
+DETECT_HTTP_TIMEOUT_S: int = 60
+
+#: 🔴 **관계: `총 예산 + 콜당 상한 ≤ BE 타임아웃`** (45 + 15 = 60 ≤ 60).
+#: 예산 검사가 **시작만 막으므로** 마지막 콜은 예산 직전에 시작해 상한만큼 더 쓴다.
+#: 좌변이 `총 예산`만이면 그 꼬리를 빼먹는다 — 그게 이 결함의 형태였다.
+#: ⚠ **경계에 붙어 있다**(여유 0) — 그리고 `deadline` 은 **감지·조립 뒤에** 시작하므로
+#: 실제 HTTP 총 시간은 여기에 **감지 시간이 더 얹힌다.** 그건 콜당 90s 와 무관하게
+#: 종전 설계부터 그랬고, 04 의 60s 를 올리는 것은 승우님 통보 축이라 이 회차가 안 건드렸다
+#: (99 #124 에 등재).
+
 _FAKE = "fake"
 _OPENAI_COMPAT = "openai_compat"
 _SIGNAL_LABEL_RE = re.compile(r"신호 유형:\s*(.+)")
@@ -100,9 +134,20 @@ def build_brief_provider(settings: BriefingSettings | None = None) -> LLMProvide
     """
     settings = settings or get_briefing_settings()
     if settings.llm_provider == _OPENAI_COMPAT:
-        from ai.llm.providers.openai_compat import build_openai_compat_provider
+        from ai.llm.providers.openai_compat import (  # noqa: PLC0415 — 벤더 지연 import
+            build_openai_compat_provider,
+            get_llm_settings,
+        )
 
-        return build_openai_compat_provider()
+        #: 🔴 **브리핑 전용 상한을 주입한다** — 전역 `OPENAI_TIMEOUT_S`(counsel 기준 90s)를
+        #: 그대로 타면 총 예산 45s + 90s = 135s 로 04 의 BE 60s 를 넘는다(99 #124).
+        #: ⚠ `model_copy` 로 **타임아웃만** 바꾼다 — 키·URL·모델을 이 파일이 다시 읽거나
+        #: 옮겨 적지 않는다(값을 만지지 않는 것이 유출 표면을 안 넓힌다 · 99 #122).
+        #: ⚠ 선례: `problem_generation/provider.py` 도 verifier 에 자기 `OpenAiSettings` 를 준다.
+        narrator = get_llm_settings().model_copy(
+            update={"openai_timeout_s": float(BRIEFING_CALL_TIMEOUT_S)}
+        )
+        return build_openai_compat_provider(settings=narrator)
     return FakeBriefProvider()
 
 
