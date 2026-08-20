@@ -278,13 +278,19 @@ def _preview_source(options: PreviewOptions) -> dict[str, Any]:
 
 async def _run_llm(
     options: PreviewOptions,
-) -> tuple[ProblemSetResult, tuple[StoredProblemItem, ...], float, int]:
+) -> tuple[ProblemSetResult, tuple[StoredProblemItem, ...], float, list[tuple[str, int]]]:
     verify_config = load_verify_config()
     item_store = InMemoryProblemItemStore()
-    calls: list[str] = []
+    # 🔴 **prompt_id 와 latency_ms 까지 남긴다** — 종전에는 role 문자열만
+    #   담아 「모두 몇 번」만 알 수 있었다. 자리별 상한(`llm/call_timeouts.yaml`)은
+    #   **자리별 실측 p95** 에서 나오므로, role 축으로는 근거가 안 된다
+    #   (counsel 의 plan 과 write 가 같은 role 이라는 것과 같은 사정이다).
+    calls: list[tuple[str, int]] = []
     gateway = build_problem_gateway(
         verify_config=verify_config,
-        recorder=lambda record, _context: calls.append(record.role.value),
+        recorder=lambda record, _context: calls.append(
+            (record.prompt_id, record.latency_ms)
+        ),
     )
     workflow = build_problem_workflow(
         gateway=gateway,
@@ -302,7 +308,7 @@ async def _run_llm(
         raise PreviewUnavailable(f"문항 세트로 끝나지 않았다: {type(outcome).__name__}")
     # 생성 본문은 `ItemResult` 가 아니라 저장소에 있다 — 결과는 판정 메타만 싣는다.
     stored = tuple(await item_store.list_all())
-    return outcome, stored, elapsed, len(calls)
+    return outcome, stored, elapsed, calls
 
 
 def _render_item(index: int, item: GeneratedItem) -> list[str]:
@@ -404,7 +410,11 @@ def _collect(options: PreviewOptions) -> dict[str, Any]:
     result, stored, elapsed, calls = asyncio.run(_run_llm(options))
     items_by_slot = {record.slot_index: record.item for record in stored}
     payload["elapsed_s"] = elapsed
-    payload["llm_calls"] = calls
+    payload["llm_calls"] = len(calls)
+    #: ⚠ 자리별 상한을 정하려면 합계가 아니라 **콜 단위**가 필요하다.
+    payload["llm_call_detail"] = [
+        {"prompt_id": prompt_id, "latency_ms": latency} for prompt_id, latency in calls
+    ]
     payload["result"] = {
         "status": result.status.value,
         "set_id": str(result.set_id),

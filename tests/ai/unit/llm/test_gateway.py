@@ -18,6 +18,7 @@ from ai.contracts.llm import (
     ParseFailed,
     TokenUsage,
 )
+from ai.llm.call_timeouts import CallTimeoutTable
 from ai.llm.gateway import LlmCallRecord, LlmCallRecorder, LlmGateway
 from ai.runtime.tracing import TRACING_ENV_SYNONYMS
 
@@ -431,3 +432,128 @@ def test_hook_cannot_change_request_identity_fields(
 
     assert provider.requests == []
     assert records == []
+
+
+class _SlowProvider:
+    """지정한 시간만큼 기다렸다가 답하는 대역 — 상한이 실제로 끊는지 재기 위한 것.
+
+    ⚠ `_started`를 세는 이유: 「상한이 끑었다」와 「애초에 안 불렸다」는
+    밖에서 둘 다 「결과가 없다」로 보인다. 가르지 않으면 라우팅 버그를 상한 덕으로 읽는다.
+    """
+
+    def __init__(self, *, delay_s: float, name: str = "fake") -> None:
+        self._delay_s = delay_s
+        self._name = name
+        self.started = 0
+        self.finished = 0
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    async def complete(
+        self,
+        request: LLMRequest,
+        context: ExecutionContext,
+    ) -> LLMResult:
+        del request, context
+        self.started += 1
+        await asyncio.sleep(self._delay_s)
+        self.finished += 1
+        return _result()
+
+
+def test_an_unregistered_prompt_id_is_not_capped_by_the_gateway() -> None:
+    """정상 — 표에 없는 자리는 오늘과 같다(provider 전역 상한이 받는다).
+
+    🔴 **이게 이 변경의 핵심 계약이다.** 정본 표가 비어 있으므로 지금 모든 호출이
+    이 경로를 탄다 — 즐, 이 PR 은 운영 동작을 바꾸지 않는다.
+    """
+
+    provider = _SlowProvider(delay_s=0.01)
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        call_timeouts=CallTimeoutTable(call_timeouts={"다른/자리": 0.001}),
+    )
+
+    result = _run(gateway.complete(_request(), _context()))
+
+    assert result.outcome is CallOutcome.OK
+    assert (provider.started, provider.finished) == (1, 1)
+
+
+def test_a_registered_cap_shorter_than_the_call_raises_llm_timeout() -> None:
+    """경계 — 상한이 호출보다 짧으면 게이트웨이가 끗는다.
+
+    🔴 `TimeoutError` 가 아니라 **`LlmTimeout`** 이어야 한다 — provider 가 직접 끈을
+    때와 같은 예외여야 소비쪽이 두 경우를 가르지 않고 같은 폴백을 한다.
+    """
+
+    provider = _SlowProvider(delay_s=5.0)
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        transport_retry={ModelRole.GENERATOR: 0},
+        call_timeouts=CallTimeoutTable(call_timeouts={"composition/reply": 0.01}),
+    )
+
+    with pytest.raises(LlmTimeout, match="composition/reply"):
+        _run(gateway.complete(_request(), _context()))
+
+    #: 🔴 「안 불렸다」가 아니라 「불렸는데 끑겼다」임을 센다.
+    assert (provider.started, provider.finished) == (1, 0)
+
+
+def test_a_capped_timeout_is_recorded_as_timeout_like_any_other() -> None:
+    """실패 — 원장에 `TIMEOUT` 으로 적힐다.
+
+    ⚠ 같은 사건이 두 가지 모양으로 원장에 남으면 **원가·장애 집계가 갈린다.**
+    """
+
+    records: list[LlmCallRecord] = []
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: _SlowProvider(delay_s=5.0)},
+        recorder=_collect(records),
+        transport_retry={ModelRole.GENERATOR: 0},
+        call_timeouts=CallTimeoutTable(call_timeouts={"composition/reply": 0.01}),
+    )
+
+    with pytest.raises(LlmTimeout):
+        _run(gateway.complete(_request(), _context()))
+
+    assert [record.outcome for record in records] == [CallOutcome.TIMEOUT]
+    assert records[0].prompt_id == "composition/reply"
+
+
+def test_a_capped_timeout_still_follows_the_transport_retry_policy() -> None:
+    """상한으로 끘은 것도 전송 재시도 정책을 그대로 따른다.
+
+    🔴 재시도는 role 축이고 상한은 prompt_id 축이다 — **두 축이 섞이지 않음을**
+    여기서 센다. 재시도 1회 ⇒ 총 2회 시도이므로 provider 가 두 번 불려야 한다.
+    """
+
+    provider = _SlowProvider(delay_s=5.0)
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        transport_retry={ModelRole.GENERATOR: 1},
+        call_timeouts=CallTimeoutTable(call_timeouts={"composition/reply": 0.01}),
+    )
+
+    with pytest.raises(LlmTimeout):
+        _run(gateway.complete(_request(), _context()))
+
+    assert provider.started == 2
+
+
+def test_a_call_that_finishes_inside_the_cap_is_untouched() -> None:
+    """정상 — 상한 안에서 끝나면 아무것도 안 바뀐다."""
+
+    provider = _SlowProvider(delay_s=0.0)
+    gateway = LlmGateway(
+        {ModelRole.GENERATOR: provider},
+        call_timeouts=CallTimeoutTable(call_timeouts={"composition/reply": 5.0}),
+    )
+
+    result = _run(gateway.complete(_request(), _context()))
+
+    assert result.outcome is CallOutcome.OK
+    assert (provider.started, provider.finished) == (1, 1)
