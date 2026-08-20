@@ -11,12 +11,13 @@
 | `v00_realistic.json` | 실요청 모양 · passage_ref 가 실려도 해시에 안 들어간다 | ✅ |
 | `v01_null_vs_absent.json` | 안 보낸 optional 필드가 null 키로 남는다 (§2-3) | ✅ |
 | `v02_time_utc.json` | 한 payload 안에서 UTC 표기가 +00:00 과 Z 로 갈린다 (§2-1) | ✅ |
+| `v03_time_fraction.json` | 소수 초 — 후행 0 이 보존된다 (§2-1 ㉡) | ✅ |
+| `v04_nonascii.json` | 한글이 \uXXXX 가 아니라 원문 UTF-8 (§2 ②) | ✅ |
+| `v05_empty_containers.json` | detection_evidence 만 키 자체가 없다 (§2-4) | ✅ |
 | `v06_array_order.json` | 배열 입력 순서가 달라도 해시가 같다 (§1-2) | ✅ |
-| `v03_time_fraction.json` | 소수 초 — 후행 0 보존 (§2-1 ㉡) | 다음 회차 |
-| `v04_nonascii.json` | 한글이 \uXXXX 가 아니라 원문 UTF-8 (§2 ②) | 다음 회차 |
-| `v05_empty_containers.json` | detection_evidence 만 키 자체가 없다 (§2-4) | 다음 회차 |
-| `v07_escape.json` | `/` 는 이스케이프 안 함 · 제어문자 소문자 hex (§2-5) | 다음 회차 |
-| `v08_integers.json` | 정수에 후행 .0 이 없다 (§2-2) | 다음 회차 |
+| `v07_escape.json` | `/` 를 이스케이프하지 않는다 (§2-5) — 제어문자·서로게이트는 안 다룬다 | ✅ |
+| `v08_integers.json` | 정수에 후행 .0 이 없다 (§2-2) | ✅ |
+
 
 ## 🔴 해시는 여기 없다
 

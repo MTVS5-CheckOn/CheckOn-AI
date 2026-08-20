@@ -270,21 +270,160 @@ _V06: Final[dict[str, Any]] = {
 #: 벡터 목록 — `(파일명 stem, 찌르는 규칙 한 줄, 바디)`.
 #: 🔴 **미착수분은 여기 없고 README 표에만 「다음 회차」로 적는다** —
 #:   빠뜨린 것과 아직 안 한 것이 갈려야 한다.
+
+
+# ───────────── v03 · 소수 초 — 후행 0 이 보존된다 (§2-1 ㉡) ─────────────
+
+#: 🔴 **두 규칙이 같은 문자열에 얽혀 있다** [실측]:
+#:     경로 A `.isoformat()`              → `"…T00:00:00.100000+00:00"`
+#:     경로 B `pydantic model_dump(json)` → `"…T00:00:00.100000Z"`
+#: ⚠ **이 벡터의 검사는 소수 자릿수만 단언한다** — UTC 표기는 v02 가 이미 잰다.
+#: 표기까지 여기서 단언하면 같은 것을 두 번 재고, 표기가 정해질 때 둘 다 고쳐야 한다.
+#:
+#: 🔴 **왜 갈리나**: Java `OffsetDateTime.toString()` 은 **후행 0 을 트림한다** —
+#: `.100000` 이 `.1` 이 되면 바이트가 다르다(규칙 문서 §2-1 ㉡).
+_V03: Final[dict[str, Any]] = {
+    "snapshot_meta": _meta(),
+    "students": [_student("st_1", status="returned")],
+    "learning_events": [],
+    "alert_context": [
+        {
+            "student_ref": "st_1",
+            "signal_type": "acc_drop",
+            "status": "resolved",
+            "resolved_at": "2026-08-05T00:00:00.100000+00:00",  # 경로 B
+            "followed_up": True,
+        }
+    ],
+    "detection_evidence": [
+        {
+            "kind": "enrollment_transition",
+            "record_id": "ssh_1",
+            "student_ref": "st_1",
+            "source_table": "student_status_history",
+            "occurred_at": "2026-08-10T00:00:00.100000+00:00",  # 경로 A
+            "from_status": "paused",
+            "to_status": "returned",
+        }
+    ],
+}
+
+
+# ───────────── v04 · 한글이 원문 UTF-8 로 나간다 (§2 ②) ─────────────
+
+#: `ensure_ascii=False` 라 `\\uXXXX` 이스케이프를 쓰지 않는다. Java 가 기본값으로
+#: 비ASCII 를 이스케이프하면 여기서 바이트가 갈린다.
+_V04: Final[dict[str, Any]] = {
+    "snapshot_meta": _meta(),
+    "students": [_student("st_1")],
+    "learning_events": [
+        {
+            "record_id": "le_1",
+            "student_ref": "st_1",
+            "occurred_at": "2026-08-10T00:00:00+00:00",
+            "type": "submit",
+            "assignment_title_text": "8월 2주차 비문학 독서 과제",
+            "source": "trackB",
+        }
+    ],
+    "alert_context": [],
+}
+
+
+# ─────── v05 · detection_evidence 만 키 자체가 없다 (§2-4) ───────
+
+#: 🔴 **「보내지 않은」 판 한 벌이다.** `canonical.py:91` 이 `if request.detection_evidence:`
+#: 라 **빈 배열도 생략과 같은 결과**를 내고, 그 동등성은 기존 검사
+#: (`test_an_explicit_empty_array_hashes_like_an_omitted_field`)가 이미 잰다.
+#: ⚠ 두 벌 만들면 그 검사와 겹친다.
+#:
+#: ⚠ 나머지 배열(`learning_events`·`alert_context`)은 **`[]` 로 명시**한다 —
+#: 그것들은 키가 남는다는 것이 이 벡터의 대비다.
+_V05: Final[dict[str, Any]] = {
+    "snapshot_meta": _meta(),
+    "students": [_student("st_1")],
+    "learning_events": [],
+    "alert_context": [],
+}
+
+
+# ───────────── v07 · `/` 는 이스케이프하지 않는다 (§2-5) ─────────────
+
+#: 🔴 **`/` 하나만 잰다.** 규칙 문서 §2-5 는 `/`·제어문자·서로게이트 셋을 드는데:
+#:   `/`        ✅ `json.dumps` 가 이스케이프 안 함 [실측]
+#:   제어문자    🔴 **넣지 않는다** — 실요청에 올 수 없는 값을 계약처럼 만드는 것이다
+#:   서로게이트  🔴 §39 에서 **「만들 자리가 없다」**로 판정됐다(자유 텍스트 필드 부재)
+#: ⚠ README 설명도 「`/` 이스케이프」로 **좁혀** 적는다 — 「이스케이프 전반」이라 적으면
+#: 다음 사람이 *"제어문자도 덮였다"* 로 읽는다(로그 149).
+_V07: Final[dict[str, Any]] = {
+    "snapshot_meta": _meta(),
+    "students": [_student("st_1")],
+    "learning_events": [
+        {
+            "record_id": "le_1",
+            "student_ref": "st_1",
+            "occurred_at": "2026-08-10T00:00:00+00:00",
+            "type": "submit",
+            "assignment_title_text": "8/2주차 독서 과제",
+            "source": "trackB",
+        }
+    ],
+    "alert_context": [],
+}
+
+
+# ───────────── v08 · 정수에 후행 `.0` 이 없다 (§2-2) ─────────────
+
+#: 정수 필드를 한 벡터에 모아 싣는다 — Java 가 `double` 로 읽어 `10.0` 을 내면 갈린다.
+_V08: Final[dict[str, Any]] = {
+    "snapshot_meta": _meta(),
+    "students": [_student("st_1", enrolled_weeks=10)],
+    "learning_events": [
+        {
+            "record_id": "le_1",
+            "student_ref": "st_1",
+            "occurred_at": "2026-08-10T00:00:00+00:00",
+            "type": "solve",
+            "correct": True,
+            "duration_sec": 1800,
+            "passage_word_count": 950,
+            "source": "trackB",
+        }
+    ],
+    "alert_context": [],
+    "detection_evidence": [
+        {
+            "kind": "weekly_activity",
+            "record_id": "swa_1",
+            "student_ref": "st_1",
+            "source_table": "student_week_activity",
+            "week_start": _WEEK,
+            "activity_count": 21,
+        }
+    ],
+}
+
+
+
 VECTORS: Final[tuple[tuple[str, str, dict[str, Any]], ...]] = (
     ("v00_realistic", "실요청 모양 · passage_ref 가 실려도 해시에 안 들어간다", _V00),
     ("v01_null_vs_absent", "안 보낸 optional 필드가 null 키로 남는다 (§2-3)", _V01),
     ("v02_time_utc", "한 payload 안에서 UTC 표기가 +00:00 과 Z 로 갈린다 (§2-1)", _V02),
+    ("v03_time_fraction", "소수 초 — 후행 0 이 보존된다 (§2-1 ㉡)", _V03),
+    ("v04_nonascii", "한글이 \\uXXXX 가 아니라 원문 UTF-8 (§2 ②)", _V04),
+    ("v05_empty_containers", "detection_evidence 만 키 자체가 없다 (§2-4)", _V05),
     ("v06_array_order", "배열 입력 순서가 달라도 해시가 같다 (§1-2)", _V06),
+    ("v07_escape", "`/` 를 이스케이프하지 않는다 (§2-5) — 제어문자·서로게이트는 안 다룬다", _V07),
+    ("v08_integers", "정수에 후행 .0 이 없다 (§2-2)", _V08),
 )
 
 #: README 표에 함께 적을 **아직 안 만든** 벡터. 🔴 목록에서 지우지 말고 여기 남긴다.
-PENDING: Final[tuple[tuple[str, str], ...]] = (
-    ("v03_time_fraction", "소수 초 — 후행 0 보존 (§2-1 ㉡)"),
-    ("v04_nonascii", "한글이 \\uXXXX 가 아니라 원문 UTF-8 (§2 ②)"),
-    ("v05_empty_containers", "detection_evidence 만 키 자체가 없다 (§2-4)"),
-    ("v07_escape", "`/` 는 이스케이프 안 함 · 제어문자 소문자 hex (§2-5)"),
-    ("v08_integers", "정수에 후행 .0 이 없다 (§2-2)"),
-)
+#:
+#: 🔴 **8/21 로 비었다** — 아홉 종을 다 만들었다. ⚠ 남길 것이 생기면(예: 서로게이트)
+#: **사유와 함께** 여기 남기고 `test_pending_vectors_are_not_silently_dropped` 도 되살린다.
+#: ⚠ 서로게이트는 **입력 계약에 자유 텍스트 필드가 없어 만들 자리가 없다**(§39 판정) —
+#: 「안 만든 것」이 아니라 「만들 수 없는 것」이라 PENDING 이 아니다.
+PENDING: Final[tuple[tuple[str, str], ...]] = ()
 
 
 def _dump(path: Path, obj: dict[str, Any]) -> None:
