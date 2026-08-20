@@ -20,10 +20,12 @@ from ai.diagnosis.diagnoser import (
     DiagnosisConfig,
     DiagnosisGraphReferenceError,
     DiagnosisInputConflictError,
+    DiagnosisMisconceptionTagError,
     DiagnosisVersionMismatchError,
     diagnose,
 )
 from ai.diagnosis.skill_graph import load_skill_graph
+from ai.problem_generation.infrastructure.config import load_misconception_tags
 
 GRAPH_YAML = """
 meta:
@@ -72,6 +74,10 @@ edges:
 
 GRAPH = load_skill_graph(GRAPH_YAML, expected_taxonomy_version="v1")
 NOW = datetime(2026, 7, 15, tzinfo=UTC)
+_MISCONCEPTION_VOCABULARY = {
+    area: frozenset(tag.id for tag in tags)
+    for area, tags in load_misconception_tags().areas.items()
+}
 
 
 class _SeedExpected(BaseModel):
@@ -159,6 +165,7 @@ def _diagnose(
         graph_version="0.1.0",
         taxonomy_version="v1",
         config_version="b-defaults-v1",
+        misconception_vocabulary=_MISCONCEPTION_VOCABULARY,
     )
 
 
@@ -319,6 +326,83 @@ def test_chosen_no_does_not_change_v1_verdicts() -> None:
 
     assert baseline.weakness_map is not None
     assert tagged.weakness_map == baseline.weakness_map
+
+
+def test_misconception_report_counts_by_area_and_node_without_changing_map() -> None:
+    events = _events(
+        "report",
+        area_tag=AreaTag.LANGUAGE,
+        type_tag=TypeTag.CONCEPT,
+        total=12,
+        correct=4,
+        skill_node_id="lang.root",
+    )
+    enriched = tuple(
+        event
+        if event.correct
+        else event.model_copy(
+            update=(
+                {
+                    "chosen_no": 2,
+                    "misconception_tag": "application_target_substitution",
+                }
+                if index in {4, 5}
+                else {
+                    "chosen_no": 3,
+                    "misconception_tag": "adjacent_change_type_confusion",
+                }
+                if index == 6
+                else {}
+                if index == 7
+                else {"chosen_no": 4}
+            )
+        )
+        for index, event in enumerate(events)
+    )
+
+    baseline = _diagnose(*events)
+    result = _diagnose(*enriched)
+
+    assert result.weakness_map == baseline.weakness_map
+    assert result.misconceptions.by_area == {
+        "language": {
+            "adjacent_change_type_confusion": 1,
+            "application_target_substitution": 2,
+        }
+    }
+    assert result.misconceptions.by_node == {
+        "lang.root": {
+            "adjacent_change_type_confusion": 1,
+            "application_target_substitution": 2,
+        }
+    }
+    assert result.misconceptions.excluded_missing_chosen_no == 1
+    assert result.misconceptions.excluded_missing_misconception_tag == 4
+
+
+def test_unconfirmed_event_is_excluded_from_misconception_report() -> None:
+    confirmed = _events(
+        "confirmed",
+        area_tag=AreaTag.LANGUAGE,
+        type_tag=TypeTag.CONCEPT,
+        total=10,
+        correct=5,
+    )
+    unconfirmed = DiagnosisEvent(
+        event_id="unconfirmed-misconception",
+        area_tag=AreaTag.LANGUAGE,
+        type_tag=TypeTag.CONCEPT,
+        correct=False,
+        chosen_no=2,
+        misconception_tag="application_target_substitution",
+        occurred_at=NOW,
+        tag_confirmed=False,
+    )
+
+    result = _diagnose(*confirmed, unconfirmed)
+
+    assert result.misconceptions.by_area == {}
+    assert result.misconceptions.by_node == {}
 
 
 def test_non_weak_cell_has_no_severity() -> None:
@@ -640,6 +724,22 @@ def test_unknown_skill_node_fails_closed() -> None:
         _diagnose(*events)
 
 
+def test_misconception_tag_outside_area_vocabulary_fails_closed() -> None:
+    event = DiagnosisEvent(
+        event_id="invalid-misconception",
+        area_tag=AreaTag.LANGUAGE,
+        type_tag=TypeTag.CONCEPT,
+        correct=False,
+        chosen_no=2,
+        misconception_tag="scope_shift",
+        occurred_at=NOW,
+        tag_confirmed=True,
+    )
+
+    with pytest.raises(DiagnosisMisconceptionTagError, match="scope_shift"):
+        _diagnose(event)
+
+
 def test_execution_version_mismatch_is_rejected() -> None:
     with pytest.raises(DiagnosisVersionMismatchError, match="graph_version 불일치"):
         diagnose(
@@ -649,6 +749,7 @@ def test_execution_version_mismatch_is_rejected() -> None:
             graph_version="0.2.0",
             taxonomy_version="v1",
             config_version="b-defaults-v1",
+            misconception_vocabulary=_MISCONCEPTION_VOCABULARY,
         )
 
 
@@ -667,6 +768,7 @@ def test_json_golden_seed_cases() -> None:
                     graph_version="0.1.0",
                     taxonomy_version="v1",
                     config_version="b-defaults-v1",
+                    misconception_vocabulary=_MISCONCEPTION_VOCABULARY,
                 )
             continue
 
@@ -677,6 +779,7 @@ def test_json_golden_seed_cases() -> None:
             graph_version="0.1.0",
             taxonomy_version="v1",
             config_version="b-defaults-v1",
+            misconception_vocabulary=_MISCONCEPTION_VOCABULARY,
         )
         assert result.status is case.expected.status, case.case_id
         if result.weakness_map is None:

@@ -185,6 +185,30 @@ def test_weakness_map_labels_the_config_version_it_used() -> None:
     assert versions["taxonomy"] == document.expected_taxonomy_version
 
 
+def test_misconception_report_is_separate_from_weakness_map() -> None:
+    _prepare()
+    events = _mixed_events()
+    wrong_events = [event for event in events if not event["correct"]]
+    for event in wrong_events[:2]:
+        event.update(
+            chosen_no=2,
+            misconception_tag="application_target_substitution",
+        )
+    wrong_events[2]["chosen_no"] = 3
+
+    with TestClient(create_app()) as client:
+        response = client.post("/v1/diagnosis", headers=_HEADERS, json=_body(events))
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert "misconceptions" not in data["weakness_map"]
+    assert data["misconceptions"]["by_area"] == {
+        "language": {"application_target_substitution": 2}
+    }
+    assert data["misconceptions"]["excluded_missing_chosen_no"] == 17
+    assert data["misconceptions"]["excluded_missing_misconception_tag"] == 1
+
+
 def test_insufficient_data_is_a_200_status_not_an_error() -> None:
     """데이터 부족은 오류가 아니다 — 게이트 거부와 같은 처리(불변식 4)."""
     _prepare()

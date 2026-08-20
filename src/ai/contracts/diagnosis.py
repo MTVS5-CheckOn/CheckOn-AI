@@ -10,7 +10,7 @@ WeaknessMap의 구조만 정의하고, 판정 임계값·전파 계산은 diagno
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -50,6 +50,13 @@ class DiagnosisEvent(BaseModel):
     정오 판정은 기존 `correct` 값을 그대로 사용한다.
     """
 
+    misconception_tag: str | None = Field(
+        default=None,
+        min_length=1,
+        pattern=r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+    )
+    """선택한 오답 선지의 P3 검증 완료 라벨. BE가 문항 스냅숏에서 복사한다."""
+
     passage_ref: str | None = Field(default=None, min_length=1)
     """지문/자료 묶음 참조 — 같은 지문·도표·〈보기〉를 공유하는 문항이 같은 값을 갖고
     재출제 시에도 유지된다(`05_request_json.md` [A 확정 통보 2026-08-03 · 승우 합의]).
@@ -66,6 +73,14 @@ class DiagnosisEvent(BaseModel):
     occurred_at: datetime
     tag_confirmed: bool
     """False인 AI 제안 태그는 수신할 수 있지만 집계에는 반영하지 않는다."""
+
+    @model_validator(mode="after")
+    def validate_misconception_selection(self) -> Self:
+        if self.misconception_tag is not None and self.chosen_no is None:
+            raise ValueError("misconception_tag에는 chosen_no가 필요하다")
+        if self.correct and self.misconception_tag is not None:
+            raise ValueError("정답 이벤트에는 misconception_tag를 기록할 수 없다")
+        return self
 
 
 class DiagnosisInput(BaseModel):
@@ -176,6 +191,21 @@ class WeaknessMap(BaseModel):
         return self
 
 
+class MisconceptionReport(BaseModel):
+    """선택 오답의 오개념 빈도 — v1 약점 판정과 분리된 리포팅 전용 산출."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    by_area: dict[str, dict[str, Annotated[int, Field(ge=1)]]] = Field(
+        default_factory=dict
+    )
+    by_node: dict[str, dict[str, Annotated[int, Field(ge=1)]]] = Field(
+        default_factory=dict
+    )
+    excluded_missing_chosen_no: int = Field(default=0, ge=0)
+    excluded_missing_misconception_tag: int = Field(default=0, ge=0)
+
+
 class DiagnosisStatus(StrEnum):
     """진단 응답 상태."""
 
@@ -190,6 +220,7 @@ class DiagnosisResult(BaseModel):
 
     status: DiagnosisStatus
     weakness_map: WeaknessMap | None = None
+    misconceptions: MisconceptionReport = Field(default_factory=MisconceptionReport)
     status_reason: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")

@@ -64,7 +64,10 @@ from ai.problem_generation.bootstrap import (
     build_literature_selector,
     build_problem_workflow,
 )
-from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.config import (
+    load_misconception_tags,
+    load_verify_config,
+)
 from ai.problem_generation.infrastructure.graph_context import (
     AreaDelegatingGraphContextService,
 )
@@ -482,6 +485,10 @@ def _actual_diagnosis(
         graph_version=_GRAPH_VERSION,
         taxonomy_version=_TAXONOMY_VERSION,
         config_version=verify_config.version,
+        misconception_vocabulary={
+            area: frozenset(tag.id for tag in tags)
+            for area, tags in load_misconception_tags().areas.items()
+        },
     )
     assert result.weakness_map is not None
     assert result.weakness_map.nodes[skill_node_id].verdict is NodeVerdict.WEAK_CONFIRMED

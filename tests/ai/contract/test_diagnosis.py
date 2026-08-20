@@ -122,6 +122,47 @@ def test_event_rejects_chosen_no_outside_mcq_range(chosen_no: int) -> None:
         DiagnosisEvent.model_validate(data)
 
 
+def test_event_accepts_chosen_wrong_choice_misconception_tag() -> None:
+    data = _event().model_dump(mode="json")
+    data.update(
+        chosen_no=2,
+        misconception_tag="application_target_substitution",
+    )
+
+    event = DiagnosisEvent.model_validate(data)
+
+    assert event.chosen_no == 2
+    assert event.misconception_tag == "application_target_substitution"
+
+
+def test_event_rejects_misconception_tag_without_chosen_no() -> None:
+    data = _event().model_dump(mode="json")
+    data["misconception_tag"] = "application_target_substitution"
+
+    with pytest.raises(ValueError, match="chosen_no"):
+        DiagnosisEvent.model_validate(data)
+
+
+def test_event_rejects_misconception_tag_on_correct_answer() -> None:
+    data = _event().model_dump(mode="json")
+    data.update(
+        correct=True,
+        chosen_no=1,
+        misconception_tag="application_target_substitution",
+    )
+
+    with pytest.raises(ValueError, match="정답 이벤트"):
+        DiagnosisEvent.model_validate(data)
+
+
+def test_event_rejects_non_snake_case_misconception_tag() -> None:
+    data = _event().model_dump(mode="json")
+    data.update(chosen_no=2, misconception_tag="범위 이동")
+
+    with pytest.raises(ValueError, match="misconception_tag"):
+        DiagnosisEvent.model_validate(data)
+
+
 # ── passage_ref — 05 [A 확정 통보 2026-08-03] 수신 계약 ──────────────
 
 
