@@ -1,0 +1,79 @@
+{
+  "snapshot_meta": {
+    "week_start": "2026-08-10",
+    "snapshot_hash": "sha256:x",
+    "term_context": "normal",
+    "classes": [
+      {
+        "class_ref": "cl_a1"
+      }
+    ]
+  },
+  "students": [
+    {
+      "student_ref": "st_2",
+      "class_ref": "cl_a1",
+      "enrolled_weeks": 10,
+      "status": "enrolled",
+      "consent": "granted"
+    },
+    {
+      "student_ref": "st_1",
+      "class_ref": "cl_a1",
+      "enrolled_weeks": 10,
+      "status": "enrolled",
+      "consent": "granted"
+    }
+  ],
+  "learning_events": [
+    {
+      "record_id": "le_2",
+      "student_ref": "st_2",
+      "type": "solve",
+      "occurred_at": "2026-08-12T10:00:00+09:00",
+      "correct": false,
+      "source": "trackB"
+    },
+    {
+      "record_id": "le_1",
+      "student_ref": "st_1",
+      "type": "solve",
+      "occurred_at": "2026-08-11T10:00:00+09:00",
+      "correct": true,
+      "source": "trackB"
+    }
+  ],
+  "alert_context": [
+    {
+      "student_ref": "st_2",
+      "signal_type": "volume_gap",
+      "status": "open",
+      "followed_up": false
+    },
+    {
+      "student_ref": "st_1",
+      "signal_type": "acc_drop",
+      "status": "open",
+      "followed_up": false
+    }
+  ],
+  "detection_evidence": [
+    {
+      "kind": "weekly_activity",
+      "record_id": "swa_1",
+      "student_ref": "st_2",
+      "source_table": "student_week_activity",
+      "week_start": "2026-08-10",
+      "activity_count": 4
+    },
+    {
+      "kind": "assignment_window",
+      "record_id": "aws_1",
+      "student_ref": "st_1",
+      "source_table": "assignment_week_summary",
+      "week_start": "2026-08-10",
+      "expected_count": 2,
+      "submitted_count": 0
+    }
+  ]
+}

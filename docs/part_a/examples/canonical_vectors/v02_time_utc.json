@@ -1,0 +1,42 @@
+{
+  "snapshot_meta": {
+    "week_start": "2026-08-10",
+    "snapshot_hash": "sha256:x",
+    "term_context": "normal",
+    "classes": [
+      {
+        "class_ref": "cl_a1"
+      }
+    ]
+  },
+  "students": [
+    {
+      "student_ref": "st_1",
+      "class_ref": "cl_a1",
+      "enrolled_weeks": 10,
+      "status": "returned",
+      "consent": "granted"
+    }
+  ],
+  "learning_events": [],
+  "alert_context": [
+    {
+      "student_ref": "st_1",
+      "signal_type": "acc_drop",
+      "status": "resolved",
+      "resolved_at": "2026-08-05T00:00:00+00:00",
+      "followed_up": true
+    }
+  ],
+  "detection_evidence": [
+    {
+      "kind": "enrollment_transition",
+      "record_id": "ssh_1",
+      "student_ref": "st_1",
+      "source_table": "student_status_history",
+      "occurred_at": "2026-08-10T00:00:00+00:00",
+      "from_status": "paused",
+      "to_status": "returned"
+    }
+  ]
+}
