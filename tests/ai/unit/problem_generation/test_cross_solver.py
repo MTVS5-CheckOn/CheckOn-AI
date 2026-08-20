@@ -129,7 +129,11 @@ def test_cross_solver_blocks_generated_item_with_person_name(
         type_tag=TypeTag.CONCEPT,
         item_format=ItemFormat.MCQ,
         skill_node_id="grammar.node-1",
-        stem="김철수가 학교에 갔다. 밑줄 친 표현으로 적절한 것을 고르시오.",
+        # 🔴 한 문장에 인명 후보 **둘**(`김철수가`·`박영희를`) — 밀도 규칙상 그래야
+        #   전송이 막힌다(`policies/masking_redaction.md` §2 [A 확정 7/23] · 후보 1개는
+        #   토큰만 바꾸고 전송은 막지 않는다). 검사의 의도(「인명이 든 문항은 교차 풀이
+        #   전에 fail-closed」)는 그대로다.
+        stem="김철수가 박영희를 불렀다. 밑줄 친 표현으로 적절한 것을 고르시오.",
         choices=tuple(
             Choice(
                 no=no,

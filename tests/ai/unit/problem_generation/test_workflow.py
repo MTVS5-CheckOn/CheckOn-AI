@@ -249,7 +249,7 @@ class _WorkflowHarness:
                 engine_version="engine-v1",
                 schema_version="schema-v1",
                 contract_version="contract-v1",
-                prompt_version="v4",
+                prompt_version="v5",
                 graph_version=_GRAPH_VERSION,
                 taxonomy_version=_TAXONOMY_VERSION,
                 verify_config_version="verify-config.v1",
@@ -327,7 +327,11 @@ _GENERATION_LLM_ERROR_ROUTES: dict[type[LlmError], _LlmErrorRoute] = {
     LlmError: (3, "생성 시도 소진"),
     LlmUnavailable: (3, "생성 시도 소진"),
     LlmTimeout: (3, "생성 시도 소진"),
-    RedactionBlocked: (1, "redaction 불확실"),
+    # 🔴 **첫 판 확정에서 예산 소비로 바뀌었다.** 생성 프롬프트가 밀도 규칙에 걸리는 것은
+    #   「이 시도의 문면 문제」이지 확정 실패가 아니다 — 다시 뽑으면 대개 풀린다. 종전에는
+    #   `(1, …)`이라 예산을 한 번도 안 쓰고 슬롯을 버렸고, 그게 한국어 산문 출제가 통째로
+    #   막히던 세 지점 중 하나였다. ⚠ 막힌 프롬프트는 여전히 한 번도 전송되지 않는다.
+    RedactionBlocked: (3, "redaction 불확실"),
     ParseFailed: (3, "생성 시도 소진"),
     FieldMissing: (3, "생성 시도 소진"),
 }
@@ -336,7 +340,9 @@ _CROSS_SOLVE_LLM_ERROR_ROUTES: dict[type[LlmError], _LlmErrorRoute] = {
     LlmError: (1, "교차 풀이 서비스 불가"),
     LlmUnavailable: (1, "교차 풀이 서비스 불가"),
     LlmTimeout: (1, "교차 풀이 서비스 불가"),
-    RedactionBlocked: (1, "교차 풀이 redaction 불확실"),
+    # 🔴 생성 쪽과 같은 규율 — 교차 풀이 프롬프트에는 **방금 만든 문항 본문**이 실리므로
+    #   밀도 규칙에 걸리면 문항을 다시 뽑아야 풀린다. `ParseFailed` 와 같은 자리다.
+    RedactionBlocked: (3, "교차 풀이 redaction 불확실"),
     ParseFailed: (3, "교차 풀이 파싱 시도 소진"),
     FieldMissing: (3, "교차 풀이 파싱 시도 소진"),
 }
@@ -930,7 +936,13 @@ def test_unapproved_dict_entry_evidence_stops_before_blind_cross_solve() -> None
     assert result.status is ProblemSetStatus.FAILED
     assert item_result.status is ProblemItemStatus.DROPPED
     assert item_result.failure_reason is ProblemFailureReason.SOURCE_UNVERIFIED
-    assert item_result.failure_detail == "규칙 검증 실패로 생성 시도 소진"
+    # 🔴 어느 규칙이 떨어졌는지까지 실린다 — 「규칙 검증 실패」만으로는
+    # `R-1:기준_자료_없음`(자료가 없다)과 `R-1:근거_참조_불일치`(모델이 승인 밖
+    # ref 를 인용했다)를 응답만 보고 가를 수 없었다 — 원인이 정반대인데 같은 문장이
+    # 나왔다. 검사명은 규칙 식별자라 개인정보가 아니다.
+    assert item_result.failure_detail == (
+        "규칙 검증 실패로 생성 시도 소진: R-1:근거_참조_불일치"
+    )
     assert len(harness.generator_provider.requests) == 3
 
 

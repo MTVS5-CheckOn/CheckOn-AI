@@ -121,7 +121,11 @@ def _pool(*works: LiteratureWork) -> LiteraturePool:
 
 
 #: 등장인물 이름이 든 문단은 마스킹이 `확인필요`로 fail-closed 한다(불변식 3).
-_MASKED_PARAGRAPH = "이차돈은 반달을 보았다. 달빛이 마당에 가득 내렸다."
+#: 🔴 한 문장에 인명 후보가 **둘**이다 — 밀도 규칙상 그래야 `uncertain`이 선다
+#: (`policies/masking_redaction.md` §2 [A 확정 7/23] · 후보 1개는 토큰만 바꾸고
+#: 전송은 막지 않는다). 종전 픽스처는 후보 1개짜리였고, 구현이 스펙보다 넓게 막던
+#: 시절에만 통과했다 — 검사의 의도(「전송 불가한 구간」)는 그대로 두고 후보 수만 맞췄다.
+_MASKED_PARAGRAPH = "이차돈은 김서방을 보았다. 달빛이 마당에 가득 내렸다."
 _CLEAN_PARAGRAPH = "달빛이 마당에 가득 내렸고 바람이 마루를 지나갔다."
 
 
@@ -144,7 +148,9 @@ def test_selector_skips_a_span_that_redaction_cannot_transmit() -> None:
 def test_selector_drops_a_work_whose_title_redaction_cannot_transmit() -> None:
     blocked = _work(
         slug="blocked_work",
-        title="이차돈의 사",
+        # 후보 둘 — `김서방`+`이`, `이차돈`+`을`. 🔴 **조사가 붙어야 후보로 센다**
+        # (패턴이 `[성씨][가-힣]{2}` + 조사다) — 조사 없이 끝나면 1개도 안 걸린다.
+        title="김서방이 이차돈을 만나다",
         author="아무개",
         content=f"{_CLEAN_PARAGRAPH} 달 달 달",
     )
