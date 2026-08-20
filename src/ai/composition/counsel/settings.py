@@ -17,6 +17,21 @@ from ai.runtime.env_files import ENV_FILES
 #: **두 번 다** 안 따라왔다. ⇒ 한 곳에서 만들고, 문서와의 일치는 검사가 지킨다
 #: (`tests/ai/contract/test_timeout_budget_relations.py`).
 
+#: 🔴 **콜당 최악 = `openai_timeout_s × (transport_retry + 1)`** — 관계망의 **다섯 번째 입력**.
+#:
+#: `llm/gateway.py` 가 `LlmTimeout`·`LlmUnavailable` 을 `stop_after_attempt(retry + 1)` 로
+#: 재시도한다 ⇒ **재시도가 1이면 콜당이 2배**가 되고 K·lease·04 예산·BE 권고·브리핑 예산이
+#: **한꺼번에 절반**이 된다. ⚠ №19 가 이 곱을 발견했지만 **식에 넣지는 않았다**(green 이었다 —
+#: 세 축이 전부 0 이라서다). 식에 곱이 없으면 **곱하는 값이 바뀌어도 green** 이다(㉪ 의 교훈).
+#:
+#: 🔴 **그리고 기본값이 함정이다** — `_DEFAULT_TRANSPORT_RETRY = 1` 이라 **`transport_retry` 에
+#: 안 적힌 role 은 시도 2회**다. 실측(8/20): A 소유 세 축(counsel·briefing·classify)은 등록
+#: provider role 이 전부 명시돼 있어 **미등록 0건**이고, 그래서 지금 계산은 **틀리지 않았다.**
+#: ⚠ 다만 **새 role 을 붙이면서 `transport_retry` 를 안 적으면 조용히 2배**가 된다 ⇒
+#: `tests/ai/contract/test_timeout_budget_relations.py` 가 그 자리를 단언한다.
+COUNSEL_TRANSPORT_ATTEMPTS: int = 1
+"""counsel role 의 **시도 수**(= `transport_retry + 1`). 조립부 값과 갈리면 검사가 red 다."""
+
 #: 콜당 LLM 상한(초).
 #: 🔴 **정본은 배포 env `OPENAI_TIMEOUT_S` 이고 여기 값은 그 사본이다** —
 #: `llm/providers/openai_compat.py` 는 **염준영 소유**라(02 §5) 여기서 못 읽어 온다
@@ -72,7 +87,8 @@ class CounselSettings(BaseSettings):
 
         잡당 최악 LLM 콜 = plan 1 + write (regen_max 3 + 1) = **5콜**
         콜당 상한        = **90s** (`OPENAI_TIMEOUT_S` — 아래 실측 근거)
-        ⇒ 잡당 최악      = **450s**
+        전송 시도        = **1회** (`transport_retry = 0` — 곱이 1이다)
+        ⇒ 잡당 최악      = 5 × 90 × 1 = **450s**
         K × 450s ≤ **480s**(04 §2.4 `/drafts` 응답 예산)
         ⇒ **K = ⌊480 / 450⌋ = 1**
 

@@ -27,6 +27,7 @@ import pytest
 from ai.api.routers.counsel import _REGEN_MAX
 from ai.composition.counsel.assembly import DEFAULT_REGEN_MAX
 from ai.composition.counsel.settings import (
+    COUNSEL_TRANSPORT_ATTEMPTS,
     LLM_CALL_TIMEOUT_S,
     RESPONSE_BUDGET_S,
     WORST_CALLS_PER_DRAFT,
@@ -38,6 +39,7 @@ from ai.composition.provider import (
     BRIEFING_CALL_TIMEOUT_S,
     DETECT_HTTP_TIMEOUT_S,
 )
+from ai.llm.gateway import LlmGateway
 
 _CONTRACT: Final = pathlib.Path("docs/04_api_contract.md")
 
@@ -211,3 +213,70 @@ def test_the_detect_contract_numbers_match_the_code(contract_text: str) -> None:
     assert be == DETECT_HTTP_TIMEOUT_S
     stated = _one(r"최악 (\d+) \+ \d+ = \d+s", contract_text, "최악 좌변")
     assert stated == int(BRIEFING_BUDGET_S)
+
+
+# ━━ 🔴 관계망의 다섯 번째 입력 — 전송 재시도 (99 #125) ━━
+
+
+def _gateways() -> list[tuple[str, LlmGateway]]:
+    """A 소유 게이트웨이 전수 — 조립부가 늘면 여기도 늘어야 한다."""
+    from ai.composition.classify.provider import build_classify_gateway
+    from ai.composition.provider import build_brief_gateway
+
+    return [("briefing", build_brief_gateway()), ("classify", build_classify_gateway())]
+
+
+def test_every_registered_role_declares_its_transport_retry() -> None:
+    """🔴 **기본값이 함정이다** — `_DEFAULT_TRANSPORT_RETRY = 1` 이라 `transport_retry` 에
+    **안 적힌 role 은 시도 2회**이고, 그러면 콜당 최악이 **조용히 2배**가 된다.
+
+    실측(8/20): A 소유 축은 미등록 **0건**이라 **지금 계산은 틀리지 않았다.**
+    ⚠ 이 검사는 «지금 맞나» 가 아니라 **«새 role 을 붙이면서 빠뜨렸나»** 를 잡는다.
+    """
+    from ai.llm.gateway import _DEFAULT_TRANSPORT_RETRY
+
+    assert _DEFAULT_TRANSPORT_RETRY != 0, (
+        "기본값이 0 이 됐다면 이 검사의 전제가 바뀐 것이다 — 관계식을 다시 보라"
+    )
+    for name, gateway in _gateways():
+        providers = gateway._providers
+        retry = dict(gateway._transport_retry)
+        missing = [role.value for role in providers if role not in retry]
+        assert not missing, (
+            f"{name}: provider 는 등록됐는데 transport_retry 가 없는 role {missing} — "
+            f"기본값 {_DEFAULT_TRANSPORT_RETRY} 를 타서 콜당 최악이 "
+            f"{_DEFAULT_TRANSPORT_RETRY + 1}배가 된다"
+        )
+
+
+def test_the_counsel_worst_case_multiplies_the_transport_attempts() -> None:
+    """🔴 **식에 곱이 있다** — 없으면 곱하는 값이 바뀌어도 green 이다(㉪ 의 교훈).
+
+    ⚠ №19 가 이 곱을 **발견은 했는데 식에 안 넣었다** — 세 축이 전부 0 이라 green 이었다.
+    """
+    from ai.composition.counsel.assembly import COUNSELOR_TRANSPORT_RETRY
+
+    assert COUNSEL_TRANSPORT_ATTEMPTS == COUNSELOR_TRANSPORT_RETRY + 1, (
+        f"설정의 시도 수({COUNSEL_TRANSPORT_ATTEMPTS})가 조립부"
+        f"({COUNSELOR_TRANSPORT_RETRY} + 1)와 갈렸다"
+    )
+    worst = WORST_CALLS_PER_DRAFT * LLM_CALL_TIMEOUT_S * COUNSEL_TRANSPORT_ATTEMPTS
+    lease = CounselSettings().counsel_lease_seconds
+    assert worst <= lease, (
+        f"재시도를 곱한 잡당 최악 {worst}s 가 lease({lease}s)를 넘는다 — "
+        "실행 중인 잡의 lease 가 만료돼 중복 실행이 난다"
+    )
+    assert worst <= RESPONSE_BUDGET_S, (
+        f"재시도를 곱한 잡당 최악 {worst}s 가 응답 예산({RESPONSE_BUDGET_S}s)을 넘는다"
+    )
+
+
+def test_the_briefing_worst_case_multiplies_the_transport_attempts() -> None:
+    """브리핑 축도 같다 — `45 + 15 × (retry + 1) ≤ 60`."""
+    from ai.composition.provider import _NARRATOR_TRANSPORT_RETRY
+
+    attempts = _NARRATOR_TRANSPORT_RETRY + 1
+    worst = BRIEFING_BUDGET_S + BRIEFING_CALL_TIMEOUT_S * attempts
+    assert worst <= DETECT_HTTP_TIMEOUT_S, (
+        f"재시도를 곱한 브리핑 최악 {worst}s 가 BE 타임아웃({DETECT_HTTP_TIMEOUT_S}s)을 넘는다"
+    )
