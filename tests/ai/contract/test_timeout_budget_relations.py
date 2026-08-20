@@ -280,3 +280,45 @@ def test_the_briefing_worst_case_multiplies_the_transport_attempts() -> None:
     assert worst <= DETECT_HTTP_TIMEOUT_S, (
         f"재시도를 곱한 브리핑 최악 {worst}s 가 BE 타임아웃({DETECT_HTTP_TIMEOUT_S}s)을 넘는다"
     )
+
+
+# ━━ §B — 커넥션 관계 (99 #127) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def test_the_connection_budget_fits_inside_postgres() -> None:
+    """🔴 **앱 워커 × 풀 + 드레인 동시성 ≤ PG `max_connections`**.
+
+    ⚠ №20 ⑤ 의 실측(동시 300 → `TooManyConnectionsError` 35 · `OperationalError` 145)이
+    이 관계가 없어서 났다. **다만 범인은 SQLAlchemy 풀이 아니었다** — `store_backend=pg` 는
+    잡마다 `AsyncPostgresSaver` 커넥션을 **새로** 열고 그건 풀 **밖**이다.
+    ⇒ 이 검사가 덮는 것은 **상한이 있는 두 항**이고, 상한 없는 항(요청당 체크포인터)은
+    99 #127 로 남아 있다. **덮는 범위를 문면에 적어 둔다** — 안 적으면 다음 사람이
+    «관계가 잠겼다» 로 읽는다.
+    """
+    from ai.composition.counsel.settings import CounselSettings
+    from ai.db.settings import DbSettings
+
+    db = DbSettings()
+    counsel = CounselSettings()
+    bounded = db.app_workers * (db.db_pool_size + db.db_max_overflow)
+    bounded += counsel.counsel_drain_concurrency
+    assert bounded <= db.db_max_connections, (
+        f"상한 있는 커넥션 {bounded} 가 PG max_connections({db.db_max_connections})를 넘는다 — "
+        "앱 워커·풀·드레인 동시성 중 하나를 줄여라"
+    )
+
+
+def test_the_drain_concurrency_is_bounded() -> None:
+    """드레인 동시성이 곧 커넥션 수다 — 상한이 없으면 §B 관계식이 성립하지 않는다."""
+    from ai.composition.counsel.settings import CounselSettings
+
+    assert CounselSettings().counsel_drain_concurrency >= 1
+    import inspect
+
+    doc = CounselSettings.model_fields["counsel_drain_concurrency"].description or ""
+    if not doc:
+        #: pydantic 이 docstring 을 description 으로 안 옮기는 배포도 있다 — 소스를 읽는다.
+        doc = inspect.getsource(CounselSettings)
+    assert "커넥션" in doc, (
+        "드레인 동시성 docstring 에 「커넥션 수와 같다」는 관계가 사라졌다"
+    )

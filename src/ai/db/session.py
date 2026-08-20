@@ -21,7 +21,14 @@ from ai.db.settings import get_db_settings
 @lru_cache
 def get_engine() -> AsyncEngine:
     """async 엔진 싱글턴 — 첫 호출 시 생성(접속은 실제 쿼리 때)."""
-    return create_async_engine(get_db_settings().database_url, future=True)
+    settings = get_db_settings()
+    #: 🔴 **명시한다** — 종전에는 기본값에 맡겨져 관계식을 세울 수 없었다(99 #127).
+    return create_async_engine(
+        settings.database_url,
+        future=True,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+    )
 
 
 def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
