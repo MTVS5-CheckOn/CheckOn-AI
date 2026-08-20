@@ -130,8 +130,23 @@ SRC_CHANGED=1
 #    「소스·env 동일」로 건너뛰어 **반영이 안 됐다**(2026-08-20 실측). compose 는 compose 파일·
 #    env_file 최종값·이미지 digest 를 전부 config-hash 에 넣으므로, 그 판단을 그대로 빌린다.
 #    ⚠ `--dry-run` 은 아무것도 바꾸지 않는다.
+# ⚠ 액션 단어를 **정확히** 맞춰라. 종전엔 `Create` 만 봤는데 compose 는 새 서비스에
+#   `Creating`/`Created` 를 쓴다 ⇒ **서비스를 새로 추가해도 「동일」로 건너뛰었다**
+#   (2026-08-20 실측 — counsel-drain 을 넣었는데 안 떴다). 세 번째로 같은 자리를 놓쳤다.
+# ⚠ `docker compose config --hash` 로는 못 판단한다 — 저장된 라벨과 계산식이 달라서
+#   안 바뀐 app·migrate 도 항상 달라 보인다(같은 날 실측).
 PENDING=""
-[ -n "$CONT_H" ] && PENDING=$(docker compose up -d --dry-run 2>&1 | awk '$NF=="Recreate"||$NF=="Create" {print $2}' | sort -u || true)
+if [ -n "$CONT_H" ]; then
+    PENDING=$(docker compose up -d --dry-run 2>&1 \
+        | awk '$1=="Container" && $NF ~ /^(Recreate|Recreated|Creating|Created)$/ {print $2}' \
+        | sort -u || true)
+    # 🔴 두 번째 신호 — **컨테이너가 아예 없는 서비스**. 위 파싱이 또 낡아도 이건 안 놓친다.
+    for svc in $(docker compose config --services); do
+        docker compose ps -aq "$svc" 2>/dev/null | grep -q . || PENDING="${PENDING}
+${svc} (컨테이너 없음)"
+    done
+    PENDING=$(printf '%s\n' "$PENDING" | grep -v '^$' | sort -u || true)
+fi
 
 [ $SRC_CHANGED -eq 1 ] && [ -n "$CONT_H" ] && echo "  소스 차이 있음"
 [ -n "$PENDING" ] && echo "  다시 만들 컨테이너: $(echo "$PENDING" | tr '\n' ' ')"
