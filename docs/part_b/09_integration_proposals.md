@@ -2097,6 +2097,115 @@ grep -c "speech_writing" docs/04_api_contract.md
 grep -n "SUPPORTED_AREAS" -A 9 src/ai/problem_generation/domain/policy.py
 ```
 
+### 2-28. PG lease(300초)가 잡당 최악보다 짧다 — 만료되는 것은 죽은 잡이 아니라 **실행 중인 잡**이다 `[B 실측 · 2026-08-20 · A 합의 대기]`
+
+> 계기: A가 counsel에서 `450 > 300`으로 깨진 것을 PR #307로 닫으며 「problem_generation 쪽에도
+> 이 관계가 서 있는지 봐 달라」고 했다. 봤고, **더 심하게 깨져 있다.**
+> ⚠ **이 절은 제안이다 — 코드는 안 고쳤다.** 8/20 회신에 «count 비례가 맞는데 그건 설계
+> 변경이라 저희가 단독으로 정하지 않겠습니다 — 제안만 드립니다»로 적었고, 그대로 지킨다.
+
+#### 실측 — 무엇이 서 있나
+
+    lease_seconds = 300         api/routers/problem.py:138  (`PG_` 접두 · 선언 기본값)
+    한 잡의 실행   = 세트 전체   assembly.py:305 `_execute` → `workflow.run(request, context)` **한 번**
+                                ⇒ 🔴 **회전마다 re-lease 하는 counsel 과 성질이 다르다.**
+                                  counsel 은 잡이 lease 를 쥐는 시간이 「잡 하나」인데,
+                                  여기는 「세트 전체」다.
+    만료 시 동작   = re-queue    job_store.py:292 `recover_expired` → `_recover_one`
+                                (`max_recovery_attempts` 소진 시에만 `failed`)
+
+**이론 최악 콜 수 — 유도**
+
+    자료 조달  `source_redaction_retry_max`(8) + 1 = **9콜**
+               verify_config.yaml:9 · workflow.py:388
+               ⚠ 자료는 **세트당 1회**다(workflow.py:379 «자료는 세트당 한 번만 만들어지므로»)
+    문항 슬롯  `item_attempt_limit`(3) × (생성 1 + 교차풀이 1) = **6콜/슬롯**
+               contracts/problem_generation.py:458 · workflow.py:503(생성) · :566(교차풀이)
+
+    합계       9 + 6×count 콜        `count` 는 **1..20** (contracts/problem_generation.py:234)
+
+**× 콜당 상한 90초(8/20 확정)**
+
+    count=1     15콜 →  1,350초 = 22.5분    🔴 300초의  4.5배
+    count=20   129콜 → 11,610초 = 3.2시간   🔴 300초의 38.7배
+
+⚠ **이론 최악은 계약 예산용 숫자다 — 그런데 실측으로도 깨진다.**
+
+    실측(count=1 · 22회 · `evaluation/problem_preview`)   7콜 · 62.3초  ⇒ 콜당 **~8.9초**
+    같은 콜당으로 외삽                                     **count≈6 에서 300초를 넘는다**
+
+⚠ **외삽이다** — 22회가 전부 `count=1`이라 `count≥2` 실측이 없다. 다만 1~20 중 **6은 상용
+구간**이라 「이론상만 깨진다」로 읽으면 안 된다.
+
+#### 🔴 왜 「회수가 느려진다」가 아니라 결함인가
+
+A가 counsel에서 낸 판정과 같다. lease가 잡당 최악보다 짧으면 만료되는 것은 죽은 잡이 아니라
+**멀쩡히 실행 중인 잡**이고, recovery가 그걸 re-queue해서 **같은 잡이 두 번 돈다** — LLM 비용
+2배. 그리고 여기엔 한 가지가 더 붙는다:
+
+    lease_generation 은 `lease_next` 에서만 +1 된다   job_store.py:358
+    ⇒ 회수가 세대를 올리면, **먼저 돌던 워커**의 `succeed`·`fail` 이 stale fencing 으로 거부된다
+    ⇒ 🔴 두 배로 돈 값 중 **먼저 끝난 쪽의 결과가 버려진다.**
+
+#### 🔴 고정 상수로는 못 덮는다
+
+`count`가 1..20이라 최악이 **20배** 벌어진다. 11,610초로 올리면 부등식은 참이 되지만
+**진짜 죽은 잡이 3.2시간 방치된다** — 부등식을 참으로 만드느라 회수를 버리는 거래다.
+
+#### ⇒ 안 둘. 그리고 **소유 경계가 둘을 가른다.**
+
+**안 ① — `Supervisor.heartbeat` 부활 (B 권고)**
+
+    grep -rn "heartbeat" src/ tests/
+      → agents/supervisor.py:135  (구현)
+        agents/job_store.py:98·414 (`renew_lease`)
+        🔴 호출자 0건 · 테스트 0건               ← **사문이다**
+
+- 러너가 `workflow.run`이 도는 동안 주기적으로 `supervisor.heartbeat(...)`를 부른다.
+- 성립 조건이 `잡당 최악 ≤ lease`에서 **`갱신 주기 < lease`**로 바뀐다 ⇒ **`count`와 무관해진다.**
+- 🔴 **A 파일을 한 줄도 안 건드린다.** `heartbeat`는 이미 있고, 부르는 자리는
+  `problem_generation/assembly.py`(B 소유)다. `job.lease_generation`은 `lease_next`에서만
+  +1 되므로 (`start`는 안 올린다 — supervisor.py:126 `mark_running`) **실행 내내 유효하다.**
+- ⚠ **대가:** 프로세스는 살아 있는데 잡이 먹통이면 무한 연장이다 ⇒ **총 연장 상한**을 이론
+  최악에서 유도해 건다(불변식 6 「모든 루프에 상한」). 상한을 넘으면 연장을 멈추고 lease가
+  자연 만료되게 둔다 — 그때는 회수가 맞는 처방이다.
+
+**안 ② — `count` 비례 lease**
+
+- `lease_seconds`를 상수가 아니라 `(9 + 6×count) × 콜당상한`으로 잡는다.
+- 🔴 **구현 제약이 있다.** `Supervisor.lease_next`는 **어느 잡이 뽑힐지 알기 전에**
+  `now + self._lease_duration`으로 만료를 정한다(supervisor.py:84). `count`는 잡을 뽑은
+  **뒤에야** 안다 ⇒ ⓐ `Supervisor`에 duration 인자를 더하거나 ⓑ lease 직후 `count`로
+  재계산해 연장해야 하는데, **ⓑ가 결국 안 ①의 기계다.**
+- 🔴 **`agents/supervisor.py`는 A 단독 소유다**(02 §5) ⇒ 안 ②는 **A 파일 변경이 필요**하다.
+
+**B 권고: 안 ①.** ⓐ 기계가 이미 있고 ⓑ `count`와 무관하게 성립하고 ⓒ A 파일 0줄이고
+ⓓ 회수 지연이 지금 값 그대로다.
+
+⚠ **착수는 A 합의 후로 둔다.** 호출자가 0이라는 것은 **A가 아직 안 쓰기로 뒀다는 뜻일 수도
+있고**, 그 사정을 B는 모른다. 사문을 살리는 변경은 「그 사문이 실제로 동작하는지」도 같이
+재야 한다(99 #125) — 실 PG에서 `renew_lease` 왕복을 한 번도 안 재 봤다.
+
+#### ⚠ counsel 축에 대한 함의 — 지금은 안전하지만 같은 축이다
+
+A 실측대로 counsel의 `run_next`는 회전마다 re-lease하므로 잡 하나가 lease를 쥐는 시간이 짧다.
+다만 A의 480초는 `5콜 × 90초 = 450초`에 맞춰 둔 값이라 **콜 수가 늘면 다시 깨진다.**
+⇒ 안 ①이 서면 counsel 축도 같은 방식으로 `count`·콜 수와 무관해질 수 있다(A 판단).
+
+#### 확인 명령 (리뷰어가 직접 돌릴 것)
+
+```bash
+grep -rn "heartbeat" src/ai tests/ai
+```
+
+```bash
+grep -n "lease_seconds" src/ai/api/routers/problem.py
+```
+
+```bash
+grep -n "source_redaction_retry_max\|difficulty_regen_max" src/ai/problem_generation/data/verify_config.yaml
+```
+
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
 | 번호 | 항목 | B 권고안 | 담당 | 관련 part_b |
@@ -2113,6 +2222,7 @@ grep -n "SUPPORTED_AREAS" -A 9 src/ai/problem_generation/domain/policy.py
 | **B-9** `[신규]` | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** — 검증 통과 문항이 미검증 문항으로 대체될 수 있는 미정의 동작 | `07` §4의 "마지막 검증본 유지"를 생성 경로에 대칭 적용 제안. 확정 전 `difficulty_regen_enabled=false` 유지 | B 초안 → A+B | `10` §4.1 C3 |
 | **BE-11** `(구 B-10)` | ✅ **A 판정 완료 — RLS 구현 부재는 문서 표현을 앱 계층 격리로 정정해 해소.** RLS 실도입 여부는 백엔드 합의 안건으로 이관 | 도입 시 `db/session.py`·`db/store_factory.py` 연결·역할 설계와 함께 기존 26+B 8테이블에 일괄 적용. 현재 B 8테이블은 기존 패턴 준수 | **BE** | §2-4.5 |
 | **B-15** `[신규]` | **`04`가 코드·공용 정본과 갈렸다 — ① area enum이 `04`에만 6값(`speech_writing` 0회) ② 「v1은 language만」이 코드(5영역 개방)와 반대로 갈렸다** | ① 04:649·1149 문면 정정(이력 보존) ② 04:305·912를 「영역×자료요청 조합 표」로 교체. 문면 확정 후 B가 대조 검사를 단다 | A(+B) | §2-27 |
+| **B-16** `[신규]` `[P1]` | **PG `lease_seconds`(300초)가 잡당 최악보다 짧다 — 만료되는 것은 죽은 잡이 아니라 실행 중인 잡이다.** 이론 최악 `(9 + 6×count) × 90초` ⇒ count=1 이 1,350초 · count=20 이 11,610초. 실측 콜당 ~8.9초로 외삽해도 **count≈6 에서 300초을 넘는다** | 안 ① `Supervisor.heartbeat`(호출자 0건 — 사문) 부활 — A 파일 0줄 · count 무관 · **B 권고** / 안 ② count 비례 lease — `agents/supervisor.py`(A 소유) 변경 필요. 착수는 A 합의 후 | A+B | §2-28 |
 | **W1** `[신규]` | **다중 목표·다중 measured area 세트** — M2 와이어프레임 Step 1은 셀 여러 개를 담고 개수를 각각 지정하나, `05` §4.1은 **v1 단일 영역 제한** | 요청 분할 vs 요청 형식 확장 중 택일. 협업설명서도 "회의 결정 필요"로 등재 | A+B+제품 | `05` §4.1 · `10` §6 |
 | **W2** `[신규]` | 화면이 **셀에 `suspect`를 표시**하나 `04` §4의 셀 verdict는 `unknown\|weak\|ok` 3종이고 `suspect`는 **노드** verdict | 셀 verdict 확장 vs 화면이 노드 verdict를 셀에 투영 중 택일 | B(+FE) | `04` §4·§5.1 |
 | **W3** `[신규]` | 완료 알림 payload — 화면 문서는 수량(통과·검토·폐기)을 알림에 싣고, §2-1은 `result_ref` 조회로 얻는다 | §2-1 유지 권고(알림 경량화) | BE+B | §2-1 |
