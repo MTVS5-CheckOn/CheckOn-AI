@@ -148,6 +148,14 @@ _BE_REQUIRED_FLOW_FIXTURES: Final = {
     "POST counsel refine request": "post_counsel_refine.request",
     "POST counsel refine 200 applied": "post_counsel_refine.200.applied",
     "POST counsel refine 200 blocked": "post_counsel_refine.200.blocked",
+    #: 🔴 refine 의 404·409 — **라우터가 실제로 내는데** 픽스처가 없어서
+    #: `test_counsel_openapi_contract.py` 의 예외 목록에 «문서에만 있는 코드» 로
+    #: 적혀 있었다(99 #105 · 로그 178). 모양은 대응하는 것과 같게 맞췄다:
+    #: 404 ↔ `get_counsel_draft.404` · 409 ↔ `post_counsel_drafts.409.idempotency_conflict`.
+    "POST counsel refine 404": "post_counsel_refine.404",
+    "POST counsel refine 409 idempotency conflict": (
+        "post_counsel_refine.409.idempotency_conflict"
+    ),
     "POST counsel refine 400 missing idempotency key": (
         "post_counsel_refine.400.missing_idempotency_key"
     ),
@@ -202,9 +210,11 @@ def test_be_required_flow_fixture_mapping_is_complete() -> None:
     """
 
     #: 🔴 32 → 34 (8/21 · 99 #163) — 바디 검증 400 의 **배열 detail** 을 덮으면서 둘 늘었다.
+    #: 🔴 **42 → 44 (8/21 · 99 #105)** — refine 의 **404·409** 를 덮었다. 라우터가 이미
+    #:   내던 코드인데 픽스처가 없어 계약 검사의 **예외 목록**에 적혀 있었다(로그 178).
     #: ⚠ `len(...)` 으로 빼지 않는다 — **손으로 올리는 것이 이 검사의 목적**이다(로그 145).
-    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 42
-    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 42
+    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 44
+    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 44
     missing = {
         flow: fixture
         for flow, fixture in _BE_REQUIRED_FLOW_FIXTURES.items()
@@ -1174,6 +1184,22 @@ def test_counsel_refine_fixtures() -> None:
             },
             json=refine_body,
         )
+        #: 🔴 **404·409 는 라우터가 이미 내던 코드인데 픽스처가 없었다**(99 #105) — 그래서
+        #: 계약 검사의 **예외 목록**에 «문서에만 있는 코드» 로 적혀 통과하고 있었다(로그 178).
+        #: ⚠ **손으로 쓴 JSON 을 두지 않는다** — 그러면 존재 검사만 통과하고 **본문은
+        #: 아무도 안 잰다.** 여기서 **실제 응답으로** 만든다.
+        not_found = client.post(
+            "/v1/counsel/drafts/00000000-0000-4000-8000-00000000ffff/refine",
+            headers=_counsel_headers(**{"Idempotency-Key": "iq_fixture_refine_404"}),
+            json=refine_body,
+        )
+        #: 🔴 같은 키 + **다른 바디** = 409. 위 `iq_fixture_refine` 을 재사용한다 —
+        #: 같은 바디면 **기존 결과 재반환**(멱등 적중)이라 409 가 안 난다.
+        conflict = client.post(
+            f"/v1/counsel/drafts/{job_id}/refine",
+            headers=_counsel_headers(**{"Idempotency-Key": "iq_fixture_refine"}),
+            json={"instruction": "완전히 다른 지시입니다"},
+        )
 
     assert applied.status_code == 200, applied.text
     assert applied.json()["data"]["applied"] is True, applied.json()
@@ -1185,12 +1211,18 @@ def test_counsel_refine_fixtures() -> None:
     assert no_key.status_code == 400, no_key.text
     assert null_turn.status_code == 400, null_turn.text
     assert isinstance(null_turn.json()["error"]["detail"], list), null_turn.json()
+    assert not_found.status_code == 404, not_found.text
+    assert not_found.json()["error"]["code"] == "NOT_FOUND", not_found.json()
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT", conflict.json()
 
     _fixture("post_counsel_refine.request", refine_body)
     _fixture("post_counsel_refine.200.applied", applied.json())
     _fixture("post_counsel_refine.200.blocked", blocked.json())
     _fixture("post_counsel_refine.400.missing_idempotency_key", no_key.json())
     _fixture("post_counsel_refine.400.body_schema", null_turn.json())
+    _fixture("post_counsel_refine.404", not_found.json())
+    _fixture("post_counsel_refine.409.idempotency_conflict", conflict.json())
 
 
 # --------------------------------------------------------------------------
