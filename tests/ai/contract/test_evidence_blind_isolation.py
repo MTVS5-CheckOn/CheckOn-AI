@@ -108,6 +108,7 @@ def test_blind_payload_keys_match_whitelist_exactly() -> None:
 
     블랙리스트만으로는 위험한 새 키(이름이 금칙어가 아닌 것)를 못 잡는다.
     """
+    assert _BLIND_PAYLOAD_MODULES, "blind 페이로드 조립 모듈 목록이 비었다 — 검사 대상이 사라졌다"
     if not _CROSS_SOLVER.is_file():
         pytest.skip("cross_solver.py 아직 없음")
     keys = _blind_payload_keys(_CROSS_SOLVER.read_text(encoding="utf-8"))
