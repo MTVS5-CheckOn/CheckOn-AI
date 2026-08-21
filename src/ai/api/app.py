@@ -10,10 +10,12 @@ error envelope로 응답한다. 미분류 예외는 500 INTERNAL(내부 상세 �
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Iterator
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 
 from ai.api.console import install_console_handlers
 from ai.api.envelope import error_envelope
@@ -53,6 +55,67 @@ ROUTER_VERSION_SCOPES: tuple[RouterScope, ...] = (
     _diagnosis_scope,
     *OPS_VERSION_SCOPES,
 )
+
+
+# ⚠ 양자 승인 파일 수정(openapi 후처리) — 라우터 등록 선례, B 리뷰
+# 🔴 왜: FastAPI 가 path 파라미터가 있으면 `422` 를 **자동 주입**한다
+#     (`fastapi/openapi/utils.py` — 응답에 `422`·`4XX`·`default` 가 **없을 때만** 넣는다
+#     [읽음 8/22]).
+#     `job_id` 는 `str` 이라 **어떤 값도 유효**하다 ⇒ **도달 불가**인데 문서에 남아
+#     BE codegen 이 **못 오는 핸들러**를 만든다(99 #105 · 배포 openapi 로 확인됨).
+# 🔴 왜 여기: `openapi_extra` 는 deep-merge 라 **키를 못 지운다.** 선언에 `422` 를 넣어 맞추는 것은
+#     «도달 불가를 문서화» 하는 것이라 처방이 아니고, `"4XX"`·`"default"` 를 넣으면 codegen 이
+#     **다른 핸들러**를 만든다. ⇒ 문서 후처리가 유일한 길이다.
+# ⚠ 조건: path 파라미터가 **전부 `str`** 인 경로에서만 뗀다.
+#     🔴 `/v1/problems/{set_id}/items/{slot_index}` 계열은 `slot_index: int` 라
+#     **`422` 가 실제로 도달한다** — 전역 제거는 틀린다(실측 8/22: 자동 422 8곳 중 2곳).
+# 🔴 경로를 하드코딩하지 않는다 — 목록을 손으로 적으면 **새 경로가 생길 때 아무도 안 운다**
+#     (로그 149·173·175·178 이 네 번 잡은 형태다). 판정은 **규칙**이다.
+def _api_routes(routes: Iterable[Any]) -> Iterator[APIRoute]:
+    """등록된 `APIRoute` 를 전부 훑는다 — 중첩 라우터를 따라 내려간다.
+
+    ⚠ FastAPI 0.139 는 `include_router` 한 것을 `_IncludedRouter` 로 감싸 두고 실제 라우트는
+    `original_router.routes` 에 있다 [읽음]. 버전이 바뀌어도 깨지지 않게 **두 경로를 다 본다** —
+    🔴 못 찾으면 조용히 0건이 되어 **후처리가 아무것도 안 하고 통과**한다. 그 상태는
+    `tests/ai/contract/test_unreachable_422_is_not_documented.py` 가 red 로 잡는다.
+    """
+    for route in routes or ():
+        if isinstance(route, APIRoute):
+            yield route
+        nested = getattr(route, "routes", None) or getattr(
+            getattr(route, "original_router", None), "routes", None
+        )
+        if nested:
+            yield from _api_routes(nested)
+
+
+def _install_unreachable_422_removal(app: FastAPI) -> None:
+    """도달 불가 `422` 를 openapi 문서에서 뗀다(99 #105).
+
+    🔴 **판정 정보를 「생성된 스키마」가 아니라 「라우트 객체」에서 얻는다** — 스키마의
+    `parameters` 는 `openapi_extra` 가 덮을 수 있어 **문서가 거짓말을 하면 그 거짓을 믿게 된다.**
+    라우트의 `field_info.annotation` 은 **실제 파이썬 시그니처**라 도달 가능성의 정본이다.
+    ⚠ 라우터가 `422` 를 **스스로 선언**했으면 손대지 않는다 — 그건 우리가 넣은 것이 아니다.
+    """
+    original_openapi = app.openapi
+
+    def openapi_without_unreachable_validation_errors() -> dict[str, Any]:
+        schema = original_openapi()
+        paths: dict[str, Any] = schema.get("paths", {})
+        for route in _api_routes(app.routes):
+            params = route.dependant.path_params
+            if not params:
+                continue
+            if any(param.field_info.annotation is not str for param in params):
+                continue
+            if any(str(code) == "422" for code in route.responses):
+                continue
+            operations: dict[str, Any] = paths.get(route.path_format, {})
+            for method in route.methods or ():
+                operations.get(method.lower(), {}).get("responses", {}).pop("422", None)
+        return schema
+
+    app.openapi = openapi_without_unreachable_validation_errors  # type: ignore[method-assign]
 
 
 def create_app() -> FastAPI:
@@ -122,6 +185,7 @@ def create_app() -> FastAPI:
         )
 
     install_console_handlers(app)  # 콘솔 관측(PR-ψ) — 기본 전부 꺼짐, 본문은 api/console.py
+    _install_unreachable_422_removal(app)  # ⚠ 양자 승인 파일 수정 — 위 주석, B 리뷰
 
     return app
 
