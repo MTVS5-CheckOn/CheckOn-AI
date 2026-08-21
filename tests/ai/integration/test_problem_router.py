@@ -1256,7 +1256,7 @@ def test_generated_source_areas_are_accepted_at_the_front_door(
         response = client.post("/v1/problems", headers=_HEADERS, json=body)
 
     assert response.status_code == 202
-    assert response.json()["data"]["status"] == "succeeded"
+    assert response.json()["data"]["status"] == "queued"
     assert len(job_store) == 1
 
 
@@ -1512,17 +1512,11 @@ def test_ledger_generation_params_are_a_usage_axis_not_a_path_axis() -> None:
     assert called.model_provider is not None
 
 
-def test_post_202_carries_the_phase_so_be_knows_whether_to_wait() -> None:
-    """🔴 202가 `status`를 싣는다 — BE가 **통지를 기다릴지 바로 GET할지**를 그 값으로 정한다.
+@pytest.mark.no_problem_drain
+def test_post_202_is_queued_without_running_the_job_inline() -> None:
+    """POST는 적재만 하고 BE가 폴링할 ``queued`` 상태를 즉시 돌려준다."""
 
-    ⚠ pg는 POST 안에서 워커를 동기 실행하지만 `run_next()`가 **자기 잡을 처리한다는 보장이
-    없다**(우선순위·aging 순서). 그래서 202가 종단으로 나가는 경로와 `queued`로 나가는
-    경로가 **둘 다 실재한다** — `job_id`만 실어 보내면 BE가 어느 쪽인지 알 수 없다.
-
-    ⚠ counsel 202와 같은 형태다(04 §3.9) — 두 잡 엔드포인트가 다르게 생기면 BE가 규칙을
-    두 벌 만든다.
-    """
-    _prepare()
+    _run_store, _stores, generator, verifier = _prepare()
 
     with TestClient(create_app()) as client:
         posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
@@ -1534,19 +1528,15 @@ def test_post_202_carries_the_phase_so_be_knows_whether_to_wait() -> None:
 
     assert posted.status_code == 202
     assert set(posted.json()["data"]) == {"job_id", "status"}
-    assert posted.json()["data"]["status"] == "succeeded"
-    # 🔴 같은 잡을 두 문으로 읽었을 때 같은 값이어야 한다 — 202의 status가 GET과 갈리면
-    #    BE가 어느 쪽을 믿을지 알 수 없다.
+    assert posted.json()["data"]["status"] == "queued"
     assert posted.json()["data"]["status"] == fetched.json()["data"]["status"]
+    assert fetched.headers["Retry-After"] == "2"
+    assert not generator.requests
+    assert not verifier.requests
 
 
-def test_post_202_says_queued_when_the_runner_took_another_job() -> None:
-    """🔴 **202가 `queued`로 나가는 경로가 실재한다** — 그래서 위 단정이 상수 대조가 아니다.
-
-    러너는 우선순위·aging 순으로 **다음 잡 하나**를 처리한다. 앞에 다른 잡이 있으면 내 잡은
-    큐에 남고, 그 상태로 202가 나간다. ⚠ 이때 BE가 통지를 기다리면 **다음 요청이 올 때까지
-    안 돈다** — 배경 드레인 루프가 없다(v1 인라인 실행 · 09 §2-24).
-    """
+def test_post_202_stays_queued_when_another_job_is_ahead() -> None:
+    """앞선 잡이 있어도 POST는 자기 잡의 ``queued`` 상태만 반환한다."""
     _run_store, stores, _gen, _ver = _prepare(calls=2)
     supervisor = Supervisor(
         store=build_agent_job_store(),
@@ -1563,12 +1553,10 @@ def test_post_202_says_queued_when_the_runner_took_another_job() -> None:
         posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
 
     assert posted.status_code == 202
-    assert posted.json()["data"]["status"] == "queued", (
-        "앞선 잡이 있는데도 202가 종단으로 나온다 — 러너가 내 잡을 처리했다는 뜻이라 "
-        "이 테스트의 전제(다음 잡 하나만 처리)가 깨졌다"
-    )
+    assert posted.json()["data"]["status"] == "queued"
 
 
+@pytest.mark.no_problem_drain
 def test_background_drain_finishes_all_jobs_without_another_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1626,9 +1614,12 @@ def test_background_drain_finishes_all_jobs_without_another_request(
     assert not problem_router.problem_drain_running()
 
 
-def test_each_app_lifecycle_cleans_up_only_its_own_drain_task() -> None:
+def test_each_app_lifecycle_cleans_up_only_its_own_drain_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """서로 다른 이벤트 루프의 앱이 상대 드레인 태스크를 취소하지 않는다."""
 
+    monkeypatch.setenv("PG_DRAIN_ENABLED", "true")
     _prepare()
 
     with TestClient(create_app()):
@@ -1679,21 +1670,23 @@ def test_response_versions_and_ledger_versions_are_the_same_row() -> None:
     # 🔴 그 원장 행을 가리키는지까지 본다 — 값이 같아도 다른 행을 가리키면 재현이 안 된다.
     assert meta["execution_id"] == str(run.execution_id)
 
-def test_pending_job_tells_the_adapter_when_to_come_back() -> None:
+@pytest.mark.no_problem_drain
+def test_pending_job_tells_the_adapter_when_to_come_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """🔴 Kafka-HTTP adapter의 폴링 주기를 **우리 설정이** 정한다(AI-BE-01).
 
-    adapter가 자기 상수로 돌면 우리 인라인 실행이 느려져도 그쪽 주기는 그대로다.
+    adapter가 자기 상수로 돌면 배경 실행 시간과 무관하게 그쪽 주기는 그대로다.
     ⚠ 종단 응답에는 붙지 않는다 — 붙으면 adapter가 끝난 잡을 계속 돈다.
     """
+    monkeypatch.setenv("PG_DRAIN_ENABLED", "true")
     _run_store, stores, _generator, _verifier = _prepare(calls=2)
     supervisor = Supervisor(
         store=build_agent_job_store(),
         lease_duration=timedelta(minutes=5),
         priority_aging_interval=timedelta(minutes=10),
     )
-    # 🔴 **앞선 잡을 하나 넣어 두어야 내 잡이 `queued`로 남는다** — POST의 인라인 러너가
-    #    우선순위·aging 순으로 집으므로 자기 잡을 집는다는 보장이 없다(같은 파일의
-    #    `test_problem_post_never_returns_another_queued_jobs_result`와 같은 구성).
+    # 앞선 잡까지 배경 드레인이 새 요청 없이 비우는 동안 내 잡의 폴링 계약도 유지한다.
     _run(
         ProblemGenerationEnqueuer(
             supervisor=supervisor, request_store=stores.requests

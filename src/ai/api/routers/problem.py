@@ -455,20 +455,10 @@ async def _generate(request: ProblemRequest) -> tuple[ProblemJobView, WorkerJob]
         supervisor=supervisor,
         request_store=_stores.requests,
     ).enqueue(request)
-    try:
-        ran = await _run_next_for_tenant(request.tenant_id)
-    finally:
-        _notify_problem_drain(request.tenant_id)
-    if ran is not None and ran.job_id != job.job_id:
-        logger.info(
-            "PG 러너가 다른 잡을 실행했다 mine=%s ran=%s — 결과는 자기 잡에서 읽는다",
-            job.job_id,
-            ran.job_id,
-        )
-    mine = await supervisor.get(
-        tenant_id=request.tenant_id, job_id=job.job_id
-    ) or job
-    return await _view_for(mine, tenant_id=request.tenant_id), job
+    # POST는 적재만 한다. count에 비례하는 LLM 실행은 startup에 등록된 유한
+    # ProblemDrainLoop가 같은 `_run_next_for_tenant` 경로로 맡는다.
+    _notify_problem_drain(request.tenant_id)
+    return await _view_for(job, tenant_id=request.tenant_id), job
 
 
 async def _run_next_for_tenant(tenant_id: str) -> WorkerJob | None:
@@ -558,12 +548,7 @@ async def post_problem(request: Request, response: Response) -> dict[str, Any]:
         execution_id=job.execution_id,
     )
     envelope = success_envelope(
-        # 🔴 `status`를 같이 싣는다 — counsel 202와 대칭이고(04 §3.9) **BE가 통지를 기다릴지
-        #    바로 GET할지를 이 값 하나로 정한다**(런북 §2 규칙). 종전에는 `job_id`만 실려서
-        #    ⓐ 인라인 실행으로 이미 종단인 잡을 두고 BE가 Kafka를 기다리거나
-        #    ⓑ 아직 `queued`인 잡을 종단으로 오해하거나 — 어느 쪽인지 응답만으로는 알 수 없었다.
-        #    ⚠ `run_next()`가 **자기 잡을 처리한다는 보장이 없다**(우선순위·aging 순) —
-        #    202가 `queued`로 나가는 경로가 실재한다.
+        # 정상 생성 요청은 적재만 하므로 `queued`다. BE는 `Retry-After`에 따라 GET을 폴링한다.
         data={"job_id": view.job_id, "status": view.status.value},
         execution_id=str(job.execution_id),
         versions=versions,
