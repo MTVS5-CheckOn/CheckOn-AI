@@ -64,7 +64,7 @@ from ai.problem_generation.bootstrap import build_problem_workflow
 from ai.problem_generation.domain.policy import supports_source_procurement
 from ai.problem_generation.infrastructure.config import load_verify_config
 from ai.problem_generation.infrastructure.graph_context import (
-    GrammarNormGraphContextService,
+    AreaDelegatingGraphContextService,
 )
 from ai.problem_generation.infrastructure.memory_store import (
     InMemoryCandidateStore,
@@ -87,9 +87,6 @@ from ai.runtime.tracing import external_tracing_active
 _FAKES_DIR = Path(__file__).parents[1] / "fakes"
 sys.path.insert(0, str(_FAKES_DIR))
 
-from fake_graph_context import (  # noqa: E402
-    FakeGraphContextService,
-)
 from fake_provider import FakeProvider  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -400,11 +397,8 @@ def _execution_context() -> ExecutionContext:
     )
 
 
-def _graph_context(area_tag: AreaTag) -> GrammarNormGraphContextService | FakeGraphContextService:
-    if area_tag is AreaTag.LANGUAGE:
-        return GrammarNormGraphContextService()
-    case = _case_for(area_tag)
-    return FakeGraphContextService(((f"curriculum:{case.skill_node_id}",),))
+def _graph_context(_: AreaTag) -> AreaDelegatingGraphContextService:
+    return AreaDelegatingGraphContextService()
 
 
 def _provider_endpoints(
