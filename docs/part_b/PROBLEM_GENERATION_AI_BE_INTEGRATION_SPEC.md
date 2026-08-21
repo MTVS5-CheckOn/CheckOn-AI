@@ -75,6 +75,38 @@
 - ⚠ `speech_writing`의 `status_reason` 원문은 CLI 집계가 출력하지 않아 **미수집이다.**
   재호출로 보충하지 않았고 추측해서 적지 않는다.
 
+#### 후속 실측 `[2026-08-21 · PR #350 하네스]`
+
+PR #350 하네스에서 `failure_detail`과 수정 1턴을 붙인 뒤, 승인된 명령을 각각 **1회만**
+실행했다. 실패 뒤 재시도하지 않았으며 아래 회차를 앞선 회차와 합치거나 덮어쓰지 않는다.
+
+먼저 `uv run python tests/ai/integration/test_pg_real_llm_smoke.py --area speech_writing`을
+1회 실행했다.
+
+| 트랙 | 영역 | 생성 시도 | 스키마 통과 | 최종 status | failure_reason | failure_detail | 저장 |
+| --- | --- | ---: | ---: | --- | --- | --- | ---: |
+| T4 | speech_writing | 4 | 2 | `dropped` | `generation_exhausted` | `생성 시도 소진: FieldMissing` | 0 |
+
+`failure_detail`은 `ItemResult.failure_detail`에 기록된 원문이다. 이 회차는 앞선 행렬의 T4와
+스키마 통과 수가 1회에서 2회로 달라졌지만, 최종 결과는 동일하게 저장 없는 `dropped`다.
+
+| 영역 | applied | release_status | blocked_reason | failed_checks |
+| --- | --- | --- | --- | --- |
+| speech_writing | 대상 없음 | - | - | - |
+
+그 뒤 `uv run python tests/ai/integration/test_pg_real_llm_smoke.py --area all --repetitions 1`을
+1회 실행했다. 5영역 수집과 수정 처리가 반환된 뒤 `_main_async`의 출제 표 출력에서
+`UnicodeEncodeError: 'cp949' codec can't encode character '\u2014' in position 522`가 발생했다.
+표가 출력되기 전 실패했으므로 영역별 출제 집계와 수정 결과는 **미수집**이며, 메모리에 있던
+값을 추정하거나 앞선 회차 수치로 대체하지 않는다.
+
+**출제·수정 최종 상태:** 이번 후속 회차에서 T4 출제는 스키마 통과까지 갔지만
+`generation_exhausted`로 탈락해 저장 0건이고, 따라서 수정은 정상 차단(`applied=False`)이
+아니라 **대상 없음**으로 실행되지 않았다. 전체 5영역 회차는 최종 출력 오류 때문에 출제의
+`verified`·`verification_unavailable` 여부와 수정의 적용·정상 차단·오류 여부를 확정할 수
+없다. 남은 축을 닫으려면 먼저 스모크 CLI의 Windows stdout 인코딩 실패를 해소한 뒤 별도
+승인을 받아 5영역을 다시 측정해야 한다.
+
 ## 2. 공통 HTTP 계약
 
 ### 2.1 헤더
