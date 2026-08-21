@@ -2107,6 +2107,32 @@ grep -n "SUPPORTED_AREAS" -A 9 src/ai/problem_generation/domain/policy.py
 > ⚠ **이 절은 제안이다 — 코드는 안 고쳤다.** 8/20 회신에 «count 비례가 맞는데 그건 설계
 > 변경이라 저희가 단독으로 정하지 않겠습니다 — 제안만 드립니다»로 적었고, 그대로 지킨다.
 
+**정정 이력(2026-08-22):** #361(2026-08-21)이 lease heartbeat와 recovery sweep 축을
+닫았다. 이 절과 §3 B-16은 「A 합의 후 착수」로 적혀 있었으나 B가 사전 합의 없이 단독으로
+진행했다. 2026-08-22 A 회신에서 결과에 이견은 없었지만 승인 기록은 없다. 이 정정은 닫힘
+상태와 절차 기록만 바로잡으며, #361에 들어간 안의 충분성은 여기서 다시 판단하지 않는다.
+
+🔴 **(2026-08-22 · A·B 공동 판정) 합의 여섯 항목 대조:**
+
+- ①(주기적 renew)·③(종료 시 태스크 정리)·⑤(죽은 워커 회수)·⑥(중복 lease 방지) — ✅
+- ②(heartbeat 주기 < lease 만료) — ✅ **단 위치가 다르다.** 관계는
+  `src/ai/api/routers/problem.py:165-170`의
+  `ProblemRouterSettings.validate_lease_heartbeat`에 있고 기동에서 fail-closed다.
+  `lease_heartbeat.py`만 보면 이 관계는 보이지 않는다. 2026-08-22 A는 그 함수와
+  `test_lease_heartbeat.py`만 읽고 이 관계가 없다고 오판했다. 주기<lease 검사는 이미 있었고,
+  이번 회차에 총 상한>주기와 기본값 조합까지 고정했다.
+- ④(실패 판정·원장 기록) — **부분.** 실패는
+  `src/ai/problem_generation/assembly.py:322-341`의 `_run_guarded`가
+  `supervisor.fail(...)`로 원장에 수렴하지만 전용 `error_code`가 없어
+  `_ERROR_WORKER_INTERNAL`과 구분되지 않는다. 이 항목은 열어 둔다. 🔴 **언제 닫나:**
+  heartbeat 실패가 비민감 warning으로 실제 관측되면 전용 `error_code`를 부여한다. 그 전에는
+  관측이 0건이라 전용 코드를 만들어도 한 번도 나오지 않는다(2026-08-22 A 제안 · B가
+  「관측이 선행돼야 한다」로 보완).
+
+⚠ **절차 정정:** 설계 방향 ⓑ(실행 중 lease 갱신)는 2026-08-20 슬랙에서 양쪽이 명시해
+합의했다. 없는 것은 #361의 코드 승인이다. 「방향 합의 없음」이 아니라 「별도 공동 회차
+합의를 B가 단독으로 닫음」이 정확하다.
+
 #### 실측 — 무엇이 서 있나
 
     lease_seconds = 300         api/routers/problem.py:138  (`PG_` 접두 · 선언 기본값)
@@ -2222,6 +2248,46 @@ grep -n "source_redaction_retry_max\|difficulty_regen_max" src/ai/problem_genera
 조립부에서 연결할지 A 판정을 요청한다. 어느 안이든 `buffer_lexicon.find_forbidden` 위임과 기존
 사유 문자열·검사 순서는 보존해야 한다.
 
+### 2-30. 리포트 스튜디오 소유 표기 동기화 `[제안 · 표기 동기화 · 2026-08-21 사용자 서면 승인]`
+
+**소유 결정은 끝났다.** 2026-08-21 사용자 서면 승인에 따라 리포트 스튜디오와 그 안의 AI
+요소는 member-B(염준영) 담당이다. 배치도 독립 capability `src/ai/report/`와 공용 계약
+`src/ai/contracts/report.py`로 확정됐으며, composition 안에 두는 대안은 다시 열지 않는다.
+
+**현행 문서와 결정이 어긋난 자리(2026-08-22 직접 확인):**
+
+- `docs/02_ownership.md:24` — `composition/`의 박진희 R&R에 `리포트 chart_analysis`가 들어 있다.
+- `docs/02_ownership.md:175` — 소유권 주석 트리에 존재한 적 없는 `report_blocks.py`가
+  `[박진희] ★v2`로 적혀 있다.
+- `docs/02_ownership.md:228` — capability 분담표가 리포트를 A의 `composition` 확장으로
+  분류하고, B 쪽에는 `diagnosis · problem_generation`만 적는다.
+- `CLAUDE.md:66` — §7 문서 맵의 리포트 행이 A 초안
+  `docs/part_a/07_report_spec.md`만 구현 기준으로 가리켜 현재 B 소유 capability를 드러내지 않는다.
+
+**인수가 아니라 신규 구축이다.** #369 이전에는 리포트 제품 코드와 테스트가 0건이었고,
+문서에 적힌 `report_blocks.py`도 존재한 적이 없다. #369에서 처음
+`src/ai/report/`와 `src/ai/contracts/report.py`가 생겼으므로 A 파일을 B로 넘기는 변경이 아니다.
+`contracts/report.py`는 #369 제출 당시 **양자 승인 초안이며 A 리뷰가 머지 조건**이라고 PR
+최상단에 표시된 뒤 `develop`에 머지됐으나, 2026-08-22 확인한 #369의 PR 리뷰 기록은 0건이다.
+A는 같은 날 슬랙에서 리포트 착수와 `src/ai/report/` 신설을 확인했을 뿐 양자 파일 승인 기록은
+남기지 않았다. 사용자 확인 결과 사전 승인 대화는 없었고, 이 회신은 사후 인지이지 승인이 아니다.
+
+**A 반영 요청:** 전원 공용 문서의 오너인 A가 `docs/02_ownership.md:24`의 composition R&R에서
+리포트를 분리하고, `:175`의 미실재 `report_blocks.py [박진희]` 행을 독립 `report/ [염준영]`
+구조와 양자 승인 `contracts/report.py` 표기로 갱신하며, `:228`의 capability 분담에서 리포트를
+B 쪽으로 옮겨 달라. 함께 `CLAUDE.md:66`의 리포트 문서 맵에 A의 기존 사양서는 요구사항
+참조이고 독립 report capability 구현 소유는 B라는 경계를 표시해 달라. B는 두 공용 문서를
+직접 수정하지 않는다. 아울러 `contracts/report.py`(#369)와 `db/models.py`·`06_erd.md`(#361)는
+모두 A 리뷰를 머지 조건으로 적었지만 두 PR의 리뷰 기록과 PR 설명의 승인 근거가 0건이었다.
+2026-08-22 A·B는 승인이 GitHub 리뷰·슬랙·문서 중 어디서 이뤄져도 PR 설명에 누가·언제·
+어디서 승인했는지를 적고, `reviews=0` 자체가 아니라 승인 근거 부재를 위반으로 보는 문면으로
+09를 개정하기로 합의했다. 개정 PR은 A가 올리고 B가 확인한다. 양측 모두 사후 approve로
+과거 기록을 바꾸지 않는다.
+
+이 제안이 닫히기 전에는 실제 코드·승인 기록은 B 소유 독립 capability를 가리키는데 공용
+문서는 A 소유 composition을 가리켜, 리포트 관련 문서와 코드를 읽는 사람이 소유를 반대로
+판단할 위험이 있다.
+
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
 | 번호 | 항목 | B 권고안 | 담당 | 관련 part_b |
@@ -2239,7 +2305,8 @@ grep -n "source_redaction_retry_max\|difficulty_regen_max" src/ai/problem_genera
 | **B-9** `[신규]` | 난이도 사유 재생성 시 **이전 검증본 보존 규칙** — 검증 통과 문항이 미검증 문항으로 대체될 수 있는 미정의 동작 | `07` §4의 "마지막 검증본 유지"를 생성 경로에 대칭 적용 제안. 확정 전 `difficulty_regen_enabled=false` 유지 | B 초안 → A+B | `10` §4.1 C3 |
 | **BE-11** `(구 B-10)` | ✅ **A 판정 완료 — RLS 구현 부재는 문서 표현을 앱 계층 격리로 정정해 해소.** RLS 실도입 여부는 백엔드 합의 안건으로 이관 | 도입 시 `db/session.py`·`db/store_factory.py` 연결·역할 설계와 함께 기존 26+B 8테이블에 일괄 적용. 현재 B 8테이블은 기존 패턴 준수 | **BE** | §2-4.5 |
 | **B-15** `[신규]` | **`04`가 코드·공용 정본과 갈렸다 — ① area enum이 `04`에만 6값(`speech_writing` 0회) ② 「v1은 language만」이 코드(5영역 개방)와 반대로 갈렸다** | ① 04:649·1149 문면 정정(이력 보존) ② 04:305·912를 「영역×자료요청 조합 표」로 교체. 문면 확정 후 B가 대조 검사를 단다 | A(+B) | §2-27 |
-| **B-16** `[신규]` `[P1]` | **PG `lease_seconds`(300초)가 잡당 최악보다 짧다 — 만료되는 것은 죽은 잡이 아니라 실행 중인 잡이다.** 이론 최악 `(9 + 6×count) × 90초` ⇒ count=1 이 1,350초 · count=20 이 11,610초. 실측 콜당 ~8.9초로 외삽해도 **count≈6 에서 300초을 넘는다** | 안 ① `Supervisor.heartbeat`(호출자 0건 — 사문) 부활 — A 파일 0줄 · count 무관 · **B 권고** / 안 ② count 비례 lease — `agents/supervisor.py`(A 소유) 변경 필요. 착수는 A 합의 후 | A+B | §2-28 |
+| **B-16** `[닫힘 · #361 · 공동 판정 2026-08-22]` | **PG lease heartbeat·recovery sweep 축은 #361로 닫혔다.** 설계 방향 ⓑ는 2026-08-20 A·B 합의가 있었지만 별도 공동 회차 합의를 B가 단독으로 닫아 코드 승인 기록은 없다. 합의 ②는 `ProblemRouterSettings.validate_lease_heartbeat`의 기동 fail-closed 관계로 충족한다 | 합의 ①②③⑤⑥ 충족. ④는 실패가 원장에 수렴하지만 전용 `error_code`가 없어 `_ERROR_WORKER_INTERNAL`과 구분되지 않으므로 열어 둔다. 구현 결과의 나머지 충분성은 이 행에서 재판정하지 않는다 | A+B | §2-28 |
+| **B-17** `[신규]` | **리포트 스튜디오 소유 결정과 공용 문서 표기가 반대이며 양자 승인 근거도 비어 있었다.** 2026-08-21 사용자 서면 승인과 #369 구현은 B 소유 독립 `report/`를 가리키지만 `02_ownership.md`·`CLAUDE.md`는 A의 composition 리포트를 가리키고, B가 올린 #369·#361은 모두 `reviews=0`이며 사전 승인도 없었다 | A가 공용 소유 표기를 갱신하고, 승인 경로와 무관하게 PR 설명에 누가·언제·어디서 승인했는지를 적는 절차 개정 PR을 올린다. B는 #369·#361에 사전 승인 없음·사후 인지를 소급 기록하고 A 개정 PR을 확인한다 | A+B | §2-30 |
 | **W1** `[신규]` | **다중 목표·다중 measured area 세트** — M2 와이어프레임 Step 1은 셀 여러 개를 담고 개수를 각각 지정하나, `05` §4.1은 **v1 단일 영역 제한** | 요청 분할 vs 요청 형식 확장 중 택일. 협업설명서도 "회의 결정 필요"로 등재 | A+B+제품 | `05` §4.1 · `10` §6 |
 | **W2** `[신규]` | 화면이 **셀에 `suspect`를 표시**하나 `04` §4의 셀 verdict는 `unknown\|weak\|ok` 3종이고 `suspect`는 **노드** verdict | 셀 verdict 확장 vs 화면이 노드 verdict를 셀에 투영 중 택일 | B(+FE) | `04` §4·§5.1 |
 | **W3** `[신규]` | 완료 알림 payload — 화면 문서는 수량(통과·검토·폐기)을 알림에 싣고, §2-1은 `result_ref` 조회로 얻는다 | §2-1 유지 권고(알림 경량화) | BE+B | §2-1 |

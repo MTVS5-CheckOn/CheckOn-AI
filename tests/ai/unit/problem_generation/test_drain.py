@@ -49,12 +49,37 @@ def test_drain_cycle_never_exceeds_job_limit() -> None:
 
 
 def test_heartbeat_interval_must_be_shorter_than_lease() -> None:
+    """주기가 lease 이상이면 실행 중 만료·회수되어 같은 잡이 두 워커에서 돈다."""
+
     with pytest.raises(ValidationError, match="lease 유효 시간보다 짧아야"):
         ProblemRouterSettings(
             _env_file=None,
             lease_seconds=30,
             lease_heartbeat_seconds=30,
         )
+
+
+def test_heartbeat_max_duration_must_stay_above_interval() -> None:
+    """총 상한이 주기 이하면 첫 갱신 전에 실행 경계가 끝나 lease를 유지하지 못한다."""
+
+    with pytest.raises(ValidationError, match="총 상한은 갱신 주기보다 커야"):
+        ProblemRouterSettings(
+            _env_file=None,
+            lease_heartbeat_seconds=60,
+            lease_heartbeat_max_seconds=60,
+        )
+
+
+def test_default_heartbeat_relationship_is_valid() -> None:
+    """기본 300/60/12,000 조합은 실행 중 lease 유지 관계를 만족한다."""
+
+    settings = ProblemRouterSettings(_env_file=None)
+
+    assert (
+        settings.lease_seconds,
+        settings.lease_heartbeat_seconds,
+        settings.lease_heartbeat_max_seconds,
+    ) == (300, 60.0, 12_000.0)
 
 
 def test_drain_loop_survives_a_cycle_failure() -> None:

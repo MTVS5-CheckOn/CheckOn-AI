@@ -56,6 +56,7 @@ def test_bundled_literature_pool_loads_every_indexed_work() -> None:
         (DEFAULT_LITERATURE_POOL_ROOT / "index.json").read_text(encoding="utf-8")
     )
 
+    assert PINNED_SLUGS, "고정 등재 작품 목록이 비었다 — 확장 수집 제외 대상을 잃었다"
     assert pool.schema_version == "literature-pool.v1"
     assert len(pool.works) == len(raw["works"])
     assert all(work.content for work in pool.works)

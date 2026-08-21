@@ -117,6 +117,7 @@ _VERIFIED_POOL_SLUGS = frozenset(
 
 
 def _verified_literature_pool() -> LiteraturePool:
+    assert _VERIFIED_POOL_SLUGS, "검증 작품 목록이 비었다 — 워크플로 테스트 입력이 사라졌다"
     pool = load_literature_pool()
     return pool.model_copy(
         update={
