@@ -1,0 +1,28 @@
+{
+  "data": null,
+  "error": {
+    "code": "INVALID_SCHEMA",
+    "message": "요청 바디 스키마 위반",
+    "detail": [
+      {
+        "field": "turn_no",
+        "type": "int_type"
+      }
+    ]
+  },
+  "meta": {
+    "execution_id": null,
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "counsel-pack-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "0.4",
+      "graph": null,
+      "taxonomy": null,
+      "verify_config": null,
+      "difficulty_calib": null
+    }
+  }
+}

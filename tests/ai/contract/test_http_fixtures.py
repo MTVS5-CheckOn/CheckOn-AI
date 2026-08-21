@@ -125,6 +125,8 @@ _BE_REQUIRED_FLOW_FIXTURES: Final = {
     "POST counsel drafts 202 queued": "post_counsel_drafts.202.queued",
     "POST counsel drafts 400 missing header": "post_counsel_drafts.400.missing_header",
     "POST counsel drafts 400 unknown label": "post_counsel_drafts.400.unknown_label",
+    "POST counsel drafts 400 body schema": "post_counsel_drafts.400.body_schema",
+    "POST counsel refine 400 body schema": "post_counsel_refine.400.body_schema",
     "POST counsel drafts 409 conflict": "post_counsel_drafts.409.idempotency_conflict",
     "GET counsel draft generated": "get_counsel_draft.generated",
     "GET counsel draft template only": "get_counsel_draft.template_only",
@@ -189,8 +191,10 @@ def test_be_required_flow_fixture_mapping_is_complete() -> None:
     잡는 것이고, `len()` 으로 빼면 **지워도 통과한다.**
     """
 
-    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 32
-    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 32
+    #: 🔴 32 → 34 (8/21 · 99 #163) — 바디 검증 400 의 **배열 detail** 을 덮으면서 둘 늘었다.
+    #: ⚠ `len(...)` 으로 빼지 않는다 — **손으로 올리는 것이 이 검사의 목적**이다(로그 145).
+    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 34
+    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 34
     missing = {
         flow: fixture
         for flow, fixture in _BE_REQUIRED_FLOW_FIXTURES.items()
@@ -807,14 +811,34 @@ def test_counsel_post_error_bodies() -> None:
             headers=_counsel_headers(**{"Idempotency-Key": "iq_fixture_conflict"}),
             json=_counsel_body(class_ref="cl_다름"),
         )
+        #: 🔴 **바디 스키마 위반** — `_format_validation_error` 가 만드는 **배열** detail 이다.
+        #: ⚠ `labels` 로 만들지 않는다 — `unknown_label` 픽스처가 이미 그 자리를 **객체**
+        #: detail 로 덮는다. 겹치면 무엇을 재는지 흐려진다.
+        #: ⚠ 어휘 밖 값이 아니라 **필수 필드 생략**으로 만든다 — 값을 넣으면 그 값이
+        #: detail 에 새는지도 같이 봐야 해서 재는 축이 둘이 된다.
+        bad_body = _counsel_body()
+        bad_body["context"] = {
+            key: value
+            for key, value in bad_body["context"].items()
+            if key != "period_label"
+        }
+        body_schema = client.post(
+            "/v1/counsel/drafts",
+            headers=_counsel_headers(**{"Idempotency-Key": "iq_fixture_body_schema"}),
+            json=bad_body,
+        )
 
     assert missing_header.status_code == 400, missing_header.text
     assert unknown_label.status_code == 400, unknown_label.text
+    assert body_schema.status_code == 400, body_schema.text
+    #: 🔴 **배열 detail** 이다 — 헤더·라벨 400 의 **객체** detail 과 모양이 다르다(99 #163).
+    assert isinstance(body_schema.json()["error"]["detail"], list), body_schema.json()
     assert first.status_code == 202, first.text
     assert conflict.status_code == 409, conflict.text
 
     _fixture("post_counsel_drafts.400.missing_header", missing_header.json())
     _fixture("post_counsel_drafts.400.unknown_label", unknown_label.json())
+    _fixture("post_counsel_drafts.400.body_schema", body_schema.json())
     _fixture("post_counsel_drafts.409.idempotency_conflict", conflict.json())
 
 
@@ -999,6 +1023,15 @@ def test_counsel_refine_fixtures() -> None:
             headers=_counsel_headers(**{"Idempotency-Key": "iq_fixture_blocked"}),
             json={"instruction": "다른 학생들에 비해 잘한다고 써줘"},
         )
+        #: 🔴 **승우님이 실제로 받은 그 입력이다**(2026-08-21) — `turn_no: null`.
+        #: `RefineRequest.turn_no` 는 `int = Field(default=1, ge=1)` 라 **`null` 이 안 들어간다**.
+        #: ⚠ 이 픽스처가 잠그는 것은 *"null 을 보내면 배열 detail 이 온다"* 이지
+        #: *"turn_no 가 필수다"* 가 아니다 — `default=1` 은 그대로다.
+        null_turn = client.post(
+            f"/v1/counsel/drafts/{job_id}/refine",
+            headers=_counsel_headers(**{"Idempotency-Key": "iq_fixture_null_turn"}),
+            json={"instruction": "조금 더 짧게 정리해 주세요", "turn_no": None},
+        )
         no_key = client.post(
             f"/v1/counsel/drafts/{job_id}/refine",
             headers={
@@ -1017,11 +1050,14 @@ def test_counsel_refine_fixtures() -> None:
         blocked.json()
     )
     assert no_key.status_code == 400, no_key.text
+    assert null_turn.status_code == 400, null_turn.text
+    assert isinstance(null_turn.json()["error"]["detail"], list), null_turn.json()
 
     _fixture("post_counsel_refine.request", refine_body)
     _fixture("post_counsel_refine.200.applied", applied.json())
     _fixture("post_counsel_refine.200.blocked", blocked.json())
     _fixture("post_counsel_refine.400.missing_idempotency_key", no_key.json())
+    _fixture("post_counsel_refine.400.body_schema", null_turn.json())
 
 
 # --------------------------------------------------------------------------
@@ -1127,3 +1163,62 @@ def test_placeholders_keep_the_shape_of_what_they_replace() -> None:
     #: UUID 셋은 원래 형태를 지키고 있었다 — 회귀만 막는다.
     for key in ("execution_id", "job_id", "set_id", "item_id"):
         UUID(_PLACEHOLDER[key])
+
+
+# ── 🔴 바디 검증 400 의 detail — 모양과 「값이 안 실린다」 (99 #163) ──
+
+
+def _read_fixture(name: str) -> dict[str, Any]:
+    """커밋된 픽스처를 읽는다 — 🔴 **생성기가 아니라 파일이 계약이다.**"""
+    loaded: dict[str, Any] = json.loads(
+        (FIXTURE_DIR / f"{name}.json").read_text(encoding="utf-8")
+    )
+    return loaded
+
+
+_BODY_SCHEMA_FIXTURES: Final = (
+    "post_counsel_drafts.400.body_schema",
+    "post_counsel_refine.400.body_schema",
+)
+
+
+@pytest.mark.parametrize("name", _BODY_SCHEMA_FIXTURES)
+def test_body_schema_detail_is_a_list_of_field_and_type(name: str) -> None:
+    """🔴 **바디 검증 실패의 detail 은 배열이고 원소가 `field`·`type` 두 키다.**
+
+    400 `detail` 은 세 모양이다 — 헤더 객체(`missing_headers`) · 라벨 객체(`labels`) ·
+    🔴 **바디 배열**. 앞 둘만 픽스처가 있었고 이 모양은 **0건**이었다(99 #163).
+    그래서 `field` 를 `path` 로 바꾸거나 배열을 객체로 감싸도 **red 가 안 났다** —
+    백엔드가 이번에 그 형태를 못 읽고 뭉갠 자리이기도 하다.
+
+    ⚠ **값(`"turn_no"`)을 단언하지 않는다** — 필드 이름이 바뀌면 red 가 나야 할 것은
+    **픽스처**이지 이 검사가 아니다. 여기서는 **모양만** 잰다.
+    """
+    detail = _read_fixture(name)["error"]["detail"]
+    assert isinstance(detail, list), f"{name}: detail 이 배열이 아니다 — {detail!r}"
+    assert detail, f"{name}: detail 이 비었다"
+    for item in detail:
+        assert set(item) == {"field", "type"}, f"{name}: 원소 키가 {sorted(item)} 다"
+        assert all(isinstance(value, str) for value in item.values()), item
+
+
+def test_body_schema_detail_does_not_leak_request_values() -> None:
+    """🔴 **detail 에 요청 바디의 「값」이 실리지 않는다** (04 §2.3 · 불변식 3).
+
+    `routers/counsel.py::_format_validation_error` 의 docstring 이
+    *"필드 경로만 — 값은 싣지 않는다(개인정보가 detail로 새지 않게)"* 라고 **약속**하는데
+    🔴 **그것을 재는 검사가 0건**이었다 — 약속만 있고 가드가 없던 자리다.
+
+    ⚠ 재는 법: 두 픽스처를 만든 요청이 실제로 실어 보낸 **값 문자열**이 응답 전문 어디에도
+    없어야 한다. `turn_no: null` 은 값이 `None` 이라 문자열이 없으므로,
+    **refine 요청의 `instruction` 문면**을 쓴다 — 그건 학부모 문의에 가까운 자유 텍스트라
+    새면 정확히 개인정보 누출 경로가 된다.
+    """
+    sent_value = "조금 더 짧게 정리해 주세요"
+    body = json.dumps(_read_fixture("post_counsel_refine.400.body_schema"), ensure_ascii=False)
+    assert sent_value not in body, f"요청 값이 detail 로 샜다: {body}"
+
+    #: POST 쪽은 **필수 필드 생략**으로 만들었으므로 값 자체가 없다 — 대신 바디에 남아 있는
+    #: 다른 값(예: `class_ref`)이 응답에 안 실리는지를 본다.
+    posted = json.dumps(_read_fixture("post_counsel_drafts.400.body_schema"), ensure_ascii=False)
+    assert "cl_" not in posted, f"요청 값이 detail 로 샜다: {posted}"

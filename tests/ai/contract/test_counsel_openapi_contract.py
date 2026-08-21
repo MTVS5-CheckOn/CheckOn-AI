@@ -234,7 +234,10 @@ def test_this_change_did_not_touch_any_response() -> None:
     *"픽스처가 사라졌는데 문서만 늘었다"* 를 막는다.
     """
     counsel_fixtures = sorted(_FIXTURE_DIR.glob("*counsel*.json"))
-    assert len(counsel_fixtures) == 15, [p.name for p in counsel_fixtures]
+    #: 🔴 **15 → 17 (8/21 · 99 #163)** — 바디 검증 400 의 **배열 detail** 을 덮으면서
+    #: `post_counsel_drafts.400.body_schema` · `post_counsel_refine.400.body_schema` 둘이 늘었다.
+    #: ⚠ `len(...)` 으로 빼지 않는다 — **손으로 올리는 것이 이 검사의 목적**이다(로그 145).
+    assert len(counsel_fixtures) == 17, [p.name for p in counsel_fixtures]
 
 
 @pytest.mark.parametrize(
