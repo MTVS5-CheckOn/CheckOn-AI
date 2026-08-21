@@ -740,6 +740,24 @@ def test_misconception_tag_outside_area_vocabulary_fails_closed() -> None:
         _diagnose(event)
 
 
+def test_misconception_node_area_mismatch_fails_closed() -> None:
+    event = DiagnosisEvent(
+        event_id="mismatched-misconception-node",
+        area_tag=AreaTag.READING,
+        type_tag=TypeTag.CONCEPT,
+        skill_node_id="lang.root",
+        correct=False,
+        chosen_no=2,
+        correct_no=1,
+        misconception_tag="scope_shift",
+        occurred_at=NOW,
+        tag_confirmed=True,
+    )
+
+    with pytest.raises(DiagnosisGraphReferenceError, match="노드 영역"):
+        _diagnose(event)
+
+
 def test_execution_version_mismatch_is_rejected() -> None:
     with pytest.raises(DiagnosisVersionMismatchError, match="graph_version 불일치"):
         diagnose(

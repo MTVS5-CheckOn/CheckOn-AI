@@ -92,6 +92,7 @@ AI 내부에서 `tenant_id`, `student_ref`, `target_ref`는 UUID가 아니라 �
       "type_tag": "concept",
       "item_format": "mcq",
       "chosen_no": 1,
+      "correct_no": 1,
       "skill_node_id": "language.grammar.sentence.structure",
       "correct": true,
       "occurred_at": "2026-08-01T09:00:00Z",
@@ -103,6 +104,7 @@ AI 내부에서 `tenant_id`, `student_ref`, `target_ref`는 UUID가 아니라 �
       "type_tag": "concept",
       "item_format": "mcq",
       "chosen_no": 2,
+      "correct_no": 1,
       "misconception_tag": "application_target_substitution",
       "skill_node_id": "language.grammar.sentence.structure",
       "correct": false,
@@ -116,8 +118,10 @@ AI 내부에서 `tenant_id`, `student_ref`, `target_ref`는 UUID가 아니라 �
 위 JSON은 `DiagnosisRequestBody.model_validate(...).model_dump_json(exclude_none=True)`의 실제 출력이다.
 
 - `chosen_no`: 1-based `1..5`. 비객관식이거나 선택 번호를 알 수 없으면 `null` 또는 생략한다.
+- `correct_no`: BE가 보존한 1-based 정답 번호다. 비객관식이거나 정답 번호를 알 수 없으면 `null` 또는 생략하며, 약점 판정 축에는 사용하지 않는다.
 - `misconception_tag`: 오답일 때 Step5 문항 스냅숏의 `choices[].misconception_tag`를 복사한다. 정답이면 `null` 또는 생략한다.
-- BE는 저장된 `answer.correct_no`와 `chosen_no`를 대조해 `correct`를 확정한 뒤 전송한다. AI 진단 입력에는 `correct_no`가 없으므로 이 대조를 AI에 미룰 수 없다.
+- BE는 저장된 `answer.correct_no`와 `chosen_no`를 대조해 `correct`를 확정한 뒤 세 값을 전송한다. 채점 책임은 정답 키를 보유한 BE에 있고, AI는 수신한 세 값의 자기 정합성을 재검증한다.
+- `chosen_no`와 `correct_no`가 모두 있으면 두 번호의 일치 여부와 `correct`가 모순될 때 `400 INVALID_SCHEMA`다.
 - `misconception_tag`가 있는데 `chosen_no`가 없거나, `correct=true`인데 라벨이 있으면 `400 INVALID_SCHEMA`다.
 - 라벨이 이벤트 영역의 YAML 닫힌 어휘를 벗어나면 `400 INVALID_SCHEMA`다.
 
@@ -673,7 +677,7 @@ Adapter→Backend가 본문을 Kafka로 전달해야 한다면 참조형, slot �
 - [ ] 수정 버튼을 `available_actions`로 판정
 - [ ] `REVISION_CONFLICT`의 `current_revision_no`로 재시도
 - [ ] `tag_confirmed`·`skill_node_id` 연결 보강
-- [ ] 학생 제출의 `chosen_no`를 1-based로 보존하고 저장된 `answer.correct_no`와 대조해 `correct` 확정
+- [ ] 학생 제출의 `chosen_no`와 저장된 `answer.correct_no`를 1-based로 보존하고 대조해 `correct` 확정 후 세 값 전달
 - [ ] 선택한 오답 선지의 `misconception_tag`를 Step1 이벤트에 복사하고 정답이면 생략
 - [ ] `data.misconceptions`의 영역·노드별 빈도와 제외 건수를 별도 리포트로 저장
 
@@ -763,7 +767,7 @@ AI 오개념 연동 계약은 기준 커밋 `d1316992bb2e84159d3ad5a34332eb91362
 | 주체 | 확정 책임 | 서명 상태 | 기준 |
 | --- | --- | --- | --- |
 | AI / member-B 염준영 | `chosen_no`·`misconception_tag` 수신, 닫힌 어휘 검증, 별도 빈도 리포트, Step5 원문 제공 | 확정 | `d1316992bb2e84159d3ad5a34332eb913626957c` · 2026-08-20 |
-| Kafka–HTTP Adapter | Step5 원문 필드 무손실 전달, 참조형 이벤트·REST 재조회 경계 유지 | 연동 계약 확정 | 본 문서 §3 Step5 · §6.1 · §8.3 |
-| Backend | 저장 정답과 선택 번호 대조, 선택 오답 라벨 복사, diagnosis 리포트 별도 저장 | 연동 계약 확정 | 본 문서 §3 Step1 · §8.4 · §11 |
+| Kafka–HTTP Adapter | Step5 원문 필드 무손실 전달, 참조형 이벤트·REST 재조회 경계 유지 | AI 연동안 제시 · 상대 확인 필요 | 본 문서 §3 Step5 · §6.1 · §8.3 |
+| Backend | 저장 정답과 선택 번호 대조, 선택 오답 라벨 복사, diagnosis 리포트 별도 저장 | AI 연동안 제시 · 상대 확인 필요 | 본 문서 §3 Step1 · §8.4 · §11 |
 
-표의 “연동 계약 확정”은 구현 완료를 뜻하지 않는다. 완료 판정은 §11 인수 기준의 E2E 증적으로만 한다.
+Adapter·Backend 행은 AI가 제시한 계약이며 각 소유자의 확인 전에는 상대 서명으로 간주하지 않는다. 구현 완료 판정은 §11 인수 기준의 E2E 증적으로만 한다.

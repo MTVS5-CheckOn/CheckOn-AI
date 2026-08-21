@@ -122,6 +122,30 @@ def test_event_rejects_chosen_no_outside_mcq_range(chosen_no: int) -> None:
         DiagnosisEvent.model_validate(data)
 
 
+@pytest.mark.parametrize("correct_no", [1, 5])
+def test_event_accepts_mcq_correct_no(correct_no: int) -> None:
+    data = _event().model_dump(mode="json")
+    data["correct_no"] = correct_no
+
+    assert DiagnosisEvent.model_validate(data).correct_no == correct_no
+
+
+@pytest.mark.parametrize(
+    ("chosen_no", "correct_no", "correct"),
+    [(1, 1, False), (2, 1, True)],
+)
+def test_event_rejects_inconsistent_choice_and_correct_answer(
+    chosen_no: int,
+    correct_no: int,
+    correct: bool,
+) -> None:
+    data = _event().model_dump(mode="json")
+    data.update(chosen_no=chosen_no, correct_no=correct_no, correct=correct)
+
+    with pytest.raises(ValueError, match="서로 모순"):
+        DiagnosisEvent.model_validate(data)
+
+
 def test_event_accepts_chosen_wrong_choice_misconception_tag() -> None:
     data = _event().model_dump(mode="json")
     data.update(

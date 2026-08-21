@@ -208,9 +208,10 @@ def _load_prompt_snapshots(root: Path) -> PromptSnapshotManifest:
         "pg.source_material.v1",
         "pg.items.v1",
         "pg.cross_solve.v1",
+        "pg.misconception_check.v1",
     }
     actual_prompt_ids = {snapshot.prompt_id for snapshot in manifest.snapshots}
-    if actual_prompt_ids != expected_prompt_ids or len(manifest.snapshots) != 4:
+    if actual_prompt_ids != expected_prompt_ids or len(manifest.snapshots) != 5:
         raise ProblemGoldenError(
             f"프롬프트 스냅숏 ID 불일치: {sorted(actual_prompt_ids)}"
         )
