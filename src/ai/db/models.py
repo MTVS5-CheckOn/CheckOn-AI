@@ -1,4 +1,4 @@
-"""ERD 38테이블 ORM — 06_erd.md 정본을 그대로 옮긴다.
+"""ERD 41테이블 ORM — 06_erd.md 정본을 그대로 옮긴다.
 
 소유: 공통 계약 (A+B 확인 완료 — 양자 목록은 02_ownership.md §4가 정본).
 ⚠ **여기 수를 다시 적지 않는다** — 「12곳」이 v5(`graphrag.py` 편입)로 13이 된 뒤에도
@@ -34,6 +34,7 @@ from sqlalchemy import (
     String,
     Text,
     Uuid,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -512,6 +513,35 @@ class ProblemSet(Base):
     stop_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     diagnostic_purpose: Mapped[bool] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(_TZ)
+
+
+class ProblemGenerationRequest(Base):
+    """PG 워커 입력 정본 — 프로세스 재시작 뒤 `payload_ref`를 해소한다."""
+
+    __tablename__ = "problem_generation_request"
+    __table_args__ = (
+        Index("ix_problem_generation_request_tenant_created", "tenant_id", "created_at"),
+    )
+
+    ref: Mapped[str] = mapped_column(String, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(_TZ, server_default=func.now())
+
+
+class ProblemGenerationResult(Base):
+    """PG 워커 결과 정본 — 다른 API 프로세스가 `result_ref`를 역참조한다."""
+
+    __tablename__ = "problem_generation_result"
+    __table_args__ = (
+        Index("ix_problem_generation_result_tenant_created", "tenant_id", "created_at"),
+    )
+
+    ref: Mapped[str] = mapped_column(String, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    job_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(_TZ, server_default=func.now())
 
 
 class ProblemItem(Base):

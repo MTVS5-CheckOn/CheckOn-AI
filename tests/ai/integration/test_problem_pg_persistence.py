@@ -64,6 +64,7 @@ from fake_provider import FakeProvider  # noqa: E402
 from test_problem_router import (  # noqa: E402
     _SKILL_NODE_ID,
     _body,
+    _expand_verifier_steps,
     _generated_item_json,
     _solve_result_json,
 )
@@ -125,7 +126,8 @@ def _prepare_pg(
         generator_steps or (_generated_item_json(),), name="pg-generator"
     )
     verifier = FakeProvider(
-        verifier_steps or (_solve_result_json(),), name="pg-verifier"
+        _expand_verifier_steps(verifier_steps or (_solve_result_json(),)),
+        name="pg-verifier",
     )
     problem_router.set_problem_providers(
         ProblemProviders(
@@ -204,6 +206,8 @@ def _generated_source_item_json(
                     else {
                         AreaTag.MEDIA: "expression_means_substitution",
                         AreaTag.SPEECH_WRITING: "source_purpose_mismatch",
+                        AreaTag.LITERATURE: "interpretation_exaggeration",
+                        AreaTag.READING: "causal_flip",
                     }[area_tag]
                 ),
             )

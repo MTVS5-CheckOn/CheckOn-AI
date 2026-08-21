@@ -1,4 +1,4 @@
-# [체크온] AI PostgreSQL 전체 ERD v4 — [PART_A+PART_B] 문제생성 저장 계층 반영
+# [체크온] AI PostgreSQL 전체 ERD v7 — [PART_A+PART_B] 문제생성 저장 계층 반영
 
 원칙(변경 없음): AI PG는 **산출물·실행 메타·캐시**만. 도메인 원본(학생·학습 기록·Alert 상태·문의 원문·Draft 승인)은 백엔드 DB 소유 — `…_ref`는 전부 백엔드 DB를 가리키는 **논리 참조**(물리 FK 아님). 전 테이블 `tenant_id` 필수 + **애플리케이션 계층 격리**(RLS 미도입 — 실도입 여부는 99 BE-11).
 
@@ -11,6 +11,8 @@ v4 확장: A-1 승인에 따라 [PART_B] 문제생성·진단 8테이블(`WEAKNE
 v5 확장: 기대치 입력 2테이블과 `COUNSEL_PACK_RESULT`에 이어 `COUNSEL_DRAFT_VIEW`를 편입했다. 애플리케이션 소유 테이블은 **총 38개**다. 읽기 모델 테이블은 `_CachedView`·`_DraftState` 배선 전의 자리이며 두 스냅숏을 독립 nullable 정본으로 둔다.
 
 v6 확장(2026-08-12 · ㉻): `COUNSEL_CONTEXT_BUNDLE`을 편입하고 `DRAFT.content`를 추가했다. 애플리케이션 소유 테이블은 **총 39개**다. 🔴 **입력 묶음은 읽기 모델이 아니다** — `COUNSEL_DRAFT_VIEW`는 조회 캐시고 이 테이블은 실행 **전에** 만들어져 워커가 소비하는 입력이라 생애주기가 다르다. 한 테이블에 합치면 조회 캐시를 비우는 정리 배치가 **재개할 잡의 입력을 지운다.**
+
+v7 확장(2026-08-21): `PROBLEM_GENERATION_REQUEST`·`PROBLEM_GENERATION_RESULT`를 편입했다. 애플리케이션 소유 테이블은 **총 41개**다. 잡 원장만 영속하고 `payload_ref`·`result_ref` 대상이 프로세스 메모리에 있던 결손을 닫아, PG startup recovery와 다중 인스턴스 조회가 실제 본문을 복원한다.
 
 **`AI_RUN` 버전 세트:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이다. 공통 6종(`pipeline` · `engine` · `threshold` · `prompt` · `schema` · `contract`)과 [PART_B] 실행 전용 nullable 4종(`graph` · `taxonomy` · `verify_config` · `difficulty_calib`)으로 구성되며, **버전 컬럼은 총 10개**다. 실행 식별자·모델 정보·재현성 키·생성 시각까지 포함한 `AI_RUN` 전체 컬럼은 **총 18개**다.
 
@@ -51,6 +53,7 @@ erDiagram
   %% ───────── diagnosis · problem_generation ([PART_B]) ─────────
   AI_RUN ||--o{ WEAKNESS_MAP : "진단 실행"
   AI_RUN ||--o{ PROBLEM_SET : "출제 실행"
+  AGENT_RUN ||--o| PROBLEM_GENERATION_RESULT : "PG 결과 논리 참조"
   WEAKNESS_MAP ||--o{ PROBLEM_SET : "출제 입력(수동 목표는 null)"
   PROBLEM_SET ||--|{ PROBLEM_ITEM : "문항 1..*"
   PROBLEM_SET ||--o{ ITEM_CANDIDATE : "슬롯별 생성 후보"
@@ -352,6 +355,19 @@ erDiagram
     boolean diagnostic_purpose
     timestamptz created_at
   }
+  PROBLEM_GENERATION_REQUEST {
+    varchar ref PK "AGENT_RUN.payload_ref가 가리키는 논리 참조"
+    varchar tenant_id "격리 술어"
+    jsonb snapshot "ProblemRequest 무손실 정본"
+    timestamptz created_at "저장 시각"
+  }
+  PROBLEM_GENERATION_RESULT {
+    varchar ref PK "AGENT_RUN.result_ref가 가리키는 논리 참조"
+    varchar tenant_id "격리 술어"
+    uuid job_id "UNIQUE · AgentRun 논리 참조"
+    jsonb snapshot "ProblemGenerationOutcome 무손실 정본"
+    timestamptz created_at "저장 시각"
+  }
   PROBLEM_ITEM {
     uuid id PK
     uuid set_id FK
@@ -529,9 +545,10 @@ erDiagram
 
 ## 보존 순서 규약 (2026-08-12 · ㉻ · 지시서 73 §8)
 
-🔴 **아래 넷은 멱등 레코드보다 먼저 삭제되면 안 된다.**
+🔴 **아래 여섯은 멱등 레코드보다 먼저 삭제되면 안 된다.**
 
     COUNSEL_CONTEXT_BUNDLE · DRAFT · COUNSEL_PACK_RESULT · COUNSEL_DRAFT_VIEW
+    · PROBLEM_GENERATION_REQUEST · PROBLEM_GENERATION_RESULT
       ⩾ IDEMPOTENCY_RECORD
 
 ⚠ 순서가 뒤집히면 **멱등 202 뒤 GET이 404**이거나 **재개가 입력을 못 찾는다**: 멱등 레코드가

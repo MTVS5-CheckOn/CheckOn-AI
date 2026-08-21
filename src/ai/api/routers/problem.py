@@ -9,10 +9,10 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Final
+from typing import Any, Final, Self
 
 from fastapi import APIRouter, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ai.agents.supervisor import Supervisor, system_utc_now
@@ -35,9 +35,11 @@ from ai.contracts.problem_generation import (
     RevisionKind,
 )
 from ai.db.repositories.idempotency import IdempotencyStore
+from ai.db.repositories.problem_job_queue import pending_problem_tenants
 from ai.db.repositories.problem_set_store import PgProblemSetStore
 from ai.db.repositories.run_store import RunStore, default_llm_call_collector
 from ai.db.session import get_sessionmaker
+from ai.db.settings import get_db_settings
 from ai.db.store_factory import (
     build_agent_job_store,
     build_idempotency_store,
@@ -56,6 +58,7 @@ from ai.problem_generation.application.workflow import DiagnosisCallable
 from ai.problem_generation.assembly import (
     ProblemGenerationRunner,
     ProblemRuntimeStores,
+    build_tenant_scoped_candidate_store,
     build_tenant_scoped_item_store,
     build_tenant_scoped_revision_store,
     open_problem_generation_runner,
@@ -136,7 +139,11 @@ class ProblemRouterSettings(BaseSettings):
         env_file=ENV_FILES, env_prefix="PG_", extra="ignore"
     )
 
-    lease_seconds: int = 300
+    lease_seconds: int = Field(default=300, gt=0)
+    lease_heartbeat_seconds: float = Field(default=60.0, gt=0)
+    """실행 중 lease 갱신 주기. 기본값은 lease의 1/5이라 일시 지연 4회분을 남긴다."""
+    lease_heartbeat_max_seconds: float = Field(default=12_000.0, gt=0)
+    """heartbeat를 포함한 잡 실행 총 상한. count=20 이론 상한 11,610초를 덮는다."""
     priority_aging_seconds: int = 600
     poll_retry_after_seconds: int = Field(default=2, ge=1)
     """비종단 조회 응답의 `Retry-After` 값(초).
@@ -153,6 +160,15 @@ class ProblemRouterSettings(BaseSettings):
     drain_failure_backoff_initial_seconds: float = Field(default=1.0, gt=0)
     drain_failure_backoff_max_seconds: float = Field(default=30.0, gt=0)
     drain_shutdown_grace_seconds: float = Field(default=30.0, gt=0)
+    drain_tenants_per_sweep: int = Field(default=100, ge=1, le=1_000)
+
+    @model_validator(mode="after")
+    def validate_lease_heartbeat(self) -> Self:
+        if self.lease_heartbeat_seconds >= self.lease_seconds:
+            raise ValueError("lease heartbeat 주기는 lease 유효 시간보다 짧아야 한다")
+        if self.lease_heartbeat_max_seconds <= self.lease_heartbeat_seconds:
+            raise ValueError("lease heartbeat 총 상한은 갱신 주기보다 커야 한다")
+        return self
 
 
 class ProblemJobView(BaseModel):
@@ -337,6 +353,14 @@ async def _start_problem_drain() -> None:
         return
     drain = ProblemDrainLoop(
         run_next=_run_next_for_tenant,
+        discover_tenants=(
+            None
+            if get_db_settings().store_backend != "pg"
+            else lambda: pending_problem_tenants(
+                sessionmaker=get_sessionmaker(),
+                limit=settings.drain_tenants_per_sweep,
+            )
+        ),
         max_jobs_per_cycle=settings.drain_max_jobs_per_cycle,
         cycle_interval_seconds=settings.drain_cycle_interval_seconds,
         idle_interval_seconds=settings.drain_idle_interval_seconds,
@@ -463,6 +487,7 @@ async def _generate(request: ProblemRequest) -> tuple[ProblemJobView, WorkerJob]
 
 async def _run_next_for_tenant(tenant_id: str) -> WorkerJob | None:
     supervisor = _build_supervisor()
+    settings = ProblemRouterSettings()
     graph_context, diagnosis = _require_services()
     providers = require_problem_providers()
     # 🔴 슬롯 최종본 저장소만 **요청 테넌트로 스코프**한다(09 §2-20.3) — Protocol에
@@ -471,6 +496,7 @@ async def _run_next_for_tenant(tenant_id: str) -> WorkerJob | None:
     #  ⚠ `store_backend=memory`(기본)면 `None`이라 **`_stores`가 그대로 간다** — 주입 seam
     #   무변경. 교체할 때도 나머지 셋은 `_stores`에서 그대로 옮긴다(덮어쓰지 않는다).
     tenant_items = build_tenant_scoped_item_store(tenant_id=tenant_id)
+    tenant_candidates = build_tenant_scoped_candidate_store(tenant_id=tenant_id)
     tenant_sets = (
         None
         if tenant_items is None
@@ -478,11 +504,11 @@ async def _run_next_for_tenant(tenant_id: str) -> WorkerJob | None:
     )
     stores = (
         _stores
-        if tenant_items is None and tenant_sets is None
+        if tenant_candidates is None and tenant_items is None and tenant_sets is None
         else problem_runtime_stores(
             request_store=_stores.requests,
             result_store=_stores.results,
-            candidate_store=_stores.candidates,
+            candidate_store=tenant_candidates or _stores.candidates,
             item_store=tenant_items or _stores.items,
             set_store=tenant_sets or _stores.sets,
         )
@@ -495,6 +521,8 @@ async def _run_next_for_tenant(tenant_id: str) -> WorkerJob | None:
         stores=stores,
         lease_owner=_LEASE_OWNER,
         run_store=_run_store,
+        lease_heartbeat_seconds=settings.lease_heartbeat_seconds,
+        lease_heartbeat_max_seconds=settings.lease_heartbeat_max_seconds,
     ) as runner:
         return await runner.run_next(tenant_id=tenant_id)
 
@@ -865,7 +893,12 @@ async def get_problem_item(
                     current_item,
                 )
             if revision_no == 0 and stored.candidate_ref is not None:
-                candidate = await _stores.candidates.get(stored.candidate_ref)
+                candidate_store = build_tenant_scoped_candidate_store(
+                    tenant_id=tenant_id
+                )
+                candidate = await (candidate_store or _stores.candidates).get(
+                    stored.candidate_ref
+                )
         except LookupError as exc:
             raise NotFound(
                 "문항 슬롯 부재",

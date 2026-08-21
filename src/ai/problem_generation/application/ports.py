@@ -79,7 +79,7 @@ class ProblemRevisionStore(Protocol):
 
 
 class CandidateStore(Protocol):
-    """ITEM_CANDIDATE 승인 전 사용하는 교체 가능한 저장 경계."""
+    """게이트 통과 후보를 재개 경로에서도 읽는 교체 가능한 저장 경계."""
 
     async def put(self, candidate: CandidateSnapshot) -> str:
         """후보를 멱등·불변 저장하고 참조를 반환한다."""

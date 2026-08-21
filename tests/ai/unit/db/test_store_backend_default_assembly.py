@@ -63,6 +63,7 @@ from ai.db.repositories.probe_stores import (
     PgProfileStore,
     PgSpecResultStore,
 )
+from ai.db.repositories.problem_candidate_store import PgCandidateStore
 from ai.db.repositories.problem_revision_store import PgProblemRevisionStore
 from ai.db.repositories.problem_store import PgProblemItemStore
 from ai.db.repositories.run_store import InMemoryRunStore, PgRunStore
@@ -74,6 +75,7 @@ from ai.import_mapping.probe.stores import (
     InMemorySpecResultStore,
 )
 from ai.problem_generation.assembly import (
+    build_tenant_scoped_candidate_store,
     build_tenant_scoped_item_store,
     build_tenant_scoped_revision_store,
 )
@@ -135,6 +137,18 @@ _UNCALLED_BRANCHES: Final[dict[str, str]] = {
     "ai.problem_generation.assembly::build_tenant_scoped_revision_store": (
         "**아래 전용 검사가 직접 부른다** — item store와 같은 테넌트 스코프이며 memory에서 "
         "`None`을 반환하므로 일반 팩토리 표의 (pg타입, memory타입) 모양과 다르다"
+    ),
+    "ai.problem_generation.assembly::build_tenant_scoped_candidate_store": (
+        "아래 전용 검사가 직접 부른다. 후보 참조는 재개 경로가 다시 읽으므로 pg에서는 "
+        "테넌트 스코프 저장소, memory에서는 None을 반환하는 비대칭 조립이다"
+    ),
+    "ai.problem_generation.assembly::problem_runtime_stores": (
+        "PG 요청·결과 포트를 함께 고르는 capability 조립 seam이다. 일반 팩토리와 반환 모양이 "
+        "다르고 `test_problem_runtime_store_assembly.py`가 pg·memory 양쪽 타입을 직접 대조한다"
+    ),
+    "ai.api.routers.problem::_start_problem_drain": (
+        "PG 백엔드일 때만 영속 테넌트를 재발견하는 수명주기 분기다. 저장소 팩토리가 아니며 "
+        "`test_ai_be_communication_spec.py`와 PG 드레인 검사가 호출 연결·복구 동작을 대조한다"
     ),
 }
 
@@ -219,6 +233,23 @@ def test_the_tenant_scoped_item_store_follows_the_same_flag(
 def test_the_tenant_scoped_item_store_is_none_on_memory(memory_settings: None) -> None:
     del memory_settings
     assert build_tenant_scoped_item_store(tenant_id="t_flip") is None
+
+
+def test_the_tenant_scoped_candidate_store_follows_the_same_flag(
+    default_settings: None,
+) -> None:
+    del default_settings
+    assert isinstance(
+        build_tenant_scoped_candidate_store(tenant_id="t_flip"),
+        PgCandidateStore,
+    )
+
+
+def test_the_tenant_scoped_candidate_store_is_none_on_memory(
+    memory_settings: None,
+) -> None:
+    del memory_settings
+    assert build_tenant_scoped_candidate_store(tenant_id="t_flip") is None
 
 
 def test_the_tenant_scoped_revision_store_follows_the_same_flag(

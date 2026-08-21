@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
 from ai.contracts.agents import WorkerJob
 
 logger = logging.getLogger(__name__)
 
 type RunNext = Callable[[str], Awaitable[WorkerJob | None]]
+type DiscoverTenants = Callable[[], Awaitable[Sequence[str]]]
 
 
 class ProblemDrainLoop:
@@ -21,6 +22,7 @@ class ProblemDrainLoop:
         self,
         *,
         run_next: RunNext,
+        discover_tenants: DiscoverTenants | None = None,
         max_jobs_per_cycle: int,
         cycle_interval_seconds: float,
         idle_interval_seconds: float,
@@ -44,6 +46,7 @@ class ProblemDrainLoop:
             raise ValueError("failure_backoff_max_seconds는 initial 이상이어야 한다")
 
         self._run_next = run_next
+        self._discover_tenants = discover_tenants
         self._max_jobs_per_cycle = max_jobs_per_cycle
         self._cycle_interval_seconds = cycle_interval_seconds
         self._idle_interval_seconds = idle_interval_seconds
@@ -152,18 +155,47 @@ class ProblemDrainLoop:
                 consecutive_failures = 0
                 if processed == self._max_jobs_per_cycle:
                     self.notify_tenant(tenant_id)
-                await self._wait_or_stop(self._cycle_interval_seconds)
+                delay = (
+                    self._idle_interval_seconds
+                    if processed == 0
+                    else self._cycle_interval_seconds
+                )
+                await self._wait_or_stop(delay)
             finally:
                 self._cycle_done.set()
 
     async def _next_tenant(self) -> str | None:
         assert self._tenant_queue is not None
         try:
+            return self._take_scheduled_tenant()
+        except asyncio.QueueEmpty:
+            pass
+
+        if self._discover_tenants is not None:
+            try:
+                for tenant_id in await self._discover_tenants():
+                    self.notify_tenant(tenant_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("PG 배경 드레인 pending tenant 재발견 실패")
+            try:
+                return self._take_scheduled_tenant()
+            except asyncio.QueueEmpty:
+                pass
+
+        try:
             tenant_id = await asyncio.wait_for(
                 self._tenant_queue.get(), timeout=self._idle_interval_seconds
             )
         except TimeoutError:
             return None
+        self._scheduled_tenants.discard(tenant_id)
+        return tenant_id
+
+    def _take_scheduled_tenant(self) -> str:
+        assert self._tenant_queue is not None
+        tenant_id = self._tenant_queue.get_nowait()
         self._scheduled_tenants.discard(tenant_id)
         return tenant_id
 
@@ -191,4 +223,4 @@ class ProblemDrainLoop:
             return
 
 
-__all__ = ["ProblemDrainLoop", "RunNext"]
+__all__ = ["DiscoverTenants", "ProblemDrainLoop", "RunNext"]

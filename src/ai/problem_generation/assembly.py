@@ -25,7 +25,12 @@ from ai.contracts.problem_generation import (
     ProblemGenerationOutcome,
     ProblemRequest,
 )
+from ai.db.repositories.problem_candidate_store import PgCandidateStore
 from ai.db.repositories.problem_revision_store import PgProblemRevisionStore
+from ai.db.repositories.problem_runtime_store import (
+    PgProblemRequestStore,
+    PgProblemResultStore,
+)
 from ai.db.repositories.problem_store import PgProblemItemStore
 from ai.db.repositories.run_store import (
     LlmCallCollector,
@@ -36,6 +41,9 @@ from ai.db.session import get_sessionmaker
 from ai.db.settings import DbSettings, get_db_settings
 from ai.llm.determinism import deterministic_params
 from ai.llm.prompts.loader import load_prompt_template
+from ai.problem_generation.application.lease_heartbeat import (
+    run_with_lease_heartbeat,
+)
 from ai.problem_generation.application.ports import (
     CandidateStore,
     ProblemItemStore,
@@ -142,7 +150,7 @@ class _InMemoryProblemResultStore:
 
 @dataclass(frozen=True, slots=True)
 class ProblemRuntimeStores:
-    """PG 영속 구현 승인 전 사용하는 주입 가능한 저장소 묶음."""
+    """PG 실행 입력·결과·중간 산출 저장소 묶음."""
 
     requests: ProblemRequestStore
     results: ProblemResultStore
@@ -188,6 +196,19 @@ def build_tenant_scoped_item_store(
     return PgProblemItemStore(sessionmaker=get_sessionmaker(), tenant_id=tenant_id)
 
 
+def build_tenant_scoped_candidate_store(
+    *,
+    tenant_id: str,
+    settings: DbSettings | None = None,
+) -> CandidateStore | None:
+    """`store_backend=pg`면 재개 가능한 테넌트 스코프 후보 저장소를 만든다."""
+
+    settings = settings or get_db_settings()
+    if settings.store_backend != _PG:
+        return None
+    return PgCandidateStore(sessionmaker=get_sessionmaker(), tenant_id=tenant_id)
+
+
 def build_tenant_scoped_revision_store(
     *, tenant_id: str, settings: DbSettings | None = None
 ) -> ProblemRevisionStore | None:
@@ -208,13 +229,25 @@ def problem_runtime_stores(
     candidate_store: CandidateStore | None = None,
     item_store: ProblemItemStore | None = None,
     set_store: ProblemSetStore | None = None,
+    settings: DbSettings | None = None,
 ) -> ProblemRuntimeStores:
-    """저장 포트 교체 seam — PG 저장소 승인 뒤 이 조립 지점만 바꾼다."""
+    """저장 포트 교체 seam — PG에서는 요청·결과를 프로세스 간 영속한다."""
 
     defaults = default_problem_runtime_stores()
+    resolved = settings or get_db_settings()
+    pg_requests = (
+        PgProblemRequestStore(sessionmaker=get_sessionmaker())
+        if resolved.store_backend == _PG
+        else None
+    )
+    pg_results = (
+        PgProblemResultStore(sessionmaker=get_sessionmaker())
+        if resolved.store_backend == _PG
+        else None
+    )
     return ProblemRuntimeStores(
-        requests=request_store or defaults.requests,
-        results=result_store or defaults.results,
+        requests=request_store or pg_requests or defaults.requests,
+        results=result_store or pg_results or defaults.results,
         candidates=candidate_store or defaults.candidates,
         items=item_store or defaults.items,
         sets=set_store or defaults.sets,
@@ -259,6 +292,8 @@ class ProblemGenerationRunner:
         verify_config_version: str,
         prompt_version: str,
         lease_owner: str,
+        lease_heartbeat_seconds: float,
+        lease_heartbeat_max_seconds: float,
         now: Callable[[], datetime] = system_utc_now,
     ) -> None:
         self._supervisor = supervisor
@@ -270,6 +305,8 @@ class ProblemGenerationRunner:
         self._verify_config_version = verify_config_version
         self._prompt_version = prompt_version
         self._lease_owner = lease_owner
+        self._lease_heartbeat_seconds = lease_heartbeat_seconds
+        self._lease_heartbeat_max_seconds = lease_heartbeat_max_seconds
         self._now = now
 
     async def run_next(self, *, tenant_id: str) -> WorkerJob | None:
@@ -304,6 +341,26 @@ class ProblemGenerationRunner:
             raise
 
     async def _execute(self, job: WorkerJob) -> WorkerJob:
+        result_ref = await run_with_lease_heartbeat(
+            self._produce_result(job),
+            renew=lambda: self._supervisor.heartbeat(
+                tenant_id=job.tenant_id,
+                job_id=job.job_id,
+                lease_owner=self._lease_owner,
+                lease_generation=job.lease_generation,
+            ),
+            interval_seconds=self._lease_heartbeat_seconds,
+            max_duration_seconds=self._lease_heartbeat_max_seconds,
+        )
+        return await self._supervisor.succeed(
+            tenant_id=job.tenant_id,
+            job_id=job.job_id,
+            lease_owner=self._lease_owner,
+            lease_generation=job.lease_generation,
+            result_ref=result_ref,
+        )
+
+    async def _produce_result(self, job: WorkerJob) -> str:
         request = await self._requests.get(
             job.payload_ref, tenant_id=job.tenant_id
         )
@@ -332,17 +389,10 @@ class ProblemGenerationRunner:
         finally:
             await self._finalize_execution(context, swallow_errors=failed)
 
-        result_ref = await self._results.put(
+        return await self._results.put(
             tenant_id=job.tenant_id,
             job_id=job.job_id,
             result=result,
-        )
-        return await self._supervisor.succeed(
-            tenant_id=job.tenant_id,
-            job_id=job.job_id,
-            lease_owner=self._lease_owner,
-            lease_generation=job.lease_generation,
-            result_ref=result_ref,
         )
 
     def _execution_context(
@@ -438,6 +488,8 @@ async def open_problem_generation_runner(
     stores: ProblemRuntimeStores,
     lease_owner: str,
     run_store: RunStore,
+    lease_heartbeat_seconds: float,
+    lease_heartbeat_max_seconds: float,
     db_settings: DbSettings | None = None,
     call_log: LlmCallCollector | None = None,
 ) -> AsyncIterator[ProblemGenerationRunner]:
@@ -474,6 +526,8 @@ async def open_problem_generation_runner(
             verify_config_version=verify_config.version,
             prompt_version=prompt_version,
             lease_owner=lease_owner,
+            lease_heartbeat_seconds=lease_heartbeat_seconds,
+            lease_heartbeat_max_seconds=lease_heartbeat_max_seconds,
         )
 
 
@@ -481,6 +535,7 @@ __all__ = [
     "ProblemGenerationRunner",
     "ProblemResultStore",
     "ProblemRuntimeStores",
+    "build_tenant_scoped_candidate_store",
     "build_tenant_scoped_item_store",
     "build_tenant_scoped_revision_store",
     "default_problem_runtime_stores",
