@@ -1,0 +1,32 @@
+{
+  "snapshot_meta": {
+    "week_start": "2026-08-10",
+    "snapshot_hash": "sha256:x",
+    "term_context": "normal",
+    "classes": [
+      {
+        "class_ref": "cl_a1"
+      }
+    ]
+  },
+  "students": [
+    {
+      "student_ref": "st_1",
+      "class_ref": "cl_a1",
+      "enrolled_weeks": 10,
+      "status": "enrolled",
+      "consent": "granted"
+    }
+  ],
+  "learning_events": [
+    {
+      "record_id": "le_1",
+      "student_ref": "st_1",
+      "occurred_at": "2026-08-10T00:00:00+00:00",
+      "type": "submit",
+      "assignment_title_text": "8월 2주차 비문학 독서 과제",
+      "source": "trackB"
+    }
+  ],
+  "alert_context": []
+}

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -64,10 +65,16 @@ def test_the_readme_matches_the_generator() -> None:
     assert path.read_text(encoding="utf-8") == render_readme()
 
 
-def test_pending_vectors_are_not_silently_dropped() -> None:
-    """🔴 미착수분이 목록에서 사라지면 «안 한 것»이 «없는 것»이 된다(로그 149와 같은 형태)."""
-    assert PENDING, "미착수 벡터를 지우지 마라 — 다 만들었으면 이 검사를 같이 지운다"
-    assert not (set(_NAMES) & {name for name, _ in PENDING})
+def test_pending_is_empty_because_every_vector_exists() -> None:
+    """🔴 **아홉 종을 다 만들어 `PENDING` 이 비었다**(8/21).
+
+    ⚠ 종전 검사(`test_pending_vectors_are_not_silently_dropped`)는 `assert PENDING` 이었고
+    그 docstring 이 *"다 만들었으면 이 검사를 같이 지운다"* 라고 적어 뒀다. 지우는 대신
+    **뜻을 뒤집어 남긴다** — 누가 벡터를 빼고 `PENDING` 에 도로 넣으면 여기서 걸린다.
+    ⚠ 서로게이트는 **입력 계약에 자유 텍스트 필드가 없어 만들 자리가 없다**(§39 판정) —
+    「안 만든 것」이 아니라 「만들 수 없는 것」이라 `PENDING` 이 아니다.
+    """
+    assert PENDING == (), f"미착수분이 다시 생겼다: {PENDING}"
 
 
 # ─────────────────────── ② 모델이 받는 입력인가 ───────────────────────
@@ -142,3 +149,65 @@ def test_v00_carries_passage_ref_but_the_hash_ignores_it() -> None:
     assert canonical_snapshot_hash(
         DetectRequest.model_validate(body)
     ) == canonical_snapshot_hash(DetectRequest.model_validate(without))
+
+
+# ─────────────────── ⑥ 잔여 다섯이 각자 한 규칙을 든다 ───────────────────
+
+
+def _serialized(name: str) -> str:
+    """🔴 `canonical_snapshot_hash` 와 **같은 인자**로 만든다.
+
+    ⚠ 다른 인자로 만들면 다른 것을 재게 된다 — 이 파일이 재려는 것은
+    「해시가 보는 그 문자열」이지 「보기 좋은 JSON」이 아니다.
+    """
+    payload = canonical_snapshot_payload(_request(name))
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def test_v03_keeps_the_fractional_seconds() -> None:
+    """소수 초 6자리가 보존된다 — 🔴 **표기(Z/+00:00)는 안 잰다**(v02 가 이미 잰다).
+
+    🔴 왜 갈리나: Java `OffsetDateTime.toString()` 은 **후행 0 을 트림한다** —
+    `.100000` 이 `.1` 이 되면 바이트가 다르다(규칙 문서 §2-1 ㉡).
+    ⚠ 표기까지 여기서 단언하면 같은 것을 두 번 재고, 표기가 정해질 때 둘 다 고쳐야 한다.
+    """
+    assert ".100000" in _serialized("v03_time_fraction")
+
+
+def test_v04_writes_hangul_as_utf8_not_escapes() -> None:
+    """`ensure_ascii=False` 라 한글이 원문으로 나간다 — 유니코드 이스케이프가 아니다."""
+    text = _serialized("v04_nonascii")
+    assert "비문학 독서 과제" in text
+    assert "\\u" not in text, "비ASCII 가 이스케이프됐다"
+
+
+def test_v05_omits_the_detection_evidence_key() -> None:
+    """🔴 `detection_evidence` **만** 키 자체가 없다 — 나머지 배열은 남는다.
+
+    ⚠ 빈 배열도 같은 결과를 낸다(`canonical.py` 의 `if request.detection_evidence:`).
+    그 **동등성**은 기존 `test_an_explicit_empty_array_hashes_like_an_omitted_field` 가
+    잰다 — 여기서는 **키가 없다**는 것만 든다.
+    """
+    payload = canonical_snapshot_payload(_request("v05_empty_containers"))
+    assert "detection_evidence" not in payload
+    assert payload["learning_events"] == []
+    assert payload["alert_context"] == []
+
+
+def test_v07_does_not_escape_the_solidus() -> None:
+    """`/` 를 이스케이프하지 않는다 — 🔴 **`/` 만** 든다.
+
+    ⚠ 제어문자는 **일부러 안 넣었다**(실요청에 올 수 없는 값을 계약처럼 만들지 않는다) ·
+    서로게이트는 **만들 자리가 없다**(§39). ⇒ 이 검사를 「이스케이프 전반」으로 읽지 마라.
+    """
+    text = _serialized("v07_escape")
+    assert "8/2주차" in text
+    assert "8\\/2주차" not in text
+
+
+def test_v08_writes_integers_without_a_trailing_zero() -> None:
+    """정수에 후행 `.0` 이 없다 — Java 가 `double` 로 읽으면 `10.0` 이 되어 갈린다."""
+    text = _serialized("v08_integers")
+    assert re.search(r":\s*-?\d+\.0\b", text) is None, f"후행 .0 이 있다: {text[:200]}"
+    for value in ("10", "1800", "950", "21"):
+        assert f":{value}" in text
