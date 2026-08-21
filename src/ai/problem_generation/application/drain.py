@@ -6,6 +6,7 @@ import asyncio
 import logging
 import math
 from collections.abc import Awaitable, Callable, Sequence
+from typing import Final
 
 from ai.contracts.agents import WorkerJob
 
@@ -13,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 type RunNext = Callable[[str], Awaitable[WorkerJob | None]]
 type DiscoverTenants = Callable[[], Awaitable[Sequence[str]]]
+
+#: 앱 워커마다 드레인 태스크 하나가 잡을 직렬 실행한다. PG 백엔드에서는 실행 중인 잡이
+#: SQLAlchemy 풀 밖의 체크포인터 커넥션 하나를 점유하므로 DB 연결 예산의 직접 입력이다.
+PROBLEM_DRAIN_CONNECTIONS_PER_APP_WORKER: Final = 1
 
 
 class ProblemDrainLoop:
@@ -75,9 +80,7 @@ class ProblemDrainLoop:
         self._stop_event = asyncio.Event()
         self._cycle_done = asyncio.Event()
         self._cycle_done.set()
-        self._task = asyncio.create_task(
-            self._run(), name="problem-generation-drain"
-        )
+        self._task = asyncio.create_task(self._run(), name="problem-generation-drain")
 
     def notify_tenant(self, tenant_id: str) -> None:
         """새 잡이 생긴 테넌트를 중복 없이 다음 사이클에 예약한다."""
@@ -203,10 +206,7 @@ class ProblemDrainLoop:
         max_doublings = max(
             0,
             math.ceil(
-                math.log2(
-                    self._failure_backoff_max_seconds
-                    / self._failure_backoff_initial_seconds
-                )
+                math.log2(self._failure_backoff_max_seconds / self._failure_backoff_initial_seconds)
             ),
         )
         multiplier = 2.0 ** min(consecutive_failures - 1, max_doublings)
@@ -223,4 +223,9 @@ class ProblemDrainLoop:
             return
 
 
-__all__ = ["DiscoverTenants", "ProblemDrainLoop", "RunNext"]
+__all__ = [
+    "DiscoverTenants",
+    "PROBLEM_DRAIN_CONNECTIONS_PER_APP_WORKER",
+    "ProblemDrainLoop",
+    "RunNext",
+]

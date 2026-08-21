@@ -286,21 +286,23 @@ def test_the_briefing_worst_case_multiplies_the_transport_attempts() -> None:
 
 
 def test_the_connection_budget_fits_inside_postgres() -> None:
-    """🔴 **앱 워커 × 풀 + 드레인 동시성 ≤ PG `max_connections`**.
+    """🔴 **앱 워커 × (풀 + PG 드레인) + counsel 드레인 ≤ PG 상한**.
 
     ⚠ №20 ⑤ 의 실측(동시 300 → `TooManyConnectionsError` 35 · `OperationalError` 145)이
-    이 관계가 없어서 났다. **다만 범인은 SQLAlchemy 풀이 아니었다** — `store_backend=pg` 는
-    잡마다 `AsyncPostgresSaver` 커넥션을 **새로** 열고 그건 풀 **밖**이다.
-    ⇒ 이 검사가 덮는 것은 **상한이 있는 두 항**이고, 상한 없는 항(요청당 체크포인터)은
-    99 #127 로 남아 있다. **덮는 범위를 문면에 적어 둔다** — 안 적으면 다음 사람이
-    «관계가 잠겼다» 로 읽는다.
+    이 관계가 없어서 났다. 인라인 요청의 풀 밖 체크포인터는 제거됐지만, 두 드레인은 잡을
+    실행하는 동안 각각 풀 밖 체크포인터를 쓴다. PG 드레인의 직렬 실행 1개도 앱 워커 수를
+    따라 늘어나므로 빠뜨리지 않는다.
     """
     from ai.composition.counsel.settings import CounselSettings
     from ai.db.settings import DbSettings
+    from ai.problem_generation.application.drain import (
+        PROBLEM_DRAIN_CONNECTIONS_PER_APP_WORKER,
+    )
 
     db = DbSettings()
     counsel = CounselSettings()
     bounded = db.app_workers * (db.db_pool_size + db.db_max_overflow)
+    bounded += db.app_workers * PROBLEM_DRAIN_CONNECTIONS_PER_APP_WORKER
     bounded += counsel.counsel_drain_concurrency
     assert bounded <= db.db_max_connections, (
         f"상한 있는 커넥션 {bounded} 가 PG max_connections({db.db_max_connections})를 넘는다 — "
@@ -319,39 +321,33 @@ def test_the_drain_concurrency_is_bounded() -> None:
     if not doc:
         #: pydantic 이 docstring 을 description 으로 안 옮기는 배포도 있다 — 소스를 읽는다.
         doc = inspect.getsource(CounselSettings)
-    assert "커넥션" in doc, (
-        "드레인 동시성 docstring 에 「커넥션 수와 같다」는 관계가 사라졌다"
-    )
+    assert "커넥션" in doc, "드레인 동시성 docstring 에 「커넥션 수와 같다」는 관계가 사라졌다"
 
 
-def test_the_third_connection_term_is_named_even_though_it_is_unbounded() -> None:
-    """🔴 **식은 셋인데 잠근 것은 둘이다** — 그 사실이 어딘가 적혀 있어야 한다 (99 #127).
+def test_the_out_of_pool_connection_terms_are_named_and_bounded() -> None:
+    """🔴 두 드레인의 풀 밖 커넥션이 관계식과 운영 문면에서 빠지지 않는다 (99 #127).
 
-    ⚠ №21 보고가 *"두 항만 잠금"* 이라 적었고 №22 작업 0-6 이 그것을 물었다. 답:
+    현재 관계식은 다음 세 항이고 모두 상한이 있다:
 
-        앱워커 × (pool + overflow)        ← 잠긴다(설정)
-      + 앱워커 × 동시요청당 체크포인터    ← 🔴 **상한 없다** (요청 수가 곧 커넥션 수)
-      + 드레인 동시성                     ← 잠긴다(세마포어)
+        앱워커 × (pool + overflow)        ← 설정
+      + 앱워커 × PG 드레인 1             ← 직렬 태스크 구조
+      + counsel 드레인 동시성             ← 세마포어
 
-    🔴 **~~가운데 항은 `counsel_inline_drain_max` 가 0 이 되면 사라진다~~ (8/21 정정)** —
-    **K=0 은 그 항을 안 없앴다.** 라우터가 러너를 **조건 없이** 열었고 여는 것 자체가
-    `_open_saver` → `open_checkpointer` 다. K 는 그 **안쪽 루프의 회전 수**일 뿐이었다.
-    ⚠ 이 문장은 저장소 산문을 **재지 않고 옮긴 것**이다(로그 146).
-    🔴 **(8/21 해소)** 러너를 `AsyncExitStack` 으로 **필요할 때만** 연다 ⇒ 이제 실제로
-    적재만 하는 POST 는 체크포인터를 안 연다. 그 성질은
-    `tests/ai/integration/test_counsel_runner_is_opened_lazily.py` 가 잰다.
-    ⚠ 이 검사는 **값을 재는 것이 아니라 「그 사실이 문면에 있는가」를 잰다** — 말없이
-    사라지면 다음 사람이 «세 항이 다 잠겼다» 로 읽는다.
+    counsel POST가 체크포인터를 열지 않는 성질은 별도 lazy-runner 검사가 잰다. 여기서는
+    남은 두 풀 밖 항이 설정 문면과 각 드레인 문면에 함께 존재하는지를 잰다.
     """
     import inspect
 
     from ai.composition.counsel import drain
     from ai.db.settings import DbSettings
+    from ai.problem_generation.application import drain as problem_drain
 
     doc = inspect.getsource(DbSettings)
-    assert "체크포인터" in doc and "풀 밖" in doc, (
-        "커넥션 관계식에서 「체크포인터는 풀 밖」이라는 항이 사라졌다"
+    assert "PG 드레인 1" in doc and "counsel 드레인 동시성" in doc, (
+        "커넥션 관계식에서 두 드레인 중 하나가 사라졌다"
     )
+    assert problem_drain.PROBLEM_DRAIN_CONNECTIONS_PER_APP_WORKER == 1
+    assert "잡을 직렬 실행" in inspect.getsource(problem_drain)
     assert "커넥션 몫이 앱과 갈린다" in (drain.__doc__ or ""), (
         "드레인 docstring 에서 커넥션 몫 조건(#128 ③)이 사라졌다"
     )

@@ -44,18 +44,18 @@ class DbSettings(BaseSettings):
     app_workers: int = Field(default=1, ge=1)
     """앱 프로세스(uvicorn worker) 수 — 관계식의 곱이다.
 
-    🔴 **№20 ⑤ 의 진짜 범인은 SQLAlchemy 풀이 아니었다.** `store_backend=pg` 는 잡마다
-    `AsyncPostgresSaver` 커넥션을 **새로** 열고(`counsel/assembly.py` — 요청 스코프),
-    그건 **풀 밖**이다. 동시 300건이 곧 커넥션 300 시도였고 `TooManyConnectionsError` 가 났다.
-    ⇒ 관계식은 **그 항을 포함해야 한다**:
+    🔴 **№20 ⑤ 의 진짜 범인은 SQLAlchemy 풀이 아니었다.** 당시 counsel POST가 잡마다
+    `AsyncPostgresSaver` 커넥션을 **새로** 열었고, 그건 **풀 밖**이었다. 동시 300건이 곧
+    커넥션 300 시도라 `TooManyConnectionsError`가 났다. 인라인 실행 제거와 lazy runner로
+    요청당 무제한 항은 닫혔지만, 두 배경 드레인의 체크포인터 커넥션은 예산에 남는다:
 
         앱 워커 × (pool_size + max_overflow)          ← SQLAlchemy
-      + 앱 워커 × 동시 요청당 체크포인터 커넥션        ← 🔴 풀 밖
-      + 배경 드레인 동시성                             ← `counsel_drain_concurrency`
+      + 앱 워커 × PG 드레인 1                         ← 체크포인터 · 풀 밖
+      + counsel 드레인 동시성                         ← 체크포인터 · 풀 밖
       ≤ PG max_connections
 
-    ⚠ **동시 요청당 체크포인터 커넥션에 상한이 없다** — 그게 남은 결함이고 99 #127 이다.
-    이 회차는 **드레인 몫만** 상한을 갖는다(세마포어)."""
+    PG 드레인은 앱 워커마다 태스크 하나가 잡을 직렬 실행하고, counsel 드레인은 세마포어로
+    동시성을 제한한다. ⇒ 세 항 모두 설정 또는 구조로 상한이 있다."""
 
     agent_checkpoint_database_url: str | None = None
     """LangGraph PostgresSaver용 psycopg URL.
