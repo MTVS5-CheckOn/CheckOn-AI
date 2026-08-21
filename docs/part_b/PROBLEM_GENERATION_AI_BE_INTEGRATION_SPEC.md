@@ -23,8 +23,8 @@
 기준 커밋에서 다시 실행한 결과는 다음과 같다.
 
 - Ruff 통과
-- Mypy 522파일 통과
-- offline 3,681 passed / 20 skipped / 172 deselected / 3 xfailed
+- Mypy 523파일 통과
+- offline 3,685 passed / 20 skipped / 172 deselected / 3 xfailed
 - 57노드 중 56노드 완주와 `language.grammar.fortition` 제외는 **그대로 유효하다.** 코드로
   대조했다 — `tests/ai/integration/test_problem_router.py`의
   `_A_OWNED_REDACTION_BLOCKED_NODES`가 그 1노드만 담고, 같은 파일이
@@ -309,7 +309,9 @@ Adapter는 `job_id`와 `execution_id`를 응답 즉시 영속 저장한다. `202
 | `data.status` | 구분 | Adapter 동작 |
 | --- | --- | --- |
 | `queued` | 비종단 | `Retry-After` 후 재조회 |
+| `leased` | 비종단 | `Retry-After` 후 재조회 |
 | `running` | 비종단 | `Retry-After` 후 재조회 |
+| `paused` | 비종단 | `Retry-After` 후 재조회 |
 | `succeeded` | 종단 성공 | `data.result.set_id`를 저장하고 Step4로 이동 |
 | `failed` | 종단 실패 | 관찰 종료 및 실패 처리 |
 | `cancelled` | 종단 실패 | 관찰 종료 및 실패 처리 |
