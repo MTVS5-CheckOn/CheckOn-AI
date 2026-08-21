@@ -742,4 +742,31 @@ CORPUS: tuple[RedactionCase, ...] = (
             "이미 전송을 막는다(`trace_masking.py:83` — `findings or uncertain`)"
         ),
     ),
+    # ── 73~74 국어 문법 용어(오탐 검증 — 유지돼야 함) ─────────
+    # 🔴 №59 실측 8/22. `whitelists.name_exclude` 의 `이시옷`·`성립되` 가 이 둘을 막는다.
+    #   ⚠ 어간을 빼면 **여기가 red** 여야 그 목록이 지켜진다 — yaml:332 의 «코퍼스와 함께 누적».
+    RedactionCase(
+        id=73,
+        category="함정·문법용어(사이시옷)",
+        text="표기상으로는 사이시옷이 없더라도 된소리로 발음한다",
+        expected="표기상으로는 사이시옷이 없더라도 된소리로 발음한다",
+        must_present=("사이시옷이",),
+        context_trap=True,
+        reason=(
+            "🔴 `이`(성씨)+`시옷`+조사 `이`. **B 축이 이 오탐 때문에 "
+            "`language.grammar.fortition` 노드를 57 중에서 빼고 있었다**(99 #185)"
+        ),
+    ),
+    RedactionCase(
+        id=74,
+        category="함정·문법용어(성립되)",
+        text="휴지가 성립되는 합성어의 경우에는 된소리로 발음한다",
+        expected="휴지가 성립되는 합성어의 경우에는 된소리로 발음한다",
+        must_present=("성립되는",),
+        context_trap=True,
+        reason=(
+            "🔴 `성`(성씨)+`립되`+조사 `는`. 위 73 과 **같은 문장에** 있어 후보가 셋이 됐고 "
+            "밀도 임계를 넘겨 **문장 통째 `⟪확인필요⟫`** 였다"
+        ),
+    ),
 )

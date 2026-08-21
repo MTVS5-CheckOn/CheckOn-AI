@@ -29,13 +29,16 @@ def test_corpus_has_expected_cases() -> None:
     「3음절 한자어 + 조사」 형태로 인명 후보에 걸려 **초안이 통째로 안 나왔다.**
     `whitelists.name_exclude` 5어간이 처방이고, **이 여덟이 그 목록의 감시자**다 — 어간을
     빼면 여기가 red 다. ⚠ 종전 이 자리의 편중 셋과 달리 이번은 **미탐이 아니라 오탐** 축이다.
+    🔴 **73~74 는 8/22 오탐 실측분이다**(99 #185 · №59). 국어 문법 용어(`사이시옷이`·
+    `성립되는`)가 같은 형태로 걸려 **B 축이 `language.grammar.fortition` 노드를 57 중에서
+    빼고 있었다** — 🔴 **한 달 넘게**. 처방은 같은 목록에 어간 둘이고, 이 둘이 감시자다.
     🔴 56~64는 8/6 실측분이다 — 이번엔 **관계어 앞 정식 성명이 한 건도 없었다**(미탐 14종)
     그리고 **학원 빈출어가 없었다**(오탐 9종). 편중 세 번째라, 형태 커버리지를 사람이
     표로 관리하는 대신 **곱집합을 생성해 CI가 재게** 했다(`test_redaction_coverage.py`).
     """
     # 🔴 손 유지 총수 — 올릴 때는 위 docstring 에 **왜 늘었는지**를 같이 적는다(결정 로그 145).
-    assert len(CORPUS) == 71
-    assert len({case.id for case in CORPUS}) == 71  # id 중복 없음
+    assert len(CORPUS) == 73
+    assert len({case.id for case in CORPUS}) == 73  # id 중복 없음
 
 
 def test_no_miss_across_corpus() -> None:
