@@ -98,3 +98,29 @@ def test_the_consent_field_is_reserved_but_unused(section: str) -> None:
         f"🔴 표식 없이 두면 구현 회차에서 **처리 로직이 생긴다.** "
         f"실제로 쓰기로 했다면 그것은 계약 변경이고 백엔드 합의가 선행이다"
     )
+
+
+def test_the_label_suggest_trigger_is_not_called_a_batch_anywhere_in_04() -> None:
+    """④ 04 **전문**에서 라벨 제안을 「주간 배치」라 부르는 줄이 없다.
+
+    🔴 **왜 절 검사로 모자란가** — ①~③ 은 §3.7 절만 본다. 그래서 8/21 에 **같은 문서가 두
+    말을 했다**: §3.7 은 「강사 요청」, §2 카운트 표와 §3 엔드포인트 표는 「주간 배치」.
+    **표 행은 어느 절 검사에도 안 걸린다.**
+
+    ⚠ 🔴 **앵커를 「주간 배치」 단독으로 넓히지 않는다** — 이 저장소에는 **다른 축의 배치**
+    문면이 있다(`part_a/03_usecases.md` 의 detect R3 비율 계산 · `06_refine_policy.md` 의
+    선호 추출). 넓히면 **남의 사실을 red 로 만든다**(#02 가 반복해서 남긴 것).
+    ⇒ **같은 줄에** 「라벨」 축 표식과 「주간 배치」가 **함께** 있을 때만 red 다.
+    """
+    body = _DOC.read_text(encoding="utf-8")
+    stale = [
+        f"{n}: {line.strip()}"
+        for n, line in enumerate(body.splitlines(), start=1)
+        if "주간 배치" in line and ("labels/suggest" in line or "라벨 제안" in line)
+    ]
+    assert not stale, (
+        "라벨 제안의 트리거는 **「강사 요청」**이다(8/21 · 04 §3.7). 표 행이 낡았다:\n  "
+        + "\n  ".join(stale)
+        + f"\n🔴 정말 배치로 되돌린 것이면 §{_SECTION} 과 {_SIBLING} §6 도 같이 고쳐라 — "
+        "지금은 같은 문서가 두 말을 하고 있다"
+    )
