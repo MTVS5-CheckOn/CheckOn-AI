@@ -29,13 +29,13 @@ from typing import Any, Final
 from uuid import UUID
 
 import pytest
+from counsel_drain import drain_once
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
 from ai.api.routers import counsel as counsel_router
 from ai.api.routers import diagnosis as diagnosis_router
 from ai.api.routers import problem as problem_router
-from ai.composition.counsel.assembly import open_counsel_pack_runner
 from ai.composition.counsel.enqueue import CounselPackEnqueuer
 from ai.composition.counsel.settings import get_counsel_settings
 from ai.composition.counsel.stores import InMemoryDraftResultStore
@@ -885,32 +885,31 @@ def test_counsel_get_draft_fixtures() -> None:
     _fixture("get_counsel_draft.404", not_found.json())
 
 
+#: 이 파일이 「늦은 성공」을 만들 때 돌리는 회전 수.
+#:
+#: 🔴 **`counsel_inline_drain_max`(K)를 참조하지 않는다** — 종전 자체 구현은
+#: `range(K + 2)` 였다. K 는 **예산에서 역산한 운영값**이고 여기 필요한 것은
+#: **「내가 방금 넣은 잡 하나를 끝낸다」**는 시나리오 상수다. 둘을 묶으면 운영값이
+#: 바뀔 때 검사가 red 도 아니고 조용히 **무효**가 된다(결정 로그 153).
+#:
+#: ⚠ **1 인 이유**: 이 자리는 POST 직후이고 큐에 자기 잡 하나뿐이다
+#: (`assert posted...status != "succeeded"` 가 그 앞에서 그것을 못 박는다).
+_LATE_SUCCESS_ROTATIONS: Final = 1
+
+
 def _drain_counsel_queue() -> None:
     """워커 대역 — 남은 잡을 끝까지 돌린다(라우터를 안 지난다).
 
     ⚠ **늦은 성공**을 만들 때만 쓴다. POST 가 그 자리에서 끝나면 뷰가 완성된 result 와
     함께 캐시돼 GET 이 복원 경로를 **다시 안 지난다.**
+
+    🔴 **자체 구현을 걷고 `drain_once` 로 합쳤다**(99 #155 · 8/21). 종전에는 이 파일이
+    러너를 직접 열어, `fakes/counsel_drain.py::drain_once` 와 **두 대역**이 공존했다 —
+    갈리면 이 파일의 검사가 **다른 것을 잰다**(결정 로그 127 이 닫은 병의 재발 자리).
+    ⚠ 남긴 쪽이 `drain_once` 인 이유는 그것이 **라우터·배경 워커와 같은 `run_next`** 를
+    부르기 때문이다(`test_drain_once_bridge.py` 가 그 등가성을 문다).
     """
-
-    async def run() -> None:
-        provider = counsel_router.require_counsel_provider()
-        async with open_counsel_pack_runner(
-            supervisor=counsel_router._build_supervisor(),
-            context_store=counsel_router._context_store,
-            step_sink=counsel_router._step_sink,
-            draft_store=counsel_router._draft_store,
-            pack_store=counsel_router._pack_store,
-            planner=provider,
-            writer=provider,
-            regen_max=counsel_router._REGEN_MAX,
-            lease_owner="http-fixture-counsel-worker",
-            run_store=counsel_router._run_store,
-        ) as runner:
-            for _ in range(get_counsel_settings().counsel_inline_drain_max + 2):
-                if await runner.run_next(tenant_id=_COUNSEL_TENANT) is None:
-                    break
-
-    asyncio.run(run())
+    drain_once(_COUNSEL_TENANT, rotations=_LATE_SUCCESS_ROTATIONS)
 
 
 def _drop_every_counsel_draft_row() -> int:
