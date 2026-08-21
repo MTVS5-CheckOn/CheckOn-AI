@@ -12,10 +12,13 @@ schema_version: llm-call-timeouts.v1
 #   (`OPENAI_TIMEOUT_S`, 운영 90초)이 그대로 간다 — 즉 이 파일이 비면 **오늘과 같다.**
 #   값을 채우는 것은 별건이고, 자리마다 소유자가 다르다:
 #
-#     composition/briefing          detect 브리핑    A 소유 — 지금은 `composition/provider.py`
-#                                                    의 `BRIEFING_CALL_TIMEOUT_S = 15` 국소 주입
+#     composition/briefing          detect 브리핑    ✅ **(8/22) 아래 표에 들어왔다** —
+#                                                    국소 주입은 걷었다(99 #141)
 #     composition/counsel_plan      counsel plan     A 소유 — 실측 p95 5.4s
-#     composition/counsel_*(write)  counsel write    A 소유 — 실측 p95 26.8s
+#     composition/counsel_pack      counsel write    A 소유 — 실측 p95 26.8s
+#       ⚠ 🔴 (8/22 정정) 종전 표기는 `composition/counsel_*(write)` 였는데 **와일드카드가
+#         아니다** — 실제 키는 `composition/counsel_pack` **하나**다(`counsel/prompt.py`).
+#         `*` 로 적어 두면 다음 사람이 여러 키를 찾는다.
 #     pg.items.v1 · pg.cross_solve.v1 · pg.passage.v1 · pg.source_material.v1 · pg.refine.v1
 #                                   출제             B 소유 — 🔴 **콜당 실측이 없다**
 #     classify.inquiry.v1           분류             B 소유 — 콜당 실측 없음
@@ -24,9 +27,44 @@ schema_version: llm-call-timeouts.v1
 #   나온다. 근거 없는 상한은 정상 호출을 죽이고(짧으면) 아무것도 안 막는다(길면).
 #   실측이 없는 자리는 **비워 두는 것이 정직한 상태**다 — 전역 상한이 받는다.
 #
-# ⚠ 값을 넣을 때는 근거를 같은 줄 주석에 남긴다. 예:
-#     composition/counsel_plan: 30.0   # 실측 p95 5.4s × 여유 — A 판정 2026-mm-dd
+# 🔴 **상한은 `max` 를 밑돌면 안 된다** — 그것이 하한이다. 밑돌면 **관측된 정상 콜을 죽인다.**
+# ⚠ 🔴 **「p95 × 2」는 규칙이 아니라 우연이었다**(2026-08-22 실측). pg 두 자리에서 그 곱이
+#   `max` 를 넘긴 것은 우연이고, 실제 배수는 흩어진다:
+#       pg.items.v1     40.0 / max 29.6 = 1.35배
+#       pg.cross_solve  16.0 / max  9.3 = 1.72배
+#       composition/briefing 15.0 / max 5.76 = 2.6배   ← p95×2 는 4.0s 라 **max 를 밑돈다**
+# 🔴 **실제 값은 「그 자리가 죽었을 때의 대가」로 정한다.** 대가가 크면 여유를 남기고
+#   작으면 조인다 — ⇒ **값 옆에 그 대가를 적는다.** 배수만 적으면 다음 사람이 **배수를
+#   규칙으로 읽고** 다른 자리에 그대로 적용한다.
+# ⚠ `max` 가 없는 자리는 **비워 둔다** — `p95` 만으로는 하한을 못 지킨다.
+#
+# ⚠ 값을 넣을 때는 근거를 값 위 주석 블록에 남긴다(한 줄로는 안 들어간다).
 call_timeouts:
+  # ━━ composition/briefing — A 판정 2026-08-22 (99 #141 해소) ━━
+  #
+  # ① 실측: **n=147 · 7회차**(2026-08-20 스모크 · 8/22 전수 재집계 · **실 LLM 0회**)
+  #      p50 **0.97s** · p90 1.54s · p95 **2.02s** · **max 5.76s** · 재시도 0/147
+  #    ⚠ 🔴 원장은 `local_data/*llm_smoke_raw.json` 의 `s1.rows` 인데 **사용자 로컬이라
+  #      저장소에 없다**(`git ls-files local_data` = 0). 다음 사람이 그 경로를 찾으면 없다.
+  #    ⚠ **표본 절단을 명시적으로 배제했다**(99 #110 의 순환): 이 회차들은 상한 15s 시절인데
+  #      **15s 초과 0/147** 이고 `llm_failed` 21건은 지연 **p50 0.22s**(벤더 미도달 — 즉시
+  #      실패)라 **타임아웃으로 잘린 표본이 아니다.** `budget_exhausted` 는 **0건**.
+  #
+  # ② 🔴 **왜 안 조였나** — `max` 가 상한의 **38%** 다. 15s 초과가 **0/147** 이라
+  #    조일 근거가 **관측에 없다.** 「이 정도면 되겠지」로 내리는 것이 이 파일이 금지한 그것이다.
+  #
+  # ③ 🔴 **값의 대가** — 브리핑이 죽으면 `/detect` 축이 **결정론 폴백 문구**로 간다.
+  #    조여서 얻는 것(빨리 실패)보다 **잃는 것(강사가 문장 대신 폴백을 본다)이 크다** ⇒ 여유를 남긴다.
+  #    ⚠ 🔴 **다음 사람이 「2.6배는 헐렁하다」로 조이려 할 때 읽을 문장이 이것이다.**
+  #    ⚠ 위쪽 예산 관계도 이 값에 묶여 있다: 브리핑 총 예산 45s + 콜당 15s = **60s** 로
+  #      04 §2.4 의 BE 60s 에 **딱 맞는다**(99 #124). 올리면 그 관계가 깨진다.
+  composition/briefing: 15.0
+  #
+  # 🔴 **`composition/counsel_plan`·`composition/counsel_pack` 은 비워 둔다(8/22)** —
+  #   `p95` 는 있는데(5.4s · 26.8s) **`max` 가 없다.** 위 규칙대로 `max` 를 모르면 하한을
+  #   못 지키고, 브리핑에서 본 것처럼 `p95×2` 가 `max` 를 밑돌 수 있다 ⇒ **`max` 실측 전에는
+  #   안 넣는다.** ⚠ 「왜 안 넣었지」로 읽히지 않게 여기 적어 둔다.
+  #
   # 🔴 아래 두 자리만 채운다 — 나머지는 표본이 얇어 **비워 둔다**(아래 「보류」).
   #   측정: 로컬 실 LLM(gpt-5.4-mini · api.openai.com) · 5영역 × 4회 = 20회 · 2026-08-20
   #   러너: `python -m ai.evaluation.problem_preview --area <영역> --count 1 --json`
