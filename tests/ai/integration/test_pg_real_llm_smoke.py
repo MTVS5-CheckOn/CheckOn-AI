@@ -140,6 +140,17 @@ class RealLlmSmokeUnavailable(RuntimeError):
     """실측 환경 또는 provider가 없어 스모크를 실행할 수 없음."""
 
 
+class _UnexpectedSmokeOutcome(AssertionError):
+    """ProblemSetResult가 아닌 정상 거부 산출의 비민감 사유를 보존한다."""
+
+    def __init__(self, area_tag: AreaTag, outcome_type: str, status_reason: str) -> None:
+        super().__init__(
+            f"{area_tag.value} 실측이 ProblemSetResult로 끝나지 않았다: "
+            f"{outcome_type}: {status_reason}"
+        )
+        self.status_reason = status_reason
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderFailureObservation:
     """본문·URL 없이 provider 실패의 분류 정보만 남기는 실측 메타."""
@@ -277,6 +288,7 @@ class SafeFailureRow:
     exception_type: str
     cause_type: str
     http_status: str
+    status_reason: str
 
 
 class _ObservingProvider:
@@ -521,9 +533,10 @@ async def run_real_llm_smoke(
     outcome = await workflow.run(request, execution_context)
     duration_s = time.perf_counter() - started
     if not isinstance(outcome, ProblemSetResult):
-        raise AssertionError(
-            f"{area_tag.value} 실측이 ProblemSetResult로 끝나지 않았다: "
-            f"{type(outcome).__name__}: {outcome.status_reason}"
+        raise _UnexpectedSmokeOutcome(
+            area_tag,
+            type(outcome).__name__,
+            outcome.status_reason,
         )
 
     frozen_records = tuple(records)
@@ -703,6 +716,7 @@ def _safe_failure_from_reason(area: AreaTag | str, reason: str) -> SafeFailureRo
         exception_type=fields.get("exceptions", _UNKNOWN),
         cause_type=fields.get("causes", _UNKNOWN),
         http_status=fields.get("http_statuses", "none"),
+        status_reason=_UNKNOWN,
     )
 
 
@@ -717,6 +731,11 @@ def _safe_failure_from_exception(area: AreaTag | str, error: Exception) -> SafeF
         exception_type=type(error).__name__,
         cause_type=type(deepest).__name__ if deepest is not None else _UNKNOWN,
         http_status=str(status) if isinstance(status, int) else "none",
+        status_reason=(
+            _single_line(error.status_reason)
+            if isinstance(error, _UnexpectedSmokeOutcome)
+            else _UNKNOWN
+        ),
     )
 
 
@@ -748,21 +767,16 @@ async def _run_matrix(
     tuple[RefineReportRow, ...],
     tuple[SafeFailureRow, ...],
 ]:
-    try:
-        summaries = await run_real_llm_smoke_matrix(repetitions=repetitions)
-    except Exception as error:
-        return (), (), (_safe_failure_from_exception("all", error),)
     rows: list[SmokeReportRow] = []
     refine_rows: list[RefineReportRow] = []
     failures: list[SafeFailureRow] = []
-    for summary in summaries:
-        if summary.observations:
-            rows.append(_report_row(summary.area_tag, summary.observations))
-            refine_rows.append(_refine_report_row(summary.area_tag, summary.observations))
-        failures.extend(
-            _safe_failure_from_reason(summary.area_tag, reason)
-            for reason in summary.unavailable_reasons
+    for case in _AREA_CASES:
+        area_rows, area_refine_rows, area_failures = await _run_single(
+            case.area_tag, repetitions
         )
+        rows.extend(area_rows)
+        refine_rows.extend(area_refine_rows)
+        failures.extend(area_failures)
     return tuple(rows), tuple(refine_rows), tuple(failures)
 
 
@@ -817,8 +831,8 @@ def _render_refine_report(rows: tuple[RefineReportRow, ...]) -> str:
 
 def _render_failures(rows: tuple[SafeFailureRow, ...]) -> str:
     lines = [
-        "| 영역 | outcome | 예외 타입 | 원인 타입 | HTTP 상태 |",
-        "| --- | --- | --- | --- | --- |",
+        "| 영역 | outcome | 예외 타입 | 원인 타입 | HTTP 상태 | status_reason |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     lines.extend(
         "| "
@@ -829,6 +843,7 @@ def _render_failures(rows: tuple[SafeFailureRow, ...]) -> str:
                 row.exception_type,
                 row.cause_type,
                 row.http_status,
+                row.status_reason,
             )
         )
         + " |"
@@ -1156,7 +1171,7 @@ def test_cli_preserves_success_and_failure_from_repeated_single_area(
     report = result_path.read_text(encoding="utf-8")
     assert "| T1 | language | 1 | 1 | verified | - | - | 1 | fake-model |" in report
     assert "| language | false | - | answer_integrity | R-1:테스트 |" in report
-    assert "| language | provider_error | LlmError | BadRequestError | 400 |" in report
+    assert "| language | provider_error | LlmError | BadRequestError | 400 | unknown |" in report
     assert "secret.example" not in report
     assert "api_key" not in report
     assert "RAW_COMPLETION_MUST_NOT_PRINT" not in report
@@ -1170,7 +1185,7 @@ def test_cli_failure_renderer_keeps_only_categorical_metadata() -> None:
     )
     rendered = _render_failures((_safe_failure_from_reason(AreaTag.LANGUAGE, reason),))
 
-    assert "| language | provider_error | LlmError | BadRequestError | 400 |" in rendered
+    assert "| language | provider_error | LlmError | BadRequestError | 400 | unknown |" in rendered
     assert "secret.example" not in rendered
     assert "api_key" not in rendered
 
