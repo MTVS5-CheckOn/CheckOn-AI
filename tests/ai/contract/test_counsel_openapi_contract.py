@@ -172,15 +172,25 @@ def test_the_documented_codes_cover_every_fixture() -> None:
 
     #: 🔴 **문서에만 있는 코드 — 늘면 red 다.** 각각 왜 픽스처가 없는지 아래에 적었다.
     extra = {path: sorted(documented[path] - from_fixtures[path]) for path in documented}
+    #: 🔴 **예외 항마다 「왜 예외인가」와 「언제 없어지나」를 적는다**(로그 178).
+    #:   둘 중 하나라도 못 적으면 그건 예외가 아니라 **미해소 안건**이다 — 종전 주석은
+    #:   *"이 PR 이전부터"* 였고 그건 **내력이지 이유가 아니다.**
     assert extra == {
         _CREATE: [],
-        #: `422` — FastAPI 가 path 파라미터 때문에 **자동으로** 넣는다(이 PR 이전부터).
-        #:   🔴 `job_id: str` 이라 검증이 실패할 수 없어 **도달 불가**다(실측: 어떤 값도
-        #:   404 로 떨어진다). `openapi_extra` 는 deep-merge 라 **키를 지울 수 없고**,
-        #:   지우려면 `api/app.py`(양자 승인)를 열어야 한다 ⇒ 99 #105 로 등재했다.
+        #: `422` ——— 🔴 **왜**: FastAPI 가 path 파라미터가 있으면 **자동으로** 넣는다
+        #:   (`fastapi/openapi/utils.py` — `all_route_params` 가 있고 응답에 `422`·`4XX`·
+        #:   `default` 가 **없을 때만** 넣는다 [읽음 8/21]). `job_id: str` 이라 검증이
+        #:   실패할 수 없어 **도달 불가**이고, 승우님이 codegen 하면 **못 오는 핸들러**가 생긴다.
+        #: 🔴 **언제**: `api/app.py` 에 `app.openapi()` 후처리를 넣어 **path 파라미터가
+        #:   전부 `str` 인 경로에서만** `422` 를 떼면 없어진다. ⚠ 전역 제거는 **틀린다** —
+        #:   `/v1/problems/{set_id}/items/{slot_index}` 는 `slot_index: int` 라 **422 가
+        #:   실제로 도달한다**(실측 8/21). `openapi_extra` 는 deep-merge 라 **키를 못 지운다.**
+        #:   `app.py` 가 **양자 승인 13파일**이라 이 회차에서 안 열었다 ⇒ 99 #105.
         _GET: ["422"],
-        #: `404`·`409` 는 라우터가 실제로 낸다 — **픽스처가 없을 뿐이다**(99 #105).
-        _REFINE: ["404", "409", "422"],
+        #: 🔴 **(8/21) `404`·`409` 를 뺐다** — 라우터가 실제로 내던 코드인데 픽스처가
+        #:   없었을 뿐이고, 이제 `post_counsel_refine.404` · `.409.idempotency_conflict`
+        #:   가 덮는다(99 #105). ⚠ 남은 `422` 는 위 `_GET` 과 **같은 사유·같은 조건**이다.
+        _REFINE: ["422"],
     }, extra
 
 
@@ -227,17 +237,23 @@ def test_the_data_shape_differs_across_the_three_endpoints() -> None:
 # ── 6 · 기존 픽스처가 그대로다 ───────────────────────────────────
 
 
-def test_this_change_did_not_touch_any_response() -> None:
-    """이 PR 은 **문서만** 늘렸다 — 응답 본문은 픽스처가 증명한다.
+def test_the_counsel_fixture_count_is_raised_by_hand() -> None:
+    """counsel 픽스처 **개수 가드** — *"픽스처가 사라졌는데 문서만 늘었다"* 를 막는다.
 
-    ⚠ 픽스처 대조는 `test_http_fixtures.py` 가 든다. 여기서는 **개수**만 확인해
-    *"픽스처가 사라졌는데 문서만 늘었다"* 를 막는다.
+    ⚠ 픽스처 **대조**는 `test_http_fixtures.py` 가 든다. 여기서는 **개수**만 본다.
+
+    ⚠ 🔴 **(8/21) 이름을 고쳤다** — 종전 이름은 `test_this_change_did_not_touch_any_response`
+    였고, 그건 **이 함수가 하는 일이 아니었다**(«어떤 PR 이 응답을 안 건드렸다» 는 그 PR
+    한 번의 사실이고, 이 검사는 **개수를 손으로 올리게 하는 장치**다). 로그 154 가 8/10 에
+    등재했고 그동안 안 고쳐졌다 — **숫자를 건드리는 이번 회차가 그 자리다.**
+    🔴 옛 이름을 여기 남긴다 — 지우면 로그 154 를 찾는 사람이 이 함수에 못 닿는다.
     """
     counsel_fixtures = sorted(_FIXTURE_DIR.glob("*counsel*.json"))
     #: 🔴 **15 → 17 (8/21 · 99 #163)** — 바디 검증 400 의 **배열 detail** 을 덮으면서
     #: `post_counsel_drafts.400.body_schema` · `post_counsel_refine.400.body_schema` 둘이 늘었다.
+    #: 🔴 **17 → 19 (8/21 · 99 #105)** — refine 의 **404·409** 를 덮었다.
     #: ⚠ `len(...)` 으로 빼지 않는다 — **손으로 올리는 것이 이 검사의 목적**이다(로그 145).
-    assert len(counsel_fixtures) == 17, [p.name for p in counsel_fixtures]
+    assert len(counsel_fixtures) == 19, [p.name for p in counsel_fixtures]
 
 
 @pytest.mark.parametrize(
