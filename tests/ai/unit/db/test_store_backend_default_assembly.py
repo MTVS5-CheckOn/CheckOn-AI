@@ -58,22 +58,12 @@ from ai.db.repositories.inquiry_class_store import (
     PgInquiryClassStore,
 )
 from ai.db.repositories.pack_store import PgPackResultStore
-from ai.db.repositories.probe_stores import (
-    PgAgentStepSink,
-    PgProfileStore,
-    PgSpecResultStore,
-)
 from ai.db.repositories.problem_candidate_store import PgCandidateStore
 from ai.db.repositories.problem_revision_store import PgProblemRevisionStore
 from ai.db.repositories.problem_store import PgProblemItemStore
 from ai.db.repositories.run_store import InMemoryRunStore, PgRunStore
 from ai.db.session import get_engine
 from ai.db.settings import get_db_settings
-from ai.import_mapping.probe.stores import (
-    InMemoryAgentStepSink,
-    InMemoryProfileStore,
-    InMemorySpecResultStore,
-)
 from ai.problem_generation.assembly import (
     build_tenant_scoped_candidate_store,
     build_tenant_scoped_item_store,
@@ -91,8 +81,6 @@ _FACTORIES: Final[tuple[tuple[str, type, type], ...]] = (
     ("build_agent_job_store", PgJobStore, InMemoryJobStore),
     ("build_idempotency_store", PgIdempotencyStore, InMemoryIdempotencyStore),
     ("build_detection_store", PgDetectionStore, InMemoryDetectionStore),
-    ("build_profile_store", PgProfileStore, InMemoryProfileStore),
-    ("build_spec_result_store", PgSpecResultStore, InMemorySpecResultStore),
     ("build_pack_result_store", PgPackResultStore, InMemoryPackResultStore),
     #: ㉻ — 워커 입력 묶음과 초안 본문. 이 둘이 팩토리를 안 타서 결손이 있었다.
     ("build_context_store", PgContextStore, InMemoryContextStore),
@@ -107,7 +95,6 @@ _FACTORIES: Final[tuple[tuple[str, type, type], ...]] = (
         PgCounselAgentStepSink,
         InMemoryCounselAgentStepSink,
     ),
-    ("build_agent_step_sink", PgAgentStepSink, InMemoryAgentStepSink),
 )
 
 #: `store_backend`를 보지만 **이 파일이 안 부르는** 자리 — 사유를 함께 적는다.
@@ -124,9 +111,9 @@ _UNCALLED_BRANCHES: Final[dict[str, str]] = {
         "pg 분기가 AsyncPostgresSaver **커넥션**을 여는 async 컨텍스트다 — DB 없이 못 부른다. "
         "수명 규약(pg=요청 스코프·memory=프로세스 공용)은 그 파일의 전용 검사가 든다"
     ),
-    "ai.import_mapping.probe.assembly::_open_saver": (
-        "위와 같은 형태(probe 축) — 같은 플래그로 체크포인터를 고른다"
-    ),
+    #: ⚠ 🔴 **(8/22)** `ai.import_mapping.probe.assembly::_open_saver` 사유를 뺐다 —
+    #: import 축 개발 중단으로 **그 분기 자체가 사라졌다**(99 #187). 사유 목록에 남기면
+    #: 「사유 목록이 낡았다」로 red 다(그 단언이 실제로 잡았다).
     "ai.problem_generation.assembly::_open_saver": (
         "위와 같은 형태(B 축) — B 소유 파일이라 이 회차가 실행 경로를 넓히지 않는다"
     ),

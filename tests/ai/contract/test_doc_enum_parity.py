@@ -68,7 +68,6 @@ from ai.contracts.problem_generation import (
 from ai.contracts.taxonomy import V1_TYPE_TAGS
 from ai.detection.segments import Segment
 from ai.evidence.models import EvidenceOwnerKind
-from ai.import_mapping.probe.state import MappingProbeState
 
 _DOCS: Final = Path(__file__).resolve().parents[3] / "docs"
 
@@ -155,13 +154,10 @@ _FIELD_PAIRS: Final = (
         "CounselPackState",
         CounselPackState,
     ),
-    _FieldPair(
-        "mapping_probe_state",
-        _DOCS / "policies" / "langgraph_state.md",
-        "### 2.2 State",
-        "MappingProbeState",
-        MappingProbeState,
-    ),
+    #: ⚠ 🔴 **(8/22) `mapping_probe_state` 쌍을 뺐다** — import 축 개발 중단으로
+    #: `MappingProbeState` 가 사라졌다(99 #187). `policies/langgraph_state.md` §2.2 는
+    #: **문서에 남아 있다** — 그 절은 설계 기록이고, 대조할 코드가 없어졌을 뿐이다.
+    #: 🔴 import 축을 되살리면 이 쌍을 **여기 다시 넣어야** 문서와 코드가 다시 묶인다.
 )
 
 

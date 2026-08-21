@@ -113,25 +113,13 @@ def test_counsel_runner_refuses_to_start_when_tracing_active(
         asyncio.run(_open())
 
 
-@pytest.mark.parametrize("env_name", TRACING_ENV_SYNONYMS)
-def test_probe_runner_refuses_to_start_when_tracing_active(
-    env_name: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """mapping_probe도 같은 위험 표면이다(11 §3 — LangGraph 워커 둘)."""
-    import asyncio
 
-    monkeypatch.setenv(env_name, "true")
-    from ai.import_mapping.probe.assembly import open_mapping_probe_runner
-
-    async def _open() -> None:
-        async with open_mapping_probe_runner(
-            supervisor=None,  # type: ignore[arg-type]
-            lease_owner="w",
-        ):
-            pass
-
-    with pytest.raises(ValueError, match="외부 트레이싱"):
-        asyncio.run(_open())
+#: ⚠ 🔴 **(8/22) `test_probe_runner_refuses_to_start_when_tracing_active` 를 뺐다** —
+#: import 축 개발 중단으로 `open_mapping_probe_runner` 가 사라졌다(99 #187).
+#: 🔴 **트레이싱 차단 규약(11 §3)은 그대로다** — 위 counsel 러너 검사가 같은 성질을
+#: **같은 동의어 목록**으로 계속 잰다. ⚠ 종전 문면: *"mapping_probe도 같은 위험 표면이다
+#: (11 §3 — LangGraph 워커 둘)"* — 🔴 **워커가 둘에서 하나가 됐다.** 셋째 워커
+#: (problem_generation)가 같은 표면을 갖는지는 이 파일이 안 잰다(B 축).
 
 
 def test_guard_message_names_detected_env_but_never_values(

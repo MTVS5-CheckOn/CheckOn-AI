@@ -27,6 +27,15 @@ class WorkerKind(StrEnum):
 
     COUNSEL_PACK = "counsel_pack"
     MAPPING_PROBE = "mapping_probe"
+    #: 🔴 **deprecated (2026-08-22)** — import 축 개발 중단. 신규 생성 경로는 없다.
+    #: ⚠ **지우지 마라** — 기존 원장 행을 읽는 `WorkerKind(row.agent_kind)` 가 이 값을 필요로 한다
+    #:   (`db/repositories/agent_job.py` · `ledger_audit.py`). 지우면 그 조회가 `ValueError` 다.
+    #: 🔴 **언제 지울 수 있나:** 배포 DB 에 `mapping_probe` 행이 0 이 되고 CHECK 제약을 바꾸는 회차.
+    #:   ⚠ **그 조건은 검사로 못 잰다**(저장소 밖) — **99 #188** 이 운영 점검 항목이다.
+    #:   확인: `SELECT count(*) FROM agent_run WHERE agent_kind = 'mapping_probe';`
+    #:   🔴 **읽기 전용.** UPDATE·DELETE 금지.   · 소유: **A(박진희)**
+    #: ⚠ 계기 셋: ① `WorkerKind` 를 고칠 때 ② 배포 DB 스키마를 손볼 때 ③ import 축을 되살릴 때
+    #: ⚠ 🔴 **「주기」가 아니라 「계기」다** — 달력에 기대는 항목은 아무도 안 본다.
     PROBLEM_GENERATION = "problem_generation"
 
 
@@ -35,6 +44,9 @@ class OperationKind(StrEnum):
 
     COUNSEL_PACK_GENERATE = "counsel_pack.generate"
     MAPPING_PROBE_RESOLVE = "mapping_probe.resolve"
+    #: 🔴 **deprecated (2026-08-22)** — `WorkerKind.MAPPING_PROBE` 와 **짝**이다.
+    #: `db/models.py` 의 CHECK 제약이 이 값을 참조하므로 **하나만 지우면 제약이 깨진다.**
+    #: 위 `WorkerKind.MAPPING_PROBE` 주석 참조(99 #187·#188).
     PROBLEM_SET_GENERATE = "problem_set.generate"
     PROBLEM_ITEM_REFINE = "problem_item.refine"
     PROBLEM_ITEM_REVERIFY = "problem_item.reverify"

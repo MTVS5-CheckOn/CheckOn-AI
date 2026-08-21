@@ -26,8 +26,9 @@ from ai.api.app import create_app
 _STR_ONLY_OPERATIONS: Final = (
     ("/v1/counsel/drafts/{job_id}", "get"),
     ("/v1/counsel/drafts/{job_id}/refine", "post"),
-    ("/v1/imports/{job_id}", "get"),
-    ("/v1/imports/{job_id}/confirm", "post"),
+    #: ⚠ 🔴 **(8/22) `/v1/imports/{job_id}` 둘을 뺐다** — 경로 자체가 사라졌다(99 #187).
+    #: 🔴 **후처리 규칙은 안 바뀌었다** — 규칙은 «path 파라미터가 전부 `str`» 이고, 이 목록은
+    #: 그 규칙의 **현재 적용 대상**일 뿐이다. 경로가 늘면 여기도 늘려야 한다(파일 머리말 참조).
     ("/v1/problems/{job_id}", "get"),
     ("/v1/problems/{set_id}/items", "get"),
 )

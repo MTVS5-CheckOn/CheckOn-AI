@@ -52,11 +52,6 @@ from ai.db.repositories.inquiry_class_store import (
     PgInquiryClassStore,
 )
 from ai.db.repositories.pack_store import PgPackResultStore
-from ai.db.repositories.probe_stores import (
-    PgAgentStepSink,
-    PgProfileStore,
-    PgSpecResultStore,
-)
 from ai.db.repositories.run_store import (
     InMemoryRunStore,
     PgRunStore,
@@ -64,14 +59,6 @@ from ai.db.repositories.run_store import (
 )
 from ai.db.session import get_sessionmaker
 from ai.db.settings import DbSettings, get_db_settings
-from ai.import_mapping.probe.stores import (
-    AgentStepSink,
-    InMemoryAgentStepSink,
-    InMemoryProfileStore,
-    InMemorySpecResultStore,
-    ProfileStore,
-    SpecResultStore,
-)
 
 _PG = "pg"
 
@@ -200,20 +187,6 @@ def build_detection_store(settings: DbSettings | None = None) -> DetectionStore:
     return InMemoryDetectionStore()
 
 
-def build_profile_store(settings: DbSettings | None = None) -> ProfileStore:
-    """mapping_probe 입력(source_profile) 저장소 — PG 선택 시 워커·enqueue가 공유."""
-    settings = settings or get_db_settings()
-    if settings.store_backend == _PG:
-        return PgProfileStore(sessionmaker=get_sessionmaker())
-    return InMemoryProfileStore()
-
-
-def build_spec_result_store(settings: DbSettings | None = None) -> SpecResultStore:
-    """mapping_probe 산출(mapping_spec) 저장소 — result_ref로 참조되는 조사 결과."""
-    settings = settings or get_db_settings()
-    if settings.store_backend == _PG:
-        return PgSpecResultStore(sessionmaker=get_sessionmaker())
-    return InMemorySpecResultStore()
 
 
 def build_pack_result_store(settings: DbSettings | None = None) -> PackResultStore:
@@ -284,8 +257,11 @@ def build_counsel_agent_step_sink(
 ) -> CounselAgentStepSink:
     """counsel 스텝(agent_step) 싱크 — 🔴 **counsel 계약 타입**을 돌려준다 (99 #37).
 
-    ⚠ **`build_agent_step_sink()`와 별개다.** 그쪽은 `mapping_probe` 전용이고 **probe의
-    `AgentStepRecord`**를 받는다 — 필드가 같아도 **별개 타입**이라 서로 못 쓴다.
+    ⚠ 🔴 **(8/22) 종전에는 `build_agent_step_sink()` 와 「별개다」를 적어 뒀다** — 그쪽은
+    `mapping_probe` 전용이었고 **probe 의 `AgentStepRecord`** 를 받았다(필드가 같아도 별개
+    타입이라 서로 못 썼다). import 축 개발 중단으로 **그 빌더는 사라졌고 이제 하나뿐**이다
+    (99 #187). 🔴 **그래도 이름을 안 줄였다** — `counsel_` 접두가 «이 타입은 counsel 계약»
+    이라는 사실을 계속 말한다. 종전 문면은 **왜 둘이었는지의 기록**이다.
     종전에는 counsel 조립부가 **어떤 빌더도 안 타서** `STORE_BACKEND=pg`를 켜도
     스텝이 **PG에 안 앉았다**(실측 8/11 · #37).
 
@@ -298,14 +274,3 @@ def build_counsel_agent_step_sink(
     #: 거부**한다(99 #38). 팩토리에 판정을 복제하지 않는다.
     return InMemoryCounselAgentStepSink()
 
-
-def build_agent_step_sink(settings: DbSettings | None = None) -> AgentStepSink:
-    """`mapping_probe` 스텝(agent_step) 싱크 — 도구 호출 이력(마스킹 통과분).
-
-    ⚠ **probe 전용이다** — counsel은 `build_counsel_agent_step_sink()`를 쓴다(99 #37).
-    이번 회차에 개명해 호출부를 넓히지 않았다.
-    """
-    settings = settings or get_db_settings()
-    if settings.store_backend == _PG:
-        return PgAgentStepSink(sessionmaker=get_sessionmaker())
-    return InMemoryAgentStepSink()
