@@ -1,10 +1,11 @@
 <!--
-⚠ 양자 승인 12곳(`docs/02_ownership.md` §4 정본: 공통 contracts 6 ·
-   evidence/models · runtime/metrics · api/app·envelope · db/models·base) 또는
+⚠ 양자 승인 파일(목록·수의 정본은 `docs/02_ownership.md` §4-1) 또는
    상대 capability 파일을 건드렸다면, 아래 첫 줄에 이렇게 적어주세요 —
    03_coding_rules §8
 
    ⚠ 승인 필요: [파일명] (안건번호 — 리뷰어 이름)
+   🔴 승인을 받았으면 **누가·언제·어디서**를 PR 설명에 적어주세요(CLAUDE.md §2) —
+      없으면 「승인 기록 없음(날짜)」을 그대로 적습니다. 사후 approve 는 기록을 고치는 것입니다.
 
    골든셋 기대값을 수정했다면 PR 제목에 [golden]을 붙여주세요 — §7
 -->
