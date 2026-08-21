@@ -653,4 +653,93 @@ CORPUS: tuple[RedactionCase, ...] = (
             "성씨 결합(`[$surnames][가-힣]{2}`)이 이걸 통째로 막는다"
         ),
     ),
+    # ── 65~72 상담 fact·완충 사전 빈출어(오탐 검증 — 유지돼야 함) ──────
+    # 🔴 №53 실측 8문면. `whitelists.name_exclude` 5어간이 이 여덟을 막는다.
+    #   ⚠ 어간을 뺐을 때 **여기가 red** 여야 그 목록이 지켜진다 — yaml:332 의 «코퍼스와 함께 누적».
+    RedactionCase(
+        id=65,
+        category="함정·상담 fact(이번에)",
+        text="이번에는 과제를 모두 제출했습니다",
+        expected="이번에는 과제를 모두 제출했습니다",
+        must_present=("이번에는",),
+        context_trap=True,
+        reason="`이`(성씨)+`번에`+`는` — 3음절 한자어 + 조사. name_exclude `이번에`",
+    ),
+    RedactionCase(
+        id=66,
+        category="함정·상담 fact(이번에)",
+        text="이번에도 제출 완료",
+        expected="이번에도 제출 완료",
+        must_present=("이번에도",),
+        context_trap=True,
+        reason="같은 어간에 조사만 다른 형태 — 조사 15개가 전부 같은 구멍이다",
+    ),
+    RedactionCase(
+        id=67,
+        category="함정·상담 fact(정리하)",
+        text="정리하는 습관이 자리 잡고 있습니다",
+        expected="정리하는 습관이 자리 잡고 있습니다",
+        must_present=("정리하는",),
+        context_trap=True,
+        reason="`정`(성씨)+`리하`+`는`. name_exclude `정리하`",
+    ),
+    RedactionCase(
+        id=68,
+        category="함정·상담 fact(이해력)",
+        text="이해력이 부족한 편입니다",
+        expected="이해력이 부족한 편입니다",
+        must_present=("이해력이",),
+        context_trap=True,
+        reason=(
+            "`이`+`해력`+주격 `이`. 🔴 **완충 사전 B군 치환 쌍의 `from`** 이라 "
+            "이 오탐이 프롬프트 축 방어를 통째로 끄고 있었다(prompt.py `_renderable_pair`)"
+        ),
+    ),
+    RedactionCase(
+        id=69,
+        category="함정·상담 fact(정에서)",
+        text="가정에서도 지도해 주시면 좋겠습니다",
+        expected="가정에서도 지도해 주시면 좋겠습니다",
+        must_present=("가정에서도",),
+        context_trap=True,
+        reason=(
+            "🔴 **어절 안쪽 절단** — `가`를 버리고 `정에서`+`도`를 문다. "
+            "name_exclude 는 그 성질을 안 고치고 이 조각만 뺀다(99 #178)"
+        ),
+    ),
+    RedactionCase(
+        id=70,
+        category="함정·상담 fact(정에서)",
+        text="가정에서도 함께 봐 주세요",
+        expected="가정에서도 함께 봐 주세요",
+        must_present=("가정에서도",),
+        context_trap=True,
+        reason="같은 절단이 다른 문장에서도 나는지 — 어간이 아니라 조각이라 문맥과 무관하다",
+    ),
+    RedactionCase(
+        id=71,
+        category="함정·완충어(다른)",
+        text="다른 학생에 비해 시간이 더 걸립니다",
+        expected="다른 학생에 비해 시간이 더 걸립니다",
+        must_present=("다른", "학생"),
+        context_trap=True,
+        reason=(
+            "🔴 이쪽은 `name_candidates`가 아니라 **`name_honorific`** 경로다 — "
+            "`[가-힣]{2,3}` + 호칭 `학생` 이라 `⟪확인필요⟫`가 아니라 **`⟪이름1⟫` 확정**이 났다. "
+            "`name_exclude`가 두 경로 모두에 걸린다(redaction.py:311·398)"
+        ),
+    ),
+    RedactionCase(
+        id=72,
+        category="함정·상담 fact(복합)",
+        text="이번에는 정리하는 습관이 보이고 가정에서도 지도해 주셨습니다",
+        expected="이번에는 정리하는 습관이 보이고 가정에서도 지도해 주셨습니다",
+        must_present=("이번에는", "정리하는", "가정에서도"),
+        context_trap=True,
+        reason=(
+            "🔴 **후보 2개 이상이면 문장이 통째로 `⟪확인필요⟫`가 된다**(밀도 임계) — "
+            "한 문장에 셋을 넣어 그 층까지 막혔는지 잰다. 오탐 1건이면 트립와이어가 "
+            "이미 전송을 막는다(`trace_masking.py:83` — `findings or uncertain`)"
+        ),
+    ),
 )
