@@ -222,7 +222,7 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
 
 ---
 
-## 7. `POST /v1/labels/suggest` — 라벨 제안 (202, 주간 배치)
+## 7. `POST /v1/labels/suggest` — 라벨 제안 (202, 강사 요청)
 
 ```json
 {
