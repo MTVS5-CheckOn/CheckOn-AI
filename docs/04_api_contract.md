@@ -155,8 +155,9 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 | `POST /v1/classify` — **비캐시**(LLM 호출) | 🔴 **원장 키** | 위와 같다 |
 | `POST /v1/classify` — **캐시 히트** | 🔴 **원장 키** | ✅ **(8/7 해소)** 캐시 조회를 `try` 안으로 옮겨 `finally`의 원장 적재를 타게 했다 — **예측 재사용도 실행이다**(불변식 8). ⚠ 그 실행은 **LLM 호출 0건**이라 `model_provider`·`model_name`·`generation_params`가 **전부 null**이다(원장에서 그렇게 구분한다 · 99 ㊧). 🔴 **캐시 히트도 원장 적재 실패 시 5xx다** — 저장된 예측이 있어도 나간다. 종전에는 캐시 히트가 원장을 안 타서 **5xx가 구조적으로 불가능한 경로**였는데 이제 가능하다. ⚠ **캐시가 뜨면 항상 200이라는 뜻이 아니다.** 새 사유 코드는 없다(기존 5xx). *원장을 못 남긴 채 「기록했다」로 응답하는 것이 더 나쁘다* 는 판정과 일관된다 |
 | `POST /v1/problems` · `GET /v1/problems/{job_id}` | 🔴 **원장 키** | 잡을 **항상** 만든다(잡 없는 성공 경로 없음). ⚠ `GET`은 현재 응답마다 새로 발급 — **아래 미정합** |
-| `POST/GET /v1/imports` — **조사(probing) 기동** | 🔴 **원장 키** | ✅ **(8/12 · ㉾ 해소)** 조사 워커가 `AI_RUN`을 남기고(`capability=import_mapping` · 잡 **한 건당 한 행**) 응답이 그 `WorkerJob.execution_id`를 싣는다 — **`AI_RUN` PK와 같은 값**이다. POST·GET·멱등 재응답이 같다. ⚠ 현재 planner가 Fake라 그 실행의 **LLM 호출은 0건**이고 `model_provider`·`model_name`·`generation_params`가 **전부 null**이다(`/v1/classify` 캐시 히트와 같은 구분 · 99 ㊧) |
-| `POST/GET /v1/imports` — **조사 없음**(`preview_ready`·`failed`) | ⚠ **상관 ID** | 워커도 LLM도 안 타므로 **가리킬 실행이 없다** — `job_id`가 그대로 실리며 반복 조회는 같은 값. ⚠ **없는 실행을 지어내지 않는다.** 종전에는 이 축 전체가 상관 ID였다(그때는 `AI_RUN` 참조가 0건이었다) |
+<!-- 🔴 (2026-08-22) `POST/GET /v1/imports` 두 행을 뺐다 — 이 표는 «**지금** 어느 엔드포인트가
+     원장 키를 쓰나»를 말하는 **계약**이고, 그 엔드포인트는 삭제됐다(§3.8 · 99 #187).
+     ⚠ 그 두 행이 담던 **㉾ 해소(8/12 · 조사 워커가 `AI_RUN` 한 행)** 는 99 와 git 이력에 남는다. -->
 | `POST /v1/confirmations` | ⚠ **미정합** | 원장을 쓰지 않는데 **호출마다 새 값**이라 상관 ID로도 기능하지 않는다 — 아래 |
 
 🔴 **아직 이 규정과 어긋나는 자리 둘** `[미정합 · 수정 대기]` — 계약이 정본이고 구현을 여기 맞춘다:
@@ -208,7 +209,7 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 | --- | --- |
 | `pipeline` · `engine` · `schema` · `contract` | 없음(필수) |
 | `threshold` | 감지 임계값 시트를 쓰는 capability(detection) 외 |
-| `prompt` | **프롬프트를 쓰지 않는 capability** 외 — ⚠ 종전 *"LLM 미사용 실행"* 표기를 고친 것이다. counsel·classify·detect·imports·pg는 전부 프롬프트를 쓰므로 **호출 0건인 실행에서도 채운다**(캐시 히트 포함) |
+| `prompt` | **프롬프트를 쓰지 않는 capability** 외 — ⚠ 종전 *"LLM 미사용 실행"* 표기를 고친 것이다. counsel·classify·detect·pg는 전부 프롬프트를 쓰므로 **호출 0건인 실행에서도 채운다**(캐시 히트 포함) |
 | `graph` · `taxonomy` · `verify_config` | 관련 [PART_B] capability 외 |
 | `difficulty_calib` | `problem_generation` 외에는 항상 null이고, **v1은 보정 미배선(`difficulty_regen_enabled: false`)이라 pg도 null**이다 |
 
@@ -234,10 +235,10 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 
   | 엔드포인트 | 최초 | 멱등 재반환 |
   | --- | --- | --- |
-  | `POST /v1/detect` · `POST /v1/classify` · `POST /v1/imports/{job_id}/confirm` | 200 | **200** |
-  | `POST /v1/imports` · `POST /v1/counsel/drafts` | 202 | **202** |
+  | `POST /v1/detect` · `POST /v1/classify` | 200 | **200** |
+  | `POST /v1/counsel/drafts` · `POST /v1/problems` | 202 | **202** |
 
-  ⚠ **구현 세 곳은 이미 일관됐다** — 틀린 것은 문서였다(실측 8/7). `imports`·`counsel`은 데코레이터 `status_code=202`가 재반환에도 그대로 걸리고, `detect`·`classify`는 기본 200이다. 회귀는 `tests/ai/contract/test_idempotent_replay_status.py`가 세 축을 한 자리에서 잡는다.
+  ⚠ **구현 세 곳은 이미 일관됐다** — 틀린 것은 문서였다(실측 8/7 · ⚠ 🔴 그때의 세 곳 중 `imports` 는 **2026-08-22 에 삭제됐다**(§3.8) — 아래는 **그 시점의 기록**이다). `imports`·`counsel`은 데코레이터 `status_code=202`가 재반환에도 그대로 걸리고, `detect`·`classify`는 기본 200이다. 회귀는 `tests/ai/contract/test_idempotent_replay_status.py`가 세 축을 한 자리에서 잡는다.
 
 > **[PART_B 크로스체킹 요청 · 미확정 — 공통 HTTP 경계]** 현재 감지 v0 캐시는 전역 Idempotency-Key와 클라이언트 `snapshot_hash`를 신뢰한다. **제안 해결안:** `(tenant_id, method/path, idempotency_key)`로 스코프하고 서버가 canonical body digest를 계산해 원자 저장·TTL·영속화를 보장한다. 아울러 `RequestValidationError`를 공통 envelope의 `400 INVALID_SCHEMA`로 매핑하고, 실제 `contracts.llm` 예외를 503/504로 변환하는 단일 adapter, `RedactionUncertain` 상세 강제 제거, `X-Request-Id` 응답 echo·로그 correlation을 공통 계층에 두는 안을 A·B·백엔드가 확인해 달라.
 >
@@ -255,7 +256,8 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 | --- | --- | --- |
 | 동기 | `/classify` `/tags/suggest` `/confirmations` | 타임아웃 10s (`/feedback`은 7/16 보류 — §3.2). ⚠ **종전 「≤2s」는 실측과 달랐다** — `/classify` 배포 실측(2026-08-20 · n=5 · 종단): min **2.21s** · p50 **2.65s** · max **4.62s** · **2초 초과 5/5**. `/confirmations` 는 0.9s(n=1). 🔴 **최악은 3콜 × 90초 = 270초**(`MAX_PARSE_RETRY` 2 + 1)로 타임아웃 10s 를 크게 넘는다 — 그 간극은 99 ㉬ |
 | 동기 (`/detect`) | `/detect`(야간 배치라 지연 무관) | **타임아웃 60s [A 확정 7/23 · 백엔드 통보 필요]** — 브리핑 문장화(ⓐ) 포함으로 상향. **문장화 총 예산 45s · LLM 호출당 15s 상한** ⇒ 🔴 **최악 45 + 15 = 60s** (예산 검사는 호출 **시작 전**에만 도므로 마지막 호출이 상한만큼 더 쓴다). ⚠ **8/20 정정** — 콜당 90초 확정(99 ㉪) 이후 `/detect` 도 provider 전역을 타서 최악 **~135s** 가 돼 있었다(99 #124). ⇒ **브리핑 role 에만 15s 를 주입**해 이 표의 숫자를 되살렸다(`composition/provider.py` 정본 · 검사가 04 와 잇는다). **백엔드 read timeout ≥60s 는 그대로다** — 재통보 불필요. ⚠ **`deadline` 은 감지·조립 뒤에 시작하므로 HTTP 총 시간에는 감지 시간이 더 얹힌다**(종전 설계부터 그랬다 · 99 #124), 예산 소진 신호는 템플릿 폴백. **백엔드 클라이언트 read timeout ≥60s 필요.** 다른 동기 API는 10s 유지 |
-| 비동기 (202) | `/drafts` `/imports` `/agents/*` `/labels/suggest` | 202 + `job_id` → **완료 통지는 Kafka 이벤트 (7/15 확정)** · `GET`은 상태 보조 조회로 유지 · 🔴 **`/drafts` 응답 예산 480초**(종전 「총 5분」 — 콜당 90초 확정으로 재산정 · 8/20). ⚠ **이 문장은 계약 문면이며 현재 강제하지 않는다** — 초과 시 `failed` 로 떨구는 코드는 **0건**이다(실측 8/20 grep 전수). 잡은 계속 돈다 |
+| 비동기 (202) | `/drafts` `/agents/*` | 202 + `job_id` → **완료 통지는 Kafka 이벤트 (7/15 확정)** · `GET`은 상태 보조 조회로 유지 · 🔴 **`/drafts` 응답 예산 480초**(종전 「총 5분」 — 콜당 90초 확정으로 재산정 · 8/20). ⚠ **이 문장은 계약 문면이며 현재 강제하지 않는다** — 초과 시 `failed` 로 떨구는 코드는 **0건**이다(실측 8/20 grep 전수). 잡은 계속 돈다 |
+| 🔴 비동기 (202 · **폴링**) | `/labels/suggest` | 202 + `job_id` → **완료 통지는 폴링(`GET`)** — 🔴 **Kafka 이벤트가 아니다(2026-08-22 판정)**. ⚠ 종전에는 위 Kafka 행에 같이 있었다. **§3.7 이 트리거를 「강사 요청」으로 바꾸면서**(8/21) 응답 대상이 시스템이 아니라 **강사(사람)**가 됐다 — 화면에서 기다리는 요청이라 `/drafts` 와 같은 패턴(202 + `GET` + `Retry-After`)으로 충분하고, 🔴 Kafka 를 유지하면 **어댑터에 안 쓸 outbox 경로를 하나 더** 만든다(AI 는 Kafka 에 직접 안 쓴다). ⚠ **BE 통보 대상** — 기대하던 이벤트가 안 온다. |
 
 #### 🔴 `refine` 도 같은 LLM 예산을 씁니다 `[신설 · 8/20]`
 
@@ -300,7 +302,6 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 | `POST /classify` | 동기 | 문의 도착 즉시 | topic + sentiment + urgency 3축 + 축별 confidence |
 | `POST /tags/suggest` | 동기 | 과제 입력 화면 | 영역·유형 제안 + 신뢰도 + 캐시 여부 |
 | `POST /labels/suggest` | 202 | 강사 요청 | 라벨 제안 + 근거 인용(실존 검증 통과분) — 트리거·저장 정책은 §3.7 |
-| `POST /imports` → `GET` → `/confirm` | 202 | 타사 엑셀 업로드 | 매핑 미리보기 → 확정 후 표준 스키마 산출 |
 | `POST /counsel/drafts` → `GET` → `/refine` | 202 | **문의 도착 즉시** | 초안 1건 자동 생성 · 근거 인용 ≥1 · 다듬기(동기) — §3.9 |
 | `POST /problems` → `GET /problems/{job_id}` | 202 | 강사가 출제를 요청할 때 | 세트 생성 잡 → 문항 **요약** 목록(본문·evidence 아님) — §3.11. 🔴 **v1은 `area_tag=language` + `passage` 없음만** · `type_tags`에 `apply` 금지 |
 | `GET /health` · `GET /ready` · `GET /meta/versions` | 동기 | 상시 | 프로세스 liveness · DB readiness · capability별 선언 버전 — §3.10 |
@@ -689,6 +690,8 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 ```
 
 **인용 실존 게이트 통과분만 반환** — 인용이 이력에 없으면 제안 자체가 폐기됨. 확정 전 초안 생성에 미사용.
+
+🔴 **완료 통지는 폴링(`GET`)이다 — Kafka 이벤트가 아니다(2026-08-22 판정).** 트리거가 **강사 요청**이라 강사가 화면에서 기다린다 ⇒ `/counsel/drafts` 와 같은 패턴(202 + `GET` + `Retry-After`). ⚠ 종전 §2.4 표는 이 엔드포인트를 Kafka 통지 쪽에 두고 있었다(7/15 확정 문면) — **§3.7 을 「강사 요청」으로 바꾼 8/21 개정이 그 줄까지 안 갔다.** ⚠ **BE 통보 대상**이다.
 
 🔴 **전제 — `history` 는 앱 경로 문의만이다(8/21 확정).** 앱 밖 소통(전화·문자·대면 기록)은 실리지 않는다. ⇒ 이력이 있는 학부모는 **앱 가입자**이고, **가입 시 필수 동의**를 마쳤다 — 동의 없는 학부모가 이 요청에 실릴 경로가 없다.
 ⚠ 🔴 **이 전제가 깨지는 방식은 런타임 값이 아니라 「새 유입 경로」다** — 앱 밖 기록을 넣는 경로가 생기면 **이 문장부터 고친다**(그때 `guardian_consent` 가 열린다 · `part_a/12_label_discovery.md` §6 ②도 같이 본다).
@@ -1087,7 +1090,6 @@ LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
       "detection": { "...": "detection_versions()" },
       "classification": { "...": "classify_versions()" },
       "counsel": { "...": "counsel_versions()" },
-      "imports": { "...": "import_versions()" },
       "problem_generation": { "...": "problem_failure_versions()" }
     }
   },

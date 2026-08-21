@@ -240,28 +240,17 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
 
 ---
 
-## 8. 스마트 데이터 이전 `/v1/imports`
+## 8. 스마트 데이터 이전 `/v1/imports` 🔴 **(2026-08-22 삭제 — v1 범위 밖)**
 
-```json
-// ① POST /v1/imports — 기동 (Open-3: 스토리지 URL 방식 가정)
-{
-  "file_url": "https://storage.internal/uploads/abc.xlsx",   // 사전서명 URL
-  "file_hash": "sha256:77aa...",
-  "filename": "학원조아_원생내보내기_202607.xlsx"
-}
-```
-
-```json
-// ② GET /v1/imports/{job_id} 로 미리보기 확인 후
-// ③ POST /v1/imports/{job_id}/confirm — 강사 확정 (수정 반영)
-{
-  "spec_overrides": [
-    { "source_column": "점수B", "target_field": "weekly_score_2" },
-    { "source_column": "비고",  "target_field": "submitted_at" }
-  ],
-  "confirmed_by": "teacher"
-}
-```
+> 🔴 **이 요청 예시들은 더 이상 계약이 아니다.** import 축은 v1 에서 개발하지 않기로 했고
+> 엔드포인트 셋(`POST /v1/imports` · `GET /v1/imports/{job_id}` · `POST .../confirm`)이 **삭제됐다**
+> — `docs/04_api_contract.md` §3.8 · 99 #187.
+>
+> ⚠ 종전 예시(`file_url`·`file_hash`·`spec_overrides`)는 **git 이력과 `docs/handoff/`** 에 남는다.
+> 🔴 **여기 남겨 두면 이 문서가 「있다」고 말한다** — 04 §3.8 은 「없다」고 말한다(같은 사실을 두 문서가
+> 반대로 말하는 형태 · #02).
+>
+> ⚠ **절 번호는 안 당겼다** — 뒤 절(§9·§10…)을 가리키는 자리가 있어 번호를 밀면 그것들이 갈린다.
 
 ---
 
