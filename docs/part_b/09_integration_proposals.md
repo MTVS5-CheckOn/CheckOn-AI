@@ -2209,10 +2209,24 @@ grep -n "lease_seconds" src/ai/api/routers/problem.py
 grep -n "source_redaction_retry_max\|difficulty_regen_max" src/ai/problem_generation/data/verify_config.yaml
 ```
 
+### 2-29. 리포트·브리핑 공통 결정론 텍스트 게이트의 중립 경계 `[B 제안 · 2026-08-21 · A 결정 대기]`
+
+리포트 블록이 필요한 토큰·기호·금칙어·숫자 EXACT·길이 검사는 A 소유
+`composition/briefing_gate.py`에 이미 있고, 금칙어 판정은 그 안에서
+`buffer_lexicon.find_forbidden`에 위임된다. B가 이 로직을 복사하면 판정 정본이 다시 둘로
+갈리고, 반대로 `report/`가 A capability 내부를 직접 import하면 capability 경계를 어긴다.
+
+이번 계약·게이트 골격은 `report/gate.py`가 결정론 텍스트 게이트 호출 계약을 주입받아 다섯
+검사를 그대로 위임하는 데까지만 둔다. LLM·라우터·registry 배선은 없으며 A 파일도 수정하지
+않는다. 다음 실행 경로 착수 전에 공통 구현을 A 소유 `gates/`로 올릴지, 현재 주입 경계를
+조립부에서 연결할지 A 판정을 요청한다. 어느 안이든 `buffer_lexicon.find_forbidden` 위임과 기존
+사유 문자열·검사 순서는 보존해야 한다.
+
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
 | 번호 | 항목 | B 권고안 | 담당 | 관련 part_b |
 | --- | --- | --- | --- | --- |
+| **B-15** `[신규]` | 리포트·브리핑 공통 결정론 텍스트 게이트의 중립 경계 | A가 `gates/` 승격 또는 주입 조립 중 하나를 판정. 판정 전 리포트는 호출 계약만 두고 런타임 배선하지 않는다 | A+B | §2-29 |
 | B-3 잔여 | taxonomy 경계 사례 7건 판정 | 태깅 골든셋 시드와 동시 확정 | A+B | 04·06 §5 |
 | Open-12 | F17 OCR 실명→alias·OCR 소유 (P2) | 스캔·매칭·마스킹=BE 유지, 판독 소유는 벤더 선정과 함께 | BE(+A·B) | 02 §1-C |
 | B-2 | 공용 계약 리뷰·구현·14항목 승인 완료 — **문서 동기화 3/7 완료, 4건 잔여(§2-10)** | 잔여 4건 소유자 반영 요청 | A+B | 02 §5 |

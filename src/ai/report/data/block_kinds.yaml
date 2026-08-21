@@ -1,0 +1,7 @@
+version: report-block-kinds.v1
+block_kinds:
+  - greeting
+  - fact
+  - chart_analysis
+  - suggestion
+  - closing
