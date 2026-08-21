@@ -31,6 +31,7 @@ from ai.contracts.llm import (
 from ai.db.repositories.llm_payload import capture_payloads
 from ai.db.repositories.run_store import default_llm_call_collector
 from ai.detection.brief import build_brief
+from ai.llm.call_timeouts import load_call_timeouts
 from ai.llm.gateway import LlmCallRecorder, LlmGateway
 from ai.runtime.env_files import ENV_FILES
 from ai.runtime.trace_masking import RedactionTripwireTraceHook
@@ -47,17 +48,37 @@ _NARRATOR_TRANSPORT_RETRY = 0
 #: `t=44.9s` 에 시작한 콜이 90s 를 쓰면 **총 ~135s** 다 ⇒ 04 의 BE 60s 를 끊어 먹는다.
 #: 🔴 **그때가 정확히 장애 때다** — 폴백 문구조차 BE 에 못 간다.
 
-#: 브리핑 **콜당** LLM 상한(초) — 🔴 provider 전역(`OPENAI_TIMEOUT_S`)을 **안 쓴다.**
+def _briefing_call_timeout_s() -> int:
+    """브리핑 콜당 상한 — 🔴 **정본은 `llm/call_timeouts.yaml`** 이다(99 #141).
+
+    ⚠ **값을 여기 다시 적지 않는다** — 두 곳에 적으면 갈린다(#02 가 반복해서 잡은 형태).
+    🔴 표에 없으면 **기동에서 실패한다**: 이 축은 04 §2.4 의 예산 관계(브리핑 45s + 콜당
+    = BE 60s)가 걸려 있어, 조용히 전역 90s 로 가면 **총 135s** 가 되고 그건 99 #124 가
+    실측한 사고다. ⇒ **없으면 여기서 죽는 것이 낫다.**
+    """
+    from ai.composition.briefing import PROMPT_ID as BRIEFING_PROMPT_ID  # noqa: PLC0415
+
+    seconds = load_call_timeouts().get(BRIEFING_PROMPT_ID)
+    if seconds is None:
+        raise RuntimeError(
+            f"`call_timeouts.yaml` 에 `{BRIEFING_PROMPT_ID}` 상한이 없다 — "
+            "브리핑이 전역 상한(90s)을 타면 /detect 예산이 깨진다(99 #124·#141)"
+        )
+    return int(seconds)
+
+
+#: 브리핑 **콜당** LLM 상한(초) — 🔴 **값과 근거는 `llm/call_timeouts.yaml` 로 옮겼다**(8/22).
 #:
 #: ⚠ **왜 전역과 다른 값을 쓰나** — counsel 은 4문단 글이고 브리핑은 **문장 하나**다
 #: (실측: narrator 응답 토큰 중앙 **28**). 같은 상한을 쓸 이유가 없고, 쓰면 예산이 깨진다.
-#: 🔴 **근거는 원장 실측이다**(2026-08-20 · `local_data/*llm_smoke_raw.json` s1 · **n=147** ·
-#: 7회차): 콜당 min 0.19s · p50 **0.97s** · p90 1.56s · p95 2.02s · **max 5.76s**.
-#: ⇒ 15s 는 실측 max 의 **2.6배**다.
-#: ⚠ **표본 절단을 명시적으로 배제했다**(99 #110 의 순환): 이 회차들은 상한 15s 시절인데
-#: **15s 초과 0/147** 이고 `llm_failed` 21건은 지연 p50 **0.22s**(벤더 미도달 — 즉시 실패)라
-#: **타임아웃으로 잘린 표본이 아니다.** 예산 소진(`budget_exhausted`) 은 **0건**이다.
-BRIEFING_CALL_TIMEOUT_S: int = 15
+#: 🔴 **종전에는 이 값이 여기 있었다**(`BRIEFING_CALL_TIMEOUT_S = 15` + `model_copy` 주입) —
+#: №19 당시 `llm/` 이 B 소유라 **A 축에서 국소로 막는 것이 유일한 길**이었기 때문이다.
+#: 8/20 에 `call_timeouts.yaml` 이 정본 자리를 만들었고 8/22 에 값이 그리로 들어가면서
+#: **두 곳이던 것이 한 곳이 됐다**(99 #141 해소). 위 문면은 **왜 두 곳이었는지의 기록**이다.
+#: ⚠ 🔴 **실측·절단 배제·예산 관계는 값 옆으로 갔다** — 값이 사는 곳에 근거가 있어야 한다.
+#: ⇒ 이제 게이트웨이가 `prompt_id="composition/briefing"` 으로 상한을 씌운다
+#: (`llm/gateway.py` — `asyncio.timeout(cap)`). provider 는 전역 설정을 그대로 받는다.
+BRIEFING_CALL_TIMEOUT_S: int = _briefing_call_timeout_s()
 
 #: 브리핑 문장화 **총** 예산(초) — 04 §2.4 `/detect` 정본. `api/routers/detect.py` 가 쓴다.
 BRIEFING_BUDGET_S: float = 45.0
@@ -139,15 +160,13 @@ def build_brief_provider(settings: BriefingSettings | None = None) -> LLMProvide
             get_llm_settings,
         )
 
-        #: 🔴 **브리핑 전용 상한을 주입한다** — 전역 `OPENAI_TIMEOUT_S`(counsel 기준 90s)를
-        #: 그대로 타면 총 예산 45s + 90s = 135s 로 04 의 BE 60s 를 넘는다(99 #124).
-        #: ⚠ `model_copy` 로 **타임아웃만** 바꾼다 — 키·URL·모델을 이 파일이 다시 읽거나
-        #: 옮겨 적지 않는다(값을 만지지 않는 것이 유출 표면을 안 넓힌다 · 99 #122).
-        #: ⚠ 선례: `problem_generation/provider.py` 도 verifier 에 자기 `OpenAiSettings` 를 준다.
-        narrator = get_llm_settings().model_copy(
-            update={"openai_timeout_s": float(BRIEFING_CALL_TIMEOUT_S)}
-        )
-        return build_openai_compat_provider(settings=narrator)
+        #: 🔴 **(8/22) 국소 주입을 걷었다** — 상한은 이제 `call_timeouts.yaml` 의
+        #: `composition/briefing` 이고 **게이트웨이가** `asyncio.timeout` 으로 씌운다(99 #141).
+        #: ⚠ 종전에는 여기서 `get_llm_settings().model_copy(update={"openai_timeout_s": …})`
+        #: 로 주입했다 — 전역 90s 를 그대로 타면 총 예산 45s + 90s = **135s** 라 04 의 BE 60s
+        #: 를 넘기 때문이다(99 #124). **그 위험은 그대로이고, 막는 자리만 옮겼다.**
+        #: 🔴 provider 는 이제 전역 설정을 **그대로** 받는다 — 조이는 것은 게이트웨이다.
+        return build_openai_compat_provider(settings=get_llm_settings())
     return FakeBriefProvider()
 
 

@@ -185,20 +185,36 @@ def test_the_worst_briefing_fits_inside_the_backend_timeout() -> None:
 
 
 def test_the_briefing_does_not_ride_the_global_call_timeout() -> None:
-    """🔴 **브리핑은 provider 전역 상한을 안 탄다** — 그 주입이 실제로 서는지 잰다.
+    """🔴 **브리핑은 provider 전역 상한을 안 탄다** — 그 조임이 실제로 서는지 잰다.
 
-    ⚠ 상수만 재면 「값은 맞는데 주입을 안 했다」를 못 잡는다 ⇒ **조립된 provider 의
-    실효 타임아웃**을 본다. 선례: `problem_generation/provider.py` 가 verifier 에 같은
-    형태로 자기 `OpenAiSettings` 를 준다.
+    ⚠ 상수만 재면 「값은 맞는데 배선을 안 했다」를 못 잡는다 ⇒ **조립된 게이트웨이의
+    실효 상한**을 본다.
+
+    ⚠ 🔴 **(8/22) 재는 층이 바뀌었다.** 종전에는 `composition/provider.py` 가
+    `model_copy(update={"openai_timeout_s": …})` 로 **provider 에** 15s 를 주입했고 이
+    검사는 그 provider 의 실효값을 봤다. №58 이 그 국소 주입을 걷고 값을
+    `call_timeouts.yaml` 로 옮겼다(99 #141) ⇒ 이제 조이는 것은 **게이트웨이**이고
+    (`llm/gateway.py` — `asyncio.timeout(cap)`), provider 는 전역 설정을 **그대로 받는다.**
+    🔴 **그래서 「provider 실효값 == 15」 는 이제 틀린 단언이다** — 그대로 뒀으면 참인 상태를
+    red 로 만든다. 종전 문면은 «주입이 provider 에 있던 시절» 의 기록으로 남긴다.
+
+    🔴 **두 축을 함께 잰다** — 하나만 재면 «표에 값은 있는데 게이트웨이가 안 쓴다» 나
+    «게이트웨이는 조이는데 provider 도 같이 조인다»(이중 조임)가 안 걸린다.
     """
-    from ai.composition.provider import BriefingSettings, build_brief_provider
+    from ai.composition.briefing import PROMPT_ID as BRIEFING_PROMPT_ID  # noqa: PLC0415
+    from ai.composition.provider import build_brief_gateway  # noqa: PLC0415
+    from ai.llm.providers.openai_compat import OpenAiSettings  # noqa: PLC0415
 
-    provider = build_brief_provider(BriefingSettings(llm_provider="openai_compat"))
-    #: 🔴 실효값을 본다 — 상수만 재면 「값은 맞는데 주입을 안 했다」를 못 잡는다.
-    effective = getattr(provider, "_settings").openai_timeout_s  # noqa: B009 — 실효값 확인
+    gateway = build_brief_gateway()
+    #: ① 🔴 **게이트웨이가 표의 값을 실제로 든다** — 표에만 있고 안 쓰이면 전역으로 간다.
+    effective = getattr(gateway, "_call_timeouts").get(BRIEFING_PROMPT_ID)  # noqa: B009
     assert effective == float(BRIEFING_CALL_TIMEOUT_S), (
-        f"브리핑 provider 의 실효 타임아웃이 {effective}s 다 — "
-        f"{BRIEFING_CALL_TIMEOUT_S}s 주입이 안 섰다(전역을 그대로 탄다)"
+        f"브리핑 게이트웨이의 실효 상한이 {effective}s 다 — "
+        f"`call_timeouts.yaml` 의 `{BRIEFING_PROMPT_ID}` 가 안 실렸다(전역 90s 를 그대로 탄다)"
+    )
+    #: ② 🔴 **provider 는 더 이상 국소 주입을 안 받는다** — 두 곳에서 조이면 값이 갈린다.
+    assert BRIEFING_CALL_TIMEOUT_S != OpenAiSettings().openai_timeout_s, (
+        "브리핑 상한이 전역과 같아졌다 — 이 검사가 아무것도 안 가린다(값을 확인하라)"
     )
 
 

@@ -7,6 +7,13 @@
 ⇒ A(박진희)가 2026-08-20에 «국소 주입이 늘어나면 어느 자리가 어떤 상한을 쓰는지
 흩어진다 — 언젠가는 한 곳에 모이는 게 맞다»고 제기했고, 그 한 곳이 여기다.
 
+⚠ 🔴 **(2026-08-22)** 그 국소 주입은 **걷었다.** 브리핑 상한은 이제 `call_timeouts.yaml`의
+`composition/briefing` **한 곳**이고, 조이는 것은 게이트웨이다(99 #141 해소).
+`composition/provider.py`는 그 값을 **읽기만** 하고 없으면 기동에서 실패한다.
+🔴 위 문면은 **왜 두 곳이었는지의 기록**으로 남긴다 — 지우면 «A 축에서 국소로 막는 것이
+유일한 길이었다»는 사정이 사라진다.
+⚠ `problem_generation/provider.py`의 verifier 전용 설정은 **아직 그대로다**(B 소유).
+
 🔴 **축은 `role`이 아니라 `prompt_id`다.** A의 요청 문면은 「role별 상한」이었는데
 **role로는 못 가른다** — counsel의 plan과 write가 둘 다 `ModelRole.COUNSELOR`이고
 (`composition/counsel/provider.py`가 이미 그렇게 적어 뒀다) 그 둘의 실측 지연은 5배
@@ -14,9 +21,9 @@
 한 칸에 들어간다.** `prompt_id`는 `LLMRequest`에 이미 있어 계약 변경도 없다.
 
 ⚠ **표가 비면 오늘과 같다.** 없는 `prompt_id`는 `None`이고, 그때 게이트웨이는 상한을
-씌우지 않아 provider의 전역 상한이 그대로 간다. 지금 `call_timeouts.yaml`은 **비어 있다** —
-값은 실측 p95에서 나오는데 pg·classify 자리는 콜당 실측이 없고, counsel·detect 자리의
-값은 A 소유이기 때문이다(§2-29).
+씌우지 않아 provider의 전역 상한이 그대로 간다. ⚠ **(8/22 갱신)** 표에는 지금 **셋**이 있다 —
+`composition/briefing`(A 판정) · `pg.items.v1` · `pg.cross_solve.v1`. `counsel_plan`·
+`counsel_pack`은 **`max` 실측이 없어 비워 뒀다**(`p95`만으로는 하한을 못 지킨다 — yaml 주석).
 """
 
 from functools import lru_cache
