@@ -18,12 +18,20 @@ ToneSafety 게이트 검출 **병행**"* 이라고 규정하는데 **양쪽이 �
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from dataclasses import replace
 from typing import Final
 from uuid import UUID
 
 import pytest
 
-from ai.composition.buffer_lexicon import EXPECTED_TERM_COUNT, load_buffer_lexicon
+from ai.composition.buffer_lexicon import (
+    EXPECTED_TERM_COUNT,
+    BufferLexicon,
+    Replacement,
+    load_buffer_lexicon,
+)
+from ai.composition.counsel import prompt as prompt_module
 from ai.composition.counsel.gate import check_counsel_gate
 from ai.composition.counsel.prompt import _buffer_replacements, assemble_prompt
 from ai.contracts.composition import (
@@ -253,22 +261,81 @@ def test_a_from_only_term_rides_the_avoid_list() -> None:
     assert "안 했습니다" in prompt
 
 
-def test_the_two_lists_are_separate_lines() -> None:
+
+#: 🔴 **인위적 차단 쌍** — `redact()` 가 확실히 무는 `from` 하나(`김민준은` → `⟪확인필요⟫은`).
+#: ⚠ **가명은 코퍼스에 이미 있는 것만 쓴다**(65~72 · 35~42) — 새 실명을 지어내지 않는다.
+#: 🔴 **왜 주입하는가**: №54 가 오탐을 닫아 **실제로 막히는 쌍이 0개**가 됐다. 그러면
+#:   아래 두 검사가 **아무것도 안 재는 검사**가 된다(로그 149 — «없으면 통과»는 통과가
+#:   아니다). ⇒ 사전이 아니라 **로더 반환값에** 한 쌍을 꽂아 성질을 계속 잰다.
+#: ⚠ `buffer_lexicon.yaml` 은 **안 건드린다** — 데이터 파일에 검사용 값을 넣으면
+#:   프로덕션 프롬프트에 그 쌍이 실린다.
+#: 🔴 **막히는 자리가 둘이라 쌍도 둘이다** — `prompt.py` 가 그 둘을 **다르게** 다룬다:
+#:   `from` 이 걸리면 **쌍 통째로** 빠지고(③), `to` 만 걸리면 **`from` 을 회피 목록으로
+#:   살린다**(②). 하나만 주입하면 둘 중 한 축이 안 재진다.
+_INJECTED_FROM_BLOCKED: Final = Replacement(source="김민준은", target="그 학생은")
+_INJECTED_TO_BLOCKED: Final = Replacement(source="부진합니다", target="박서연이 그렇습니다")
+
+
+@pytest.fixture
+def lexicon_with_a_blocked_pair(monkeypatch: pytest.MonkeyPatch) -> Iterator[BufferLexicon]:
+    """B군 사전에 **막히는 쌍 둘**을 더한 것을 프롬프트가 읽게 한다.
+
+    ⚠ 🔴 **캐시를 양쪽에서 비운다** — `_buffer_replacements` 는 `@lru_cache` 다
+    (`prompt.py:64`). 안 비우면 **앞 검사가 진짜 사전으로 채워 둔 값**이 나와 주입이
+    조용히 무시된다. 실측(8/21): 이 검사들이 **단독으로는 통과하고 파일 전체에서는
+    실패**했다 — 🔴 «혼자 돌면 green» 은 격리가 아니라 **오염의 증상**이다.
+    ⚠ 뒤에서도 비운다 — 안 비우면 **주입된 값**이 다음 검사로 샌다(반대 방향 오염).
+    """
+    base = load_buffer_lexicon()
+    patched = replace(
+        base,
+        replacements=(*base.replacements, _INJECTED_FROM_BLOCKED, _INJECTED_TO_BLOCKED),
+    )
+    monkeypatch.setattr(prompt_module, "load_buffer_lexicon", lambda: patched)
+    prompt_module._buffer_replacements.cache_clear()
+    yield patched
+    prompt_module._buffer_replacements.cache_clear()
+
+
+def test_the_two_lists_are_separate_lines(lexicon_with_a_blocked_pair: BufferLexicon) -> None:
     """🔴 치환 목록과 회피 목록을 **한 줄에 섞지 않는다.**
 
     섞으면 화살표 없는 항을 LLM이 **치환 대상**으로 읽는다.
+
+    ⚠ 🔴 **(8/21) 관심사는 「회피 줄의 존재」가 아니라 「두 목록의 분리」다** — 이름이
+    그렇게 적고 있다. №54 로 **실제 막히는 쌍이 0개**가 되어 회피 줄이 안 생겼고, 그대로
+    두면 `StopIteration` 이다. ⇒ **막히는 쌍을 하나 주입해** 분리 계약을 계속 잰다.
+    ⚠ 주입을 빼면 이 검사는 red 다(`_INJECTED_BLOCKED` 가 사전에 없다).
     """
+    assert _INJECTED_TO_BLOCKED in lexicon_with_a_blocked_pair.replacements, (
+        "주입이 안 걸렸다 — 이 검사는 «`to` 만 막힌» 쌍이 있어야 무엇이든 잰다"
+    )
     line = _buffer_replacements(1)
     replace_line = next(ln for ln in line.split("\n") if "바꿔 쓰세요" in ln)
     avoid_line = next(ln for ln in line.split("\n") if "쓰지 마세요" in ln)
 
     assert "→" in replace_line
     assert "→" not in avoid_line, f"회피 목록에 화살표가 섞였다: {avoid_line[:80]!r}"
-    assert "실패했습니다" not in replace_line, "쌍이 아닌 항이 치환 목록에 실렸다"
+    assert _INJECTED_TO_BLOCKED.source not in replace_line, (
+        "쌍이 아닌 항이 치환 목록에 실렸다 — 회피 항은 화살표 없이 실리므로 LLM 이 "
+        "치환 대상으로 읽는다"
+    )
+    #: ⚠ 🔴 **(8/21) 종전엔 이 자리에 `실패했습니다` 가 있었다** — 그 쌍의 `to`
+    #:   (`이번에는 결과가…`)가 `redact()` 오탐에 걸려 **회피 목록에 있던 시절**의 예다.
+    #:   №54 가 오탐을 닫아 **지금은 정상 쌍으로 치환 목록에 실린다** ⇒ 그 이름을 그대로
+    #:   두면 **참인 상태를 red 로 만든다.** 🔴 **예를 주입 쌍으로 옮겼다** — 사전이
+    #:   바뀌어도 흔들리지 않고, 재는 성질(«회피 항은 치환 목록에 없다»)은 같다.
 
 
-def test_a_from_blocked_term_stays_out() -> None:
+def test_a_from_blocked_term_stays_out(lexicon_with_a_blocked_pair: BufferLexicon) -> None:
     """⚠ `from`이 걸리는 항은 **여전히 못 싣는다** — 그 사실을 고정한다.
+
+    ⚠ 🔴 **(8/21) 뒤집지 않았다.** №54 가 `이해력이 부족`·`다른 학생에 비해` 의 오탐을
+    닫아 **막힌 `from` 이 0개**가 됐다 — 그런데 이 검사가 지키는 계약(«막힌 `from` 은 안
+    실린다»)은 **여전히 유효하다.** «이제 실린다» 로 뒤집으면 **다음에 새 쌍이 막혔을 때
+    아무도 안 운다**(로그 149 — «빼면 지워도 통과»). ⇒ **막히는 쌍을 주입해** 성질을 잰다.
+    ⚠ 아래 세 단언이 함께 서야 한다: 막힌 `from` 부재 · 그 `to` 도 부재(쌍 통째) ·
+    **안 막힌 쌍은 실린다**(안 그러면 «다 빠져서 통과» 가 된다).
 
     🔴 **「안 된다」를 검사로 박아 두면 나중에 휴리스틱이 나아졌을 때 red가 나서
     자동 복귀가 눈에 보인다**(#04 규율 — 경계를 말했으면 그 자리에 red를 남긴다).
@@ -279,9 +346,20 @@ def test_a_from_blocked_term_stays_out() -> None:
     """
     prompt = assemble_prompt(_context())
 
-    assert "이해력이 부족" not in prompt
-    assert "다른 학생에 비해" not in prompt, (
-        "🔴 `from`이 걸리는 항이 실렸다 — 휴리스틱이 나아졌다면 이 단정과 99 #83을 같이 고쳐라"
+    assert _INJECTED_FROM_BLOCKED.source not in prompt, (
+        f"🔴 `from` 이 걸리는 항이 실렸다 — 전송 트립와이어가 프롬프트를 통째로 막는다: "
+        f"{_INJECTED_FROM_BLOCKED.source!r}"
+    )
+    assert _INJECTED_FROM_BLOCKED.target not in prompt, (
+        "🔴 막힌 쌍의 `to` 만 남았다 — 쌍이 반쪽으로 실리면 LLM 이 화살표 없는 항을 "
+        "치환 대상으로 읽는다"
+    )
+    assert "기초가 없" in prompt, (
+        "🔴 안 막힌 쌍까지 사라졌다 — 이 검사가 「막힌 것만 빠진다」를 재는지 확인하는 자리다"
+    )
+    assert _INJECTED_TO_BLOCKED.source in prompt, (
+        "🔴 `to` 만 막힌 쌍의 `from` 까지 사라졌다 — 쌍을 통째로 버리면 **멀쩡한 절반**이 "
+        "같이 사라진다(99 #84 · 로그 114)"
     )
 
 
