@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import re
 import sys
 import time
@@ -100,17 +101,62 @@ def _context() -> ExecutionContext:
     )
 
 
-def _draft_context(combo: str) -> DraftContext:
+#: 시나리오 A — 종전 유일본. 🔴 **수치다운 것이 「정답률」 하나다.**
+#: 그래서 세 `interest`(grade·attitude·admission)가 집을 것이 하나뿐이고,
+#: v0.7 24조합 전수에서 셋이 전부 정답률을 주력으로 썼다(№41 §1).
+_FACTS_A: Final = (
+    EvidenceFact(label="지문 학습량", value="6월 42지문 312문항", record_id="le_2041"),
+    EvidenceFact(label="제출률", value="최근 4주 100%", record_id="le_2077"),
+    EvidenceFact(label="추론 문항 정답률", value="62% → 71%", record_id="le_2103"),
+)
+_SUMMARIES_A: Final = (
+    "6월 한 달 지문 42개·312문항을 풀었다",
+    "최근 4주 과제 제출률 100%",
+    "추론 문항 정답률이 62%에서 71%로 올랐다",
+)
+
+#: 🔴 시나리오 B — **축마다 집을 것이 따로 있게** 짠다(№41 §3-3).
+#:
+#:     attitude  →  과제 제출 두 창(직전 10/10 · 최근 4/10)
+#:     grade     →  지문당 풀이 시간 두 달(4분 · 7분) · 학습량 감소
+#:     admission →  🔴 **없다.** 점수·석차·반 평균이 불변식 7 과 프롬프트 「지켜야 할
+#:                  선」 양쪽에서 금지돼 「목표 대비 위치」를 말할 재료가 계약에 없다.
+#:                  ⇒ admission 이 안 갈리면 그것은 프롬프트 탓도 시나리오 탓도 아니다.
+#:
+#: ⚠ 🔴 **정답률을 일부러 뺐다** — A 와 같은 것이 있으면 세 축이 또 거기로 몰린다.
+#: ⚠ 🔴 **파생값(「4분 → 7분」)을 fact 로 만들지 않았다.** 두 시점을 **각자의
+#:   `record_id` 를 가진 두 fact** 로 둔다 — 계약이 *"집계·기준선 파생 fact 는 `None`"*
+#:   이라 파생으로 쓰면 인용이 막히고, 프롬프트도 *"두 수치를 빼서 새 숫자를 만들지
+#:   마세요"* 라 **뺄셈은 애초에 모델이 할 일이 아니다.**
+_FACTS_B: Final = (
+    EvidenceFact(label="직전 4주 과제 제출", value="10건 중 10건", record_id="le_3009"),
+    EvidenceFact(label="최근 4주 과제 제출", value="10건 중 4건", record_id="le_3101"),
+    EvidenceFact(label="6월 지문당 풀이 시간", value="평균 4분", record_id="le_3016"),
+    EvidenceFact(label="7월 지문당 풀이 시간", value="평균 7분", record_id="le_3115"),
+    EvidenceFact(label="7월 지문 학습량", value="12지문 96문항", record_id="le_3120"),
+)
+_SUMMARIES_B: Final = (
+    "직전 4주에는 과제 10건을 모두 제출했다",
+    "최근 4주에는 과제 10건 중 4건을 제출했다",
+    "지문당 풀이 시간이 6월 평균 4분, 7월 평균 7분이다",
+    "7월 지문 학습량은 12지문 96문항이다",
+)
+
+_SCENARIOS: Final = {
+    "a": (_FACTS_A, _SUMMARIES_A, "요즘 아이가 잘 하고 있는지 궁금합니다."),
+    "b": (_FACTS_B, _SUMMARIES_B, "지난달보다 힘들어하는 것 같아서 여쭤봅니다."),
+}
+
+
+def _draft_context(combo: str, scenario: str = "a") -> DraftContext:
     """조합 키 하나로 컨텍스트를 짓는다 — 🔴 **근거는 네 축에서 같다.**
 
     ⚠ 근거를 조합마다 바꾸면 «프롬프트가 바꾼 것»과 «입력이 바꾼 것»이 안 갈린다.
+    🔴 **그래서 시나리오는 `combo` 가 아니라 명시 인자로만 바뀐다** — 한 번의 실행 안에서는
+    모든 조합이 같은 근거를 본다(№41 §2-1).
     """
     comm, sensitivity, interest, frequency = combo.split(".")
-    facts = (
-        EvidenceFact(label="지문 학습량", value="6월 42지문 312문항", record_id="le_2041"),
-        EvidenceFact(label="제출률", value="최근 4주 100%", record_id="le_2077"),
-        EvidenceFact(label="추론 문항 정답률", value="62% → 71%", record_id="le_2103"),
-    )
+    facts, summaries, inquiry = _SCENARIOS[scenario]
     return DraftContext(
         student_ref="st_preview",
         guardian_ref="pa_preview",
@@ -118,14 +164,10 @@ def _draft_context(combo: str) -> DraftContext:
             comm=comm, sensitivity=sensitivity, interest=interest, frequency=frequency
         ),
         facts=facts,
-        evidence_summaries=(
-            "6월 한 달 지문 42개·312문항을 풀었다",
-            "최근 4주 과제 제출률 100%",
-            "추론 문항 정답률이 62%에서 71%로 올랐다",
-        ),
+        evidence_summaries=summaries,
         period_label="2026년 7월",
         fallback_text="이번 기간 학습 상황을 정리해 전해 드립니다.",
-        inquiry_text="요즘 아이가 잘 하고 있는지 궁금합니다.",
+        inquiry_text=inquiry,
     )
 
 
@@ -229,17 +271,18 @@ async def _run(
     provider_name: str,
     *,
     only_candidate: bool = False,
+    scenario: str = "a",
 ) -> int:
     provider = _build_provider(provider_name)
     totals = _Totals()
     candidate_text = candidate.read_text(encoding="utf-8") if candidate else None
 
     for combo in combos:
-        context = _draft_context(combo)
+        context = _draft_context(combo, scenario)
         key = combination_key(**context.label_snapshot.as_axes())
         rule = counsel_prompt.tone_rule_for(context)
         print("\n" + "=" * 72)
-        print(f"■ {key}")
+        print(f"■ {key}   [시나리오 {scenario.upper()}]")
         print(
             f"  blocks={rule.blocks} · 문장/블록={rule.sentences_per_block}"
             f" · buffer={rule.buffer_level}"
@@ -301,9 +344,21 @@ def main() -> None:
         help="🔴 A(현행)를 건너뛴다 — 호출 수 절반",
     )
     parser.add_argument(
+        "--scenario",
+        choices=sorted(_SCENARIOS),
+        default="a",
+        help="🔴 근거 묶음 — a(종전) · b(정답률 없음 · 제출 하락 · 풀이 시간 증가)",
+    )
+    parser.add_argument(
         "--provider",
-        default="openai_compat",
-        help="🔴 먼저 `--provider fake` 로 배선을 증명하라 (실 LLM 0회)",
+        #: 🔴 **저장소 관례를 따른다 — `LLM_PROVIDER` 가 있으면 그것이 기본값이다.**
+        #: ⚠ 종전에는 **이 도구만 안 따라서**, `LLM_PROVIDER=fake` 를 주고 배선을 증명한
+        #: 한 번이 **실 LLM 1콜을 태웠다**(2026-08-21 실측). 저장소 전체가 그 env 로 fake 를
+        #: 켜는데 여기만 하드코딩된 기본값을 썼다 — 그 파일 자신의 안내가
+        #: *"먼저 `--provider fake` 로 배선을 증명하라"* 인데 **아무것도 강제하지 않았다.**
+        default=os.environ.get("LLM_PROVIDER", "openai_compat"),
+        help="🔴 먼저 `--provider fake` 로 배선을 증명하라 (실 LLM 0회) — "
+        "`LLM_PROVIDER` 가 기본값이다",
     )
     args = parser.parse_args()
     combos = tuple(c.strip() for c in args.combos.split(",") if c.strip())
@@ -315,6 +370,7 @@ def main() -> None:
                 args.runs,
                 args.provider,
                 only_candidate=args.only_candidate,
+                scenario=args.scenario,
             )
         )
     )
