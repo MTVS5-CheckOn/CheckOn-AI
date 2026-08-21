@@ -27,6 +27,7 @@ from ai.contracts.diagnosis import (
     WeaknessNode,
 )
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
+from ai.contracts.gates import BlockedReason
 from ai.contracts.llm import (
     CallOutcome,
     LlmError,
@@ -60,9 +61,21 @@ from ai.diagnosis.skill_graph import load_skill_graph
 from ai.llm.gateway import LlmCallRecord
 from ai.llm.providers.openai_compat import OpenAiSettings, get_llm_settings
 from ai.llm.structured import parse
-from ai.problem_generation.bootstrap import build_problem_workflow
+from ai.problem_generation.application.refiner import (
+    ProblemItemRefiner,
+    ProblemRefineOutcome,
+)
+from ai.problem_generation.bootstrap import (
+    build_problem_workflow,
+    resolve_external_corpus,
+)
 from ai.problem_generation.domain.policy import supports_source_procurement
-from ai.problem_generation.infrastructure.config import load_verify_config
+from ai.problem_generation.infrastructure.config import (
+    load_area_specs,
+    load_banned_topics,
+    load_misconception_tags,
+    load_verify_config,
+)
 from ai.problem_generation.infrastructure.graph_context import (
     AreaDelegatingGraphContextService,
 )
@@ -110,9 +123,7 @@ _VALID_GATE_STATUSES = frozenset(
         ProblemItemStatus.DROPPED,
     }
 )
-_UPSTREAM_FAILURES = frozenset(
-    {CallOutcome.TIMEOUT, CallOutcome.PROVIDER_ERROR}
-)
+_UPSTREAM_FAILURES = frozenset({CallOutcome.TIMEOUT, CallOutcome.PROVIDER_ERROR})
 _TRACKS = {
     AreaTag.LANGUAGE: "T1",
     AreaTag.READING: "T2",
@@ -121,6 +132,7 @@ _TRACKS = {
     AreaTag.MEDIA: "T5",
 }
 _UNKNOWN = "unknown"
+_REFINE_INSTRUCTION = "문항의 핵심 평가 요소를 유지하면서 발문을 더 명확하게 다듬어 주세요."
 
 
 class RealLlmSmokeUnavailable(RuntimeError):
@@ -213,6 +225,7 @@ class RealLlmSmokeObservation:
     verifier_completions: tuple[LLMResult, ...]
     parsed_items: tuple[GeneratedItem, ...]
     generated_items: tuple[GeneratedItem, ...]
+    refine_outcome: ProblemRefineOutcome | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,8 +255,18 @@ class SmokeReportRow:
     schema_passed: int
     final_status: str
     failure_reason: str
+    failure_detail: str
     stored_body_count: int
     model: str
+
+
+@dataclass(frozen=True, slots=True)
+class RefineReportRow:
+    area_tag: AreaTag
+    applied: str
+    release_status: str
+    blocked_reason: str
+    failed_checks: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,25 +490,34 @@ async def run_real_llm_smoke(
     )
     records: list[LlmCallRecord] = []
     verify_config = load_verify_config()
+    banned_topics = load_banned_topics()
+    area_specs = load_area_specs()
+    misconception_tags = load_misconception_tags()
+    external_corpus = resolve_external_corpus()
     item_store = InMemoryProblemItemStore()
     gateway = build_problem_gateway(
         verify_config=verify_config,
         recorder=lambda record, _context: records.append(record),
         providers=providers,
     )
+    graph_context = _graph_context(area_tag)
+    request = _request(area_tag)
+    execution_context = _execution_context()
     workflow = build_problem_workflow(
         gateway=gateway,
-        graph_context=_graph_context(area_tag),
+        graph_context=graph_context,
         diagnosis=_diagnose,
         candidate_store=InMemoryCandidateStore(),
         item_store=item_store,
         checkpointer=InMemorySaver(),
         verify_config=verify_config,
+        banned_topics=banned_topics,
+        external_corpus=external_corpus,
     )
 
     called_at = datetime.now(_KST)
     started = time.perf_counter()
-    outcome = await workflow.run(_request(area_tag), _execution_context())
+    outcome = await workflow.run(request, execution_context)
     duration_s = time.perf_counter() - started
     if not isinstance(outcome, ProblemSetResult):
         raise AssertionError(
@@ -494,9 +526,7 @@ async def run_real_llm_smoke(
         )
 
     frozen_records = tuple(records)
-    if not generator.completions and _role_is_unavailable(
-        frozen_records, ModelRole.GENERATOR
-    ):
+    if not generator.completions and _role_is_unavailable(frozen_records, ModelRole.GENERATOR):
         raise RealLlmSmokeUnavailable(
             _unavailable_reason(
                 role=ModelRole.GENERATOR,
@@ -526,8 +556,25 @@ async def run_real_llm_smoke(
             continue
         if stored.item is not None:
             generated_items.append(stored.item)
-    generator_endpoint, generator_model, verifier_endpoint, verifier_model = (
-        _provider_endpoints(local_settings, provider_settings)
+    refine_outcome = None
+    if generated_items:
+        refiner = ProblemItemRefiner(
+            gateway=gateway,
+            graph_context=graph_context,
+            verify_config=verify_config,
+            banned_topics=banned_topics,
+            area_specs=area_specs,
+            misconception_tags=misconception_tags,
+            external_corpus=external_corpus,
+        )
+        refine_outcome = await refiner.refine(
+            original=generated_items[0],
+            request=request,
+            instruction=_REFINE_INSTRUCTION,
+            execution_context=execution_context,
+        )
+    generator_endpoint, generator_model, verifier_endpoint, verifier_model = _provider_endpoints(
+        local_settings, provider_settings
     )
     return RealLlmSmokeObservation(
         area_tag=area_tag,
@@ -546,12 +593,11 @@ async def run_real_llm_smoke(
         verifier_completions=tuple(verifier.completions),
         parsed_items=parsed_items,
         generated_items=tuple(generated_items),
+        refine_outcome=refine_outcome,
     )
 
 
-async def run_real_llm_smoke_matrix(
-    *, repetitions: int
-) -> tuple[RealLlmAreaSummary, ...]:
+async def run_real_llm_smoke_matrix(*, repetitions: int) -> tuple[RealLlmAreaSummary, ...]:
     """5영역을 지정 횟수만큼 실행하고 영역별 스키마 통과율 입력값을 모은다."""
 
     if repetitions < 1:
@@ -583,11 +629,11 @@ def _report_row(
     statuses = ",".join(item.status.value for item in items) or "no_item"
     reasons = (
         ",".join(
-            item.failure_reason.value if item.failure_reason is not None else "-"
-            for item in items
+            item.failure_reason.value if item.failure_reason is not None else "-" for item in items
         )
         or "-"
     )
+    details = ",".join(_single_line(item.failure_detail) for item in items) or "-"
     models = sorted({observation.generator_model for observation in observations})
     return SmokeReportRow(
         area_tag=area_tag,
@@ -597,10 +643,48 @@ def _report_row(
         schema_passed=sum(len(observation.parsed_items) for observation in observations),
         final_status=statuses,
         failure_reason=reasons,
-        stored_body_count=sum(
-            len(observation.generated_items) for observation in observations
-        ),
+        failure_detail=details,
+        stored_body_count=sum(len(observation.generated_items) for observation in observations),
         model=",".join(models) or "-",
+    )
+
+
+def _single_line(value: str | None) -> str:
+    if value is None:
+        return "-"
+    folded = " ".join(value.splitlines()).strip()
+    return folded.replace("|", "\\|") or "-"
+
+
+def _refine_report_row(
+    area_tag: AreaTag,
+    observations: tuple[RealLlmSmokeObservation, ...],
+) -> RefineReportRow:
+    outcomes = tuple(
+        observation.refine_outcome
+        for observation in observations
+        if observation.refine_outcome is not None
+    )
+    if not outcomes:
+        return RefineReportRow(
+            area_tag=area_tag,
+            applied="대상 없음",
+            release_status="-",
+            blocked_reason="-",
+            failed_checks="-",
+        )
+    return RefineReportRow(
+        area_tag=area_tag,
+        applied=",".join("true" if outcome.applied else "false" for outcome in outcomes),
+        release_status=",".join(
+            outcome.release_status.value if outcome.release_status is not None else "-"
+            for outcome in outcomes
+        ),
+        blocked_reason=",".join(
+            outcome.blocked_reason.value if outcome.blocked_reason is not None else "-"
+            for outcome in outcomes
+        ),
+        failed_checks=";".join(",".join(outcome.failed_checks) or "-" for outcome in outcomes),
     )
 
 
@@ -621,9 +705,7 @@ def _safe_failure_from_reason(area: AreaTag | str, reason: str) -> SafeFailureRo
     )
 
 
-def _safe_failure_from_exception(
-    area: AreaTag | str, error: Exception
-) -> SafeFailureRow:
+def _safe_failure_from_exception(area: AreaTag | str, error: Exception) -> SafeFailureRow:
     deepest = error.__cause__
     while deepest is not None and deepest.__cause__ is not None:
         deepest = deepest.__cause__
@@ -639,7 +721,11 @@ def _safe_failure_from_exception(
 
 async def _run_single(
     area_tag: AreaTag, repetitions: int
-) -> tuple[tuple[SmokeReportRow, ...], tuple[SafeFailureRow, ...]]:
+) -> tuple[
+    tuple[SmokeReportRow, ...],
+    tuple[RefineReportRow, ...],
+    tuple[SafeFailureRow, ...],
+]:
     observations: list[RealLlmSmokeObservation] = []
     failures: list[SafeFailureRow] = []
     for _ in range(repetitions):
@@ -650,33 +736,40 @@ async def _run_single(
         except Exception as error:
             failures.append(_safe_failure_from_exception(area_tag, error))
     rows = (_report_row(area_tag, tuple(observations)),) if observations else ()
-    return rows, tuple(failures)
+    refine_rows = (_refine_report_row(area_tag, tuple(observations)),) if observations else ()
+    return rows, refine_rows, tuple(failures)
 
 
 async def _run_matrix(
     repetitions: int,
-) -> tuple[tuple[SmokeReportRow, ...], tuple[SafeFailureRow, ...]]:
+) -> tuple[
+    tuple[SmokeReportRow, ...],
+    tuple[RefineReportRow, ...],
+    tuple[SafeFailureRow, ...],
+]:
     try:
         summaries = await run_real_llm_smoke_matrix(repetitions=repetitions)
     except Exception as error:
-        return (), (_safe_failure_from_exception("all", error),)
+        return (), (), (_safe_failure_from_exception("all", error),)
     rows: list[SmokeReportRow] = []
+    refine_rows: list[RefineReportRow] = []
     failures: list[SafeFailureRow] = []
     for summary in summaries:
         if summary.observations:
             rows.append(_report_row(summary.area_tag, summary.observations))
+            refine_rows.append(_refine_report_row(summary.area_tag, summary.observations))
         failures.extend(
             _safe_failure_from_reason(summary.area_tag, reason)
             for reason in summary.unavailable_reasons
         )
-    return tuple(rows), tuple(failures)
+    return tuple(rows), tuple(refine_rows), tuple(failures)
 
 
 def _render_report(rows: tuple[SmokeReportRow, ...]) -> str:
     lines = [
         "| 트랙 | 영역 | 생성 시도 N | 스키마 통과 M | 최종 status | "
-        "failure_reason | 저장 본문 수 | 모델명 |",
-        "| --- | --- | ---: | ---: | --- | --- | ---: | --- |",
+        "failure_reason | failure_detail | 저장 본문 수 | 모델명 |",
+        "| --- | --- | ---: | ---: | --- | --- | --- | ---: | --- |",
     ]
     lines.extend(
         "| "
@@ -688,8 +781,31 @@ def _render_report(rows: tuple[SmokeReportRow, ...]) -> str:
                 str(row.schema_passed),
                 row.final_status,
                 row.failure_reason,
+                row.failure_detail,
                 str(row.stored_body_count),
                 row.model,
+            )
+        )
+        + " |"
+        for row in rows
+    )
+    return "\n".join(lines)
+
+
+def _render_refine_report(rows: tuple[RefineReportRow, ...]) -> str:
+    lines = [
+        "| 영역 | applied | release_status | blocked_reason | failed_checks |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    lines.extend(
+        "| "
+        + " | ".join(
+            (
+                row.area_tag.value,
+                row.applied,
+                row.release_status,
+                row.blocked_reason,
+                row.failed_checks,
             )
         )
         + " |"
@@ -721,9 +837,7 @@ def _render_failures(rows: tuple[SafeFailureRow, ...]) -> str:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="문제출제 T1 또는 T1~T5 실 LLM 스모크 집계"
-    )
+    parser = argparse.ArgumentParser(description="문제출제 T1 또는 T1~T5 실 LLM 스모크 집계")
     parser.add_argument(
         "--area",
         required=True,
@@ -744,10 +858,12 @@ async def _main_async(area: str, repetitions: int) -> int:
         print("오류: --repetitions는 1 이상이어야 한다")
         return 2
     if area == "all":
-        rows, failures = await _run_matrix(repetitions)
+        rows, refine_rows, failures = await _run_matrix(repetitions)
     else:
-        rows, failures = await _run_single(AreaTag(area), repetitions)
+        rows, refine_rows, failures = await _run_single(AreaTag(area), repetitions)
     print(_render_report(rows))
+    print("\n문제수정 1턴")
+    print(_render_refine_report(refine_rows))
     if failures:
         print("\n비민감 provider 실패 메타")
         print(_render_failures(failures))
@@ -887,6 +1003,11 @@ async def _fake_cli_observation() -> RealLlmSmokeObservation:
         verifier_completions=(),
         parsed_items=(placeholder,),
         generated_items=(placeholder,),
+        refine_outcome=ProblemRefineOutcome(
+            applied=False,
+            blocked_reason=BlockedReason.ANSWER_INTEGRITY,
+            failed_checks=("R-1:테스트",),
+        ),
     )
 
 
@@ -910,9 +1031,8 @@ def test_cli_preserves_runner_exit_code(
     runner_exit_code: int,
 ) -> None:
     monkeypatch.setattr(sys.modules[__name__], "real_llm_optin", lambda: True)
-    monkeypatch.setattr(
-        sys.modules[__name__], "external_tracing_active", lambda: False
-    )
+    monkeypatch.setattr(sys.modules[__name__], "external_tracing_active", lambda: False)
+
     def completed(coro: Coroutine[object, object, int]) -> int:
         coro.close()
         return runner_exit_code
@@ -924,9 +1044,7 @@ def test_cli_preserves_runner_exit_code(
 
 def test_cli_keyboard_interrupt_returns_130(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys.modules[__name__], "real_llm_optin", lambda: True)
-    monkeypatch.setattr(
-        sys.modules[__name__], "external_tracing_active", lambda: False
-    )
+    monkeypatch.setattr(sys.modules[__name__], "external_tracing_active", lambda: False)
 
     def interrupted(coro: Coroutine[object, object, int]) -> int:
         coro.close()
@@ -941,9 +1059,7 @@ def test_cli_does_not_map_provider_error_to_130(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(sys.modules[__name__], "real_llm_optin", lambda: True)
-    monkeypatch.setattr(
-        sys.modules[__name__], "external_tracing_active", lambda: False
-    )
+    monkeypatch.setattr(sys.modules[__name__], "external_tracing_active", lambda: False)
 
     def provider_error(coro: Coroutine[object, object, int]) -> int:
         coro.close()
@@ -959,7 +1075,7 @@ def test_cli_fake_provider_renders_table_without_endpoint() -> None:
     observation = asyncio.run(_fake_cli_observation())
     rendered = _render_report((_report_row(AreaTag.LANGUAGE, (observation,)),))
 
-    assert "| T1 | language | 1 | 1 | verified | - | 1 | fake-model |" in rendered
+    assert "| T1 | language | 1 | 1 | verified | - | - | 1 | fake-model |" in rendered
     assert "secret.example" not in rendered
     assert "api_key" not in rendered
     assert "RAW_COMPLETION_MUST_NOT_PRINT" not in rendered
@@ -991,7 +1107,8 @@ def test_cli_preserves_success_and_failure_from_repeated_single_area(
 
     assert asyncio.run(_main_async("language", 2)) == 1
     output = capsys.readouterr().out
-    assert "| T1 | language | 1 | 1 | verified | - | 1 | fake-model |" in output
+    assert "| T1 | language | 1 | 1 | verified | - | - | 1 | fake-model |" in output
+    assert "| language | false | - | answer_integrity | R-1:테스트 |" in output
     assert "| language | provider_error | LlmError | BadRequestError | 400 |" in output
     assert "secret.example" not in output
     assert "RAW_COMPLETION_MUST_NOT_PRINT" not in output
@@ -1003,9 +1120,7 @@ def test_cli_failure_renderer_keeps_only_categorical_metadata() -> None:
         "causes=BadRequestError http_statuses=400 "
         "https://secret.example/v1?api_key=hidden"
     )
-    rendered = _render_failures(
-        (_safe_failure_from_reason(AreaTag.LANGUAGE, reason),)
-    )
+    rendered = _render_failures((_safe_failure_from_reason(AreaTag.LANGUAGE, reason),))
 
     assert "| language | provider_error | LlmError | BadRequestError | 400 |" in rendered
     assert "secret.example" not in rendered
