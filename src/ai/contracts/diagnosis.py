@@ -50,6 +50,13 @@ class DiagnosisEvent(BaseModel):
     정오 판정은 기존 `correct` 값을 그대로 사용한다.
     """
 
+    correct_no: int | None = Field(default=None, ge=1, le=5)
+    """BE가 보존한 1-based 정답 번호. 선택·정오 값의 정합 검증에만 사용한다.
+
+    **v1 약점 판정 축에는 쓰지 않는다.** 비객관식이거나 정답 번호를 알 수 없으면
+    null이다.
+    """
+
     misconception_tag: str | None = Field(
         default=None,
         min_length=1,
@@ -80,6 +87,12 @@ class DiagnosisEvent(BaseModel):
             raise ValueError("misconception_tag에는 chosen_no가 필요하다")
         if self.correct and self.misconception_tag is not None:
             raise ValueError("정답 이벤트에는 misconception_tag를 기록할 수 없다")
+        if (
+            self.correct_no is not None
+            and self.chosen_no is not None
+            and (self.chosen_no == self.correct_no) != self.correct
+        ):
+            raise ValueError("chosen_no·correct_no·correct 값이 서로 모순된다")
         return self
 
 

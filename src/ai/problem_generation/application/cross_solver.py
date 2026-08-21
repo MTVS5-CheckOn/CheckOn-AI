@@ -59,6 +59,10 @@ class BlindCrossSolver:
     def prompt_version(self) -> str:
         return self._prompt.version
 
+    @property
+    def misconception_prompt_version(self) -> str:
+        return self._misconception_prompt.version
+
     def misconception_structure_failures(
         self,
         item: GeneratedItem,

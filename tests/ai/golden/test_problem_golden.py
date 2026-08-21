@@ -27,7 +27,7 @@ def test_problem_golden_evaluator_passes_offline() -> None:
 
     assert report.passed
     assert report.total_cases == 75
-    assert report.prompt_snapshot_count == 4
+    assert report.prompt_snapshot_count == 5
     assert report.educational_review_status == "expert_review_pending"
     assert report.real_model_evaluated is False
     assert {summary.suite: summary.case_count for summary in report.suites} == {
