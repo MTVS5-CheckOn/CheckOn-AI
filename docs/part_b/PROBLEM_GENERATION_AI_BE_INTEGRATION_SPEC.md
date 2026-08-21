@@ -1,11 +1,11 @@
 # AI–BE/Adapter 문제출제 통신 명세
 
-- 기준 AI 커밋: `fe255e30a5eca89c1141fdee5a97f929f02fb912` (#370 머지 후 `develop`)
+- 기준 AI 커밋: `daa025ef7c396fa320f53de0fe46757739924458` (`daa025e`, #379 머지 후 `develop`)
 - 기준 브랜치: `develop`
-- 확정일: 2026-08-21 (출제·수정 최종 실측 회차)
+- 확정일: 2026-08-22 (BE 전달 직전 명세 확정 회차)
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 문서 개정: PR #354 enqueue-only · PR #361 재기동 복구 · PR #362 종단/수정 fixture ·
-  2026-08-21 UTF-8 재측정 반영
+  PR #371 출제·수정 최종 실측 · PR #374 도달 불가 422 문서 제거
 
 ## 1. 범위와 결론
 
@@ -406,6 +406,11 @@ Adapter는 `job_id`와 `execution_id`를 응답 즉시 영속 저장한다. `202
 `count`와 재생성 횟수에 따라 실행 시간이 달라지므로 Adapter는 21분 같은 고정 상한에서
 잡을 실패로 바꾸지 않는다. 운영 관찰 SLO를 넘기면 Backend 상태를 `processing`으로 유지하고
 별도 reconciliation이 같은 `job_id`를 계속 조회한다. 관찰 중단은 AI 잡의 취소가 아니다.
+
+AI 잡을 외부에서 취소하는 HTTP 엔드포인트는 없다. 따라서 Backend·Adapter는 관찰 SLO를
+넘겨도 잡을 중단시킬 수 없고 관찰만 종료한다. `cancelled`는 AI 내부 사유로만 도달하며,
+이 경계는 problem뿐 아니라 counsel도 같다(`09_integration_proposals.md` §2-26.4 3번 ·
+`src/ai/api/routers/counsel.py:198,1408-1411`). counsel은 A 소유이므로 이 문서는 사실만 인용한다.
 
 API view cache가 유실되어도 `STORE_BACKEND=postgres` 배포에서는 영속 JobStore와 result
 store에서 상태·결과를 조회할 수 있다. 메모리 저장 백엔드의 프로세스 재시작 내구성은 계약
@@ -838,6 +843,7 @@ Adapter→Backend가 본문을 Kafka로 전달해야 한다면 참조형, slot �
 ### 8.3 BE 연동 직전 — Adapter
 
 - [ ] 고정 관찰 상한으로 AI 잡을 실패 처리하지 않고 비종단 reconciliation 구현
+- [ ] 외부 취소 HTTP가 없음을 전제로 재시도·타임아웃 정책을 세우고 관찰 종료를 잡 취소로 처리하지 않음
 - [ ] 비종단 상태에서만 `Retry-After`를 polling 간격에 반영
 - [ ] `job_id`·`execution_id` 영속 저장
 - [ ] `correct_option_index` 파생 및 AI 원문 answer 보존
@@ -885,7 +891,22 @@ Adapter→Backend가 본문을 Kafka로 전달해야 한다면 참조형, slot �
   - `manual_targets: ["grammar.sentence-structure"]`는 실제 curriculum node ID가 아니다.
   - `banned_topics_version: "v1"`은 실행 정본과 다르며 실제 값은 `pg-banned-v1`이다.
 - 실제 node ID는 diagnosis 응답의 `weakness_map.nodes`에서 얻는다.
-- 정확한 enum과 스키마는 FastAPI `/openapi.json` 및 Pydantic 계약과 대조한다.
+- 이 문서가 problem 축 HTTP 계약의 정본이다. problem 축의 기계 판독 OpenAPI 정본은 아직
+  없고 `/openapi.json`에는 FastAPI 자동 생성분만 있다. B 단독으로 닫을 수 없는 소유 경계와
+  변경 범위는 `09_integration_proposals.md` §2-26.4 2번을 가리킨다. 2026-08-22 A·B 합의에
+  따라 A 배포 보안 회차 뒤 OpenAPI 정본화를 착수한다. Pydantic 계약과의 대조는 계속 유효하다.
+- PR #374는 FastAPI 자동 생성 OpenAPI에서 도달 불가한 422만 제거했다.
+  경로와 타입 근거는 `src/ai/api/routers/problem.py:594-596,803-804,853-855,992-994`다.
+
+  | problem 경로 | path 파라미터 | OpenAPI 422 | BE 처리 |
+  | --- | --- | --- | --- |
+  | `GET /v1/problems/{job_id}` | `job_id: str` | 제거 | 종전 422는 도달 불가 응답이었으므로 핸들러를 만들지 않는다. |
+  | `GET /v1/problems/{set_id}/items` | `set_id: str` | 제거 | 종전 422는 도달 불가 응답이었으므로 핸들러를 만들지 않는다. |
+  | `GET /v1/problems/{set_id}/items/{slot_index}` | `set_id: str`, `slot_index: int` | 유지 | 정수 변환 실패로 실제 도달하므로 422를 처리한다. |
+  | `POST /v1/problems/{set_id}/items/{slot_index}/revisions` | `set_id: str`, `slot_index: int` | 유지 | 정수 변환 실패로 실제 도달하므로 422를 처리한다. |
+
+  배포 `/openapi.json`이 바뀌었으므로 이미 클라이언트를 생성했다면 다시 생성한다. 이번 문서가
+  첫 전달이라 아직 생성하지 않았다면 재실행이 아니라 이 스키마로 최초 생성한다.
 - `WRITE_HTTP_FIXTURES=1`로 기존 계약을 덮어쓰지 않는다.
 - fixture가 없는 응답을 추측해 구현하지 말고 AI 측에 요청한다.
 
