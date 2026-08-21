@@ -2362,6 +2362,11 @@ anchor, 프롬프트에는 남기지 않는다. 따라서 33노드 coverage 초�
 
 ### 실 LLM matrix의 GraphContext 대체 한계 `[판정 기록]`
 
+🔴 **(2026-08-21 정정 고지) 이 절의 T2·T4·T5 판정은 뒤집혔다.** 아래 본문을 근거로 삼기 전에
+같은 절 끝의 「(2026-08-21) 위 판정 중 T2·T4·T5는 뒤집혔다」를 반드시 함께 읽어라. 근거는
+PR #347(하네스 배선 교정)과 PR #348(실측)이다. 본문은 **무엇을 왜 잘못 판정했는지**를 남기려고
+지우지 않았다.
+
 `tests/ai/integration/test_pg_real_llm_smoke.py::_graph_context()`는 `language`만
 `GrammarNormGraphContextService`를 쓰고 T2~T5에는 `FakeGraphContextService`가 만든
 `curriculum:<skill_node_id>` 승인 ref를 넣는다. 반면 운영 기동부
@@ -2385,6 +2390,52 @@ anchor, 프롬프트에는 남기지 않는다. 따라서 33노드 coverage 초�
 `GraphContextReferenceInsufficient`로 실패 닫히므로 자료 생성 LLM까지 도달하지 않는다.
 따라서 운영 배선 기반 실 LLM 측정 표본은 **0회**이며, 실 ContextPack 생산자 없이 단순히
 측정을 반복해서 해소할 수 있는 결손이 아니다.
+
+#### 🔴 (2026-08-21) 위 판정 중 T2·T4·T5는 뒤집혔다 — 근거는 PR #347·#348
+
+**위 문단들을 지우지 않고 남긴다.** 무엇을 근거로 무엇을 잘못 판정했는지가 이 정정의 내용이다.
+
+**틀린 전제 둘 — 코드로 대조했다.**
+
+① *「운영 기동부는 전 영역에 어문규범 서비스 하나만 주입한다」* 는 틀렸다.
+`api/routers/problem.py::bootstrap_problem_services()`가 주입하는 것은
+`AreaDelegatingGraphContextService`이고, 그것은 자료 생성·저작물 선택 영역에 **어문규범 pack이
+아니라 빈 base ContextPack**을 준다
+(`infrastructure/graph_context.py::AreaDelegatingGraphContextService.resolve_generation_context`).
+
+② *「빈 anchor가 `GraphContextReferenceInsufficient`로 실패 닫혀 자료 생성 LLM까지 도달하지
+않는다」* 도 틀렸다. 그 가드는 `application/workflow.py`의 `procure_source`에서
+`requires_reference_before_source_procurement(area_tag)`가 참일 때만 돈다. 그 술어는
+`domain/policy.py`의 `_SOURCE_REQUEST_SHAPES`가 `(False, False)`인 영역, 즉 **`language`에서만
+참**이다. T2·T4·T5에서는 애초에 돌지 않는다.
+
+**실제 차단 지점은 제품이 아니라 스모크 하네스였다.** 하네스가 T2~T5에 운영에 없는
+`curriculum:<skill_node_id>` 승인 ref를 주입했고, 승인 ref가 **있으면**
+`PassageGenerator`·`SourceMaterialGenerator`가 `_require_approved_evidence`로 「초안 anchor ⊆
+허용 ref」를 엄격 대조한다. 실 LLM이 그 합성 ref를 되풀이할 이유가 없어
+`PassageDraftRejected`·`SourceMaterialDraftRejected`로 세트가 통째 닫혔다. 승인 근거가 비어
+있는 운영 배선에서는 같은 초안이 자체 고정 경로(`_ground_*_draft`)로 통과한다. PR #347이
+하네스를 운영 배선으로 통일했고, 재발 방지 가드를
+`tests/ai/contract/test_problem_graph_context_access_guard.py`에 뒀다.
+
+**PR #348 실측(2026-08-21 · `7301915` · 영역별 1회)로 갱신한 판정:**
+
+| 트랙 | 종전 판정 | 2026-08-21 실측 | 갱신 판정 |
+| --- | --- | --- | --- |
+| T2 독서 | 자료 생성 LLM 도달 불가 | 생성 4 / 스키마 3 / `verification_unavailable` / 저장 1 | **도달·저장 확인.** 단 `verified`가 아니다 |
+| T4 화법과작문 | 자료 생성 LLM 도달 불가 | 생성 4 / 스키마 1 / `dropped` `generation_exhausted` / 저장 0 | **생성 단계까지 도달.** 저장 실패 — **해소가 아니다** |
+| T5 매체 | 자료 생성 LLM 도달 불가 | 생성 4 / 스키마 3 / `verification_unavailable` / 저장 1 | **도달·저장 확인.** 단 `verified`가 아니다 |
+
+**바뀌지 않은 것 — 이쪽이 더 중요하다.**
+
+- 거짓이 된 것은 「운영 배선 기반 실 LLM 측정 표본 **0회**」 한 문장뿐이다. 이제 영역별 1회다.
+- 「근거 원문의 실존·권리·버전·hash를 운영 경로로 검증했다는 뜻이 아니다」와 「이를 근거로
+  『T5까지 운영 검증 완료』라고 보고하면 안 된다」는 **그대로 유효하다.** T2·T4·T5가 통과한
+  경로는 **LLM이 만든 자료를 스스로 고정한 `generated:` anchor**이지 승인된 외부 정본이 아니다.
+- 🔴 **T4는 「해결」도 「통과」도 아니다.** 차단 지점이 자료 조달에서 문항 생성으로 옮겨졌을 뿐,
+  저장 0건이다. ⚠ `status_reason` 원문은 CLI 집계가 출력하지 않아 **미수집**이며 추측하지 않는다.
+- 따라서 T2·T4·T5의 「실 ContextPack 생산자 도입」은 **문항 생성 도달의 선결 조건은 아니었지만**,
+  근거 품질을 올리는 작업으로서는 여전히 열려 있다. 종전 판정이 이 둘을 하나로 묶은 것이 오류다.
 
 실제 57노드 그래프와 결정론 진단기로 `speech_writing.writing.material` 및
 `media.reception.credibility`를 `weak_confirmed`로 산출한 뒤, 그 노드가 자료 생성 → 문항

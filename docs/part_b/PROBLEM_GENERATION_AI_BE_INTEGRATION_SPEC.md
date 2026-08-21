@@ -27,6 +27,54 @@
 - FakeProvider 기준 커리큘럼 57노드 중 56노드 HTTP 생성·게이트·PG 저장·재조회 완주
 - `language.grammar.fortition` 1노드는 A 소유 redaction 오탐으로 제외
 
+**(2026-08-21 재검증 · `origin/develop` `7301915`)** 위 다섯 줄은 기준 커밋 시점의 수치다.
+현재 develop에서 다시 실행한 결과는 다음과 같다.
+
+- Ruff 통과
+- Mypy 520파일 통과
+- offline 3,672 passed / 20 skipped / 172 deselected / 3 xfailed
+- 57노드 중 56노드 완주와 `language.grammar.fortition` 제외는 **그대로 유효하다.** 코드로
+  대조했다 — `tests/ai/integration/test_problem_router.py`의
+  `_A_OWNED_REDACTION_BLOCKED_NODES`가 그 1노드만 담고, 같은 파일이
+  `len(_RUNNABLE_CURRICULUM_NODES) == 56`을 단언하며, 전용 재현 검사
+  `tests/ai/unit/problem_generation/test_fortition_redaction.py`가 따로 있다.
+- PostgreSQL integration은 이 회차에서 **실행하지 않았다.** 기준 커밋 시점 수치를 이월하지도 않는다.
+
+### 1.1 실 LLM 5영역 실측 `[2026-08-21 · PR #348]`
+
+계약 검증과 별개로, 운영 GraphContext 배선(PR #347)에서 5영역이 실제로 어디까지 가는지
+측정했다. **문항 품질 보증이 아니라 도달 지점 기록이다.**
+
+- 기준 SHA `7301915` · 모델 `gpt-5.6-luna` · 벤더 공개 API
+- 영역별 **1회**. 실패를 재시도로 덮지 않았다.
+
+먼저 `language` 1회를 사전 측정했다.
+
+| 구분 | 생성 시도 | 스키마 통과 | 최종 status | failure_reason | 저장 |
+| --- | ---: | ---: | --- | --- | ---: |
+| language(사전) | 3 | 2 | `dropped` | `generation_exhausted` | 0 |
+
+그 뒤 5영역 행렬을 **별도 실행**했다. 🔴 **사전 실패는 아래 행렬로 덮이지 않는다** — 같은
+영역이 회차에 따라 다른 결과를 낸다는 사실 자체가 기록이다.
+
+| 트랙 | 영역 | 생성 시도 | 스키마 통과 | 최종 status | failure_reason | 저장 |
+| --- | --- | ---: | ---: | --- | --- | ---: |
+| T1 | language | 2 | 1 | `verified` | - | 1 |
+| T2 | reading | 4 | 3 | `verification_unavailable` | - | 1 |
+| T3 | literature | 2 | 2 | `needs_review` | - | 1 |
+| T4 | speech_writing | 4 | 1 | `dropped` | `generation_exhausted` | 0 |
+| T5 | media | 4 | 3 | `verification_unavailable` | - | 1 |
+
+- `reading`·`speech_writing`·`media` 셋 다 **PR #347 이전에 막히던 합성 승인 ref 고정 지점을
+  통과했다.** 그 차단은 스모크 하네스가 운영에 없는 `curriculum:<node>` 승인 ref를 주입해
+  생성기를 엄격 대조 모드로 뒤집었기 때문이었다.
+- `reading`·`media`는 문항 생성과 저장까지 도달했다. ⚠ 다만 최종 status는
+  `verification_unavailable`이며 **`verified`가 아니다.**
+- `speech_writing`은 문항 생성 4회·스키마 통과 1회까지 갔으나 `generation_exhausted`로
+  `dropped`됐고 저장 0건이다. 🔴 **차단 지점이 뒤로 옮겨졌을 뿐 해소가 아니다.**
+- ⚠ `speech_writing`의 `status_reason` 원문은 CLI 집계가 출력하지 않아 **미수집이다.**
+  재호출로 보충하지 않았고 추측해서 적지 않는다.
+
 ## 2. 공통 HTTP 계약
 
 ### 2.1 헤더
