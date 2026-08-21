@@ -1,8 +1,8 @@
 # AI–BE/Adapter 문제출제 통신 명세
 
-- 기준 AI 커밋: `bc30fe9d` (#363 머지 후 `develop`)
+- 기준 AI 커밋: `fe255e30a5eca89c1141fdee5a97f929f02fb912` (#370 머지 후 `develop`)
 - 기준 브랜치: `develop`
-- 확정일: 2026-08-21 (재측정·재기동 정합 회차)
+- 확정일: 2026-08-21 (출제·수정 최종 실측 회차)
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 문서 개정: PR #354 enqueue-only · PR #361 재기동 복구 · PR #362 종단/수정 fixture ·
   2026-08-21 UTF-8 재측정 반영
@@ -27,8 +27,8 @@
 기준 커밋에서 다시 실행한 결과는 다음과 같다.
 
 - Ruff 통과
-- Mypy 533파일 통과
-- offline 3,728 passed / 20 skipped / 173 deselected / 3 xfailed
+- Mypy 543파일 통과
+- offline 3,771 passed / 20 skipped / 173 deselected / 3 xfailed
 - 57노드 중 56노드 완주와 `language.grammar.fortition` 제외는 **그대로 유효하다.** 코드로
   대조했다 — `tests/ai/integration/test_problem_router.py`의
   `_A_OWNED_REDACTION_BLOCKED_NODES`가 그 1노드만 담고, 같은 파일이
@@ -134,6 +134,55 @@ area=all · outcome=unknown · exception_type=AssertionError · cause_type=unkno
 
 결과 파일에는 위 세 표와 범주형 실패 메타만 있으며 API 키·endpoint·프롬프트·모델 원문
 응답은 없다. 파일을 UTF-8로 다시 읽고 해당 문자열이 없음을 확인했다.
+
+#### 출제·수정 최종 실측 `[2026-08-21 · 기준 fe255e3 · #370 하네스]`
+
+#370에서 매트릭스를 영역별 `_run_single` 경계로 격리하고 정상 거부의 고정
+`status_reason`만 안전 실패 메타에 보존하도록 고친 뒤, 다음 명령을 **딱 1회** 실행했다.
+실패를 재시도하지 않았고 반복 횟수를 올리지 않았다.
+
+```bash
+uv run python tests/ai/integration/test_pg_real_llm_smoke.py --area all --repetitions 1
+```
+
+- 기준 SHA: `fe255e30a5eca89c1141fdee5a97f929f02fb912`
+- exit code: `0`
+- 집계: 출제 5영역 · 수정 5영역 · 안전 실패 메타 0건
+
+| 트랙 | 영역 | 생성 시도 | 스키마 통과 | 최종 status | failure_reason | failure_detail | 저장 |
+| --- | --- | ---: | ---: | --- | --- | --- | ---: |
+| T1 | language | 3 | 1 | `dropped` | `generation_exhausted` | `생성 시도 소진: FieldMissing` | 0 |
+| T2 | reading | 5 | 3 | `verification_unavailable` | - | `교차 풀이 redaction 불확실 — 시도 소진` | 1 |
+| T3 | literature | 4 | 3 | `needs_review` | - | - | 1 |
+| T4 | speech_writing | 4 | 2 | `verification_unavailable` | - | `교차 풀이 redaction 불확실 — 시도 소진` | 1 |
+| T5 | media | 4 | 3 | `verification_unavailable` | - | `교차 풀이 redaction 불확실 — 시도 소진` | 1 |
+
+| 영역 | applied | release_status | blocked_reason | failed_checks |
+| --- | --- | --- | --- | --- |
+| language | 대상 없음 | - | - | - |
+| reading | `false` | - | `pii_exposure` | - |
+| literature | `true` | `needs_review` | - | - |
+| speech_writing | `false` | - | `pii_exposure` | - |
+| media | `false` | - | `pii_exposure` | - |
+
+앞선 회차의 **미수집 기록은 당시 사실로 그대로 둔다.** 이번 회차에는 다섯 영역 행이 모두
+남았으므로 출제 수치와 수정 결과의 미수집 자리를 위 표로 닫는다. 안전 실패 메타는 0건이라
+이번 회차에 별도로 기록할 예외 `status_reason`은 없다. 과거 T4 정상 거부 회차에서 버려진
+`status_reason`을 현재 결과로 추정해 소급하지 않는다.
+
+**출제·수정 최종 상태:** `language`는 필수 필드 누락으로 생성 예산을 소진해 `dropped`, 저장
+0건이다. 생성 스키마 필수 필드 충족이 선행돼야 풀린다. `reading`·`speech_writing`·`media`는
+각 1건을 저장했지만 교차 풀이 redaction 불확실로 `verification_unavailable`이며 성공이나 발행
+가능 상태가 아니다. 해당 redaction 차단 원인 해소와 검증 완주가 선행돼야 한다. `literature`도
+`needs_review`이지 `verified`가 아니므로 사람 검토 전 발행할 수 없다.
+
+수정 결과는 세 갈래로 구분한다. `reading`·`speech_writing`·`media`는
+`applied=False`·`pii_exposure`로 **정상 차단**됐고 오류가 아니다. `language`는 저장 문항이 없어
+**대상 없음**이다. `literature`만 적용됐지만 결과는 `needs_review`다. 이번 회차의 **오류는
+0건**이며, 정상 차단이나 대상 없음을 오류 또는 성공으로 바꾸어 쓰지 않는다.
+
+결과 파일을 UTF-8로 다시 읽고 `api_key`·Authorization/Bearer·URL·endpoint·프롬프트·모델
+원문 응답이 없음을 확인했다. 모델 식별자와 위 비민감 집계만 기록돼 있다.
 
 ## 2. 공통 HTTP 계약
 
