@@ -2012,8 +2012,11 @@ LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
 
 기존 등재 2건 중 **Kafka 축은 닫는다**(§2-25.4의 2번 — adapter 소유로 이관). 새로 셋:
 
-1. **요청·결과 저장소 PG 구현** — 재기동 후 `GET`이 결과를 못 읽는다. §2-25.4에서 이어지는
-   유일한 운영 전 필수이며, 저장 테이블 결정이 `db/models.py`(양자)라 **A 합의 선행**이다.
+1. ✅ **요청·결과 저장소 PG 구현(2026-08-21 해소 · A 리뷰 요청)** —
+   `PROBLEM_GENERATION_REQUEST`·`PROBLEM_GENERATION_RESULT`에 무손실 JSONB 정본을 두고
+   tenant 술어로 역참조한다. 실제 독립 프로세스에서 running 워커 종료 → lease 만료 →
+   startup drain 재발견 → recovery_count=1 → 결과 저장 → 새 프로세스 조회까지 통과했다.
+   `db/models.py`·`06_erd.md`는 양자 파일이므로 머지 조건은 A 리뷰다.
 2. **OpenAPI 정본화** — 백엔드가 세운 규약을 우리가 못 지킨다. 엔드포인트 13개 전부의
    시그니처 변경이고 **8개가 A 소유**, 공통 envelope 모델도 양자다. **B 단독 불가.**
 3. **job 취소 HTTP 노출** — 계약에는 `cancelled`가 있는데 엔드포인트가 0개다. adapter가

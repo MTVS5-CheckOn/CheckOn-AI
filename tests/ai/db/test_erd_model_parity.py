@@ -60,7 +60,7 @@ def _sa_category(t: TypeEngine[object]) -> str:
 
 
 def test_erd_parsed_34_tables() -> None:
-    """파서 경로가 틀리면 아래 대조가 조용히 0건 통과한다 — 38테이블 상수로 고정."""
+    """파서 경로가 틀리면 아래 대조가 조용히 0건 통과한다 — 41테이블 상수로 고정."""
     assert ERD_PATH.is_file()
     # 34 → 36(2026-08-03): 기대치 입력 층 — passage_type_stat(조합 실측 누적) ·
     # expectation_ingest(이중 집계 방지 원장). 결정 로그 33 · ⚠ 양자 승인 대상.
@@ -69,7 +69,8 @@ def test_erd_parsed_34_tables() -> None:
     # 37 → 38(2026-08-10): counsel_draft_view — 두 독립 읽기 캐시의 영속 자리.
     # 38 → 39(2026-08-12): counsel_context_bundle — 워커 입력 묶음의 정본(㉻).
     #   ⚠ 읽기 모델(38번)과 **다른 생애주기**라 합치지 않았다. ⚠ 양자 승인 대상.
-    assert len(ERD_TABLES) == 39, f"ERD 테이블 수 {len(ERD_TABLES)} != 39"
+    # 39 → 41(2026-08-21): PG 요청·결과 참조의 프로세스 간 정본.
+    assert len(ERD_TABLES) == 41, f"ERD 테이블 수 {len(ERD_TABLES)} != 41"
 
 
 def test_table_set_matches_erd() -> None:
@@ -151,6 +152,7 @@ EXPECTED_UNIQUES: dict[str, set[frozenset[str]]] = {
     "weakness_map": {frozenset({"tenant_id", "student_ref", "graph_version", "week_start"})},
     "item_candidate": {frozenset({"tenant_id", "set_id", "slot_index", "attempt_no"})},
     "problem_item": {frozenset({"set_id", "slot_index"})},
+    "problem_generation_result": {frozenset({"job_id"})},
     "counsel_draft_view": {frozenset({"tenant_id", "job_id"})},
 }
 

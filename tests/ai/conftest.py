@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from functools import partial
 from typing import Any
 
 import httpx
@@ -62,7 +63,7 @@ def _background_drains(
     # ProblemDrainLoop를 재는 검사는 자기 본문에서 이 값을 true로 명시한다.
     monkeypatch.setenv("PG_DRAIN_ENABLED", "false")
     from counsel_drain import drain_once
-    from problem_drain import drain_problem_once
+    from problem_drain import adrain_problem_once
 
     original = TestClient.post
     counsel_drain_enabled = request.node.get_closest_marker("no_counsel_drain") is None
@@ -94,7 +95,15 @@ def _background_drains(
             headers = kwargs.get("headers") or {}
             tenant = headers.get("X-Tenant-Id") if isinstance(headers, dict) else None
             if tenant:
-                drain_problem_once(str(tenant), rotations=_DRAIN_ROTATIONS)
+                if self.portal is None:
+                    raise RuntimeError("TestClient 앱 이벤트 루프가 열리지 않았다")
+                self.portal.call(
+                    partial(
+                        adrain_problem_once,
+                        str(tenant),
+                        rotations=_DRAIN_ROTATIONS,
+                    )
+                )
         return response
 
     monkeypatch.setattr(TestClient, "post", post)

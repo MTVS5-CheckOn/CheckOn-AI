@@ -1,4 +1,4 @@
-"""AI–BE 회의 명세의 구현 영향 사실을 코드·fixture와 대조한다."""
+"""AI–BE 확정 지시서의 구현 영향 사실을 코드·fixture와 대조한다."""
 
 from __future__ import annotations
 
@@ -117,4 +117,7 @@ def test_snapshot_keeps_feedback_and_current_unsupported_boundary_visible() -> N
     ]
     assert snapshot["supported_revision_kinds"] == ["ai_refine"]
     assert snapshot["retry_after_is_advisory"] is True
-    assert snapshot["startup_queued_recovery"] == "not_guaranteed"
+    assert snapshot["startup_queued_recovery"] == "postgres_sweep"
+    assert "pending_problem_tenants" in _called_names(
+        problem_router._start_problem_drain  # noqa: SLF001
+    )

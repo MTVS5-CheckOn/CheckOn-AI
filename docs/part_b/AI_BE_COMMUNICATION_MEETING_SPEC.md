@@ -1,12 +1,13 @@
-# CheckOn AI–BE 문제출제 통신 규약 회의안
+# CheckOn AI–BE 문제출제 통신 규약 확정 지시서
 
 - 작성일: 2026-08-21
-- AI 기준: `develop` `fc7f9a718767ff09ea1c929cbbe79e758ed70a92`
+- AI 기준: `develop` `5d80a43` 이상
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
-- 목적: 약점 진단 → 문제 생성 → 조회 → 수정 → 오답 약점 환류 계약 확정
-- 표기: **확정**은 현재 AI 코드·HTTP fixture로 검증된 값, **협의**는 회의 결정 사항
+- 목적: 약점 진단 → 문제 생성 → 조회 → 수정 → 오답 약점 환류의 BE 구현 계약 지시
+- 적용 방식: 이 문서의 결정은 협의 후보가 아니라 AI 통신 경계의 확정값이다. BE와 Adapter는
+  구현 중 모순을 발견했을 때만 재현 자료와 함께 변경을 요청한다.
 
-## 1. 회의 결론 요약
+## 1. 확정 지시 요약
 
 1. BE는 AI가 반환한 `skill_node_id`를 임의로 다시 고르지 않고 보존한다.
 2. `POST /v1/problems`는 LLM 완료를 기다리지 않고 `202 + queued`를 즉시 반환한다.
@@ -15,7 +16,8 @@
 5. 종단 결과의 `set_id`로 문항 목록과 상세를 조회한다.
 6. 학생이 고른 오답의 `misconception_tag`를 다음 진단 이벤트로 되돌린다.
 7. 고정 시간 초과만으로 잡을 실패 처리하거나 새 멱등키로 중복 생성하지 않는다.
-8. startup recovery sweep과 lease heartbeat는 운영 개방 전 AI 후속 조건이다.
+8. PG는 startup recovery sweep과 실행 중 lease heartbeat를 사용한다. BE는 AI 재시작을
+   이유로 새 잡을 만들지 않고 기존 `job_id` polling을 계속한다.
 
 ## 2. 전체 호출 흐름
 
@@ -381,17 +383,30 @@ problem_generation_request
 - `language.grammar.fortition` redaction 오탐 잔여
 - 일부 terminal·5xx 조합의 고정 HTTP fixture 미비
 
-운영 개방 전 AI 후속:
+PG 운영 계약:
 
-1. startup에서 영속 queued tenant를 재발견하는 recovery sweep
-2. 실행 중 `renew_lease`를 호출하는 주기적 heartbeat
-3. 워커 사망 후 lease 만료·회수 검사
-4. 실제 프로세스·컨테이너 재시작 E2E
-5. 두 background drain의 DB connection 합산 관측
+1. startup과 유휴 sweep에서 PostgreSQL의 `queued` 또는 lease가 만료된
+   `leased | running` PG 테넌트를 제한 조회하고, 인메모리 알림 큐가 비어 있어도 기존
+   잡을 다시 실행 대상으로 올린다.
+   `payload_ref`·`result_ref`·재개용 `item-candidate:` 참조 대상도 PostgreSQL 정본이다.
+2. 실행 중 lease heartbeat 주기는 기본 60초이며 lease 300초보다 짧아야 기동한다.
+3. heartbeat 갱신 실패는 fencing 소유권 상실로 보고 진행 중 실행을 취소한다. 실행 총
+   상한은 기본 12,000초이며, 초과 시에도 실행을 취소해 무한 연장을 막는다.
+4. 만료된 `leased | running`은 기존 `recover_expired` 규약에 따라 회수한다.
+5. `paused`는 자동 재개하지 않는다.
+6. 실제 독립 프로세스 4개로 `queued 적재 → running 중 프로세스 종료 → lease 만료 → 새
+   드레인의 테넌트 재발견·요청 및 후보 복원·recovery_count=1 → succeeded → 또 다른
+   프로세스의 결과 복원`을
+   검증한다. 실 LLM 호출은 0회다.
 
-PostgreSQL이면 재시작 뒤 잡을 조회할 수 있지만, 현재 `ProblemDrainLoop`의 tenant 예약 큐는
-메모리다. 재시작 뒤 기존 queued 잡의 자동 실행 재개까지 보장되는 것은 아니다. BE는 이때
-새 멱등키로 중복 잡을 만들지 않는다.
+아직 남은 AI 검증·구현:
+
+1. counsel 러너에 동일한 실행 lease heartbeat 적용(A 소유 회차)
+2. 두 background drain의 DB connection 합산 300동시성 실측
+3. 일부 terminal·5xx 조합의 고정 HTTP fixture 보강
+
+BE는 위 검증이 진행 중이어도 AI 재시작을 이유로 새 멱등키나 새 잡을 만들지 않는다.
+같은 `job_id`를 reconciliation 대상으로 유지한다.
 
 ## 15. BE 구현 체크리스트
 
@@ -412,20 +427,20 @@ PostgreSQL이면 재시작 뒤 잡을 조회할 수 있지만, 현재 `ProblemDr
 - [ ] parent-child-Outbox를 중복 없이 저장한다.
 - [ ] 공개 reason code만 화면 문구로 번역한다.
 
-## 16. 회의 결정표
+## 16. 구현 결정표
 
-| 번호 | 안건 | AI 권고 | 회의 결과 |
-| --- | --- | --- | --- |
-| D1 | polling 소유자 | Adapter가 소유하고 BE에는 상태 이벤트 전달 |  |
-| D2 | 관찰 SLO 초과 | 실패 전환 금지, reconciliation 이관 |  |
-| D3 | 한 cell의 복수 node | 강사 선택 또는 버전 고정 제품 정책 |  |
-| D4 | 다중 target 저장 | target별 child execution |  |
-| D5 | Kafka 결과 payload | 참조 이벤트 + REST 상세 조회 |  |
-| D6 | 부분 성공 표시 | 성공 문항과 dropped·미처리 수량 동시 표시 |  |
-| D7 | `verification_unavailable` | 저장 허용, 학생 발행 차단 |  |
-| D8 | revision v1 | `ai_refine`만 개방 |  |
-| D9 | recovery·heartbeat | 운영 개방 전 필수 |  |
-| D10 | 두 drain DB 예산 | 배포 환경 합산 실측 후 확정 |  |
+| 번호 | 안건 | 확정 지시 |
+| --- | --- | --- |
+| D1 | polling 소유자 | Adapter가 소유하고 BE에는 상태 이벤트를 전달한다. |
+| D2 | 관찰 SLO 초과 | 실패로 바꾸지 않고 reconciliation으로 이관한다. |
+| D3 | 한 cell의 복수 node | v1은 강사 선택값을 사용하고 선택값이 없으면 요청을 만들지 않는다. |
+| D4 | 다중 target 저장 | target별 child execution을 별도 저장한다. |
+| D5 | Kafka 결과 payload | 참조 이벤트를 쓰고 문항 상세는 REST로 조회한다. |
+| D6 | 부분 성공 표시 | 성공 문항과 dropped·미처리 수량을 함께 표시한다. |
+| D7 | `verification_unavailable` | 저장은 허용하되 학생 발행은 차단한다. |
+| D8 | revision v1 | `ai_refine`만 개방한다. |
+| D9 | recovery·heartbeat | PG는 recovery sweep·heartbeat를 적용하고 BE는 동일 job polling을 유지한다. |
+| D10 | 두 drain DB 예산 | AI가 300동시성 합산 실측으로 배포 상한을 정해 별도 통보한다. BE는 임의 동시성을 올리지 않는다. |
 
 ## 17. 공동 E2E 인수 기준
 
@@ -453,7 +468,7 @@ PostgreSQL이면 재시작 뒤 잡을 조회할 수 있지만, 현재 `ProblemDr
 
 ## 18. 기계 대조 snapshot
 
-아래 JSON은 회의 문면 전체를 고정하지 않고 BE 구현에 영향을 주는 의미만 코드·fixture와
+아래 JSON은 지시 문면 전체를 고정하지 않고 BE 구현에 영향을 주는 의미만 코드·fixture와
 대조하기 위한 snapshot이다. 문장을 다듬어도 값이 같으면 가드는 통과한다.
 
 <!-- ai-be-contract-snapshot:start -->
@@ -494,7 +509,7 @@ PostgreSQL이면 재시작 뒤 잡을 조회할 수 있지만, 현재 `ProblemDr
   "answer_number_base": 1,
   "misconception_feedback_field": "choices[].misconception_tag",
   "retry_after_is_advisory": true,
-  "startup_queued_recovery": "not_guaranteed"
+  "startup_queued_recovery": "postgres_sweep"
 }
 ```
 <!-- ai-be-contract-snapshot:end -->
@@ -505,7 +520,8 @@ PostgreSQL이면 재시작 뒤 잡을 조회할 수 있지만, 현재 `ProblemDr
 
 1. 현재 AI HTTP fixture와 OpenAPI
 2. `docs/04_api_contract.md`
-3. 이 회의 명세
+3. 이 확정 지시서
 4. 과거 회의록·PR 본문·메신저
 
-문서와 코드가 갈리면 추측하지 않고 재현 가능한 fixture를 추가한 뒤 함께 확정한다.
+문서와 코드가 갈리면 BE가 임의 해석하지 않고 재현 자료를 AI에 전달한다. AI는 fixture와
+이 지시서를 같은 변경에서 갱신해 새 확정값을 통보한다.

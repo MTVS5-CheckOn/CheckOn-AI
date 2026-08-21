@@ -403,6 +403,8 @@ async def _run_problem_generation(
         verify_config_version="verify-config.v1",
         prompt_version="v6",
         lease_owner="worker-g3-pg",
+        lease_heartbeat_seconds=60.0,
+        lease_heartbeat_max_seconds=12_000.0,
         now=lambda: _NOW,
     )
     job = await ProblemGenerationEnqueuer(

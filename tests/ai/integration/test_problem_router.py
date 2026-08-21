@@ -1431,6 +1431,8 @@ def test_problem_ledger_survives_every_failure_kind(
             verify_config_version="verify-config.v1",
             prompt_version="v6",
             lease_owner="problem-router",
+            lease_heartbeat_seconds=60.0,
+            lease_heartbeat_max_seconds=12_000.0,
         )
         with pytest.raises(expected):
             await runner.run_next(tenant_id=job.tenant_id)
@@ -1470,6 +1472,8 @@ def test_failed_path_ledger_error_does_not_replace_the_original_error() -> None:
             verify_config_version="verify-config.v1",
             prompt_version="v6",
             lease_owner="problem-router",
+            lease_heartbeat_seconds=60.0,
+            lease_heartbeat_max_seconds=12_000.0,
         )
         with pytest.raises(LlmUpstreamTimeout):
             await runner.run_next(tenant_id=job.tenant_id)

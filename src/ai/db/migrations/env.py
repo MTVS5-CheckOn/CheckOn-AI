@@ -1,7 +1,7 @@
 """Alembic 마이그레이션 환경 — async 엔진 기반.
 
 DB URL은 ai.db.settings에서 주입한다(alembic.ini에 하드코딩 금지). target_metadata는
-ai.db.models(Base.metadata) — 37테이블이 여기 등록된다. offline 모드는 DB 없이 SQL만
+ai.db.models(Base.metadata) — 41테이블이 여기 등록된다. offline 모드는 DB 없이 SQL만
 생성하므로 로컬 PG가 없어도 마이그레이션을 검증할 수 있다(99 ⑫).
 """
 
