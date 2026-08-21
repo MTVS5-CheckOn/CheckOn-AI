@@ -32,7 +32,10 @@ _CANARY: Final = "CANARY-c0ffee-DO-NOT-PRINT"
 #: 🔴 **비밀 필드의 정본 목록** — 「값이 새면 남이 우리 자원에 접근할 수 있는가」로 골랐다.
 #: ⚠ 타임아웃·풀 크기·모델 이름·상한값은 **비밀이 아니다**(가릴 필요 없는 값을 가리면
 #: 디버깅이 어려워진다). 접속 URL 은 **자격증명이 들어갈 수 있는 것만** 넣었다 —
-#: `openai_base_url`·`stdict_base_url` 은 판정을 넘겼다(99 #176 · 사람 판정 대기).
+#: `openai_base_url` 둘은 🔴 **가리지 않기로 판정했다**(8/21 · 99 #176) — 자격증명이 아니라
+#: 구성 정보이고 **장애 조사에 필요하다**(«어느 엔드포인트로 보냈나» · #133 선례).
+#: 위험은 `repr` 이 아니라 **저장소 문면**이고 그 축은 **99 #177** 이다.
+#: ⚠ `stdict_base_url` 은 공개 API 라 애초에 비밀이 아니다.
 _SECRET_FIELDS: Final[tuple[tuple[type[BaseSettings], str], ...]] = (
     (DbSettings, "database_url"),
     (DbSettings, "agent_checkpoint_database_url"),
