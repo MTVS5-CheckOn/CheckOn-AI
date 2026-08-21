@@ -42,6 +42,7 @@ from ai.composition.counsel.stores import InMemoryDraftResultStore
 from ai.contracts.agents import JobPhase
 from ai.contracts.counsel import CounselDraftRequest
 from ai.contracts.diagnosis import DiagnosisResult
+from ai.contracts.llm import LlmError, LlmTimeout, LlmUnavailable
 from ai.contracts.problem_generation import (
     Answer,
     Choice,
@@ -85,6 +86,7 @@ _PLACEHOLDER: Final = {
     "job_id": "00000000-0000-4000-8000-0000000000j0".replace("j", "b"),
     "set_id": "00000000-0000-4000-8000-000000000050",
     "item_id": "00000000-0000-4000-8000-000000000010",
+    "llm_call_id": "00000000-0000-4000-8000-0000000000c0",
     #: 🔴 counsel `result.generated_at` 은 **실시간**이다(`_clock()`) — 정규화 안 하면
     #: 픽스처가 매 실행 흔들린다. ⚠ 기존 18개 픽스처에 이 키는 **0건**이라(실측)
     #: 여기 추가해도 그쪽 대조는 바뀌지 않는다.
@@ -100,11 +102,19 @@ _BE_REQUIRED_FLOW_FIXTURES: Final = {
     "POST problems 202": "post_problems.202",
     "GET job queued": "get_problem.queued",
     "GET job succeeded": "get_problem.succeeded",
+    "GET job failed": "get_problem.failed",
+    "GET job cancelled": "get_problem.cancelled",
     "GET job 404": "get_problem.404",
     "GET items list": "get_problem_items.list",
     "GET items detail": "get_problem_items.detail",
     "GET items detail after cache loss": "get_problem_items.detail.cache_lost",
     "GET items partial success": "get_problem_items.partial_success",
+    "POST problem revision request": "post_problem_revision.request",
+    "POST problem revision 200": "post_problem_revision.200",
+    "POST problem revision 409 stale": "post_problem_revision.409.stale",
+    "POST problem revision 500": "post_problem_revision.500.internal",
+    "POST problem revision 503": "post_problem_revision.503.llm_upstream_down",
+    "POST problem revision 504": "post_problem_revision.504.timeout",
     "POST problems 400 missing header": "post_problems.400.missing_header",
     "POST problems 400 source procurement": (
         "post_problems.400.source_procurement_not_implemented"
@@ -193,8 +203,8 @@ def test_be_required_flow_fixture_mapping_is_complete() -> None:
 
     #: 🔴 32 → 34 (8/21 · 99 #163) — 바디 검증 400 의 **배열 detail** 을 덮으면서 둘 늘었다.
     #: ⚠ `len(...)` 으로 빼지 않는다 — **손으로 올리는 것이 이 검사의 목적**이다(로그 145).
-    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 34
-    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 34
+    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 42
+    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 42
     missing = {
         flow: fixture
         for flow, fixture in _BE_REQUIRED_FLOW_FIXTURES.items()
@@ -446,6 +456,25 @@ def test_pending_status_tells_the_adapter_when_to_come_back() -> None:
     _fixture("get_problem.queued", envelope)
 
 
+@pytest.mark.parametrize("phase", (JobPhase.FAILED, JobPhase.CANCELLED))
+def test_terminal_status_fixtures_cover_every_polling_stop(phase: JobPhase) -> None:
+    """성공 외 종단도 같은 polling envelope이며 `result`는 null이다."""
+    from ai.api.envelope import success_envelope
+
+    view = problem_router.ProblemJobView(
+        job_id=_PLACEHOLDER["job_id"],
+        status=phase,
+    )
+    envelope = success_envelope(
+        data=view.model_dump(mode="json"),
+        execution_id=_PLACEHOLDER["execution_id"],
+        versions=problem_router.problem_failure_versions(),
+    )
+
+    assert envelope["data"]["result"] is None
+    _fixture(f"get_problem.{phase.value}", envelope)
+
+
 # --------------------------------------------------------------------------
 # GET /v1/problems/{job_id}/items
 # --------------------------------------------------------------------------
@@ -543,6 +572,110 @@ def test_items_partial_success_fixture() -> None:
             versions=problem_router.problem_failure_versions(),
         ),
     )
+
+
+# --------------------------------------------------------------------------
+# POST /v1/problems/{set_id}/items/{slot_index}/revisions
+# --------------------------------------------------------------------------
+
+
+def _generated_set_id(client: TestClient) -> str:
+    posted = client.post("/v1/problems", headers=_HEADERS, json=_post_body())
+    assert posted.status_code == 202, posted.text
+    job_id = posted.json()["data"]["job_id"]
+    fetched = client.get(
+        f"/v1/problems/{job_id}", headers={"X-Tenant-Id": _TENANT}
+    )
+    assert fetched.status_code == 200, fetched.text
+    return str(fetched.json()["data"]["result"]["set_id"])
+
+
+def _revision_headers(suffix: str) -> dict[str, str]:
+    return {
+        **_HEADERS,
+        "X-Request-Id": f"req-problem-revision-{suffix}",
+        "Idempotency-Key": f"pg-revision-{suffix}",
+    }
+
+
+def test_problem_revision_success_and_conflict_fixtures() -> None:
+    """수정 요청·성공·낙관적 잠금 충돌을 실제 앱 응답으로 고정한다."""
+    _prepare(calls=2)
+    body = {
+        "base_revision_no": 0,
+        "revision_kind": "ai_refine",
+        "instruction": "발문을 더 명확하게 다듬어 주세요.",
+    }
+
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        set_id = _generated_set_id(client)
+        applied = client.post(
+            f"/v1/problems/{set_id}/items/0/revisions",
+            headers=_revision_headers("applied"),
+            json=body,
+        )
+        stale = client.post(
+            f"/v1/problems/{set_id}/items/0/revisions",
+            headers=_revision_headers("stale"),
+            json=body,
+        )
+
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["data"]["current_revision_no"] == 1
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error"]["code"] == "REVISION_CONFLICT"
+    assert stale.json()["error"]["detail"]["reason"] == "stale_base_revision"
+
+    _fixture("post_problem_revision.request", body)
+    _fixture("post_problem_revision.200", applied.json())
+    _fixture("post_problem_revision.409.stale", stale.json())
+
+
+@pytest.mark.parametrize(
+    ("exc", "status", "code", "fixture"),
+    (
+        (LlmError("4xx"), 500, "INTERNAL", "post_problem_revision.500.internal"),
+        (
+            LlmUnavailable("down"),
+            503,
+            "LLM_UPSTREAM_DOWN",
+            "post_problem_revision.503.llm_upstream_down",
+        ),
+        (LlmTimeout("timeout"), 504, "TIMEOUT", "post_problem_revision.504.timeout"),
+    ),
+)
+def test_problem_revision_5xx_fixtures(
+    exc: Exception, status: int, code: str, fixture: str
+) -> None:
+    """수정의 내부·업스트림·timeout 실패를 code별 실제 HTTP envelope로 고정한다."""
+    _prepare()
+
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        set_id = _generated_set_id(client)
+        problem_router.set_problem_providers(
+            ProblemProviders(
+                generator=FakeProvider(
+                    tuple(exc for _ in range(3)),
+                    name="revision-failure-generator",
+                ),
+                verifier=FakeProvider((), name="unused-revision-verifier"),
+                has_dedicated_verifier=False,
+            )
+        )
+        response = client.post(
+            f"/v1/problems/{set_id}/items/0/revisions",
+            headers=_revision_headers(str(status)),
+            json={
+                "base_revision_no": 0,
+                "revision_kind": "ai_refine",
+                "instruction": "발문을 더 명확하게 다듬어 주세요.",
+            },
+        )
+
+    assert response.status_code == status, response.text
+    assert response.json()["error"]["code"] == code
+    assert response.json()["error"]["detail"] is None
+    _fixture(fixture, response.json())
 
 
 # --------------------------------------------------------------------------
@@ -1161,7 +1294,7 @@ def test_placeholders_keep_the_shape_of_what_they_replace() -> None:
     assert parsed.tzinfo is not None, generated_at
 
     #: UUID 셋은 원래 형태를 지키고 있었다 — 회귀만 막는다.
-    for key in ("execution_id", "job_id", "set_id", "item_id"):
+    for key in ("execution_id", "job_id", "set_id", "item_id", "llm_call_id"):
         UUID(_PLACEHOLDER[key])
 
 

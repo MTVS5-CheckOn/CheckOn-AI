@@ -1,0 +1,27 @@
+{
+  "data": null,
+  "error": {
+    "code": "REVISION_CONFLICT",
+    "message": "문항 리비전 충돌",
+    "detail": {
+      "reason": "stale_base_revision",
+      "base_revision_no": 0,
+      "current_revision_no": 1
+    }
+  },
+  "meta": {
+    "execution_id": null,
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "v6",
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": null,
+      "verify_config": "verify-config.v1",
+      "difficulty_calib": null
+    }
+  }
+}

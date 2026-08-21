@@ -1,0 +1,23 @@
+{
+  "data": {
+    "job_id": "00000000-0000-4000-8000-0000000000b0",
+    "status": "cancelled",
+    "result": null
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "problem-generation-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "v6",
+      "graph": "curriculum-five-area-v1",
+      "taxonomy": null,
+      "verify_config": "verify-config.v1",
+      "difficulty_calib": null
+    }
+  }
+}
