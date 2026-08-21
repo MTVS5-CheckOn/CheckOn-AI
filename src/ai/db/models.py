@@ -751,6 +751,15 @@ class InquiryClass(Base):
 
 class LabelSuggestion(Base):
     __tablename__ = "label_suggestion"
+    #: 🔴 **v1 미사용 (2026-08-22 · 99 #190)** — 라벨 제안은 `POST /v1/labels/suggest` 가
+    #:   **동기로 계산해 바로 돌려주고 아무것도 저장하지 않는다**(04 §3.7 저장 정책).
+    #: ⚠ **지우지 마라** — 스키마를 지우려면 마이그레이션이고, **안 쓰면 비용이 0**이다.
+    #:   (import 축에서 배운 그대로다 — 지우는 것과 안 쓰는 것은 다르다 · 99 #187)
+    #: 🔴 **왜 안 쓰나:** 이 테이블은 「주간 배치 + 영속」 시절의 것이다.
+    #:   ⓐ `created_at` 이 없어 **축출할 근거가 없고**
+    #:   ⓑ `guardian_ref` 를 가져 「새로 쌓이는 개인 데이터 0」 이라는 정책과 **갈린다.**
+    #: 🔴 **언제 지울 수 있나:** 배포 DB 에 행이 0 이고 스키마를 바꾸는 회차.
+    #:   ⚠ 그 조건은 **검사로 못 잰다**(저장소 밖).   · 소유: **A(박진희)**
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String)

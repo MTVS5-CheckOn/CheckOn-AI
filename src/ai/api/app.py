@@ -29,6 +29,8 @@ from ai.api.routers.detect import VERSION_SCOPE as _detect_scope
 from ai.api.routers.detect import router as detect_router
 from ai.api.routers.diagnosis import VERSION_SCOPE as _diagnosis_scope
 from ai.api.routers.diagnosis import router as diagnosis_router
+from ai.api.routers.labels import VERSION_SCOPE as _labels_scope
+from ai.api.routers.labels import router as labels_router
 from ai.api.routers.ops import VERSION_SCOPE as OPS_VERSION_SCOPES
 from ai.api.routers.ops import router as ops_router
 from ai.api.routers.problem import VERSION_SCOPE as _problems_scope
@@ -48,6 +50,7 @@ ROUTER_VERSION_SCOPES: tuple[RouterScope, ...] = (
     _counsel_scope,
     _classify_scope,
     _confirmations_scope,
+    _labels_scope,
     _problems_scope,
     _diagnosis_scope,
     *OPS_VERSION_SCOPES,
@@ -129,6 +132,9 @@ def create_app() -> FastAPI:
     # ⚠ 양자 승인 파일 수정(라우터 등록) — 위와 동일, B 리뷰
     app.include_router(confirmations_router)
     # ⚠ 양자 승인 파일 수정(라우터 등록) — counsel 선례, A 리뷰
+    # ⚠ 양자 승인 파일 수정(라우터 등록) — counsel 선례, B 리뷰
+    # 🔴 라벨 제안(04 §3.7 · 99 #190) — **동기 200 · 잡 없음**이라 워커·드레인이 안 붙는다.
+    app.include_router(labels_router)
     app.include_router(problem_router)
     # ⚠ 양자 승인 파일 수정(라우터 등록) — problem 선례, A 리뷰. B 소유 diagnosis 라우터
     #    (Step 1 area×type 그리드 · 2026-08-12 신설)

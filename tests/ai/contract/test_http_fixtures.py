@@ -152,6 +152,12 @@ _BE_REQUIRED_FLOW_FIXTURES: Final = {
     #: `test_counsel_openapi_contract.py` 의 예외 목록에 «문서에만 있는 코드» 로
     #: 적혀 있었다(99 #105 · 로그 178). 모양은 대응하는 것과 같게 맞췄다:
     #: 404 ↔ `get_counsel_draft.404` · 409 ↔ `post_counsel_drafts.409.idempotency_conflict`.
+    #: 🔴 라벨 제안(99 #190) — **동기 200**이라 잡·폴링 흐름이 없다. 넷이 한 벌이다:
+    #: 요청 · 통과분 · 바디 스키마 400 · **생성기 미구현 503**(빈 배열로 위장하지 않는다).
+    "POST labels suggest request": "post_labels_suggest.request",
+    "POST labels suggest 200": "post_labels_suggest.200",
+    "POST labels suggest 400 body schema": "post_labels_suggest.400.body_schema",
+    "POST labels suggest 503 generator missing": "post_labels_suggest.503.generator_missing",
     "POST counsel refine 404": "post_counsel_refine.404",
     "POST counsel refine 409 idempotency conflict": (
         "post_counsel_refine.409.idempotency_conflict"
@@ -210,11 +216,12 @@ def test_be_required_flow_fixture_mapping_is_complete() -> None:
     """
 
     #: 🔴 32 → 34 (8/21 · 99 #163) — 바디 검증 400 의 **배열 detail** 을 덮으면서 둘 늘었다.
+    #: 🔴 **44 → 48 (8/22 · 99 #190)** — 라벨 제안 네 벌(요청·200·400·503)을 덮었다.
     #: 🔴 **42 → 44 (8/21 · 99 #105)** — refine 의 **404·409** 를 덮었다. 라우터가 이미
     #:   내던 코드인데 픽스처가 없어 계약 검사의 **예외 목록**에 적혀 있었다(로그 178).
     #: ⚠ `len(...)` 으로 빼지 않는다 — **손으로 올리는 것이 이 검사의 목적**이다(로그 145).
-    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 44
-    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 44
+    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 48
+    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 48
     missing = {
         flow: fixture
         for flow, fixture in _BE_REQUIRED_FLOW_FIXTURES.items()
@@ -1387,3 +1394,115 @@ def test_body_schema_detail_does_not_leak_request_values() -> None:
     #: 다른 값(예: `class_ref`)이 응답에 안 실리는지를 본다.
     posted = json.dumps(_read_fixture("post_counsel_drafts.400.body_schema"), ensure_ascii=False)
     assert "cl_" not in posted, f"요청 값이 detail 로 샜다: {posted}"
+
+# ── 라벨 제안 — 🔴 동기 200 · 학부모 한 명 (04 §3.7 · 99 #190) ──────────
+
+
+def test_labels_suggest_fixtures() -> None:
+    """라벨 제안 — 요청 예시 · 200(게이트 통과분) · 400(바디 스키마) · 503(생성기 미구현).
+
+    🔴 **손으로 쓴 JSON 을 두지 않는다** — 그러면 존재 검사만 통과하고 **본문은 아무도 안
+    잰다**(№55 에서 한 번 그렇게 갈 뻔했다). 여기서 **실제 응답으로** 만든다.
+
+    ⚠ 🔴 **200 을 만들려면 제안이 필요한데 생성기가 없다** — 그래서 이 검사가 **대역
+    provider 를 주입**한다. 그 대역은 «인용 실존 게이트가 통과시키는 제안» 하나와
+    **없는 record_id 를 가리키는 제안** 하나를 낸다 ⇒ 픽스처가 «게이트가 실제로 드롭한다»
+    까지 증명한다. 🔴 대역이 게이트를 **흉내 내지 않는다** — 게이트는 프로덕션 것이 돈다.
+    """
+    from uuid import UUID  # noqa: PLC0415
+
+    from ai.api.routers import labels as labels_router  # noqa: PLC0415
+    from ai.composition.labels.provider import (  # noqa: PLC0415
+        MissingLabelSuggestProvider,
+    )
+    from ai.contracts.counsel import LabelSuggestion  # noqa: PLC0415
+    from ai.contracts.labels import (  # noqa: PLC0415
+        EvidenceQuote,
+        SuggestedLabel,
+    )
+
+    body = {
+        "guardian_ref": "gd_11b0",
+        "history": [
+            {
+                "record_id": f"cm_{index}",
+                "direction": "inbound",
+                "text": text,
+                "at": "2026-06-12T10:11:00+09:00",
+            }
+            for index, text in enumerate(
+                (
+                    "숫자로 정리해 주세요",
+                    "점수 추이 표로 부탁드려요",
+                    "지난주 결과가 궁금합니다",
+                    "표로 보여 주시면 좋겠어요",
+                    "이번 달 통계도 알려 주세요",
+                ),
+                start=88,
+            )
+        ],
+    }
+
+    class _StubProvider:
+        """🔴 게이트가 **하나는 통과시키고 하나는 드롭**하도록 둘을 낸다."""
+
+        async def suggest(
+            self, *, guardian_ref: str, history: object
+        ) -> tuple[SuggestedLabel, ...]:
+            del history
+            return (
+                SuggestedLabel(
+                    suggestion_id=UUID("00000000-0000-4000-8000-00000000a001"),
+                    guardian_ref=guardian_ref,
+                    label=LabelSuggestion(axis="comm", value="data"),
+                    confidence=0.86,
+                    evidence_quotes=(
+                        EvidenceQuote(record_id="cm_88", quote="숫자로 정리해 주세요"),
+                    ),
+                ),
+                SuggestedLabel(
+                    suggestion_id=UUID("00000000-0000-4000-8000-00000000a002"),
+                    guardian_ref=guardian_ref,
+                    label=LabelSuggestion(axis="frequency", value="frequent"),
+                    confidence=0.51,
+                    #: 🔴 **없는 record_id** — 게이트가 이걸 버려야 한다.
+                    evidence_quotes=(
+                        EvidenceQuote(record_id="cm_없음", quote="지어낸 인용"),
+                    ),
+                ),
+            )
+
+    headers = _counsel_headers()
+    headers.pop("Idempotency-Key", None)
+    try:
+        labels_router.set_label_suggest_provider(_StubProvider())
+        with TestClient(create_app()) as client:
+            ok = client.post("/v1/labels/suggest", headers=headers, json=body)
+            bad = client.post(
+                "/v1/labels/suggest", headers=headers, json={"guardian_ref": "gd_1"}
+            )
+        labels_router.set_label_suggest_provider(MissingLabelSuggestProvider())
+        with TestClient(create_app()) as client:
+            missing = client.post("/v1/labels/suggest", headers=headers, json=body)
+    finally:
+        labels_router.reset_label_suggest_provider()
+
+    assert ok.status_code == 200, ok.text
+    suggestions = ok.json()["data"]["suggestions"]
+    assert len(suggestions) == 1, (
+        f"인용 실존 게이트가 안 돌았다 — 없는 record_id 를 가리키는 제안이 살아남았다: "
+        f"{[s['suggestion_id'] for s in suggestions]}"
+    )
+    assert suggestions[0]["label"] == {"axis": "comm", "value": "data"}
+    assert bad.status_code == 400, bad.text
+    assert isinstance(bad.json()["error"]["detail"], list), bad.json()
+    #: 🔴 **생성기가 없을 때는 200 + 빈 배열이 아니라 503 이다** — 「제안할 근거가 없다」와
+    #: 「생성기가 없다」가 증거상 같아 보이면 강사가 잘못 읽는다.
+    assert missing.status_code == 503, missing.text
+    assert missing.json()["error"]["code"] == "LLM_UPSTREAM_DOWN", missing.json()
+
+    _fixture("post_labels_suggest.request", body)
+    _fixture("post_labels_suggest.200", ok.json())
+    _fixture("post_labels_suggest.400.body_schema", bad.json())
+    _fixture("post_labels_suggest.503.generator_missing", missing.json())
+

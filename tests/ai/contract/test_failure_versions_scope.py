@@ -110,6 +110,9 @@ _FAILURE_REQUESTS: Final[dict[str, tuple[str, str, dict[str, Any] | None]]] = {
     "/v1/confirmations": ("POST", "/v1/confirmations", {"bad": 1}),
     "/v1/problems": ("POST", "/v1/problems", {"bad": 1}),
     "/v1/diagnosis": ("POST", "/v1/diagnosis", {"bad": 1}),
+    #: 🔴 라벨 제안(99 #190) — **동기 200**이라 잡이 없다. 실패는 `DomainException`
+    #: 핸들러를 지난다(바디 스키마 위반 → 400 · 생성기 미구현 → 503).
+    "/v1/labels": ("POST", "/v1/labels/suggest", {"bad": 1}),
 }
 _DIRECT_RESPONSE_PREFIXES: Final = frozenset(
     {"/v1/health", "/v1/ready", "/v1/meta/versions"}

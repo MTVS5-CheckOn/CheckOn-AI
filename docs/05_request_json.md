@@ -222,18 +222,17 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
 
 ---
 
-## 7. `POST /v1/labels/suggest` — 라벨 제안 (202, 강사 요청)
+## 7. `POST /v1/labels/suggest` — 라벨 제안 (🔴 **200 동기**, 강사 요청, 학부모 **한 명**)
 
 ```json
+// 🔴 **배열이 아니다** — 한 요청에 학부모 한 명(2026-08-22 판정 · 04 §3.7).
+//    ⚠ 종전 예시는 `guardians[]` 였고 그건 「주간 배치」 시절의 형태다.
 {
-  "guardians": [
-    {
-      "guardian_ref": "gd_11b0",
-      "history": [                          // 이력 5건 이상인 학부모만
-        { "record_id": "cm_88", "direction": "inbound", "text": "숫자로 정리해 주세요", "at": "2026-06-12T10:11:00+09:00" },
-        { "record_id": "cm_91", "direction": "inbound", "text": "점수 추이 표로 부탁드려요", "at": "2026-07-01T09:30:00+09:00" }
-      ]
-    }
+  "guardian_consent": null,             // optional · v1 미사용(자리만 예약)
+  "guardian_ref": "gd_11b0",
+  "history": [                          // 🔴 5건 이상 — 백엔드 1차 마스킹 통과본
+    { "record_id": "cm_88", "direction": "inbound", "text": "숫자로 정리해 주세요", "at": "2026-06-12T10:11:00+09:00" },
+    { "record_id": "cm_91", "direction": "inbound", "text": "점수 추이 표로 부탁드려요", "at": "2026-07-01T09:30:00+09:00" }
   ]
 }
 ```
