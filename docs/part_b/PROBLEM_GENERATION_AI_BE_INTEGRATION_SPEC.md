@@ -1,38 +1,30 @@
 # AI–BE/Adapter 문제출제 통신 명세
 
-- 기준 AI 커밋: `d1316992bb2e84159d3ad5a34332eb913626957c`
-- 기준 브랜치: `codex/diagnosis-misconception-report-p5`
-- 확정일: 2026-08-20
+- 기준 AI 커밋: `e4a1a4b256362e40f3a8ed01a27ad50b45b10d93`
+- 기준 브랜치: `develop`
+- 확정일: 2026-08-21
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
-- 문서 개정: BE 적대적 대조 질의 8건 반영
+- 문서 개정: PR #354 enqueue-only 전환과 5영역 생성·수정 계약 반영
 
 ## 1. 범위와 결론
 
 이 문서는 Step1 진단부터 Step7 수정 결과 재조회까지 Backend와 Adapter가 AI FastAPI를 호출하는 계약을 고정한다.
 
-- AI 영상 MVP 추가 구현은 없다.
-- 시연 중 AI 프로세스를 재시작하지 않는다.
-- `queued`·`running` 잡의 재시작 내구성은 운영 고도화 항목이다.
+- `POST /v1/problems`는 잡을 적재하고 항상 `queued` 202를 즉시 반환한다.
+- LLM 실행은 HTTP 요청이 아니라 앱 startup의 `ProblemDrainLoop`가 맡는다.
+- 비종단 잡은 영속 JobStore에서 조회한다. 메모리 view 유실만으로 404가 되지 않는다.
+- 단, 프로세스 재시작 뒤 기존 queued 잡의 자동 실행 재개는 아직 보장하지 않는다.
 - Adapter는 영역·유형 셀에서 교육과정 노드를 임의로 선택하지 않는다.
 - Backend가 진단 결과의 `skill_node_id`를 보존하고 Adapter가 이를 `manual_targets`로 전달한다.
 - `weakness_map.nodes`의 직렬화 순서는 node ID 사전순일 뿐 추천·심각도·출제 우선순위가 아니다.
 - AI의 Kafka 참고 계약은 문항 본문을 싣지 않는 참조형 알림이다. 문항 본문은 `set_id` 기반 REST API로 조회한다.
 - 이 명세는 API 계약과 서비스 흐름을 다룬다. 실 LLM 문항 품질을 보증하지 않는다.
 
-기준 커밋의 검증 결과는 다음과 같다.
+기준 커밋에서 다시 실행한 결과는 다음과 같다.
 
 - Ruff 통과
-- Mypy 514파일 통과
-- offline 3,632 passed / 20 skipped / 172 deselected / 3 xfailed
-- FakeProvider 기준 커리큘럼 57노드 중 56노드 HTTP 생성·게이트·PG 저장·재조회 완주
-- `language.grammar.fortition` 1노드는 A 소유 redaction 오탐으로 제외
-
-**(2026-08-21 재검증 · `origin/develop` `7301915`)** 위 다섯 줄은 기준 커밋 시점의 수치다.
-현재 develop에서 다시 실행한 결과는 다음과 같다.
-
-- Ruff 통과
-- Mypy 520파일 통과
-- offline 3,672 passed / 20 skipped / 172 deselected / 3 xfailed
+- Mypy 522파일 통과
+- offline 3,681 passed / 20 skipped / 172 deselected / 3 xfailed
 - 57노드 중 56노드 완주와 `language.grammar.fortition` 제외는 **그대로 유효하다.** 코드로
   대조했다 — `tests/ai/integration/test_problem_router.py`의
   `_A_OWNED_REDACTION_BLOCKED_NODES`가 그 1노드만 담고, 같은 파일이
@@ -268,13 +260,13 @@ Adapter는 `area_tag`나 `type_affinity`로 노드를 다시 선택하지 않는
 - `count`는 1~20이다.
 - `requested_difficulty`는 `low | medium | high`이며 선택 필드다.
 - 영역에 따라 §4의 `passage` 또는 `work_selection`을 추가한다.
-- POST read timeout은 300초로 설정한다.
+- POST는 LLM 완료를 기다리지 않는다. Adapter의 HTTP read timeout을 LLM 예산으로 늘리지 않는다.
 
 정상 응답:
 
 - HTTP `202`
 - `data.job_id`
-- `data.status`
+- `data.status="queued"`
 - `meta.execution_id`
 
 Adapter는 `job_id`와 `execution_id`를 응답 즉시 영속 저장한다. `202` 응답에는 `set_id`가 없다.
@@ -324,9 +316,19 @@ Adapter는 `job_id`와 `execution_id`를 응답 즉시 영속 저장한다. `202
 
 종료 판정의 정본은 `data.status`다. `Retry-After`는 다음 polling 시점의 advisory이며, 헤더 부재를 종료 신호로 사용하지 않는다.
 
-Adapter의 전체 child 관찰 상한은 21분이다. 이는 Adapter 정책이며 AI에는 전체 deadline이 없다.
+`count`와 재생성 횟수에 따라 실행 시간이 달라지므로 Adapter는 21분 같은 고정 상한에서
+잡을 실패로 바꾸지 않는다. 운영 관찰 SLO를 넘기면 Backend 상태를 `processing`으로 유지하고
+별도 reconciliation이 같은 `job_id`를 계속 조회한다. 관찰 중단은 AI 잡의 취소가 아니다.
 
-비종단 관찰 중 AI 프로세스가 재시작되거나 API view cache가 유실되면 현재 `404`가 발생할 수 있다. 영상 시연 중 이 구간에서 AI 프로세스를 재시작하지 않는다.
+API view cache가 유실되어도 `STORE_BACKEND=postgres` 배포에서는 영속 JobStore와 result
+store에서 상태·결과를 조회할 수 있다. 메모리 저장 백엔드의 프로세스 재시작 내구성은 계약
+범위가 아니다.
+
+조회 내구성과 실행 재개는 다르다. 현재 `ProblemDrainLoop`의 테넌트 예약 큐는 메모리이고
+startup에서 기존 queued 테넌트를 sweep하지 않는다. 따라서 프로세스 재시작 뒤 영속 잡이
+조회되더라도 자동 실행 재개는 보장되지 않는다. Backend·Adapter는 이를 404로 오해하거나
+새 멱등키로 중복 잡을 만들지 말고 같은 `job_id`를 유지한다. 운영 개방 전 AI가 startup
+recovery sweep과 실행 중 lease heartbeat를 별도 회차로 닫아야 한다.
 
 ### Step4. 문항 슬롯 목록 조회
 
@@ -541,7 +543,6 @@ AI revision API는 준비·검증돼 있다. 생성 문항 조회까지만 촬�
 | 조건 | HTTP/code | 처리 |
 | --- | --- | --- |
 | `ai_refine` 외 revision kind | `400 INVALID_SCHEMA` / `revision_kind_not_implemented` | 요청 수정 |
-| ~~language 외 영역~~ | ~~`400 INVALID_SCHEMA` / `revision_area_not_implemented`~~ | 🔴 **2026-08-20 해소 — 5영역 전부 수정된다.** 이 행은 이력으로 남긴다 |
 | 슬롯 부재 또는 `item=null` | `404 NOT_FOUND` | 수정 중단 |
 | 수정 진행 중 | `409 REVISION_CONFLICT` / `revision_in_progress` | 잠시 후 재시도 |
 | 오래된 base revision | `409 REVISION_CONFLICT` / `stale_base_revision` | `current_revision_no`로 재시도 |
@@ -724,7 +725,7 @@ Adapter→Backend가 본문을 Kafka로 전달해야 한다면 참조형, slot �
 - [ ] items 경로를 `/v1/problems/{job_id}/items`에서 `/v1/problems/{set_id}/items`로 교체
 - [ ] summary 응답에서 문항 본문을 추출하는 로직 제거
 - [ ] `/v1/problems/{set_id}/items/{slot_index}` 상세 N+1 회수 구현, 최대 20회
-- [ ] 문제 생성 POST read timeout을 300초로 설정
+- [ ] 문제 생성 POST가 `202 + status=queued`를 받으면 연결을 닫고 polling으로 전환
 - [ ] 하드코딩된 `language.grammar.phonological_change` 제거
 - [ ] diagnosis의 `weakness_map.nodes` 키를 `manual_targets`로 전달
 - [ ] §4에 따른 영역별 `passage`·`work_selection` 조립
@@ -732,13 +733,14 @@ Adapter→Backend가 본문을 Kafka로 전달해야 한다면 참조형, slot �
 
 ### 8.2 영상 MVP 필수 — 운영
 
-- [ ] 런북에 “비종단 관찰 중 AI 프로세스 재시작 금지” 명시
-- [ ] 시연 절차서에 재시작 금지 구간 표시
 - [ ] AI 서버와 PostgreSQL 준비 상태 확인 후 시연 시작
+- [ ] `STORE_BACKEND=postgres`와 PG drain 활성화 여부 확인
+- [ ] 비종단 잡이 SLO를 넘으면 실패 처리하지 않고 reconciliation 대상으로 전환
+- [ ] startup recovery sweep 반영 전에는 비종단 잡이 있는 상태의 계획 재시작을 금지
 
 ### 8.3 BE 연동 직전 — Adapter
 
-- [ ] child 전체 관찰 상한 21분 적용
+- [ ] 고정 관찰 상한으로 AI 잡을 실패 처리하지 않고 비종단 reconciliation 구현
 - [ ] 비종단 상태에서만 `Retry-After`를 polling 간격에 반영
 - [ ] `job_id`·`execution_id` 영속 저장
 - [ ] `correct_option_index` 파생 및 AI 원문 answer 보존
@@ -769,8 +771,9 @@ Adapter→Backend가 본문을 Kafka로 전달해야 한다면 참조형, slot �
 
 ## 9. 운영 고도화 — MVP 범위 밖
 
-- queued/running 잡의 AI 프로세스 재시작 내구성
 - 실제 프로세스·컨테이너 재시작 E2E
+- startup에서 영속 queued 테넌트를 재발견하는 recovery sweep
+- 실행 중 잡의 주기적 lease heartbeat와 죽은 워커 회수 실측
 - `language.grammar.fortition` redaction 오탐 정정
 - running·failed·cancelled job 응답 fixture
 - 500·503·504 응답 fixture
@@ -814,7 +817,7 @@ Backend·Adapter 작업은 다음이 모두 충족되면 인수한다.
 - [ ] 수정 가능 여부를 `available_actions`로 판정함
 - [ ] stale revision과 revision in progress를 구분함
 - [ ] tenant·request·idempotency 경계를 보존함
-- [ ] 비종단 관찰 중 AI 프로세스를 재시작하지 않는 시연 런북이 있음
+- [ ] 비종단 잡이 관찰 SLO를 넘어도 실패로 오판하지 않고 reconciliation됨
 - [ ] AI→Adapter→Kafka→Backend→review 화면 E2E가 최소 1회 통과함
 
 ## 12. 최종 경계
@@ -822,23 +825,24 @@ Backend·Adapter 작업은 다음이 모두 충족되면 인수한다.
 ### 12.1 재현 정본
 
 - 저장소: `https://github.com/MTVS5-CheckOn/CheckOn-AI.git`
-- 원격 브랜치: `codex/diagnosis-misconception-report-p5`
-- full SHA: `d1316992bb2e84159d3ad5a34332eb913626957c`
+- 원격 브랜치: `develop`
+- full SHA: `e4a1a4b256362e40f3a8ed01a27ad50b45b10d93`
 - immutable tag·CI artifact: 현재 없음
 
 ```powershell
 git fetch origin
-git switch --detach d1316992bb2e84159d3ad5a34332eb913626957c
-docker start checkon-ai-db-1
+git switch --detach e4a1a4b256362e40f3a8ed01a27ad50b45b10d93
 $env:STORE_BACKEND="memory"
+$env:CHECKON_ALLOW_REAL_LLM="0"
 uv run --frozen python -m ai.evaluation.pre_pr_verify
 ```
 
-검증 당시 인터프리터는 `C:\verith\.venv\Scripts\python.exe`다. 브랜치 이름보다 full SHA를 재현 정본으로 사용한다.
+브랜치 이름보다 full SHA를 재현 정본으로 사용한다. 위 검증은 외부 DB·실 LLM을 호출하지 않는
+offline 계약 검증이다. PostgreSQL 통합은 승인된 로컬 전용 DB에서 별도로 실행한다.
 
 ### 12.2 책임 경계
 
-AI 오개념 연동 계약은 기준 커밋 `d1316992bb2e84159d3ad5a34332eb913626957c`에서 고정한다. Backend나 Adapter 편의를 위해 AI 계약을 임의로 변경하지 않는다.
+AI 오개념 연동 계약은 기준 커밋 `e4a1a4b256362e40f3a8ed01a27ad50b45b10d93`에서 고정한다. Backend나 Adapter 편의를 위해 AI 계약을 임의로 변경하지 않는다.
 
 실제 통신을 불가능하게 만드는 BLOCKER가 코드와 fixture로 입증될 때만 소유자·최소 처방·승인 범위를 분리해 AI 변경을 요청한다.
 
@@ -846,7 +850,7 @@ AI 오개념 연동 계약은 기준 커밋 `d1316992bb2e84159d3ad5a34332eb91362
 
 | 주체 | 확정 책임 | 서명 상태 | 기준 |
 | --- | --- | --- | --- |
-| AI / member-B 염준영 | `chosen_no`·`misconception_tag` 수신, 닫힌 어휘 검증, 별도 빈도 리포트, Step5 원문 제공 | 확정 | `d1316992bb2e84159d3ad5a34332eb913626957c` · 2026-08-20 |
+| AI / member-B 염준영 | `chosen_no`·`misconception_tag` 수신, 닫힌 어휘 검증, 별도 빈도 리포트, Step5 원문 제공 | 확정 | `e4a1a4b256362e40f3a8ed01a27ad50b45b10d93` · 2026-08-21 |
 | Kafka–HTTP Adapter | Step5 원문 필드 무손실 전달, 참조형 이벤트·REST 재조회 경계 유지 | AI 연동안 제시 · 상대 확인 필요 | 본 문서 §3 Step5 · §6.1 · §8.3 |
 | Backend | 저장 정답과 선택 번호 대조, 선택 오답 라벨 복사, diagnosis 리포트 별도 저장 | AI 연동안 제시 · 상대 확인 필요 | 본 문서 §3 Step1 · §8.4 · §11 |
 
