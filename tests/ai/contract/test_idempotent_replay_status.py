@@ -34,10 +34,14 @@ from ai.api.app import create_app
 from ai.api.routers.classify import reset_inquiry_class_store
 from ai.api.routers.counsel import reset_counsel_stores
 from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
-from ai.api.routers.imports import reset_import_stores
 from ai.composition.counsel.prompt import PROMPT_VERSION
 from ai.db.repositories.run_store import InMemoryRunStore
 from ai.db.store_factory import reset_shared_agent_runtime
+
+#: ⚠ 🔴 **(8/22) `test_imports_replays_with_202` 를 뺐다** — import 축 개발 중단으로
+#: `POST /v1/imports` 자체가 없어졌다(99 #187). 🔴 **멱등 재반환 규약(04 §2.3)은 그대로다** —
+#: `/v1/counsel/drafts`(202)·`/v1/problems`(202)가 같은 규약을 이 파일에서 계속 잰다.
+#: ⚠ 지운 것은 **그 규약의 한 사례**이지 규약이 아니다.
 
 
 def _headers(key: str) -> dict[str, str]:
@@ -91,7 +95,6 @@ def _reset_all() -> None:
     reset_inquiry_class_store()
     reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
-    reset_import_stores()
 
 
 # ── 동기 = 200 ────────────────────────────────────────────────────
@@ -132,35 +135,6 @@ def test_counsel_drafts_replays_with_202() -> None:
         "준비됐다'는 뜻인데 그 시점에 잡이 running일 수 있다(04 §2.3)"
     )
     assert second.json() == first.json()
-
-
-def test_imports_replays_with_202() -> None:
-    """🔴 `POST /v1/imports`도 **202**다 — 데코레이터 `status_code=202`가 재반환에 걸린다."""
-    from ai.api.routers import imports as imports_router
-
-    class _FakeLoader:
-        """`test_imports_router.FakeSourceLoader`와 같은 계약 — `load(url) -> bytes`."""
-
-        def load(self, source_url: str) -> bytes:
-            del source_url
-            return _xlsx()
-
-    imports_router.set_import_stores(source_loader=_FakeLoader())
-    headers = _headers("t1:replay:imports")
-    body = {"source_url": "s3://replay.xlsx", "filename": "replay.xlsx"}
-
-    with TestClient(create_app()) as client:
-        first = client.post("/v1/imports", json=body, headers=headers)
-        second = client.post("/v1/imports", json=body, headers=headers)
-
-    assert first.status_code == 202, first.text
-    assert second.status_code == 202, (
-        f"imports 멱등 재반환이 {second.status_code}다 — 202여야 한다(04 §2.3)"
-    )
-    assert second.json() == first.json()
-
-
-# ── 규약이 한 곳에서 보이는가 ─────────────────────────────────────
 
 
 def test_the_contract_states_the_rule_in_one_place() -> None:

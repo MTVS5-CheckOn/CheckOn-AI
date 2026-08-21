@@ -698,38 +698,15 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 ---
 
-### 3.8 `/v1/imports` — 스마트 데이터 이전 (202) `[Open-3]`
+### 3.8 `/v1/imports` — 스마트 데이터 이전 🔴 **(2026-08-22 삭제 — v1 범위 밖)**
 
-**흐름:** ① `POST /imports` (파일 — 스토리지 URL 제안) → 202 `job_id` ② `GET /imports/{job_id}` — 상태·미리보기 ③ `POST /imports/{job_id}/confirm` — 강사 확정 → 변환.
-
-**GET Response (preview_ready):**
-
-```json
-{
-  "data": {
-    "job_id": "uuid", "status": "preview_ready",
-    "mapping_preview": {
-      "spec_version": 1,
-      "reused": false,                 // true = 같은 양식 재수입 → LLM 호출 0회로 기존 매핑 재사용
-      "columns": [                     // 강사 확인 화면에 그대로 렌더링하면 되는 형태
-        { "source": "원생명",   "target": "student_alias", "confidence": 0.97 },
-        { "source": "점수A",   "target": "weekly_score",  "confidence": 0.41,
-          "needs_review": true,        // 확신 낮음 — 강사 확인 필수 표시 (숨기지 않음)
-          "probe_note": "유니크 값 8,7,10,9… → 10점 만점 추정" },   // 조사 에이전트의 추론 근거 (툴팁용)
-        { "source": "連락처",  "target": null,
-          "unmapped_reason": "개인정보 필드 — 자동 이전 대상 아님" }  // '모름/제외'를 정직하게 명시 — 억지 매핑 없음
-      ],
-      "unmapped_target_fields": ["event_type", "occurred_at"],  // 매핑 후보를 못 찾은 표준 필드 — 필수 판단은 백엔드
-      "source_fingerprint": "9f2c...",           // 양식 지문 — 백엔드가 보관·반송(AI만 계산 가능)
-      "sample_rows": [ { "...": "변환 예시 5행" } ]
-    }
-  }
-}
-```
-
-**confirm Request:** `{ "spec_overrides": [{ "source_column": "점수B", "target_field": "weekly_score_2" }] }` → 확정 spec 저장 → `status: done` + 확정된 `mapping_preview`.
-
-**status:** `profiling → inferring → probing(조사 에이전트) → preview_ready → done(확정 spec)` / `failed`. **규약(2026-07-30 개정):** **AI는 매핑 제안까지** — 전체 행 변환·행별 검증·집계·산출물 저장은 백엔드 소유이며 AI 응답에 `output_url`·행 집계가 없다(`part_a/10_import_spec.md` §4). **필수 여부 판단도 백엔드 소유** — 백엔드가 확정 매핑의 기준 데이터를 보유하고 AI는 양식 재사용을 위해 전달받아 활용한다. AI는 정보만 준다(`unmapped_target_fields`·`columns[].confidence`·`needs_review`)이며 **확정 차단 상태가 없다.** 동의 미보유 행 '보류'는 백엔드 · 같은 양식 재수입은 `reused: true`(LLM 0회 — `source_fingerprint` 반송 기반).
+> 🔴 **이 엔드포인트는 없다.** import 축은 **v1 에서 개발하지 않기로** 했다(사람 결정 · 승우님 확인 완료 · B 축 참조 0건).
+> `POST /v1/imports` · `GET /v1/imports/{job_id}` · `POST /v1/imports/{job_id}/confirm` **셋 다 사라졌고**, `GET /v1/ops` 응답의 **`imports` 키도 빠졌다**.
+>
+> ⚠ **BE 영향:** 알려진 소비처는 **0건**이다(계약·BE 명세 실측). `/v1/ops` 를 파싱하는 코드가 `imports` 키를 **필수로 읽으면** 고쳐야 한다.
+>
+> 🔴 **원장은 남는다** — `WorkerKind.MAPPING_PROBE`·`OperationKind.MAPPING_PROBE_RESOLVE`·`Capability.IMPORT_MAPPING`·CHECK 제약·**DB 테이블 5개**는 그대로다. `mapping_probe` 행은 **실행 기록**이고, 지우면 «그 실행이 없었다» 가 되어 **불변식 8(재현성)·원장 완전성**에 걸린다.
+> ⚠ 종전 §3.8 의 흐름·스키마 문면은 **`docs/handoff/` 와 git 이력**에 남는다 — 되살릴 때 그것을 본다(99 #187).
 
 ---
 

@@ -36,7 +36,6 @@ from ai.api.app import ROUTER_VERSION_SCOPES, create_app
 from ai.api.routers.classify import reset_inquiry_class_store
 from ai.api.routers.counsel import reset_counsel_stores
 from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
-from ai.api.routers.imports import reset_import_stores
 from ai.db.store_factory import reset_shared_agent_runtime
 
 _HEADERS = {"X-Tenant-Id": "t1", "X-Request-Id": "rq-scope", "Idempotency-Key": "k"}
@@ -67,7 +66,6 @@ def _reset_all() -> None:
     reset_inquiry_class_store()
     reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
-    reset_import_stores()
 
 
 def registered_v1_paths(app: Any) -> set[str]:  # noqa: ANN401 — FastAPI
@@ -109,7 +107,6 @@ _FAILURE_REQUESTS: Final[dict[str, tuple[str, str, dict[str, Any] | None]]] = {
     "/v1/detect": ("POST", "/v1/detect", {"bad": 1}),
     "/v1/classify": ("POST", "/v1/classify", {"bad": 1}),
     "/v1/counsel": ("GET", f"/v1/counsel/drafts/{_ABSENT_JOB}", None),
-    "/v1/imports": ("POST", "/v1/imports", {"bad": 1}),
     "/v1/confirmations": ("POST", "/v1/confirmations", {"bad": 1}),
     "/v1/problems": ("POST", "/v1/problems", {"bad": 1}),
     "/v1/diagnosis": ("POST", "/v1/diagnosis", {"bad": 1}),
@@ -260,7 +257,6 @@ def test_the_app_registers_the_routers_this_file_checks() -> None:
     for expected in (
         "/v1/detect",
         "/v1/classify",
-        "/v1/imports",
         "/v1/confirmations",
         "/v1/counsel/drafts",
     ):

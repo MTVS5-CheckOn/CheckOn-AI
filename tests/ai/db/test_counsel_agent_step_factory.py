@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 from pydantic import ValidationError
 
@@ -23,7 +21,15 @@ from ai.composition.counsel.stores import (
 )
 from ai.db.repositories.counsel_step_store import PgCounselAgentStepSink
 from ai.db.settings import DbSettings
-from ai.db.store_factory import build_agent_step_sink, build_counsel_agent_step_sink
+from ai.db.store_factory import build_counsel_agent_step_sink
+
+#: ⚠ 🔴 **(8/22) 검사 둘을 뺐다** — `test_the_probe_builder_is_left_alone` ·
+#: `test_the_two_sinks_are_different_types`. 둘 다 **probe 축 sink 가 존재한다**는 전제 위에
+#: 서 있었는데, import 축 개발 중단으로 `build_agent_step_sink`·`PgAgentStepSink` 가
+#: **사라졌다**(99 #187).
+#: 🔴 **그 둘이 지키던 것은 「두 축이 한 함수로 뭉치지 않는다」였고, 축이 하나가 되면서
+#: 그 위험 자체가 없어졌다** — 되살아나면 그때 다시 세워야 한다(import 축 부활 시).
+#: ⚠ 아래 counsel 쪽 검사들은 그대로다 — 이 파일의 본래 대상이다.
 
 
 def test_memory_backend_gives_the_counsel_in_memory_sink() -> None:
@@ -53,17 +59,6 @@ def test_creating_the_pg_sink_does_not_touch_the_database() -> None:
     assert build_counsel_agent_step_sink(DbSettings(store_backend="pg")) is not None
 
 
-def test_the_probe_builder_is_left_alone() -> None:
-    """⚠ `build_agent_step_sink()`는 **`mapping_probe` 전용으로 유지**한다.
-
-    이번 회차에 개명해 호출부를 넓히지 않는다 — 그러면 두 축이 다시 한 함수로 뭉친다.
-    """
-    from ai.db.repositories.probe_stores import PgAgentStepSink
-
-    assert isinstance(
-        build_agent_step_sink(DbSettings(store_backend="pg")), PgAgentStepSink
-    )
-
 
 def test_the_counsel_sink_satisfies_the_counsel_protocol() -> None:
     """🔴 **`cast`·`type: ignore` 없이** counsel 계약을 만족해야 한다."""
@@ -73,14 +68,3 @@ def test_the_counsel_sink_satisfies_the_counsel_protocol() -> None:
     assert hasattr(sink, "record") and hasattr(sink, "steps")
     del sink
 
-
-def test_the_two_sinks_are_different_types() -> None:
-    """probe와 counsel은 **각자의 레코드 타입**을 돌려준다 — 한쪽으로 강제하지 않는다.
-
-    ⚠ 타입 이름으로 비교한다 — `is not`은 mypy가 **정적으로 참**임을 알아 검사가 죽는다.
-    """
-    from ai.db.repositories.probe_stores import PgAgentStepSink
-
-    pg_settings: Any = DbSettings(store_backend="pg")
-    counsel = type(build_counsel_agent_step_sink(pg_settings)).__name__
-    assert counsel != PgAgentStepSink.__name__, counsel

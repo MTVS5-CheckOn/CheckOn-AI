@@ -24,7 +24,6 @@ from ai.api.version_scope import FALLBACK_VERSIONS, resolve_versions
 from ai.composition.classify.classifier import classify_versions
 from ai.composition.counsel.versions import counsel_versions
 from ai.db import session as db_session
-from ai.import_mapping.versions import import_versions
 
 
 def _app() -> FastAPI:
@@ -163,7 +162,6 @@ def test_meta_versions_uses_capability_factories_without_database(
             "counsel": versions_dict(counsel_versions()),
             "detect": versions_dict(detection_versions()),
             "diagnosis": versions_dict(diagnosis_versions()),
-            "imports": versions_dict(import_versions()),
             "problem_generation": versions_dict(problem_failure_versions()),
         },
     }

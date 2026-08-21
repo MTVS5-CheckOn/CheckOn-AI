@@ -29,8 +29,6 @@ from ai.api.routers.detect import VERSION_SCOPE as _detect_scope
 from ai.api.routers.detect import router as detect_router
 from ai.api.routers.diagnosis import VERSION_SCOPE as _diagnosis_scope
 from ai.api.routers.diagnosis import router as diagnosis_router
-from ai.api.routers.imports import VERSION_SCOPE as _imports_scope
-from ai.api.routers.imports import router as imports_router
 from ai.api.routers.ops import VERSION_SCOPE as OPS_VERSION_SCOPES
 from ai.api.routers.ops import router as ops_router
 from ai.api.routers.problem import VERSION_SCOPE as _problems_scope
@@ -47,7 +45,6 @@ logger = logging.getLogger(__name__)
 #:  단다** — `tests/ai/contract/test_version_scope_registry.py`가 잡는다.
 ROUTER_VERSION_SCOPES: tuple[RouterScope, ...] = (
     _detect_scope,
-    _imports_scope,
     _counsel_scope,
     _classify_scope,
     _confirmations_scope,
@@ -122,7 +119,11 @@ def create_app() -> FastAPI:
     """앱을 조립한다 — 라우터 등록 + 예외 핸들러 + X-Request-Id echo."""
     app = FastAPI(title="체크온 AI 서비스", version="0.1.0")
     app.include_router(detect_router)
-    app.include_router(imports_router)  # ⚠ 양자 승인 파일 수정(라우터 등록) — detect 선례, B 리뷰
+    # ⚠ 양자 승인 파일 수정(라우터 등록 **해제**) — 위 등록 선례와 같은 형식, B 리뷰
+    # 🔴 `imports_router` 는 **지웠다**(2026-08-22 · import 축 개발 중단 · 99 #187).
+    #    승우님 확인(«개발 안 해서 삭제해도 상관 없다») · B 축 참조 0건(준영님 실측).
+    #    ⚠ `WorkerKind.MAPPING_PROBE` 등 **원장 축 여덟 자리는 남겼다** — 실행 기록이라
+    #    지우면 «그 실행이 없었다» 가 된다(불변식 8). `contracts/agents.py` 주석 참조.
     app.include_router(counsel_router)  # ⚠ 양자 승인 파일 수정(라우터 등록) — 위와 동일, B 리뷰
     app.include_router(classify_router)  # ⚠ 양자 승인 파일 수정(라우터 등록) — 위와 동일, B 리뷰
     # ⚠ 양자 승인 파일 수정(라우터 등록) — 위와 동일, B 리뷰

@@ -20,7 +20,6 @@ from ai.composition.classify.classifier import classify_versions
 from ai.composition.counsel.versions import counsel_versions
 from ai.contracts.execution import VersionSet
 from ai.db.session import get_sessionmaker
-from ai.import_mapping.versions import import_versions
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +109,6 @@ async def meta_versions() -> dict[str, Any]:
         "counsel": versions_dict(counsel_versions()),
         "detect": versions_dict(detection_versions()),
         "diagnosis": versions_dict(diagnosis_versions()),
-        "imports": versions_dict(import_versions()),
         "problem_generation": versions_dict(problem_failure_versions()),
     }
     return _success(
