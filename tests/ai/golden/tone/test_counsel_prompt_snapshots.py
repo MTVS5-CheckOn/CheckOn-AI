@@ -13,10 +13,12 @@
 from __future__ import annotations
 
 import itertools
+import pathlib
 
 import pytest
 
 from ai.composition.counsel.prompt import assemble_prompt
+from ai.composition.tone import load_tone_map
 from ai.contracts.composition import (
     CommStyle,
     DraftContext,
@@ -169,3 +171,59 @@ def test_direct_leads_with_conclusion() -> None:
             assert first_block != "인사", key
         else:
             assert first_block == "인사", key
+
+
+#: 조합 키의 축 순서 — 05 §5 `comm.sens.interest.freq`.
+_AXIS_ORDER = {"comm": 0, "sensitivity": 1, "interest": 2, "frequency": 3}
+
+
+# ── 🔴 axis_rules 문장을 무는 가드 (99 #168 · 로그 169) ──
+#
+# ⚠ **이 셋이 없어서 `interest` 가 안 재지고 있었다.** `frequency`·`sensitivity`·`comm` 은
+# 전용 검사가 있는데 `interest` 만 없었고, `axis_rules` **문장 자체**를 무는 검사는 저장소
+# 전수 **0건**이었다(2026-08-21) — 문장을 바꿔도, `render_tone_rules` 가 축 하나를
+# 빠뜨려도 **아무도 안 울었다.**
+#
+# 🔴 **`interest` 가 「갈린다」를 단언하는 검사는 만들지 않는다** — 그건 LLM 출력의
+# 성질이라 결정론 검사로 못 잰다. 실측(`counsel_preview`)이 그 자리다.
+
+
+@pytest.mark.parametrize("axis", ("comm", "sensitivity", "interest", "frequency"))
+def test_every_axis_rule_reaches_the_assembled_prompt(axis: str) -> None:
+    """🔴 **네 축의 `axis_rule` 문장이 조립 프롬프트에 실린다.**
+
+    ⚠ `interest` 만의 특례가 아니다 — `render_tone_rules` 가 축 하나를 빠뜨려도
+    지금은 아무도 안 운다. **네 축 전부**를 판다.
+    ⚠ 문장을 **검사에 복제하지 않는다** — `load_tone_map()` 에서 읽어 대조한다.
+    """
+    rules = load_tone_map().axis_rules[axis]
+    for value, sentence in rules.items():
+        key = next(k for k in _DOC_EXPECTED if k.split(".")[_AXIS_ORDER[axis]] == value)
+        assert sentence in assemble_prompt(_context(key)), (
+            f"{axis}.{value} 의 문장이 조립 프롬프트에서 사라졌다 — "
+            f"`render_tone_rules` 가 그 축을 빠뜨렸거나 문면이 갈렸다"
+        )
+
+
+def test_the_three_interest_rules_differ() -> None:
+    """`interest` 세 문장이 **서로 다르다** — 같은 문장을 세 값에 넣는 실수를 막는다.
+
+    ⚠ **값을 단언하지 않는다**(문면은 `tone_map.yaml` 이 정본이다) — **서로 다름**만 잰다.
+    """
+    rules = load_tone_map().axis_rules["interest"]
+    assert len(set(rules.values())) == len(rules), rules
+
+
+@pytest.mark.parametrize("axis", ("comm", "sensitivity", "interest", "frequency"))
+def test_axis_rules_match_the_tone_mapping_doc(axis: str) -> None:
+    """🔴 `yaml` 의 문장이 **`docs/part_a/05_tone_mapping.md` 표에 그대로** 있다.
+
+    ⚠ 문면을 검사에 복제하지 말고 **두 파일을 대조한다**(`15_canonical` 가드 선례).
+    ⚠ 안 맞추면 문서가 낡는다 — 실제로 05 §1 표가 종전 문장을 들고 있었다(8/21).
+    """
+    doc = pathlib.Path("docs/part_a/05_tone_mapping.md").read_text(encoding="utf-8")
+    for value, sentence in load_tone_map().axis_rules[axis].items():
+        assert sentence in doc, (
+            f"05 §1 표의 `{axis}.{value}` 가 `tone_map.yaml` 과 다르다 — "
+            "yaml 이 정본이다. 문서를 맞춰라"
+        )
