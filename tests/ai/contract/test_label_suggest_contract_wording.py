@@ -90,7 +90,9 @@ def test_the_consent_field_is_reserved_but_unused(section: str) -> None:
     🔴 표식이 빠지면 다음 사람이 **처리 로직을 만든다.** CLAUDE.md §3 의 `item_format`
     선례와 같은 형태다(«enum엔 예약값만 두고 처리 로직 만들지 말 것»).
     """
-    assert "guardian_consent" in section, f"04 §{_SECTION} 의 `guardian_consent` 예약 자리가 사라졌다"
+    assert "guardian_consent" in section, (
+        f"04 §{_SECTION} 의 `guardian_consent` 예약 자리가 사라졌다"
+    )
     assert "v1 미사용" in section, (
         f"04 §{_SECTION} 의 `guardian_consent` 에서 「v1 미사용」 표식이 사라졌다 — "
         f"🔴 표식 없이 두면 구현 회차에서 **처리 로직이 생긴다.** "
