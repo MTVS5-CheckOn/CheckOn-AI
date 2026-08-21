@@ -45,8 +45,13 @@ from ai.contracts.composition import (
 from ai.contracts.gates import BlockedReason
 from ai.runtime.redaction import redact
 
-#: 🔴 #83 의 두 항 — **프롬프트에 못 싣는다.** 게이트가 유일한 방어다.
-_PROMPT_BLIND: Final = ("이해력이 부족", "다른 학생에 비해")
+#: 🔴 #83 의 두 항 — 종전엔 **프롬프트에 못 실어** 게이트가 유일한 방어였다.
+#: ⚠ 🔴 **(8/21) 이름을 바꿨다** — №54 가 오탐을 닫아 **이제 프롬프트에 실린다** ⇒
+#:   `_FORMERLY_PROMPT_BLIND`(«프롬프트가 못 본다»)는 **더 이상 사실이 아니다.** 값만 두고 이름을
+#:   그대로 뒀으면 다음 사람이 **없는 사실을 믿는다**(로그 154 — 값이 바뀌면 이름도 본다).
+#: 🔴 상수를 지우지는 않았다 — 이 둘이 **게이트에서 막히는지**는 여전히 재야 하고,
+#:   그 목록이 여기다.
+_FORMERLY_PROMPT_BLIND: Final = ("이해력이 부족", "다른 학생에 비해")
 
 
 def _context() -> DraftContext:
@@ -124,7 +129,7 @@ def test_no_replacement_output_is_blocked_by_the_gate() -> None:
 # ── 🔴 D · #83 의 두 항이 막힌다 (이 PR 의 존재 이유) ────────────
 
 
-@pytest.mark.parametrize("term", _PROMPT_BLIND)
+@pytest.mark.parametrize("term", _FORMERLY_PROMPT_BLIND)
 def test_the_prompt_blind_terms_are_finally_blocked(term: str) -> None:
     """🔴 **이 PR 의 존재 이유** — 이 둘은 프롬프트에 못 싣는다(99 #83).
 
@@ -160,6 +165,9 @@ def test_the_feedback_for_this_reason_can_actually_be_sent() -> None:
 
     ⚠ **그래서 B군 문면에 어휘를 안 실었다** — 실측(8/20 · 28항 전수): 어휘를 detail 로
     붙이면 `이해력이 부족`·`다른 학생에 비해` **2항**이 `redact()` 에 걸린다.
+    ⚠ 🔴 **(8/21) 그 2항은 이제 안 걸린다**(№54) — 그래도 **안 싣는 판정은 그대로다**
+    (낙인 표현이 사유를 타고 나간다 · `counsel/gate.py` 의 갱신 주석). 🔴 **이 검사가 무는
+    것은 「걸리는가」가 아니라 「사유에 콜론이 없는가」**라 그 판정을 계속 지킨다.
     """
     text = instruction_for("buffered")
     assert text, "buffered 문구가 없다 — 재생성이 빈손이다"
