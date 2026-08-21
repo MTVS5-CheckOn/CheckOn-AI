@@ -903,10 +903,7 @@ async def get_problem_item(
             "status": item_result.status.value,
             "current_revision_no": revision_no,
             "available_actions": (
-                ["refine"]
-                if current_item is not None
-                and current_item.area_tag.value == "language"
-                else []
+                ["refine"] if current_item is not None else []
             ),
             "item": (
                 current_item.model_dump(mode="json")

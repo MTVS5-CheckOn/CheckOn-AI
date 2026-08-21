@@ -519,7 +519,7 @@ def test_problem_router_roundtrip_and_prompt_version_ledger_match() -> None:
     assert len(run_store.runs) == 1
     run = next(iter(run_store.runs.values()))
     assert run.prompt_version == prompt_version
-    assert {call.prompt_version for call in run_store.calls} == {"v1", "v6"}
+    assert {call.prompt_version for call in run_store.calls} == {"v6"}
     assert len(posted.json()["meta"]["versions"]) == 10
     assert len(generator.requests) == 1
     assert len(verifier.requests) == 2
@@ -661,6 +661,7 @@ def test_runnable_56_nodes_generate_persist_and_roundtrip_over_http(node: GraphN
         "blind_cross_solve": "passed",
         "release_decision": "needs_review",
     }
+    assert detail["available_actions"] == ["refine"]
     assert set_store.created == [UUID(set_id)]
     assert [saved.set_id for saved in set_store.finalized] == [UUID(set_id)]
     assert isinstance(observed_stores.items, InMemoryProblemItemStore)

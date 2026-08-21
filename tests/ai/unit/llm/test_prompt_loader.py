@@ -54,6 +54,7 @@ def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
     assert "발문 정형 중 하나를 따른다" in template.content
     # 짝이다 — workflow가 두 버전이 다르면 기동에서 거부한다.
     assert registry.get("pg.cross_solve.v1").version == "v6"
+    assert registry.get("pg.misconception_check.v1").version == "v6"
 
 
 @pytest.mark.parametrize(

@@ -192,7 +192,8 @@ def _deduplicate_events(events: tuple[DiagnosisEvent, ...]) -> tuple[DiagnosisEv
 
 
 def _validate_node_references(events: tuple[DiagnosisEvent, ...], graph: SkillGraph) -> None:
-    known_node_ids = set(graph.node_index())
+    node_index = graph.node_index()
+    known_node_ids = set(node_index)
     unknown_node_ids = sorted(
         {
             event.skill_node_id
@@ -203,6 +204,26 @@ def _validate_node_references(events: tuple[DiagnosisEvent, ...], graph: SkillGr
     if unknown_node_ids:
         raise DiagnosisGraphReferenceError(
             f"그래프에 없는 skill_node_id: {', '.join(unknown_node_ids)}"
+        )
+    mismatched = sorted(
+        (
+            event.event_id,
+            event.area_tag.value,
+            event.skill_node_id,
+            node_index[event.skill_node_id].area_tag.value,
+        )
+        for event in events
+        if event.misconception_tag is not None
+        and event.skill_node_id is not None
+        and node_index[event.skill_node_id].area_tag is not event.area_tag
+    )
+    if mismatched:
+        rendered = ", ".join(
+            f"{event_id}:{event_area}:{node_id}:{node_area}"
+            for event_id, event_area, node_id, node_area in mismatched
+        )
+        raise DiagnosisGraphReferenceError(
+            f"오개념 이벤트의 area_tag와 노드 영역이 다르다: {rendered}"
         )
 
 

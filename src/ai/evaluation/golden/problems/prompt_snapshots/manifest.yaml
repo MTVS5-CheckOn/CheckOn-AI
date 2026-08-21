@@ -16,3 +16,7 @@ snapshots:
     version: v1
     file: cross_solve.snapshot.txt
     review_status: expert_review_pending
+  - prompt_id: pg.misconception_check.v1
+    version: v6
+    file: misconception_check.snapshot.txt
+    review_status: expert_review_pending

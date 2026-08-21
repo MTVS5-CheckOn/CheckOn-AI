@@ -244,9 +244,15 @@ class ProblemGenerationWorkflow:
             raise ProblemWorkflowConfigurationError(
                 "verify_config의 item_attempt 상한이 공용 계약과 다르다"
             )
-        if self._generator.prompt_version != self._cross_solver.prompt_version:
+        if len(
+            {
+                self._generator.prompt_version,
+                self._cross_solver.prompt_version,
+                self._cross_solver.misconception_prompt_version,
+            }
+        ) != 1:
             raise ProblemWorkflowConfigurationError(
-                "generator와 verifier 프롬프트 버전이 다르다"
+                "generator와 verifier 프롬프트 버전이 서로 다르다"
             )
         if (
             self._passage_generator.banned_topics_version
