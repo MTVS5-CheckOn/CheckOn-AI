@@ -2123,7 +2123,10 @@ grep -n "SUPPORTED_AREAS" -A 9 src/ai/problem_generation/domain/policy.py
 - ④(실패 판정·원장 기록) — **부분.** 실패는
   `src/ai/problem_generation/assembly.py:322-341`의 `_run_guarded`가
   `supervisor.fail(...)`로 원장에 수렴하지만 전용 `error_code`가 없어
-  `_ERROR_WORKER_INTERNAL`과 구분되지 않는다. 이 항목은 열어 둔다.
+  `_ERROR_WORKER_INTERNAL`과 구분되지 않는다. 이 항목은 열어 둔다. 🔴 **언제 닫나:**
+  heartbeat 실패가 비민감 warning으로 실제 관측되면 전용 `error_code`를 부여한다. 그 전에는
+  관측이 0건이라 전용 코드를 만들어도 한 번도 나오지 않는다(2026-08-22 A 제안 · B가
+  「관측이 선행돼야 한다」로 보완).
 
 ⚠ **절차 정정:** 설계 방향 ⓑ(실행 중 lease 갱신)는 2026-08-20 슬랙에서 양쪽이 명시해
 합의했다. 없는 것은 #361의 코드 승인이다. 「방향 합의 없음」이 아니라 「별도 공동 회차

@@ -42,6 +42,7 @@ from ai.db.settings import DbSettings, get_db_settings
 from ai.llm.determinism import deterministic_params
 from ai.llm.prompts.loader import load_prompt_template
 from ai.problem_generation.application.lease_heartbeat import (
+    LeaseHeartbeatFailed,
     run_with_lease_heartbeat,
 )
 from ai.problem_generation.application.ports import (
@@ -326,6 +327,10 @@ class ProblemGenerationRunner:
             error_code = (
                 exc.code if isinstance(exc, DomainException) else _ERROR_WORKER_INTERNAL
             )
+            if isinstance(exc, LeaseHeartbeatFailed):
+                logger.warning(
+                    "문제 생성 잡이 heartbeat 실패로 취소됨 job=%s", job.job_id
+                )
             try:
                 await self._supervisor.fail(
                     tenant_id=job.tenant_id,
