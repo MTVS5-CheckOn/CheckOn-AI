@@ -2118,8 +2118,9 @@ grep -n "SUPPORTED_AREAS" -A 9 src/ai/problem_generation/domain/policy.py
 - ②(heartbeat 주기 < lease 만료) — ✅ **단 위치가 다르다.** 관계는
   `src/ai/api/routers/problem.py:165-170`의
   `ProblemRouterSettings.validate_lease_heartbeat`에 있고 기동에서 fail-closed다.
-  `lease_heartbeat.py`만 보면 이 관계는 보이지 않는다. 두 관계 중 주기<lease 검사는 이미
-  있었고, 이번 회차에 총 상한>주기와 기본값 조합까지 고정했다.
+  `lease_heartbeat.py`만 보면 이 관계는 보이지 않는다. 2026-08-22 A는 그 함수와
+  `test_lease_heartbeat.py`만 읽고 이 관계가 없다고 오판했다. 주기<lease 검사는 이미 있었고,
+  이번 회차에 총 상한>주기와 기본값 조합까지 고정했다.
 - ④(실패 판정·원장 기록) — **부분.** 실패는
   `src/ai/problem_generation/assembly.py:322-341`의 `_run_guarded`가
   `supervisor.fail(...)`로 원장에 수렴하지만 전용 `error_code`가 없어
