@@ -2222,6 +2222,40 @@ grep -n "source_redaction_retry_max\|difficulty_regen_max" src/ai/problem_genera
 조립부에서 연결할지 A 판정을 요청한다. 어느 안이든 `buffer_lexicon.find_forbidden` 위임과 기존
 사유 문자열·검사 순서는 보존해야 한다.
 
+### 2-30. 리포트 스튜디오 소유 표기 동기화 `[제안 · 표기 동기화 · 2026-08-21 사용자 서면 승인]`
+
+**소유 결정은 끝났다.** 2026-08-21 사용자 서면 승인에 따라 리포트 스튜디오와 그 안의 AI
+요소는 member-B(염준영) 담당이다. 배치도 독립 capability `src/ai/report/`와 공용 계약
+`src/ai/contracts/report.py`로 확정됐으며, composition 안에 두는 대안은 다시 열지 않는다.
+
+**현행 문서와 결정이 어긋난 자리(2026-08-22 직접 확인):**
+
+- `docs/02_ownership.md:24` — `composition/`의 박진희 R&R에 `리포트 chart_analysis`가 들어 있다.
+- `docs/02_ownership.md:175` — 소유권 주석 트리에 존재한 적 없는 `report_blocks.py`가
+  `[박진희] ★v2`로 적혀 있다.
+- `docs/02_ownership.md:228` — capability 분담표가 리포트를 A의 `composition` 확장으로
+  분류하고, B 쪽에는 `diagnosis · problem_generation`만 적는다.
+- `CLAUDE.md:66` — §7 문서 맵의 리포트 행이 A 초안
+  `docs/part_a/07_report_spec.md`만 구현 기준으로 가리켜 현재 B 소유 capability를 드러내지 않는다.
+
+**인수가 아니라 신규 구축이다.** #369 이전에는 리포트 제품 코드와 테스트가 0건이었고,
+문서에 적힌 `report_blocks.py`도 존재한 적이 없다. #369에서 처음
+`src/ai/report/`와 `src/ai/contracts/report.py`가 생겼으므로 A 파일을 B로 넘기는 변경이 아니다.
+`contracts/report.py`는 #369 제출 당시 **양자 승인 초안이며 A 리뷰가 머지 조건**이라고 PR
+최상단에 표시됐고, 2026-08-21 A 승인 뒤 `develop`에 머지됐다. 즉 승인 절차는 이미 충족됐지만
+공용 소유 문서의 표기가 뒤따르지 않은 상태다.
+
+**A 반영 요청:** 전원 공용 문서의 오너인 A가 `docs/02_ownership.md:24`의 composition R&R에서
+리포트를 분리하고, `:175`의 미실재 `report_blocks.py [박진희]` 행을 독립 `report/ [염준영]`
+구조와 양자 승인 `contracts/report.py` 표기로 갱신하며, `:228`의 capability 분담에서 리포트를
+B 쪽으로 옮겨 달라. 함께 `CLAUDE.md:66`의 리포트 문서 맵에 A의 기존 사양서는 요구사항
+참조이고 독립 report capability 구현 소유는 B라는 경계를 표시해 달라. B는 두 공용 문서를
+직접 수정하지 않는다.
+
+이 제안이 닫히기 전에는 실제 코드·승인 기록은 B 소유 독립 capability를 가리키는데 공용
+문서는 A 소유 composition을 가리켜, 리포트 관련 문서와 코드를 읽는 사람이 소유를 반대로
+판단할 위험이 있다.
+
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
 | 번호 | 항목 | B 권고안 | 담당 | 관련 part_b |
@@ -2240,6 +2274,7 @@ grep -n "source_redaction_retry_max\|difficulty_regen_max" src/ai/problem_genera
 | **BE-11** `(구 B-10)` | ✅ **A 판정 완료 — RLS 구현 부재는 문서 표현을 앱 계층 격리로 정정해 해소.** RLS 실도입 여부는 백엔드 합의 안건으로 이관 | 도입 시 `db/session.py`·`db/store_factory.py` 연결·역할 설계와 함께 기존 26+B 8테이블에 일괄 적용. 현재 B 8테이블은 기존 패턴 준수 | **BE** | §2-4.5 |
 | **B-15** `[신규]` | **`04`가 코드·공용 정본과 갈렸다 — ① area enum이 `04`에만 6값(`speech_writing` 0회) ② 「v1은 language만」이 코드(5영역 개방)와 반대로 갈렸다** | ① 04:649·1149 문면 정정(이력 보존) ② 04:305·912를 「영역×자료요청 조합 표」로 교체. 문면 확정 후 B가 대조 검사를 단다 | A(+B) | §2-27 |
 | **B-16** `[신규]` `[P1]` | **PG `lease_seconds`(300초)가 잡당 최악보다 짧다 — 만료되는 것은 죽은 잡이 아니라 실행 중인 잡이다.** 이론 최악 `(9 + 6×count) × 90초` ⇒ count=1 이 1,350초 · count=20 이 11,610초. 실측 콜당 ~8.9초로 외삽해도 **count≈6 에서 300초을 넘는다** | 안 ① `Supervisor.heartbeat`(호출자 0건 — 사문) 부활 — A 파일 0줄 · count 무관 · **B 권고** / 안 ② count 비례 lease — `agents/supervisor.py`(A 소유) 변경 필요. 착수는 A 합의 후 | A+B | §2-28 |
+| **B-17** `[신규]` | **리포트 스튜디오 소유 결정과 공용 문서 표기가 반대다.** 2026-08-21 사용자 서면 승인과 #369 구현은 B 소유 독립 `report/`를 가리키지만 `02_ownership.md`·`CLAUDE.md`는 A의 composition 리포트를 가리킨다 | A가 `02_ownership.md:24·175·228`과 `CLAUDE.md:66`의 리포트 소유 표기를 확정 배치에 맞춰 갱신. B는 공용 문서를 직접 수정하지 않는다 | A | §2-30 |
 | **W1** `[신규]` | **다중 목표·다중 measured area 세트** — M2 와이어프레임 Step 1은 셀 여러 개를 담고 개수를 각각 지정하나, `05` §4.1은 **v1 단일 영역 제한** | 요청 분할 vs 요청 형식 확장 중 택일. 협업설명서도 "회의 결정 필요"로 등재 | A+B+제품 | `05` §4.1 · `10` §6 |
 | **W2** `[신규]` | 화면이 **셀에 `suspect`를 표시**하나 `04` §4의 셀 verdict는 `unknown\|weak\|ok` 3종이고 `suspect`는 **노드** verdict | 셀 verdict 확장 vs 화면이 노드 verdict를 셀에 투영 중 택일 | B(+FE) | `04` §4·§5.1 |
 | **W3** `[신규]` | 완료 알림 payload — 화면 문서는 수량(통과·검토·폐기)을 알림에 싣고, §2-1은 `result_ref` 조회로 얻는다 | §2-1 유지 권고(알림 경량화) | BE+B | §2-1 |
