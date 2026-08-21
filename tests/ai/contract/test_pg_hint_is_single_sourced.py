@@ -49,6 +49,7 @@ def _skip_messages(path: Path) -> list[str]:
 
 def test_no_test_file_spells_the_command_itself() -> None:
     """🔴 **skip 문면에 기동 명령을 직접 적지 않는다** — 적으면 정본이 둘이 된다."""
+    assert any(_TESTS.rglob("*.py")), "tests/에서 Python 파일을 하나도 찾지 못했다 — 검사가 끊겼다"
     offenders: dict[str, list[str]] = {}
     for path in sorted(_TESTS.rglob("*.py")):
         if path == _CANON:
