@@ -1,7 +1,7 @@
 # CheckOn AI–BE 문제출제 통신 규약 확정 지시서
 
 - 작성일: 2026-08-21
-- AI 기준: `develop` `5d80a43` 이상
+- AI 기준: `develop` `bc30fe9` 이상 (#363 머지 후)
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 목적: 약점 진단 → 문제 생성 → 조회 → 수정 → 오답 약점 환류의 BE 구현 계약 지시
 - 적용 방식: 이 문서의 결정은 협의 후보가 아니라 AI 통신 경계의 확정값이다. BE와 Adapter는
@@ -381,7 +381,8 @@ problem_generation_request
 - `apply` type tag 미지원
 - `ai_refine` 외 revision kind 미지원
 - `language.grammar.fortition` redaction 오탐 잔여
-- 일부 terminal·5xx 조합의 고정 HTTP fixture 미비
+- ~~일부 terminal·5xx 조합의 고정 HTTP fixture 미비~~ **해소(2026-08-21 · PR #362):**
+  failed·cancelled 조회와 revision 요청·200·409·500·503·504 fixture를 추가했다.
 
 PG 운영 계약:
 
@@ -403,7 +404,8 @@ PG 운영 계약:
 
 1. counsel 러너에 동일한 실행 lease heartbeat 적용(A 소유 회차)
 2. 두 background drain의 DB connection 합산 300동시성 실측
-3. 일부 terminal·5xx 조합의 고정 HTTP fixture 보강
+3. ~~일부 terminal·5xx 조합의 고정 HTTP fixture 보강~~ ✅ **PR #362 해소** — 필수 흐름
+   mapping 42개에 failed·cancelled 및 revision 종단/5xx 조합이 포함된다.
 
 BE는 위 검증이 진행 중이어도 AI 재시작을 이유로 새 멱등키나 새 잡을 만들지 않는다.
 같은 `job_id`를 reconciliation 대상으로 유지한다.
@@ -509,7 +511,17 @@ BE는 위 검증이 진행 중이어도 AI 재시작을 이유로 새 멱등키�
   "answer_number_base": 1,
   "misconception_feedback_field": "choices[].misconception_tag",
   "retry_after_is_advisory": true,
-  "startup_queued_recovery": "postgres_sweep"
+  "startup_queued_recovery": "postgres_sweep",
+  "job_recovery": {
+    "eligible_phases": ["queued", "leased_expired", "running_expired"],
+    "sweep_limit": 100,
+    "idle_interval_seconds": 1.0,
+    "lease_seconds": 300,
+    "heartbeat_seconds": 60.0,
+    "max_execution_seconds": 12000.0,
+    "heartbeat_failure": "cancel_operation",
+    "paused_auto_recovery": false
+  }
 }
 ```
 <!-- ai-be-contract-snapshot:end -->

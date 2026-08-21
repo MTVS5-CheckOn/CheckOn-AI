@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import inspect
 import json
 import textwrap
@@ -10,9 +11,16 @@ from pathlib import Path
 from typing import Any
 
 from ai.api.routers import problem as problem_router
+from ai.api.routers.problem import ProblemRouterSettings
 from ai.contracts.agents import TERMINAL_PHASES, JobPhase
 from ai.contracts.problem_generation import Choice, TargetSource
 from ai.contracts.taxonomy import AreaTag
+from ai.db.repositories.problem_job_queue import (
+    build_pending_problem_tenants_query,
+)
+from ai.problem_generation.application.lease_heartbeat import (
+    run_with_lease_heartbeat,
+)
 from ai.problem_generation.domain.policy import (
     SUPPORTED_AREAS,
     supports_source_procurement,
@@ -120,4 +128,60 @@ def test_snapshot_keeps_feedback_and_current_unsupported_boundary_visible() -> N
     assert snapshot["startup_queued_recovery"] == "postgres_sweep"
     assert "pending_problem_tenants" in _called_names(
         problem_router._start_problem_drain  # noqa: SLF001
+    )
+
+
+def test_snapshot_matches_problem_recovery_defaults_and_database_scope() -> None:
+    recovery = _snapshot()["job_recovery"]
+    fields = ProblemRouterSettings.model_fields
+
+    assert recovery["sweep_limit"] == fields["drain_tenants_per_sweep"].default
+    assert recovery["idle_interval_seconds"] == fields["drain_idle_interval_seconds"].default
+    assert recovery["lease_seconds"] == fields["lease_seconds"].default
+    assert recovery["heartbeat_seconds"] == fields["lease_heartbeat_seconds"].default
+    assert recovery["max_execution_seconds"] == fields["lease_heartbeat_max_seconds"].default
+    assert recovery["paused_auto_recovery"] is False
+
+    query = str(
+        build_pending_problem_tenants_query(limit=recovery["sweep_limit"]).compile(
+            compile_kwargs={"literal_binds": True}
+        )
+    )
+    for phase in ("queued", "leased", "running"):
+        assert phase in query, f"BE 재기동 명세의 회수 phase와 DB 조회가 갈렸다: {phase}"
+    assert "paused" not in query, "BE 명세는 paused 자동 회수를 금지하지만 DB 조회에 포함됐다"
+    assert "lease_expires_at <= now()" in query, (
+        "BE 명세는 leased/running의 lease 만료분만 회수하지만 DB 조회 조건이 갈렸다"
+    )
+
+
+def test_snapshot_heartbeat_failure_cancels_the_running_operation() -> None:
+    recovery = _snapshot()["job_recovery"]
+    assert recovery["heartbeat_failure"] == "cancel_operation"
+
+    async def scenario() -> bool:
+        cancelled = asyncio.Event()
+
+        async def operation() -> None:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        async def rejected_renewal() -> None:
+            raise RuntimeError("fencing 소유권 상실")
+
+        try:
+            await run_with_lease_heartbeat(
+                operation(),
+                renew=rejected_renewal,
+                interval_seconds=0.001,
+                max_duration_seconds=1.0,
+            )
+        except RuntimeError:
+            pass
+        return cancelled.is_set()
+
+    assert asyncio.run(scenario()), (
+        "BE 명세는 heartbeat 실패 시 실행 취소를 약속하지만 operation이 계속 살아 있다"
     )

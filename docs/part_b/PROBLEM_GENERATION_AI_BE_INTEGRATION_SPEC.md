@@ -1,10 +1,11 @@
 # AI–BE/Adapter 문제출제 통신 명세
 
-- 기준 AI 커밋: `e4a1a4b256362e40f3a8ed01a27ad50b45b10d93`
+- 기준 AI 커밋: `bc30fe9d` (#363 머지 후 `develop`)
 - 기준 브랜치: `develop`
-- 확정일: 2026-08-21
+- 확정일: 2026-08-21 (재측정·재기동 정합 회차)
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
-- 문서 개정: PR #354 enqueue-only 전환과 5영역 생성·수정 계약 반영
+- 문서 개정: PR #354 enqueue-only · PR #361 재기동 복구 · PR #362 종단/수정 fixture ·
+  2026-08-21 UTF-8 재측정 반영
 
 ## 1. 범위와 결론
 
@@ -13,7 +14,10 @@
 - `POST /v1/problems`는 잡을 적재하고 항상 `queued` 202를 즉시 반환한다.
 - LLM 실행은 HTTP 요청이 아니라 앱 startup의 `ProblemDrainLoop`가 맡는다.
 - 비종단 잡은 영속 JobStore에서 조회한다. 메모리 view 유실만으로 404가 되지 않는다.
-- 단, 프로세스 재시작 뒤 기존 queued 잡의 자동 실행 재개는 아직 보장하지 않는다.
+- ~~프로세스 재시작 뒤 기존 queued 잡의 자동 실행 재개는 아직 보장하지 않는다.~~
+  **정정(2026-08-21 · PR #361):** PostgreSQL 배포는 startup과 유휴 sweep에서 기존
+  `queued` 및 lease가 만료된 `leased | running` 잡을 재발견해 자동 실행 대상으로 올린다.
+  정확한 범위와 기본 주기는 Step3의 정정 이력을 따른다.
 - Adapter는 영역·유형 셀에서 교육과정 노드를 임의로 선택하지 않는다.
 - Backend가 진단 결과의 `skill_node_id`를 보존하고 Adapter가 이를 `manual_targets`로 전달한다.
 - `weakness_map.nodes`의 직렬화 순서는 node ID 사전순일 뿐 추천·심각도·출제 우선순위가 아니다.
@@ -23,8 +27,8 @@
 기준 커밋에서 다시 실행한 결과는 다음과 같다.
 
 - Ruff 통과
-- Mypy 523파일 통과
-- offline 3,685 passed / 20 skipped / 172 deselected / 3 xfailed
+- Mypy 533파일 통과
+- offline 3,728 passed / 20 skipped / 173 deselected / 3 xfailed
 - 57노드 중 56노드 완주와 `language.grammar.fortition` 제외는 **그대로 유효하다.** 코드로
   대조했다 — `tests/ai/integration/test_problem_router.py`의
   `_A_OWNED_REDACTION_BLOCKED_NODES`가 그 1노드만 담고, 같은 파일이
@@ -66,6 +70,9 @@
   `dropped`됐고 저장 0건이다. 🔴 **차단 지점이 뒤로 옮겨졌을 뿐 해소가 아니다.**
 - ⚠ `speech_writing`의 `status_reason` 원문은 CLI 집계가 출력하지 않아 **미수집이다.**
   재호출로 보충하지 않았고 추측해서 적지 않는다.
+- **후속 정정(2026-08-21 · PR #366 하네스):** 아래 승인된 5영역 재측정도 영역별 행을
+  만들기 전에 `AssertionError`로 중단돼 T4 `status_reason`을 새로 얻지 못했다. 실패 1건을
+  값 0으로 바꾸거나 앞선 회차 문면으로 채우지 않으므로 이 과거 미수집 값은 그대로다.
 
 #### 후속 실측 `[2026-08-21 · PR #350 하네스]`
 
@@ -98,6 +105,35 @@ PR #350 하네스에서 `failure_detail`과 수정 1턴을 붙인 뒤, 승인된
 `verified`·`verification_unavailable` 여부와 수정의 적용·정상 차단·오류 여부를 확정할 수
 없다. 남은 축을 닫으려면 먼저 스모크 CLI의 Windows stdout 인코딩 실패를 해소한 뒤 별도
 승인을 받아 5영역을 다시 측정해야 한다.
+
+#### UTF-8 파일 재측정 `[2026-08-21 · PR #366 하네스]`
+
+stdout 대신 `local_data/pg_real_llm_smoke_report.md`에 UTF-8로 기록하는 하네스에서 다음
+명령을 **딱 1회** 실행했다. 실패 뒤 재시도하지 않았다.
+
+```bash
+uv run python tests/ai/integration/test_pg_real_llm_smoke.py --area all --repetitions 1
+```
+
+원시 비민감 집계:
+
+```text
+exit code: 1
+출제 집계 행: 0
+수정 집계 행: 0
+실패 행: 1
+area=all · outcome=unknown · exception_type=AssertionError · cause_type=unknown · http_status=none
+```
+
+이번에는 UTF-8 파일이 정상 생성돼 cp949 출력 손실은 닫혔다. 그러나
+`run_real_llm_smoke_matrix()`가 영역별 `RealLlmAreaSummary`를 반환하기 전에 예외가 나서
+영역별 생성 시도·스키마 통과·최종 status·저장 건수와 수정 결과는 **이번 회차도 미수집**이다.
+안전 집계는 예외 메시지와 traceback을 보존하지 않으므로 정확한 assertion 위치,
+`status_reason`, #347 배선 변경 전후 중 어느 단계인지는 **미확인**이다. 추가 호출로 보충하지
+않고 제품 코드도 수정하지 않는다.
+
+결과 파일에는 위 세 표와 범주형 실패 메타만 있으며 API 키·endpoint·프롬프트·모델 원문
+응답은 없다. 파일을 UTF-8로 다시 읽고 해당 문자열이 없음을 확인했다.
 
 ## 2. 공통 HTTP 계약
 
@@ -326,11 +362,21 @@ API view cache가 유실되어도 `STORE_BACKEND=postgres` 배포에서는 영�
 store에서 상태·결과를 조회할 수 있다. 메모리 저장 백엔드의 프로세스 재시작 내구성은 계약
 범위가 아니다.
 
-조회 내구성과 실행 재개는 다르다. 현재 `ProblemDrainLoop`의 테넌트 예약 큐는 메모리이고
-startup에서 기존 queued 테넌트를 sweep하지 않는다. 따라서 프로세스 재시작 뒤 영속 잡이
-조회되더라도 자동 실행 재개는 보장되지 않는다. Backend·Adapter는 이를 404로 오해하거나
-새 멱등키로 중복 잡을 만들지 말고 같은 `job_id`를 유지한다. 운영 개방 전 AI가 startup
-recovery sweep과 실행 중 lease heartbeat를 별도 회차로 닫아야 한다.
+~~조회 내구성과 실행 재개는 다르다. `ProblemDrainLoop`의 테넌트 예약 큐는 메모리이고
+startup에서 기존 queued 테넌트를 sweep하지 않으므로 자동 실행 재개는 보장되지 않는다.
+운영 개방 전 AI가 startup recovery sweep과 실행 중 lease heartbeat를 별도 회차로 닫아야
+한다.~~
+
+**정정(2026-08-21 · PR #361):** PostgreSQL 배포의 startup 및 알림 큐가 빈 유휴 사이클은
+`queued` 또는 lease가 만료된 `leased | running` 잡의 테넌트를 ID 순으로 최대 100개씩
+재발견한다(`problem.py:345-373`, `problem_job_queue.py:17-35`). 기본 유휴 간격은 1초다
+(`problem.py:156-163`). `paused`와 만료되지 않은 실행 잡은 자동 회수하지 않는다.
+
+lease 기본값은 300초, 실행 중 heartbeat 주기는 60초, heartbeat 포함 총 실행 상한은
+12,000초다(`problem.py:142-170`). heartbeat 갱신이 실패하면 fencing 소유권을 잃은 것으로
+보고 진행 중 operation을 취소하며, 총 상한을 넘겨도 operation과 heartbeat를 모두 취소한다
+(`lease_heartbeat.py:39-53`, `assembly.py:343-360`). Backend·Adapter는 AI 재시작이나 관찰
+지연을 404/새 작업으로 바꾸지 않고 같은 `job_id`를 계속 조회한다.
 
 ### Step4. 문항 슬롯 목록 조회
 
