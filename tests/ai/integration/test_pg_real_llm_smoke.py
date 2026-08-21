@@ -133,6 +133,7 @@ _TRACKS = {
 }
 _UNKNOWN = "unknown"
 _REFINE_INSTRUCTION = "문항의 핵심 평가 요소를 유지하면서 발문을 더 명확하게 다듬어 주세요."
+_RESULT_PATH = Path("local_data/pg_real_llm_smoke_report.md")
 
 
 class RealLlmSmokeUnavailable(RuntimeError):
@@ -836,6 +837,34 @@ def _render_failures(rows: tuple[SafeFailureRow, ...]) -> str:
     return "\n".join(lines)
 
 
+def _render_full_report(
+    rows: tuple[SmokeReportRow, ...],
+    refine_rows: tuple[RefineReportRow, ...],
+    failures: tuple[SafeFailureRow, ...],
+) -> str:
+    sections = [
+        "# 문제출제·수정 실 LLM 스모크",
+        "",
+        "## 문제출제",
+        "",
+        _render_report(rows),
+        "",
+        "## 문제수정 1턴",
+        "",
+        _render_refine_report(refine_rows),
+    ]
+    if failures:
+        sections.extend(
+            (
+                "",
+                "## 비민감 provider 실패 메타",
+                "",
+                _render_failures(failures),
+            )
+        )
+    return "\n".join(sections) + "\n"
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="문제출제 T1 또는 T1~T5 실 LLM 스모크 집계")
     parser.add_argument(
@@ -853,7 +882,12 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _main_async(area: str, repetitions: int) -> int:
+async def _main_async(
+    area: str,
+    repetitions: int,
+    *,
+    result_path: Path = _RESULT_PATH,
+) -> int:
     if repetitions < 1:
         print("오류: --repetitions는 1 이상이어야 한다")
         return 2
@@ -861,12 +895,15 @@ async def _main_async(area: str, repetitions: int) -> int:
         rows, refine_rows, failures = await _run_matrix(repetitions)
     else:
         rows, refine_rows, failures = await _run_single(AreaTag(area), repetitions)
-    print(_render_report(rows))
-    print("\n문제수정 1턴")
-    print(_render_refine_report(refine_rows))
-    if failures:
-        print("\n비민감 provider 실패 메타")
-        print(_render_failures(failures))
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        _render_full_report(rows, refine_rows, failures),
+        encoding="utf-8",
+    )
+    print(
+        f"스모크 집계: 출제 {len(rows)}영역 · 수정 {len(refine_rows)}영역 · 실패 {len(failures)}건"
+    )
+    print(f"결과 파일: {result_path}")
     return 1 if failures else 0
 
 
@@ -1082,7 +1119,9 @@ def test_cli_fake_provider_renders_table_without_endpoint() -> None:
 
 
 def test_cli_preserves_success_and_failure_from_repeated_single_area(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     observation = asyncio.run(_fake_cli_observation())
     outcomes: list[RealLlmSmokeObservation | Exception] = [
@@ -1105,13 +1144,22 @@ def test_cli_preserves_success_and_failure_from_repeated_single_area(
         fake_run,
     )
 
-    assert asyncio.run(_main_async("language", 2)) == 1
+    result_path = tmp_path / "report.md"
+    assert asyncio.run(_main_async("language", 2, result_path=result_path)) == 1
     output = capsys.readouterr().out
-    assert "| T1 | language | 1 | 1 | verified | - | - | 1 | fake-model |" in output
-    assert "| language | false | - | answer_integrity | R-1:테스트 |" in output
-    assert "| language | provider_error | LlmError | BadRequestError | 400 |" in output
+    assert "스모크 집계: 출제 1영역 · 수정 1영역 · 실패 1건" in output
+    assert f"결과 파일: {result_path}" in output
+    assert "| 트랙 |" not in output
+    assert "| 영역 |" not in output
     assert "secret.example" not in output
     assert "RAW_COMPLETION_MUST_NOT_PRINT" not in output
+    report = result_path.read_text(encoding="utf-8")
+    assert "| T1 | language | 1 | 1 | verified | - | - | 1 | fake-model |" in report
+    assert "| language | false | - | answer_integrity | R-1:테스트 |" in report
+    assert "| language | provider_error | LlmError | BadRequestError | 400 |" in report
+    assert "secret.example" not in report
+    assert "api_key" not in report
+    assert "RAW_COMPLETION_MUST_NOT_PRINT" not in report
 
 
 def test_cli_failure_renderer_keeps_only_categorical_metadata() -> None:
