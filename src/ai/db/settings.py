@@ -22,8 +22,22 @@ class DbSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=ENV_FILES, extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://localhost/checkon_ai"
-    """async 드라이버(asyncpg) URL. 실배포는 .env로 주입."""
+    database_url: str = Field(
+        default="postgresql+asyncpg://localhost/checkon_ai", repr=False
+    )
+    """async 드라이버(asyncpg) URL. 실배포는 .env로 주입.
+
+    🔴 **`repr=False` 인 이유는 `repr` 이다** — 프로덕션 URL 에는 **비밀번호가 들어 있고**,
+    평문이면 이 설정 객체가 찍히는 모든 자리에 그대로 나온다(pytest 실패 메시지의 assertion
+    표현이 대표적이고 그건 **CI 빌드 로그에 남는다**). 99 #122 가 `OPENAI_API_KEY` 에 대해
+    실측한 경로와 **같은 경로**이고, 전수로 물어 이 필드가 나왔다(99 #176).
+    실측(8/21): `repr(DbSettings(database_url="…:CANARY_PW@…"))` 에 카나리가 **그대로** 나왔다.
+
+    ⚠ 🔴 **`SecretStr` 이 아니라 `repr=False` 를 쓴 이유는 반경이다** — 이 필드를 읽는 자리가
+    **src 4 · tests 72** 다. `SecretStr` 로 바꾸면 그 전부에 `.get_secret_value()` 를 붙여야
+    하고, 그것은 유출을 막는 일이 아니라 **호출부를 고치는 일**이다. `repr=False` 는 필드를
+    repr 에서 통째로 빼고 **소비처를 하나도 안 건드린다.** (#122 의 키는 읽는 곳이 1곳이라
+    `SecretStr` 이 맞았다 — 수단이 다른 것이지 계약은 같다: **찍어도 안 나온다.**)"""
 
     db_pool_size: int = Field(default=5, ge=1)
     """SQLAlchemy 커넥션 풀 크기 — 🔴 종전에는 **명시가 없어** 기본값에 맡겨져 있었다.
@@ -59,11 +73,16 @@ class DbSettings(BaseSettings):
 
     ⚠ 🔴 **이 상한은 구조 판단이고 실측이 아니다** — 운영 DB 커넥션 실측은 **99 #127**."""
 
-    agent_checkpoint_database_url: str | None = None
+    agent_checkpoint_database_url: str | None = Field(default=None, repr=False)
     """LangGraph PostgresSaver용 psycopg URL.
 
     미지정 시 ``database_url``에서 SQLAlchemy 드라이버 표기만 제거해 사용한다.
     체크포인트를 별도 DB로 격리할 때만 환경 변수로 명시한다.
+
+    🔴 **`repr=False` 는 `database_url` 과 같은 이유다** — 별도 DB 로 격리할 때 이 값에도
+    **자격증명이 들어간다**. ⚠ 한쪽만 가리면 **가린 적 없는 쪽으로 같은 비밀이 샌다**
+    (`checkpointer.py` 가 미지정 시 `database_url` 을 그대로 쓴다 — 두 필드는 **같은 비밀의
+    두 얼굴**이다).
     """
 
     llm_payload_max_chars: int = 32_768
