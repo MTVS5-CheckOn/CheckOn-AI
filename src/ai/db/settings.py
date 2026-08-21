@@ -55,7 +55,9 @@ class DbSettings(BaseSettings):
       ≤ PG max_connections
 
     PG 드레인은 앱 워커마다 태스크 하나가 잡을 직렬 실행하고, counsel 드레인은 세마포어로
-    동시성을 제한한다. ⇒ 세 항 모두 설정 또는 구조로 상한이 있다."""
+    동시성을 제한한다. ⇒ 세 항 모두 설정 또는 구조로 상한이 있다.
+
+    ⚠ 🔴 **이 상한은 구조 판단이고 실측이 아니다** — 운영 DB 커넥션 실측은 **99 #127**."""
 
     agent_checkpoint_database_url: str | None = None
     """LangGraph PostgresSaver용 psycopg URL.
