@@ -446,6 +446,34 @@ class SolveResult(BaseModel):
     alignment_reason: str = Field(min_length=1)
 
 
+class MisconceptionChoiceCheck(BaseModel):
+    """오답 선지 하나의 오개념 라벨·사유 의미 일치 판정."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    choice_no: int = Field(ge=1, le=5)
+    consistent: bool
+    reason: str = Field(min_length=1)
+
+
+class MisconceptionCheckResult(BaseModel):
+    """정답을 제외한 네 선지의 오개념 의미 검증 결과."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    checks: tuple[MisconceptionChoiceCheck, ...] = Field(
+        min_length=4,
+        max_length=4,
+    )
+
+    @model_validator(mode="after")
+    def validate_unique_choices(self) -> Self:
+        numbers = [check.choice_no for check in self.checks]
+        if len(set(numbers)) != len(numbers):
+            raise ValueError("오개념 의미 검증의 선지 번호는 중복될 수 없다")
+        return self
+
+
 class ProblemSetStatus(StrEnum):
     """B 세트 상태. 공용 상태 사전 편입은 승인된 제안의 동기화 대상이다."""
 

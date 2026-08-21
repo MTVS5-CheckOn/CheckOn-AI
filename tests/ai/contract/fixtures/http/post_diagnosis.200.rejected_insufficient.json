@@ -3,6 +3,12 @@
     "status": "rejected_insufficient",
     "status_reason": "판정 가능한 셀이 없다",
     "weakness_map": null,
+    "misconceptions": {
+      "by_area": {},
+      "by_node": {},
+      "excluded_missing_chosen_no": 0,
+      "excluded_missing_misconception_tag": 0
+    },
     "grid": {
       "areas": [
         "language",

@@ -1,6 +1,7 @@
 """결정론적 약점 진단 계산."""
 
 from collections import deque
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +12,7 @@ from ai.contracts.diagnosis import (
     DiagnosisInput,
     DiagnosisResult,
     DiagnosisStatus,
+    MisconceptionReport,
     NodeVerdict,
     PropagatedNode,
     WeaknessCell,
@@ -31,6 +33,10 @@ class DiagnosisInputConflictError(DiagnosisError):
 
 class DiagnosisGraphReferenceError(DiagnosisError):
     """입력 이벤트가 현재 그래프에 없는 노드를 참조함."""
+
+
+class DiagnosisMisconceptionTagError(DiagnosisError):
+    """입력 오개념 라벨이 이벤트 영역의 닫힌 어휘를 벗어남."""
 
 
 class DiagnosisVersionMismatchError(DiagnosisError):
@@ -95,6 +101,7 @@ def diagnose(
     graph_version: str,
     taxonomy_version: str,
     config_version: str,
+    misconception_vocabulary: Mapping[AreaTag, Collection[str]],
 ) -> DiagnosisResult:
     """입력 스냅숏을 약점 지도로 변환한다.
 
@@ -105,9 +112,11 @@ def diagnose(
     events = _deduplicate_events(diagnosis_input.events)
     confirmed_events = tuple(event for event in events if event.tag_confirmed)
     _validate_node_references(confirmed_events, graph)
+    _validate_misconception_tags(confirmed_events, misconception_vocabulary)
+    misconception_report = _build_misconception_report(confirmed_events)
 
     if not confirmed_events:
-        return _insufficient_result()
+        return _insufficient_result(misconception_report)
 
     overall_acc = _count(confirmed_events).accuracy
     cells, cell_coordinates = _build_cells(confirmed_events, overall_acc, config)
@@ -115,7 +124,7 @@ def diagnose(
         cell for cell in cells.values() if cell.verdict is not CellVerdict.UNKNOWN
     )
     if not judgeable_cells:
-        return _insufficient_result()
+        return _insufficient_result(misconception_report)
 
     node_states = _build_indirect_node_states(graph, cells, cell_coordinates)
     direct_counts = _group_direct_events(confirmed_events)
@@ -141,7 +150,11 @@ def diagnose(
         propagated=propagated,
         overall_low=all(cell.verdict is CellVerdict.WEAK for cell in judgeable_cells),
     )
-    return DiagnosisResult(status=DiagnosisStatus.GENERATED, weakness_map=weakness_map)
+    return DiagnosisResult(
+        status=DiagnosisStatus.GENERATED,
+        weakness_map=weakness_map,
+        misconceptions=misconception_report,
+    )
 
 
 def _validate_versions(
@@ -193,8 +206,70 @@ def _validate_node_references(events: tuple[DiagnosisEvent, ...], graph: SkillGr
         )
 
 
+def _validate_misconception_tags(
+    events: tuple[DiagnosisEvent, ...],
+    vocabulary: Mapping[AreaTag, Collection[str]],
+) -> None:
+    invalid = sorted(
+        (
+            event.event_id,
+            event.area_tag.value,
+            event.misconception_tag,
+        )
+        for event in events
+        if event.misconception_tag is not None
+        and event.misconception_tag not in vocabulary.get(event.area_tag, ())
+    )
+    if invalid:
+        rendered = ", ".join(
+            f"{event_id}:{area_tag}:{tag}" for event_id, area_tag, tag in invalid
+        )
+        raise DiagnosisMisconceptionTagError(
+            f"영역별 닫힌 어휘에 없는 misconception_tag: {rendered}"
+        )
+
+
 def _count(events: tuple[DiagnosisEvent, ...]) -> _Count:
     return _Count(correct=sum(event.correct for event in events), total=len(events))
+
+
+def _build_misconception_report(
+    events: tuple[DiagnosisEvent, ...],
+) -> MisconceptionReport:
+    by_area: dict[str, dict[str, int]] = {}
+    by_node: dict[str, dict[str, int]] = {}
+    excluded_missing_chosen_no = 0
+    excluded_missing_tag = 0
+    for event in events:
+        if event.correct:
+            continue
+        if event.chosen_no is None:
+            excluded_missing_chosen_no += 1
+            continue
+        if event.misconception_tag is None:
+            excluded_missing_tag += 1
+            continue
+        area_counts = by_area.setdefault(event.area_tag.value, {})
+        area_counts[event.misconception_tag] = (
+            area_counts.get(event.misconception_tag, 0) + 1
+        )
+        if event.skill_node_id is not None:
+            node_counts = by_node.setdefault(event.skill_node_id, {})
+            node_counts[event.misconception_tag] = (
+                node_counts.get(event.misconception_tag, 0) + 1
+            )
+    return MisconceptionReport(
+        by_area={
+            area: dict(sorted(counts.items()))
+            for area, counts in sorted(by_area.items())
+        },
+        by_node={
+            node_id: dict(sorted(counts.items()))
+            for node_id, counts in sorted(by_node.items())
+        },
+        excluded_missing_chosen_no=excluded_missing_chosen_no,
+        excluded_missing_misconception_tag=excluded_missing_tag,
+    )
 
 
 def _group_cell_events(
@@ -370,8 +445,11 @@ def _propagate(
     }
 
 
-def _insufficient_result() -> DiagnosisResult:
+def _insufficient_result(
+    misconception_report: MisconceptionReport,
+) -> DiagnosisResult:
     return DiagnosisResult(
         status=DiagnosisStatus.REJECTED_INSUFFICIENT,
+        misconceptions=misconception_report,
         status_reason="판정 가능한 셀이 없다",
     )

@@ -562,15 +562,37 @@ class ProblemGenerationWorkflow:
                     feedback=feedback,
                 )
 
+            misconception_failures = (
+                self._cross_solver.misconception_structure_failures(item)
+            )
+            if misconception_failures:
+                feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+                    failed_checks=misconception_failures,
+                    previous_stem_hash=item_stem_hash(item),
+                )
+                if state.fallback_ref is not None:
+                    return await self._restore_fallback(state)
+                if state.item_attempt == PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT:
+                    return await self._finalize_drop(
+                        state,
+                        reason=ProblemFailureReason.GENERATION_EXHAUSTED,
+                        detail="오개념 구조 검증 실패로 생성 시도 소진",
+                    )
+                return {}
+
             try:
                 solve_result = await self._cross_solver.solve(
                     item=item,
                     target_skill_node_id=target.skill_node_id,
                     execution_context=execution_context,
                 )
-            # 교차 풀이는 ParseFailed만 재시도한다. LlmError보다 반드시 먼저 잡아야 한다.
+                misconception_check = await self._cross_solver.check_misconceptions(
+                    item=item,
+                    execution_context=execution_context,
+                )
+            # 교차 검증은 ParseFailed만 재시도한다. LlmError보다 반드시 먼저 잡아야 한다.
             # 🔴 **redaction 차단을 첫 판에 확정으로 읽지 않는다.**
-            #   교차 풀이 프롬프트에는 **방금 생성된 문항 본문**이 실린다. 그 한국어 문장에
+            #   교차 검증 프롬프트에는 **방금 생성된 문항 본문**이 실린다. 그 한국어 문장에
             #   인명 후보가 한 문장에 둘 이상 들어가면 전송이 막히는데, 그건 **이 문항의
             #   표현 문제**이지 검증 불가가 아니다 — 문항을 다시 뽑으면 대개 풀린다.
             # ⚠ 그래서 `ParseFailed` 와 **같은 자리**에 둔다: 시도 예산을 쓰고, 소진됐을 때만
@@ -616,6 +638,7 @@ class ProblemGenerationWorkflow:
             cross_result = validate_cross_solve(
                 item,
                 solve_result,
+                misconception_check,
                 self._verify_config,
             )
             if not cross_result.passed:

@@ -20,7 +20,7 @@ REGISTRY_PATH = PROMPTS_ROOT / "registry.yaml"
 TEMPLATES_ROOT = PROMPTS_ROOT / "templates"
 
 
-def test_problem_generation_registry_has_five_versioned_prompts() -> None:
+def test_problem_generation_registry_has_six_versioned_prompts() -> None:
     registry = load_prompt_registry(REGISTRY_PATH)
 
     # ⚠ registry에는 pg 외 프롬프트도 산다(classify 등) — **pg.* 만** 본다.
@@ -33,9 +33,11 @@ def test_problem_generation_registry_has_five_versioned_prompts() -> None:
         "pg.source_material.v1",
         "pg.items.v1",
         "pg.cross_solve.v1",
+        "pg.misconception_check.v1",
         "pg.refine.v1",
     }
     assert registry.get("pg.cross_solve.v1").role is ModelRole.VERIFIER
+    assert registry.get("pg.misconception_check.v1").role is ModelRole.VERIFIER
     assert registry.get("pg.refine.v1").role is ModelRole.GENERATOR
 
 
@@ -83,6 +85,10 @@ def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
         (
             "pg.cross_solve.v1",
             {"blind_item_json", "target_metadata_json"},
+        ),
+        (
+            "pg.misconception_check.v1",
+            {"misconception_payload_json"},
         ),
         (
             "pg.refine.v1",

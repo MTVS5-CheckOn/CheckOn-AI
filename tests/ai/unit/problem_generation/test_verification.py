@@ -17,13 +17,18 @@ from ai.contracts.problem_generation import (
     EvidenceAnchor,
     EvidenceKind,
     GeneratedItem,
+    MisconceptionCheckResult,
+    MisconceptionChoiceCheck,
     ProblemRequest,
     SolveResult,
     TargetKind,
     TargetSource,
 )
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
-from ai.problem_generation.domain.cross_solve import validate_cross_solve
+from ai.problem_generation.domain.cross_solve import (
+    validate_cross_solve,
+    validate_misconception_structure,
+)
 from ai.problem_generation.domain.difficulty import (
     classify_t1_difficulty,
     estimate_t1_difficulty,
@@ -34,6 +39,7 @@ from ai.problem_generation.domain.policy import ReservedTypeTagWeight
 from ai.problem_generation.domain.rules import RuleValidationResult, RuleValidator
 from ai.problem_generation.infrastructure.config import (
     load_banned_topics,
+    load_misconception_tags,
     load_verify_config,
 )
 
@@ -96,6 +102,22 @@ def _solve(**changes: object) -> SolveResult:
     }
     payload.update(changes)
     return SolveResult.model_validate(payload)
+
+
+def _misconception_check(
+    *,
+    inconsistent: frozenset[int] = frozenset(),
+) -> MisconceptionCheckResult:
+    return MisconceptionCheckResult(
+        checks=tuple(
+            MisconceptionChoiceCheck(
+                choice_no=no,
+                consistent=no not in inconsistent,
+                reason="오답 사유와 오개념 라벨의 의미를 대조했다.",
+            )
+            for no in range(2, 6)
+        )
+    )
 
 
 def _context_pack() -> ContextPack:
@@ -227,7 +249,7 @@ def test_cross_gate_and_t1_difficulty_are_code_determined() -> None:
     item = _item(evidence_refs=("grammar:rule-1", "grammar:rule-2"))
 
     solve = _solve()
-    cross = validate_cross_solve(item, solve, config)
+    cross = validate_cross_solve(item, solve, _misconception_check(), config)
     estimate = estimate_t1_difficulty(item=item, solve=solve, config=config)
 
     assert cross.passed
@@ -243,10 +265,90 @@ def test_cross_gate_and_t1_difficulty_are_code_determined() -> None:
     mismatch = validate_cross_solve(
         item,
         _solve(chosen=2, multiple_answers_possible=True, aligned=False),
+        _misconception_check(),
         config,
     )
     assert not mismatch.passed
     assert len(mismatch.failed_checks) == 3
+
+
+def test_misconception_structure_rejects_tag_outside_area_vocabulary() -> None:
+    item = _item()
+    invalid = item.model_copy(
+        update={
+            "choices": tuple(
+                choice.model_copy(
+                    update={"misconception_tag": "outside_vocabulary"}
+                )
+                if choice.no == 2
+                else choice
+                for choice in item.choices
+            )
+        }
+    )
+
+    failed = validate_misconception_structure(
+        invalid,
+        load_misconception_tags(),
+    )
+
+    assert failed == ("C-7:오개념_어휘_이탈:2",)
+
+
+def test_misconception_structure_rejects_tag_on_correct_choice() -> None:
+    item = _item()
+    invalid = item.model_copy(
+        update={
+            "choices": tuple(
+                choice.model_copy(
+                    update={"misconception_tag": "application_target_substitution"}
+                )
+                if choice.no == 1
+                else choice
+                for choice in item.choices
+            )
+        }
+    )
+
+    failed = validate_misconception_structure(
+        invalid,
+        load_misconception_tags(),
+    )
+
+    assert failed == ("C-4:정답_오개념_표기",)
+
+
+def test_misconception_structure_rejects_missing_wrong_choice_tag() -> None:
+    item = _item()
+    invalid = item.model_copy(
+        update={
+            "choices": tuple(
+                choice.model_copy(update={"misconception_tag": None})
+                if choice.no == 2
+                else choice
+                for choice in item.choices
+            )
+        }
+    )
+
+    failed = validate_misconception_structure(
+        invalid,
+        load_misconception_tags(),
+    )
+
+    assert failed == ("C-6:오답_오개념_누락:2",)
+
+
+def test_cross_gate_rejects_why_wrong_and_misconception_contradiction() -> None:
+    result = validate_cross_solve(
+        _item(),
+        _solve(),
+        _misconception_check(inconsistent=frozenset({3})),
+        load_verify_config(),
+    )
+
+    assert not result.passed
+    assert result.failed_checks == ("C-10:오개념_설명_모순:3",)
 
 
 def test_reserved_type_tag_weight_lookup_is_an_error_not_a_zero() -> None:

@@ -16,6 +16,7 @@ from ai.contracts.diagnosis import (
     PropagatedNode,
 )
 from ai.diagnosis.diagnoser import DiagnosisConfig, diagnose
+from ai.problem_generation.infrastructure.config import load_misconception_tags
 
 GOLDEN_PATH = (
     Path(__file__).resolve().parents[4]
@@ -26,6 +27,10 @@ GOLDEN_PATH = (
     / "diagnosis"
     / "diagnosis_cases.json"
 )
+_MISCONCEPTION_VOCABULARY = {
+    area: frozenset(tag.id for tag in tags)
+    for area, tags in load_misconception_tags().areas.items()
+}
 
 
 class _GoldenExpected(BaseModel):
@@ -62,6 +67,7 @@ def _run(case: _GoldenCase, events: tuple[DiagnosisEvent, ...]) -> DiagnosisResu
         graph_version="0.1.0",
         taxonomy_version="v1",
         config_version="b-defaults-v1",
+        misconception_vocabulary=_MISCONCEPTION_VOCABULARY,
     )
 
 

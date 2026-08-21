@@ -48,6 +48,8 @@ from ai.contracts.problem_generation import (
     EvidenceAnchor,
     EvidenceKind,
     GeneratedItem,
+    MisconceptionCheckResult,
+    MisconceptionChoiceCheck,
     ProblemItemStatus,
     ProblemRequest,
     SolveResult,
@@ -254,6 +256,19 @@ def _solve_result_json() -> str:
     ).model_dump_json()
 
 
+def _misconception_check_json() -> str:
+    return MisconceptionCheckResult(
+        checks=tuple(
+            MisconceptionChoiceCheck(
+                choice_no=no,
+                consistent=True,
+                reason="오답 사유와 오개념 라벨이 일치한다.",
+            )
+            for no in range(2, 6)
+        )
+    ).model_dump_json()
+
+
 async def _unused_diagnosis(_: ProblemRequest) -> DiagnosisResult:
     raise AssertionError("teacher_manual 요청은 진단을 호출하지 않는다")
 
@@ -268,7 +283,11 @@ def _prepare(*, calls: int = 1) -> None:
                 name="http-fixture-generator",
             ),
             verifier=FakeProvider(
-                tuple(_solve_result_json() for _ in range(calls)),
+                tuple(
+                    step
+                    for _ in range(calls)
+                    for step in (_solve_result_json(), _misconception_check_json())
+                ),
                 name="http-fixture-verifier",
             ),
             has_dedicated_verifier=False,

@@ -124,7 +124,10 @@ class ProblemItemRefiner:
             external_corpus=external_corpus,
             external_similarity_max=verify_config.external_similarity_max,
         )
-        self._cross_solver = BlindCrossSolver(gateway)
+        self._cross_solver = BlindCrossSolver(
+            gateway,
+            misconception_tags=misconception_tags,
+        )
         if self._prompt.role is not ModelRole.GENERATOR:
             raise ValueError("문항 수정 프롬프트 role은 generator여야 한다")
         if self._prompt.response_schema_name != GeneratedItem.__name__:
@@ -279,12 +282,31 @@ class ProblemItemRefiner:
                 failed_checks=rule_result.failed_checks,
             )
 
+        misconception_failures = (
+            self._cross_solver.misconception_structure_failures(revised)
+        )
+        if misconception_failures:
+            return ProblemRefineOutcome(
+                applied=False,
+                blocked_reason=BlockedReason.ANSWER_INTEGRITY,
+                failed_checks=misconception_failures,
+            )
+
         solve = await self._cross_solver.solve(
             item=revised,
             target_skill_node_id=original.skill_node_id,
             execution_context=execution_context,
         )
-        cross_result = validate_cross_solve(revised, solve, self._verify_config)
+        misconception_check = await self._cross_solver.check_misconceptions(
+            item=revised,
+            execution_context=execution_context,
+        )
+        cross_result = validate_cross_solve(
+            revised,
+            solve,
+            misconception_check,
+            self._verify_config,
+        )
         if not cross_result.passed:
             return ProblemRefineOutcome(
                 applied=False,

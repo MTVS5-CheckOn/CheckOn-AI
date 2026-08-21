@@ -137,6 +137,24 @@ def _solve_result_json() -> str:
     ).model_dump_json()
 
 
+def _misconception_check_json() -> str:
+    from ai.contracts.problem_generation import (
+        MisconceptionCheckResult,
+        MisconceptionChoiceCheck,
+    )
+
+    return MisconceptionCheckResult(
+        checks=tuple(
+            MisconceptionChoiceCheck(
+                choice_no=no,
+                consistent=True,
+                reason="오답 사유와 오개념 라벨이 일치한다.",
+            )
+            for no in range(2, 6)
+        )
+    ).model_dump_json()
+
+
 class _RecordingRequestStore:
     """`put()` 호출을 세는 대역 — *"잡을 만들기 전에 끊겼는가"* 의 관측 지점.
 
@@ -167,7 +185,8 @@ def _prepare(item_type: TypeTag) -> _RecordingRequestStore:
                 (_generated_item_json(item_type),), name="reserved-tag-generator"
             ),
             verifier=FakeProvider(
-                (_solve_result_json(),), name="reserved-tag-verifier"
+                (_solve_result_json(), _misconception_check_json()),
+                name="reserved-tag-verifier",
             ),
             has_dedicated_verifier=False,
         )

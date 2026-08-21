@@ -27,6 +27,11 @@ prompts:
     role: verifier
     template: problem_generation/cross_solve.txt
     response_schema_name: SolveResult
+  - prompt_id: pg.misconception_check.v1
+    version: v1
+    role: verifier
+    template: problem_generation/misconception_check.txt
+    response_schema_name: MisconceptionCheckResult
   - prompt_id: pg.refine.v1
     version: v5
     role: generator

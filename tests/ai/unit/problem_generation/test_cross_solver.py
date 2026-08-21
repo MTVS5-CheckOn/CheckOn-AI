@@ -19,6 +19,7 @@ from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 from ai.llm.determinism import LLM_SEED
 from ai.llm.gateway import LlmGateway
 from ai.problem_generation.application.cross_solver import BlindCrossSolver
+from ai.problem_generation.infrastructure.config import load_misconception_tags
 from ai.runtime.redaction import RedactionResult, redact
 
 
@@ -38,7 +39,10 @@ def test_cross_solver_sends_only_blind_item() -> None:
         {ModelRole.VERIFIER: provider},
         transport_retry={ModelRole.VERIFIER: 0},
     )
-    solver = BlindCrossSolver(gateway)
+    solver = BlindCrossSolver(
+        gateway,
+        misconception_tags=load_misconception_tags(),
+    )
     item = GeneratedItem(
         area_tag=AreaTag.LANGUAGE,
         type_tag=TypeTag.CONCEPT,
@@ -125,7 +129,10 @@ def test_cross_solver_blocks_generated_item_with_person_name(
         {ModelRole.VERIFIER: provider},
         transport_retry={ModelRole.VERIFIER: 0},
     )
-    solver = BlindCrossSolver(gateway)
+    solver = BlindCrossSolver(
+        gateway,
+        misconception_tags=load_misconception_tags(),
+    )
     item = GeneratedItem(
         area_tag=AreaTag.LANGUAGE,
         type_tag=TypeTag.CONCEPT,

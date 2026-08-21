@@ -321,6 +321,12 @@
       },
       "overall_low": false
     },
+    "misconceptions": {
+      "by_area": {},
+      "by_node": {},
+      "excluded_missing_chosen_no": 20,
+      "excluded_missing_misconception_tag": 0
+    },
     "grid": {
       "areas": [
         "language",

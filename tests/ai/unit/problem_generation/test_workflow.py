@@ -36,6 +36,8 @@ from ai.contracts.problem_generation import (
     GeneratedItem,
     ItemResult,
     LiteratureGenre,
+    MisconceptionCheckResult,
+    MisconceptionChoiceCheck,
     ProblemFailureReason,
     ProblemGenerationState,
     ProblemItemStatus,
@@ -127,6 +129,47 @@ def _verified_literature_pool() -> LiteraturePool:
     )
 
 
+def _misconception_check_json(
+    *,
+    inconsistent: frozenset[int] = frozenset(),
+) -> str:
+    return MisconceptionCheckResult(
+        checks=tuple(
+            MisconceptionChoiceCheck(
+                choice_no=no,
+                consistent=no not in inconsistent,
+                reason="오답 사유와 오개념 라벨이 일치한다.",
+            )
+            for no in range(2, 6)
+        )
+    ).model_dump_json()
+
+
+def _expand_verifier_steps(steps: Sequence[FakeStep]) -> tuple[FakeStep, ...]:
+    expanded: list[FakeStep] = []
+    for index, step in enumerate(steps):
+        expanded.append(step)
+        if not isinstance(step, str):
+            continue
+        try:
+            SolveResult.model_validate_json(step)
+        except ValueError:
+            continue
+        if index + 1 < len(steps):
+            next_step = steps[index + 1]
+        else:
+            next_step = None
+        if isinstance(next_step, str):
+            try:
+                MisconceptionCheckResult.model_validate_json(next_step)
+            except ValueError:
+                pass
+            else:
+                continue
+        expanded.append(_misconception_check_json())
+    return tuple(expanded)
+
+
 class _WorkflowHarness:
     def __init__(
         self,
@@ -152,7 +195,7 @@ class _WorkflowHarness:
             name="fake-generator",
         )
         self.verifier_provider = FakeProvider(
-            verifier_steps,
+            _expand_verifier_steps(verifier_steps),
             name="fake-verifier",
         )
         gateway = LlmGateway(
@@ -197,7 +240,10 @@ class _WorkflowHarness:
             area_specs=area_specs,
         )
         self.literature_selector = LiteratureSelector(_verified_literature_pool())
-        self.cross_solver = BlindCrossSolver(gateway)
+        self.cross_solver = BlindCrossSolver(
+            gateway,
+            misconception_tags=load_misconception_tags(),
+        )
         self.workflow = ProblemGenerationWorkflow(
             diagnosis=self.diagnosis,
             graph_context=self.graph,
@@ -465,7 +511,7 @@ def test_literature_selection_reaches_generation_without_a_passage_llm_call() ->
     assert result.items[0].status is ProblemItemStatus.NEEDS_REVIEW
     assert result.items[0].review_reason is ReviewReason.T3_LITERATURE
     assert len(harness.generator_provider.requests) == 1
-    assert len(harness.verifier_provider.requests) == 1
+    assert len(harness.verifier_provider.requests) == 2
     stored = asyncio.run(harness.items.list_all())[0]
     assert stored.item is not None
     assert stored.item.evidence[0].quote == expected.quote
@@ -483,7 +529,7 @@ def test_same_idempotency_request_reuses_checkpoint_and_saved_result() -> None:
 
     assert second == first
     assert len(harness.generator_provider.requests) == 1
-    assert len(harness.verifier_provider.requests) == 1
+    assert len(harness.verifier_provider.requests) == 2
 
 
 def test_manual_target_skips_diagnosis_and_marks_first_success_review() -> None:
@@ -636,7 +682,7 @@ def test_same_set_duplicate_stem_is_rejected_within_shared_attempt_budget() -> N
     assert result.items[1].status is ProblemItemStatus.DROPPED
     assert result.items[1].attempt_no == 3
     assert len(harness.generator_provider.requests) == 4
-    assert len(harness.verifier_provider.requests) == 1
+    assert len(harness.verifier_provider.requests) == 2
 
 
 def test_difficulty_regeneration_uses_shared_budget_and_selects_fit() -> None:
@@ -686,7 +732,7 @@ def test_failed_difficulty_regeneration_restores_immutable_first_candidate() -> 
     assert restored.review_reason is ReviewReason.DIFFICULTY_BAND_MISMATCH
     assert restored.attempt_no == 1
     assert len(harness.generator_provider.requests) == 2
-    assert len(harness.verifier_provider.requests) == 1
+    assert len(harness.verifier_provider.requests) == 2
     candidates = asyncio.run(harness.candidates.list_all())
     assert len(candidates) == 1
     stored = asyncio.run(harness.items.list_all())[0]
@@ -778,7 +824,7 @@ def test_verifier_outage_during_difficulty_regeneration_restores_fallback() -> N
     assert final.review_reason is ReviewReason.DIFFICULTY_BAND_MISMATCH
     assert final.attempt_no == 1
     assert len(harness.generator_provider.requests) == 2
-    assert len(harness.verifier_provider.requests) == 2
+    assert len(harness.verifier_provider.requests) == 3
 
 
 def test_no_budget_for_difficulty_regeneration_never_creates_fourth_call() -> None:
@@ -857,6 +903,28 @@ def test_all_llm_error_types_during_cross_solve_follow_declared_route(
     assert len(harness.verifier_provider.requests) == expected_attempts
 
 
+def test_misconception_contradiction_exhausts_attempts_as_domain_drop() -> None:
+    inconsistent = _misconception_check_json(inconsistent=frozenset({2}))
+    harness = _WorkflowHarness(
+        generator_steps=tuple(
+            _item_json(f"오개념-모순-{attempt}") for attempt in range(3)
+        ),
+        verifier_steps=tuple(
+            step
+            for _ in range(3)
+            for step in (_solve_json(), inconsistent)
+        ),
+    )
+
+    result = _run(harness, harness.request())
+
+    assert result.status is ProblemSetStatus.FAILED
+    assert result.items[0].status is ProblemItemStatus.DROPPED
+    assert result.items[0].attempt_no == 3
+    assert result.items[0].failure_detail == "교차 풀이 불일치로 생성 시도 소진"
+    assert len(harness.verifier_provider.requests) == 6
+
+
 def test_attempt_is_checkpointed_before_external_generation_call() -> None:
     harness = _WorkflowHarness(
         generator_steps=(_item_json("중단"),),
@@ -925,7 +993,7 @@ def test_approved_dict_entry_evidence_reaches_blind_cross_solve() -> None:
     assert item_result.status is ProblemItemStatus.NEEDS_REVIEW
     assert item_result.review_reason is ReviewReason.MANUAL_TARGET_FIRST
     assert len(harness.generator_provider.requests) == 1
-    assert len(harness.verifier_provider.requests) == 1
+    assert len(harness.verifier_provider.requests) == 2
 
 
 def test_unapproved_dict_entry_evidence_stops_before_blind_cross_solve() -> None:

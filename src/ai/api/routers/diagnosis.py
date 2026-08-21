@@ -40,6 +40,7 @@ from ai.db.repositories.run_store import RunStore
 from ai.db.store_factory import build_idempotency_store, build_run_store
 from ai.diagnosis.config import default_diagnosis_runtime
 from ai.diagnosis.diagnoser import DiagnosisError, diagnose
+from ai.problem_generation.infrastructure.config import load_misconception_tags
 from ai.runtime.errors import IdempotencyConflict, SnapshotInvalid
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,10 @@ def diagnosis_versions() -> VersionSet:
 #: 기동 때 한 번 조립한다 — YAML이 깨졌으면 첫 요청이 아니라 **기동에서** 죽는 게 맞다
 #: (`problem.py`의 `_PROBLEM_FAILURE_VERSIONS`와 같은 판단).
 _DIAGNOSIS_VERSIONS: Final = diagnosis_versions()
+_MISCONCEPTION_VOCABULARY: Final = {
+    area: frozenset(tag.id for tag in tags)
+    for area, tags in load_misconception_tags().areas.items()
+}
 
 VERSION_SCOPE: Final = RouterScope(_ENDPOINT, lambda: _DIAGNOSIS_VERSIONS)
 
@@ -208,6 +213,7 @@ def _response_data(result: DiagnosisResult, *, cell_min_items: int) -> dict[str,
         "weakness_map": (
             None if weakness_map is None else weakness_map.model_dump(mode="json")
         ),
+        "misconceptions": result.misconceptions.model_dump(mode="json"),
         "grid": build_grid(
             None if weakness_map is None else weakness_map.cells,
             cell_min_items=cell_min_items,
@@ -270,6 +276,7 @@ async def post_diagnosis(request: Request) -> dict[str, Any]:
             graph_version=graph.meta.graph_version,
             taxonomy_version=graph.meta.taxonomy_version,
             config_version=document.version,
+            misconception_vocabulary=_MISCONCEPTION_VOCABULARY,
         )
     except DiagnosisError as exc:
         # 🔴 400이다 — 없는 노드 참조·같은 event_id 내용 충돌은 **호출자가 고칠 요청**이다

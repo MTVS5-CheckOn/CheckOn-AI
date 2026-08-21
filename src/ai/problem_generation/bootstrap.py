@@ -123,7 +123,10 @@ def build_problem_workflow(
             area_specs=area_specs,
         ),
         literature_selector=build_literature_selector(resolved_verify_config),
-        cross_solver=BlindCrossSolver(gateway),
+        cross_solver=BlindCrossSolver(
+            gateway,
+            misconception_tags=misconception_tags,
+        ),
         candidate_store=candidate_store,
         item_store=item_store,
         set_store=set_store or InMemoryProblemSetStore(),
