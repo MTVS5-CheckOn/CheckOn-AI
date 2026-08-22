@@ -205,6 +205,11 @@ BE 책임:
 - 관찰 SLO를 넘긴 잡은 `processing`으로 두고 reconciliation이 계속 조회한다.
 - timeout이 나도 같은 `job_id`를 유지하며 중복 POST를 만들지 않는다.
 - 성공 시 `data.result.set_id`를 저장한다.
+- AI 잡을 외부에서 취소하는 HTTP 엔드포인트는 없다. 관찰 SLO를 넘겨도 잡을 중단시킬 수
+  없고 관찰만 종료한다. `cancelled`는 AI 내부 사유로만 도달한다.
+- 외부 취소 HTTP 부재는 problem만의 경계가 아니라 counsel도 같다
+  (`09_integration_proposals.md` §2-26.4 3번 ·
+  `src/ai/api/routers/counsel.py:198,1408-1411`).
 
 ## 7. Step 4·5 — 문항 목록과 상세
 
@@ -287,6 +292,19 @@ Domain status:
 - HTTP status와 `error.code`를 함께 사용한다.
 - 비공개 `failure_detail`을 사용자에게 노출하지 않는다.
 - 화면 문구는 BE·FE가 공개 reason code를 기준으로 번역한다.
+
+PR #374는 FastAPI 자동 생성 OpenAPI에서 도달 불가한 422만 제거했다. 전역 제거가 아니다.
+경로와 타입 근거는 `src/ai/api/routers/problem.py:594-596,803-804,853-855,992-994`다.
+
+| problem 경로 | path 파라미터 | OpenAPI 422 | BE·Adapter 동작 |
+| --- | --- | --- | --- |
+| `GET /v1/problems/{job_id}` | `job_id: str` | 제거 | 종전 422는 도달 불가였으므로 핸들러를 만들지 않는다. |
+| `GET /v1/problems/{set_id}/items` | `set_id: str` | 제거 | 종전 422는 도달 불가였으므로 핸들러를 만들지 않는다. |
+| `GET /v1/problems/{set_id}/items/{slot_index}` | `set_id: str`, `slot_index: int` | 유지 | 정수 변환 실패의 422를 처리한다. |
+| `POST /v1/problems/{set_id}/items/{slot_index}/revisions` | `set_id: str`, `slot_index: int` | 유지 | 정수 변환 실패의 422를 처리한다. |
+
+배포 `/openapi.json`이 바뀌었으므로 이미 클라이언트를 생성했다면 다시 생성한다. 이번이 첫
+전달이라 아직 생성하지 않았다면 재실행이 아니라 이 스키마로 최초 생성한다.
 
 ## 11. Kafka–HTTP Adapter
 
@@ -418,6 +436,7 @@ BE는 위 검증이 진행 중이어도 AI 재시작을 이유로 새 멱등키�
 - [ ] 5영역별 자료 요청을 정확히 조립한다.
 - [ ] 202의 `job_id`, `execution_id`, `status=queued`를 저장한다.
 - [ ] `Retry-After` polling과 reconciliation을 구현한다.
+- [ ] 외부 취소 HTTP가 없음을 전제로 재시도·타임아웃 정책을 세우고 관찰 종료를 잡 취소로 처리하지 않는다.
 - [ ] Worker phase와 domain status를 별도 저장한다.
 - [ ] terminal 결과의 `set_id`로 items를 조회한다.
 - [ ] 각 `slot_index` 상세를 조회한다.
