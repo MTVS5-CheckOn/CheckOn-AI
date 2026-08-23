@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>체크온 — 리포트 스튜디오 · 목록 / 수정 / 발송</title>
+<style>
+/* ══════════ 1. 토큰 ══════════
+   앞 세 줄은 체크온_발행내역_재사용_v1 의 것을 그대로 쓴다 — 같은 제품의 같은 셸이다.
+   그 아래는 리포트 지면에만 필요해서 새로 세웠다. 색을 이 블록 밖에서 쓰지 않는다. */
+:root{
+  --ink:#1f2937;--sub:#6b7280;--line:#e5e7eb;--line2:#d1d5db;--bg:#f1f3f5;
+  --accent:#2563eb;--brand:#ff9a3c;--soft:#eff6ff;
+  --d-blue:#3b82f6;--d-green:#5cb894;--d-yellow:#f0c04a;--d-red:#e2574c;--d-track:#e8eaed;
+
+  /* A4 — CSS mm 은 96dpi 고정비라 화면 794×1123px 과 인쇄가 정확히 같다 */
+  --pw:210mm;--ph:297mm;--pmar:14mm 15mm;
+  --paper:#fff;--pline:#eceef1;--pgray:#9ca3af;
+  --ai:#7c3aed;--ai-bg:#f5f3ff;--ai-line:#ddd6fe;
+  --tch:#b45309;--tch-bg:#fffbeb;--tch-line:#fcd34d;   /* 강사가 직접 쓴 문단 */
+  --ok:#065f46;--ok-bg:#ecfdf5;--ok-line:#6ee7b7;
+  --warn:#92400e;--warn-bg:#fffbeb;--warn-line:#fcd34d;
+  --no:#991b1b;--no-bg:#fff7f7;--no-line:#fca5a5;
+  --hold:#475569;--hold-bg:#f8fafc;--hold-line:#cbd5e1;
+  --mono:ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Pretendard','Apple SD Gothic Neo','Segoe UI',sans-serif;}
+body{background:var(--bg);color:var(--ink);font-size:13px;}
+
+/* ══════════ 2. 셸 ══════════ */
+.app{display:grid;grid-template-columns:212px 1fr;min-height:100vh;}
+.nav{background:#fff;border-right:1px solid var(--line);padding:18px 12px;}
+.logo{font-size:21px;font-weight:800;color:var(--brand);padding:0 8px 2px;letter-spacing:-.5px;}
+.logo span{color:#5bc8f5;}
+.who{font-size:11.5px;color:var(--sub);padding:8px 8px 10px;font-weight:600;}
+.acad{width:100%;border:1px solid var(--line2);border-radius:8px;padding:7px 9px;font-size:12px;background:#fff;margin-bottom:14px;}
+.nav a{display:block;padding:9px 10px;border-radius:8px;color:#374151;text-decoration:none;font-size:12.5px;margin-bottom:2px;cursor:pointer;}
+.nav a:hover{background:#f8fafc;}
+.nav a.on{background:#f1f5f9;font-weight:700;color:#111827;}
+.nav .sub2{display:block;padding:7px 10px 7px 22px;font-size:12px;color:var(--sub);border-radius:8px;cursor:pointer;}
+.nav .sub2:hover{background:#f8fafc;}
+.nav .sub2.on{background:var(--soft);color:#1d4ed8;font-weight:700;}
+.nav .grp{font-size:10px;color:var(--pgray);padding:12px 10px 5px;font-weight:700;letter-spacing:.4px;}
+.main{padding:16px 20px 40px;min-width:0;}
+
+/* ══════════ 3. 공용 컴포넌트 — 발행내역 v1 과 동일 ══════════ */
+.pgttl{font-size:16px;font-weight:800;margin-bottom:3px;}
+.pgsub{font-size:11.5px;color:var(--sub);margin-bottom:12px;line-height:1.7;}
+.panel{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;}
+.btn{padding:7px 13px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:12px;cursor:pointer;color:#374151;}
+.btn:hover{border-color:var(--accent);color:var(--accent);}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;}
+.btn.pri:hover{background:#1d4ed8;color:#fff;}
+.btn.off{opacity:.42;cursor:not-allowed;}
+.btn.off:hover{border-color:var(--line2);color:#374151;}
+.btn.sm{padding:4px 9px;font-size:11px;}
+.btn.ic{padding:4px 8px;font-size:12px;line-height:1.3;}
+.sel{border:1px solid var(--line2);border-radius:999px;padding:6px 11px;font-size:12px;background:#fff;cursor:pointer;}
+.filters{display:flex;gap:7px;align-items:center;padding:12px 16px;flex-wrap:wrap;}
+.note{font-size:11.5px;color:var(--sub);line-height:1.75;padding:12px 16px;}
+.note b{color:#374151;}
+.red{color:#b91c1c;font-weight:700;}
+.sec{margin-bottom:16px;}
+.sec>h4{font-size:11.5px;color:var(--sub);font-weight:700;margin-bottom:7px;}
+.box{border:1px solid var(--line);border-radius:9px;padding:11px 13px;font-size:12px;line-height:1.8;background:#fcfcfd;}
+.box .r{display:flex;justify-content:space-between;gap:10px;}
+.box .r span{color:var(--sub);}
+.chip{display:inline-block;font-size:10px;padding:2px 8px;border-radius:999px;margin:1px 3px 1px 0;border:1px solid;}
+.chip.a{background:var(--soft);border-color:#bfdbfe;color:#1d4ed8;}
+.chip.t{background:var(--ai-bg);border-color:var(--ai-line);color:#6d28d9;}
+.chip.b{background:#f8fafc;border-color:var(--line2);color:#475569;}
+.chip.warn{background:#fff7ed;border-color:#fdba74;color:#9a3412;}
+.verd{border-radius:9px;padding:11px 13px;font-size:12px;line-height:1.75;}
+.verd.ok{background:var(--ok-bg);border:1px solid var(--ok-line);color:var(--ok);}
+.verd.warn{background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn);}
+.verd.no{background:var(--no-bg);border:1px solid var(--no-line);color:var(--no);}
+.verd.hold{background:var(--hold-bg);border:1px solid var(--hold-line);color:var(--hold);}
+.verd code{background:rgba(0,0,0,.06);border-radius:4px;padding:1px 5px;font-size:10.5px;font-family:var(--mono);}
+.verd .line{display:flex;justify-content:space-between;gap:10px;border-top:1px dotted rgba(0,0,0,.14);margin-top:7px;padding-top:6px;}
+.tg{font-size:10px;padding:2px 8px;border-radius:5px;font-weight:700;}
+.tg.free{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-line);}
+.tg.cost{background:#fff7ed;color:#9a3412;border:1px solid #fdba74;}
+.tg.re{background:var(--soft);color:#1d4ed8;border:1px solid #bfdbfe;}
+.chk{width:15px;height:15px;border:1.5px solid var(--line2);border-radius:4px;flex:0 0 auto;position:relative;background:#fff;cursor:pointer;}
+.chk.on{background:var(--accent);border-color:var(--accent);}
+.chk.on::after{content:'\2713';color:#fff;font-size:11px;position:absolute;left:2px;top:-2px;}
+.chk.dis{background:#f3f4f6;border-style:dashed;cursor:not-allowed;}
+.ctr{width:100%;border-collapse:collapse;font-size:11.5px;}
+.ctr th,.ctr td{border-bottom:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top;}
+.ctr th{background:#fafbfc;color:var(--sub);font-size:10.5px;font-weight:700;}
+.ctr code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:10.5px;font-family:var(--mono);color:#374151;}
+.own{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:4px;font-weight:700;color:#fff;}
+.own.ai{background:#b45309;} .own.be{background:#0e7490;} .own.fe{background:#7c3aed;}
+details summary{cursor:pointer;font-size:12px;font-weight:700;padding:11px 16px;}
+
+/* ══════════ 4. 목록 ══════════ */
+.mnav{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);}
+.mnav .m{font-size:17px;font-weight:800;min-width:110px;text-align:center;font-variant-numeric:tabular-nums;}
+.mnav .side{font-size:12.5px;color:var(--pgray);cursor:pointer;padding:5px 9px;border-radius:6px;font-variant-numeric:tabular-nums;}
+.mnav .side:hover{background:#f8fafc;color:var(--accent);}
+.sum{display:flex;border-top:1px solid var(--line);}
+.sum div{flex:1;padding:11px 16px;border-right:1px solid var(--line);}
+.sum div:last-child{border:none;}
+.sum .k{font-size:10.5px;color:var(--sub);}
+.sum .v{font-size:15px;font-weight:800;margin-top:3px;}
+.sum .v small{font-size:11px;color:var(--pgray);font-weight:500;}
+.rt{width:100%;border-collapse:collapse;font-size:12px;}
+.rt th{background:#fafbfc;color:var(--sub);font-size:10.5px;font-weight:700;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);}
+.rt td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle;}
+.rt tr:last-child td{border-bottom:none;}
+.rt tbody tr{cursor:pointer;}
+.rt tbody tr:hover{background:#fbfdff;}
+.rt tr.dim{background:#fcfcfd;}
+.rt tr.dim:hover{background:#fafafa;}
+.rt .nm{font-weight:700;font-size:12.5px;}
+.rt .nm small{display:block;font-weight:500;font-size:10.5px;color:var(--pgray);margin-top:2px;font-family:var(--mono);}
+.rt .num{font-variant-numeric:tabular-nums;font-weight:700;}
+.rt .dash{color:var(--pgray);font-weight:500;}
+.rt .acts{display:flex;gap:4px;justify-content:flex-end;}
+.st{font-size:11px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-weight:700;}
+.st i{width:6px;height:6px;border-radius:50%;display:inline-block;background:var(--pgray);}
+.st.done{color:#1d4ed8;} .st.done i{background:var(--d-blue);}
+.st.sent{color:var(--ok);} .st.sent i{background:var(--d-green);}
+.st.hold{color:var(--hold);} .st.hold i{background:var(--hold-line);}
+.st.no{color:#9f1239;} .st.no i{background:#e11d48;}
+.empty{padding:26px;color:var(--pgray);text-align:center;}
+
+/* ══════════ 5. 수정 ══════════ */
+.edit{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;align-items:start;}
+.tool{background:#fff;border:1px solid var(--line);border-radius:12px;position:sticky;top:16px;max-height:calc(100vh - 32px);display:flex;flex-direction:column;}
+.tool .th{padding:13px 15px;border-bottom:1px solid var(--line);}
+.tool .tb{padding:14px 15px;overflow:auto;flex:1;}
+.tool .tf{padding:12px 15px;border-top:1px solid var(--line);background:#fafbfc;}
+.tool.ro .tb,.tool.ro .tf{opacity:.42;pointer-events:none;}
+.scope{display:flex;gap:6px;margin-bottom:10px;}
+.scope button{flex:1;padding:7px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:11.5px;cursor:pointer;color:#374151;}
+.scope button.on{border-color:var(--accent);background:var(--soft);color:#1d4ed8;font-weight:700;}
+.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.presets button{padding:9px 6px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:11.5px;cursor:pointer;color:#374151;line-height:1.4;}
+.presets button:hover{border-color:var(--accent);color:var(--accent);}
+.presets button small{display:block;font-size:9.5px;color:var(--pgray);margin-top:2px;font-family:var(--mono);}
+textarea.instr{width:100%;min-height:62px;border:1px solid var(--line2);border-radius:8px;padding:9px 10px;font-size:12px;resize:vertical;line-height:1.6;}
+textarea.instr:focus{outline:none;border-color:var(--accent);}
+.rev{display:flex;align-items:flex-start;gap:8px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:5px;font-size:11.5px;line-height:1.6;}
+.rev .no{font-weight:800;font-family:var(--mono);color:var(--sub);flex:0 0 auto;}
+.rev.cur{border-color:var(--accent);background:#fbfdff;}
+.rev.blocked{border-color:var(--no-line);background:var(--no-bg);}
+.rev.tchrev{border-color:var(--tch-line);background:var(--tch-bg);}
+.rev[data-act]{cursor:pointer;}
+.rev[data-act]:hover{border-color:var(--accent);}
+.rev .tail{margin-left:auto;flex:0 0 auto;}
+
+/* ══════════ 6. 발송 ══════════ */
+.srow{display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;}
+.srow:last-child{border-bottom:none;}
+.srow:hover{background:#fbfdff;}
+.srow.dis{background:#fcfcfd;cursor:default;}
+.srow.dis:hover{background:#fcfcfd;}
+.srow .grow{flex:1;min-width:0;}
+.srow .tail{margin-left:auto;text-align:right;flex:0 0 auto;}
+.sendbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 16px;box-shadow:0 -3px 14px rgba(0,0,0,.06);}
+.drawer{position:fixed;top:0;right:0;width:640px;max-width:100vw;height:100vh;background:#fff;border-left:1px solid var(--line2);box-shadow:-8px 0 26px rgba(0,0,0,.1);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .2s;z-index:50;}
+.drawer.open{transform:none;}
+.dh{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);}
+.dh b{font-size:14px;}
+.dbody{overflow:auto;padding:14px 16px 16px;flex:1;background:var(--bg);}
+/* A4 실물 폭(794px)이 드로어보다 넓다 — zoom 은 레이아웃까지 줄여서 가로 스크롤이 안 생긴다 */
+.dbody .sheet,.dbody .legend{zoom:.72;}
+.dfoot{border-top:1px solid var(--line);padding:12px 16px;background:#fafbfc;}
+.x{cursor:pointer;color:var(--pgray);font-size:17px;}
+
+/* ══════════ 7. 리포트 지면 ══════════
+   수정 화면 좌측 · 발송 드로어 · 인쇄 미리보기가 이 하나를 공유한다. */
+/* 모든 면이 A4 한 장으로 정규화된다 — 여백이 남아도 크기는 같다 */
+.sheet-scroll{overflow-x:auto;padding-bottom:4px;}
+.sheet{width:var(--pw);margin:0 auto;}
+.pg{position:relative;display:flex;flex-direction:column;width:var(--pw);min-height:var(--ph);
+    background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:var(--pmar);margin-bottom:14px;
+    box-shadow:0 2px 10px rgba(30,55,100,.05);}
+.pgno{position:absolute;left:0;right:0;bottom:7mm;text-align:center;font-size:9px;color:var(--pgray);letter-spacing:.06em;}
+.ovf{position:absolute;top:6px;right:8px;background:var(--no-bg);border:1px solid var(--no-line);color:var(--no);
+     font-size:9.5px;font-weight:800;border-radius:5px;padding:2px 7px;}
+.legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--sub);background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 14px;margin-bottom:10px;width:var(--pw);margin-left:auto;margin-right:auto;}
+.legend b{color:#374151;}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px;}
+.legend .fix{background:var(--accent);} .legend .gen{background:var(--ai);} .legend .tch{background:var(--tch);}
+.cover{justify-content:flex-start;}
+.cover .rule{border-bottom:1px solid var(--ink);padding-bottom:7px;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;}
+.cover .big{margin-top:70px;text-align:right;font-size:38px;font-weight:300;line-height:1.24;color:#4b5563;letter-spacing:-.01em;}
+.cover .sub{text-align:right;margin-top:14px;font-size:13px;font-weight:700;line-height:1.8;}
+.cover .sub small{display:block;font-weight:500;color:var(--sub);font-family:var(--mono);font-size:10.5px;margin-top:5px;}
+.cover .mark{margin-top:auto;padding-top:56px;text-align:center;font-size:19px;font-weight:800;color:var(--brand);letter-spacing:-.5px;}
+.cover .mark span{color:#5bc8f5;}
+.rhead{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1.5px solid var(--ink);padding-bottom:9px;margin-bottom:6px;}
+.rhead h3{font-size:19px;font-weight:800;letter-spacing:-.02em;}
+.rhead .who2{font-size:13px;font-weight:700;}
+.rmeta{text-align:right;font-size:10.5px;color:var(--sub);margin-bottom:22px;font-variant-numeric:tabular-nums;}
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px 34px;}
+.kpi .kh{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
+.tag{font-size:11.5px;font-weight:800;color:#fff;border-radius:6px;padding:4px 10px;white-space:nowrap;}
+.kpi .cmp{font-size:10px;color:var(--pgray);}
+.kpi .cmp::before{content:'\25CB\00A0';}
+.kpi .row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.kpi .v{font-size:44px;font-weight:800;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}
+.kpi .v small{font-size:17px;font-weight:700;margin-left:1px;}
+.kpi .foot{font-size:9.5px;color:var(--pgray);line-height:1.7;margin-top:10px;padding-top:8px;border-top:1px dotted var(--pline);}
+.spark{flex:0 0 172px;}
+.spark .xs{display:flex;justify-content:space-between;font-size:9.5px;color:var(--pgray);margin-top:2px;}
+.spark .xs b{font-weight:800;}
+.bandbar{display:flex;height:14px;border-radius:99px;overflow:hidden;background:var(--d-track);margin-top:14px;}
+.bandbar i{display:block;height:100%;}
+.bandlg{display:flex;justify-content:space-between;font-size:9.5px;color:var(--sub);margin-top:7px;}
+.bandlg i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:4px;}
+.bandlg b{font-weight:800;color:var(--ink);}
+.asof{display:inline-block;font-size:9.5px;color:var(--pgray);border:1px solid var(--pline);border-radius:5px;padding:2px 7px;margin-top:16px;}
+.wk{margin-bottom:19px;}
+.wk .wh{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
+.wbars{display:flex;align-items:flex-end;gap:4px;height:60px;border-bottom:1.5px solid var(--pline);}
+.wbars .c{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;height:100%;position:relative;}
+.wbars .b{width:64%;border-radius:2px 2px 0 0;background:var(--d-track);}
+.wbars .c.on .b{background:var(--bar);}
+.wbars .t{font-size:9px;color:var(--pgray);font-variant-numeric:tabular-nums;}
+.wbars .c.on .t{color:var(--bar);font-weight:800;}
+.wbars .mk{position:absolute;top:-3px;font-size:11px;line-height:1;}
+.wxs{display:flex;gap:4px;margin-top:5px;}
+.wxs span{flex:1;text-align:center;font-size:9px;color:var(--pgray);}
+.wxs span.on{color:var(--ink);font-weight:800;}
+.mx{width:100%;border-collapse:collapse;font-size:11.5px;}
+.mx th,.mx td{border:1px solid var(--pline);padding:7px 8px;text-align:center;}
+.mx th{background:#fafbfc;color:var(--sub);font-size:10.5px;font-weight:700;}
+.mx th.a{text-align:left;width:126px;}
+.mx td.a{text-align:left;font-weight:700;}
+.mx td.a small{display:block;font-weight:500;font-size:9.5px;color:var(--pgray);}
+.mx td.res{color:var(--pgray);background:repeating-linear-gradient(135deg,#fafafa,#fafafa 4px,#f4f4f5 4px,#f4f4f5 8px);font-size:10px;}
+.cell{display:block;font-weight:800;font-size:13px;font-variant-numeric:tabular-nums;}
+.cell small{display:block;font-weight:500;font-size:9.5px;color:var(--pgray);margin-top:1px;}
+.cell.weak{color:var(--d-red);} .cell.ok{color:var(--d-green);} .cell.unknown{color:var(--pgray);}
+.dg{display:flex;gap:38px;align-items:center;margin-bottom:22px;}
+.dg .n2{font-size:44px;font-weight:800;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}
+.dg .k{font-size:11px;color:var(--sub);margin-bottom:5px;}
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:22px;}
+.tl{border:1px solid var(--pline);border-radius:9px;overflow:hidden;}
+.tl h5{font-size:11.5px;font-weight:800;color:#fff;padding:7px 12px;}
+.tl.good h5{background:#1d4ed8;} .tl.bad h5{background:var(--d-red);}
+.tl .li{display:flex;align-items:center;gap:9px;padding:8px 12px;border-top:1px solid var(--pline);font-size:11.5px;}
+.tl .li:first-of-type{border-top:none;}
+.tl .li .r{margin-left:auto;font-weight:800;font-variant-numeric:tabular-nums;}
+.tl .li.none{color:var(--pgray);}
+.bars .li{display:flex;align-items:center;gap:10px;padding:7px 2px;font-size:11.5px;border-bottom:1px solid var(--pline);}
+.bars .li:last-child{border-bottom:none;}
+.bars .nm{flex:0 0 180px;}
+.bars .nm em{font-style:normal;color:var(--pgray);font-size:10px;}
+.bars .bg{flex:1;height:8px;border-radius:99px;background:var(--d-track);position:relative;}
+.bars .fg{height:100%;border-radius:99px;background:var(--pgray);}
+.bars .li.weak .fg{background:var(--d-red);} .bars .li.ok .fg{background:var(--d-blue);}
+.bars .avg{position:absolute;top:-3px;width:2px;height:14px;background:#cbd5e1;border-radius:1px;}
+.bars .r{flex:0 0 48px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;}
+.bars .r.dim{color:var(--pgray);font-weight:500;}
+.rad{display:grid;grid-template-columns:320px minmax(0,1fr);gap:24px;align-items:center;}
+.rleg{display:flex;gap:15px;justify-content:center;font-size:10.5px;color:var(--sub);margin-top:4px;}
+.rleg b{color:var(--ink);}
+.rside .li{display:flex;align-items:center;gap:8px;border:1px solid var(--pline);border-radius:8px;padding:9px 12px;margin-bottom:6px;font-size:12px;}
+.rside .li .v{margin-left:auto;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}
+/* 해설 문단 — 지면에서 그대로 편집한다(강사 직접 수정 · draft_edit) */
+.blk{border-left:3px solid var(--ai);background:var(--ai-bg);border-radius:0 9px 9px 0;padding:11px 15px 12px 14px;margin-bottom:8px;font-size:12.5px;line-height:1.85;}
+.blk .bt{font-size:9.5px;font-weight:800;color:var(--ai);font-family:var(--mono);margin-bottom:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.blk .bt .cr{background:#fff;border:1px solid var(--ai-line);border-radius:4px;padding:0 5px;}
+.blk .bt .own2{margin-left:auto;font-family:inherit;letter-spacing:.02em;}
+.blk .body2{outline:none;border-radius:5px;}
+.blk.editable .body2{cursor:text;}
+.blk.editable:hover{background:#eee7ff;}
+.blk.editable .body2:hover{box-shadow:inset 0 0 0 1px var(--ai-line);}
+.blk.editable .body2:focus{box-shadow:0 0 0 2px var(--accent);background:#fff;padding:2px 5px;margin:-2px -5px;}
+.blk.on{box-shadow:0 0 0 2px var(--ai);}
+.blk.tch{border-left-color:var(--tch);background:var(--tch-bg);}
+.blk.tch .bt{color:var(--tch);}
+.blk.tch .bt .cr{border-color:var(--tch-line);}
+.blk.tch.editable:hover{background:#fff6e0;}
+.blk.gone{background:var(--hold-bg);border-left-color:var(--hold-line);color:var(--hold);}
+.blk.gone .bt{color:var(--hold);}
+.edithint{font-size:10.5px;color:var(--sub);background:#fff;border:1px dashed var(--line2);border-radius:8px;padding:8px 12px;margin-bottom:10px;}
+.edithint b{color:var(--ink);}
+.n{border-bottom:1px dotted var(--accent);font-weight:800;color:#1d4ed8;font-variant-numeric:tabular-nums;}
+.robar{display:flex;align-items:center;gap:9px;background:var(--ok-bg);border:1px solid var(--ok-line);color:var(--ok);border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:10px;}
+.hold-pg{text-align:center;justify-content:center;}
+.hold-pg .em{font-size:34px;margin-bottom:14px;}
+
+/* ══════════ 8. 인쇄 — 지면이 이미 A4 라 그대로 한 장씩 나간다 ══════════ */
+@page{size:A4;margin:0;}
+@media print{
+  .nav,.tool,.sendbar,.drawer,.legend,.ovf,.no-print{display:none!important;}
+  .app{display:block;} .main{padding:0;} body{background:#fff;}
+  .sheet-scroll{overflow:visible;}
+  .pg{border:none;border-radius:0;box-shadow:none;margin:0;break-after:page;}
+  .pg:last-child{break-after:auto;}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="nav">
+    <div class="logo">Check<span>On</span></div>
+    <div class="who">Standard · 김서현 선생님</div>
+    <select class="acad"><option>가상융합기술 아카데미</option></select>
+    <a>대시보드</a><a>클래스 관리</a><a>학생 관리</a><a>학부모 관리</a>
+    <div class="grp">스튜디오</div>
+    <a>문제 출제 스튜디오</a>
+    <a class="on">리포트 스튜디오</a>
+    <span class="sub2" data-act="view" data-v="list">리포트 목록</span>
+    <span class="sub2" data-act="view" data-v="send">리포트 발송</span>
+  </aside>
+
+  <main class="main" id="main"></main>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="dh"><b id="dTitle">리포트 상세</b><span class="x" data-act="close-drawer">&#10005;</span></div>
+  <div class="dbody" id="dBody"></div>
+  <div class="dfoot" id="dFoot"></div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════
+   와이어프레임 — 데이터는 전부 목업이다. 통신·저장 없음.
+   어휘값(영역·유형·상태·차단사유)만은 저장소 정본을 그대로 쓴다:
+     src/ai/contracts/taxonomy.py    AreaTag · TypeTag
+     src/ai/contracts/composition.py DraftStatus · DraftKind · BlockType
+     src/ai/contracts/diagnosis.py   CellVerdict
+     docs/part_a/06_refine_policy.md preset 3종 · blocked_reason
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── 1. 어휘 ────────────────────────────────────────────────────── */
+const AREA = [
+  {k:'language',       n:'언어(문법)',   track:'선택'},
+  {k:'media',          n:'매체',         track:'선택'},
+  {k:'literature',     n:'문학',         track:'공통'},
+  {k:'reading',        n:'독서',         track:'공통'},
+  {k:'speech_writing', n:'화법과작문',   track:'선택'}
+];
+const TYPE = [
+  {k:'fact',    n:'사실 확인'},
+  {k:'infer',   n:'추론'},
+  {k:'critic',  n:'비판·평가'},
+  {k:'concept', n:'개념·지식'},
+  {k:'apply',   n:'적용·창의', reserved:true}   /* v1 미산출 · 라벨만 갖는다 */
+];
+const V1_TYPE = TYPE.filter(t=>!t.reserved);
+
+const VERDICT = {
+  weak:    {n:'약점 확정',  hint:'자기 평균보다 뚜렷하게 낮음'},
+  ok:      {n:'양호',       hint:'자기 평균과 비슷하거나 높음'},
+  unknown: {n:'판단 보류',  hint:'표본이 적어 판단하지 않음'}
+};
+const STATUS = {
+  generated:             {n:'생성 완료',              c:'done'},
+  rejected_insufficient: {n:'데이터 부족 · 이번 달 생략', c:'hold'},
+  failed:                {n:'생성 실패',              c:'no'}
+};
+const CHART = {
+  weakness_by_area:    '영역별 약점 현황',
+  improvement_trend:   '보강 후 개선 추이',
+  national_percentile: '전국 백분위'
+};
+const BLOCK_KO = {greeting:'인사', fact:'학습 요약', suggestion:'제안', closing:'맺음'};
+/* 06_refine_policy §4 — 차단은 에러가 아니라 200 이다 */
+const BLOCKED = {
+  comparison_exposure:{n:'반 평균·석차 노출 지시', pre:true,  msg:'반 평균·석차는 학부모 문서에 넣을 수 없습니다 (내부 지표).'},
+  pii_exposure:       {n:'실명·연락처 삽입 지시',   pre:true,  msg:'개인정보는 초안에 넣을 수 없습니다.'},
+  out_of_scope:       {n:'초안과 무관한 요청',       pre:true,  msg:'이 리포트의 다듬기와 무관한 요청입니다.'},
+  evidence_missing:   {n:'근거 없는 수치·사실',      pre:false, msg:'요청하신 내용은 기록에서 확인되지 않아 반영하지 못했습니다.'},
+  tone_violation:     {n:'낙인·단정 표현 강제',      pre:false, msg:'해당 표현은 안전 기준에 걸려 완곡한 표현으로 바꿨습니다.'}
+};
+const MIN_N = 10;                 /* 셀 판정에 필요한 최소 문항 수 — 서버가 내려주는 값 */
+const PERIOD = {y:2026, m:8};     /* 화면 기본 월 */
+
+/* ── 2. 목업 원본 ───────────────────────────────────────────────── */
+const BASE = [
+  {id:'RP-2608-011', alias:'stu_a41c', nm:'김○○', grade:'고2', elective:'언어와 매체',   cls:'고2-1 · 목요일반',   kind:'report',        status:'generated',             sent:false, seed:41},
+  {id:'RP-2608-012', alias:'stu_7b20', nm:'박○○', grade:'고2', elective:'화법과 작문',   cls:'고2-1 · 목요일반',   kind:'report',        status:'generated',             sent:true,  sentAt:'2026.08.03 09:12', seed:72},
+  {id:'RP-2608-013', alias:'stu_c9f4', nm:'이○○', grade:'고3', elective:'언어와 매체',   cls:'고3 · 화금 심화반',  kind:'report',        status:'generated',             sent:false, seed:19},
+  {id:'RP-2608-014', alias:'stu_1d83', nm:'최○○', grade:'고2', elective:'미정',          cls:'고2-1 · 목요일반',   kind:'report',        status:'rejected_insufficient', sent:false, seed:83,
+   why:'학습 기록이 2주 미만입니다 (8/12 등원). 다음 달부터 제공됩니다.'},
+  {id:'RP-2608-015', alias:'stu_5e07', nm:'정○○', grade:'고3', elective:'화법과 작문',   cls:'고3 · 화금 심화반',  kind:'report',        status:'generated',             sent:true,  sentAt:'2026.08.03 09:12', seed:57},
+  {id:'RP-2608-016', alias:'stu_8a66', nm:'윤○○', grade:'고2', elective:'언어와 매체',   cls:'고2-1 · 목요일반',   kind:'report_single', status:'generated',             sent:false, seed:66},
+  {id:'RP-2608-017', alias:'stu_2f31', nm:'한○○', grade:'고3', elective:'언어와 매체',   cls:'고3 · 화금 심화반',  kind:'report',        status:'failed',                sent:false, seed:31,
+   why:'차트 해설 블록이 재생성 3회 안에 근거 대조를 통과하지 못했습니다.'},
+  {id:'RP-2608-018', alias:'stu_bb54', nm:'오○○', grade:'고2', elective:'화법과 작문',   cls:'고2-1 · 목요일반',   kind:'report',        status:'generated',             sent:false, seed:54}
+];
+
+/* ── 3. 파생 — 시드에서 결정론으로 만든다(같은 시드 = 같은 화면) ──── */
+function rng(seed){ let s=(seed*2654435761)>>>0; return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+const pc = x => Math.round(x*100);
+
+/* 선택과목이 어떤 영역을 여는가 — 공통(독서·문학)은 늘 열려 있다 */
+const ELECTIVE_AREAS = {'언어와 매체':['language','media'], '화법과 작문':['speech_writing'], '미정':[]};
+function isOffSubject(area, elective){
+  if(area.track === '공통') return false;
+  const mine = ELECTIVE_AREAS[elective] || [];
+  return mine.length > 0 && !mine.includes(area.k);
+}
+
+function build(b){
+  const r = rng(b.seed), R = Object.assign({}, b);
+  if(b.status !== 'generated') return R;
+
+  R.pct    = 34 + Math.floor(r()*52);                      /* 전국 백분위 — benchmarks 로 들어오는 단일 값 */
+  R.pctAt  = '2026-07-31';                                 /* as_of — 값과 함께 온다 */
+  /* 출제 난이도 분포 — 체크온이 발행한 세트 문항만. 학원 교재·모의고사 문항엔 밴드가 없다 */
+  R.bands  = {low: 12+Math.floor(r()*26), medium: 30+Math.floor(r()*44), high: 8+Math.floor(r()*22)};
+  R.weeks = Array.from({length:12}, (_,i) => ({
+    acc: .48 + r()*.42,
+    vol: 40 + Math.floor(r()*150),
+    mark: i===8 ? '보강' : (i===6 ? '상담' : null)          /* 개입 시점 마커 */
+  }));
+
+  /* 영역×유형 셀 — 선택과목 밖 영역은 표본이 거의 없다 */
+  R.cells = {};
+  let sum=0, cnt=0;
+  AREA.forEach(a=>{
+    const off = isOffSubject(a, b.elective);
+    V1_TYPE.forEach(t=>{
+      const n   = off ? Math.floor(r()*6) : 6 + Math.floor(r()*46);
+      const acc = .38 + r()*.50;
+      R.cells[a.k+'.'+t.k] = {n, acc};
+      if(n >= MIN_N){ sum += acc*n; cnt += n; }
+    });
+  });
+  R.acc   = cnt ? sum/cnt : 0;                             /* 전체 정답률 = 가중 평균 */
+  R.items = cnt;                                           /* graded_count — 채점된 문항만(n_solves 아님) */
+  /* 개인 기준선 — detection/baseline.Baseline: accuracy · volume(주당 평균) */
+  R.base = {acc: Math.min(.95, Math.max(.2, R.acc - .06 + r()*.12)),
+            volWeek: Math.round(R.items/4 * (.82 + r()*.34)),
+            weeksUsed: 6};
+
+  /* 판정은 자기 평균과의 거리로 — 반 평균이 아니라 자기 평균이다 */
+  Object.values(R.cells).forEach(c=>{
+    c.verdict = c.n < MIN_N ? 'unknown' : (c.acc < R.acc - .10 ? 'weak' : 'ok');
+  });
+
+  /* 영역 레이더 — 내 성취도 vs 내 기준선. 영역별 전국 평균은 benchmarks 에 없다 */
+  R.radar = AREA.map(a=>{
+    const cs = V1_TYPE.map(t=>R.cells[a.k+'.'+t.k]).filter(c=>c.n>=MIN_N);
+    const mine = cs.length ? cs.reduce((s,c)=>s+c.acc*c.n,0)/cs.reduce((s,c)=>s+c.n,0) : null;
+    return {area:a, mine, n: cs.reduce((s,c)=>s+c.n,0)};
+  });
+
+  R.blocks = blocksOf(R);
+  return R;
+}
+
+/* 해설 블록 — AI 초안의 문장 속 수치는 전부 위에서 확정된 값에서만 뽑는다(불변식 1·2).
+   각 블록은 owner 를 갖는다: 'ai'(생성 원문) | 'teacher'(강사가 지면에서 직접 고친 것).
+   강사 편집분은 draft_edit 경로이고 게이트·수치 대조를 거치지 않는다 — 그래서 표시를 가른다. */
+function blocksOf(R){
+  const weak = ranked(R,'weak')[0], good = ranked(R,'ok')[0];
+  const w1 = R.weeks[8], w2 = R.weeks[11];
+  const num = v => '<span class="n">'+v+'</span>';
+  return [
+    {seq:0, type:'greeting', html:
+      '안녕하세요, '+R.nm+' 학생 학부모님. '+num(PERIOD.m+'월')+' 한 달 동안의 학습 내용을 정리해 보내드립니다.'},
+    {seq:1, type:'fact', html:
+      '이번 달에는 모두 '+num(R.items.toLocaleString())+'문항을 풀었고 전체 정답률은 '+num(pc(R.acc)+'%')+'였습니다. '+
+      '꾸준히 분량을 채워 온 점이 기록에 그대로 남아 있습니다.'},
+    {seq:2, type:'fact', chart:'weakness_by_area', html: weak
+      ? num(weak.label)+' 항목의 정답률이 '+num(pc(weak.acc)+'%')+'로, 본인의 평균 '+num(pc(R.acc)+'%')+'보다 낮게 나타났습니다. '+
+        (good ? num(good.label)+'은(는) '+num(pc(good.acc)+'%')+'로 안정적이어서, 잘 되는 쪽의 접근 방식을 이 항목에도 옮겨 볼 수 있겠습니다.' : '')
+      : '이번 달에는 자기 평균보다 뚜렷하게 낮은 항목이 나타나지 않았습니다.'},
+    {seq:3, type:'fact', chart:'improvement_trend', html:
+      '보강을 진행한 주의 정답률이 '+num(pc(w1.acc)+'%')+'였고 이번 달 마지막 주는 '+num(pc(w2.acc)+'%')+'였습니다. '+
+      (w2.acc>=w1.acc ? '보강 이후 흐름이 위쪽으로 움직이고 있습니다.' : '아직 보강 효과가 수치로 드러나기까지는 시간이 조금 더 필요해 보입니다.')},
+    {seq:4, type:'fact', chart:'national_percentile', html:
+      '전국 동일 학년 기준 백분위는 '+num(R.pct)+'입니다. 한 달치 표본으로 계산한 참고치이며, '+
+      '지금은 순위보다 앞선 항목별 흐름을 함께 보시는 편이 도움이 됩니다.'},
+    {seq:5, type:'suggestion', html: weak
+      ? '다음 달에는 '+num(weak.label)+'을(를) 주 1회 소단위로 배치하려 합니다. 한 번에 많이 하기보다 짧게 자주 만나는 편이 이 유형에는 잘 맞습니다.'
+      : '다음 달에는 지금 흐름을 유지하면서 표본이 부족한 항목을 채워 보려 합니다.'},
+    {seq:6, type:'closing', html:
+      '궁금하신 점은 언제든 편하게 남겨 주세요. 다음 달에 다시 정리해 드리겠습니다.'}
+  ];
+}
+
+/* 셀을 판정별로 정렬해 대표 항목을 뽑는다 */
+function ranked(R, verdict){
+  const out=[];
+  AREA.forEach(a=>V1_TYPE.forEach(t=>{
+    const c = R.cells[a.k+'.'+t.k];
+    if(c.verdict === verdict) out.push({label:a.n+' × '+t.n, acc:c.acc, n:c.n, area:a, type:t});
+  }));
+  return out.sort((x,y)=> verdict==='weak' ? x.acc-y.acc : y.acc-x.acc);
+}
+
+const REPORTS = BASE.map(build);
+const byId = id => REPORTS.find(r=>r.id===id);
+const sendable = r => r.status==='generated' && !r.sent;
+
+/* ── 4. 화면 상태 ───────────────────────────────────────────────── */
+const S = {
+  view:'list',                 /* list | edit | send */
+  ym:{y:PERIOD.y, m:PERIOD.m},
+  f:{cls:'all', status:'all', kind:'all'},
+  openId:null,
+  scope:'whole',               /* whole | block */
+  blockSeq:null,
+  drawerId:null,
+  log:{}                       /* id → 다듬기 턴 이력 */
+};
+/* 초안 하나에는 이력이 이미 쌓여 있다 — 다듬기가 누적된다는 것을 보이려고 심어 둔다 */
+S.log['RP-2608-011'] = [
+  {rev:1, kind:'gen',     text:'초안 생성'},
+  {rev:2, kind:'refine',  text:'제안 문단을 조금 더 부드럽게', preset:'softer'},
+  {rev:2, kind:'blocked', text:'반 평균이랑 비교해서 써줘', reason:'comparison_exposure'}
+];
+const logOf = id => (S.log[id] = S.log[id] || [{rev:1, kind:'gen', text:'초안 생성'}]);
+const revOf = id => logOf(id).filter(t=>t.kind!=='blocked').length;
+
+/* ── 5. 조각 렌더러 ─────────────────────────────────────────────── */
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ymLabel = (y,m) => y+'.'+String(m).padStart(2,'0');
+const periodLabel = r => ymLabel(S.ym.y,S.ym.m)+'.01 ~ '+ymLabel(S.ym.y,S.ym.m)+'.31';
+
+function statusChip(r){
+  if(r.sent) return '<span class="st sent"><i></i>발송 완료</span>';
+  const s = STATUS[r.status];
+  return '<span class="st '+s.c+'"><i></i>'+s.n+'</span>';
+}
+
+/* 3개월 미니 추이 — 내 값(색) + 내 기준선(회색 수평선)
+   회색선은 전국 평균이 아니라 detection/baseline 의 개인 이동 기준선이다.
+   전국 평균 정답률·학습량은 benchmarks 계약에 없어서 그릴 값이 없다. */
+function spark(series, baseVal, color, fmt){
+  const W=172, H=58, pad=16;
+  const all = series.concat([baseVal]), lo=Math.min.apply(null,all), hi=Math.max.apply(null,all);
+  const span = (hi-lo)||1;
+  const x = i => pad + i*(W-pad*2)/(series.length-1);
+  const y = v => H-16 - (v-lo)/span*(H-30);
+  const by = y(baseVal);
+  let dots='', labs='';
+  series.forEach((v,i)=>{
+    dots += '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="3.4" fill="'+color+'"/>';
+    labs += '<text x="'+x(i).toFixed(1)+'" y="'+(y(v)-8).toFixed(1)+'" text-anchor="middle" font-size="10" font-weight="800" fill="'+color+'">'+fmt(v)+'</text>';
+  });
+  return '<div class="spark"><svg width="100%" viewBox="0 0 '+W+' '+H+'">'+
+    '<line x1="'+pad+'" y1="'+by.toFixed(1)+'" x2="'+(W-pad)+'" y2="'+by.toFixed(1)+'" stroke="#d6dae0" stroke-width="1.5" stroke-dasharray="4 3"/>'+
+    '<text x="'+(W-pad)+'" y="'+(by+11).toFixed(1)+'" text-anchor="end" font-size="9" fill="#aab0b9">내 기준선 '+fmt(baseVal)+'</text>'+
+    '<path d="'+series.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2"/>'+
+    dots + labs + '</svg>'+
+    '<div class="xs"><span>'+(PERIOD.m-2)+'월</span><span>'+(PERIOD.m-1)+'월</span><b>'+PERIOD.m+'월</b></div></div>';
+}
+
+/* 출제 난이도 분포 — 하·중·상 3밴드(DifficultyBand). 추이가 아니라 분포다 */
+function bandBar(bands){
+  const order = [['low','하','var(--d-green)'], ['medium','중','var(--d-yellow)'], ['high','상','var(--d-red)']];
+  const total = order.reduce((s,[k])=>s+bands[k], 0) || 1;
+  return '<div class="spark"><div class="bandbar">'+
+    order.map(([k,,c])=>'<i style="width:'+(bands[k]/total*100)+'%;background:'+c+'"></i>').join('')+
+    '</div><div class="bandlg">'+
+    order.map(([k,ko,c])=>'<span><i style="background:'+c+'"></i>'+ko+' <b>'+bands[k]+'</b></span>').join('')+
+    '</div></div>';
+}
+
+/* side 는 오른쪽 시각 요소 — 스파크라인·분포 막대·없음 중 하나 */
+function kpi(tag, color, value, unit, cmp, side, foot){
+  return '<div class="kpi"><div class="kh">'+
+    '<span class="tag" style="background:'+color+'">'+tag+'</span>'+
+    (cmp ? '<span class="cmp">'+cmp+'</span>' : '')+'</div>'+
+    '<div class="row"><div class="v" style="color:'+color+'">'+value+(unit?'<small>'+unit+'</small>':'')+'</div>'+
+    (side||'')+'</div>'+
+    '<div class="foot">'+foot+'</div></div>';
+}
+
+/* 주차별 막대 — 마지막 4주(이번 달)만 색을 준다 */
+function weekChart(title, chip, color, weeks, pick, fmt){
+  const vals = weeks.map(pick), hi = Math.max.apply(null, vals) || 1;
+  let bars='', xs='';
+  weeks.forEach((w,i)=>{
+    const on = i >= weeks.length-4;
+    bars += '<div class="c'+(on?' on':'')+'" style="--bar:'+color+'">'+
+      (w.mark ? '<span class="mk" title="'+w.mark+'">'+(w.mark==='보강'?'▲':'●')+'</span>' : '')+
+      '<span class="t">'+(on?fmt(pick(w)):'')+'</span>'+
+      '<span class="b" style="height:'+Math.max(6, pick(w)/hi*100)+'%"></span></div>';
+    xs += '<span'+(on?' class="on"':'')+'>'+(i>=weeks.length-4 ? (i-weeks.length+5)+'주' : '')+'</span>';
+  });
+  return '<div class="wk"><div class="wh"><span class="tag" style="background:'+color+'">'+chip+'</span>'+
+    '<span style="font-size:11px;color:var(--sub);">'+title+'</span></div>'+
+    '<div class="wbars">'+bars+'</div><div class="wxs">'+xs+'</div></div>';
+}
+
+/* 영역 레이더 5축 — AreaTag 정본이 5영역이다.
+   회색 정오각형은 이번 달 자기 평균이고, 진단결과 면의 회색 세로선과 같은 값이다.
+   ⚠ KPI 카드의 회색 점선(이동 기준선)과는 다른 값이다 — 칸끼리 비교는 그 달 평균이,
+   달끼리 비교는 이동 기준선이 기준이다. */
+function radarSvg(rows, baseVal){
+  const cx=160, cy=150, R=104, N=rows.length;
+  const pt=(i,r)=>{ const a=-Math.PI/2 + i*2*Math.PI/N; return [cx+r*Math.cos(a), cy+r*Math.sin(a)]; };
+  let grid='';
+  [.25,.5,.75,1].forEach(f=>{
+    grid += '<polygon points="'+rows.map((_,i)=>pt(i,R*f).map(v=>v.toFixed(1)).join(',')).join(' ')+
+      '" fill="none" stroke="#eceef1" stroke-width="1"/>';
+  });
+  rows.forEach((_,i)=>{
+    const p=pt(i,R); grid += '<line x1="'+cx+'" y1="'+cy+'" x2="'+p[0].toFixed(1)+'" y2="'+p[1].toFixed(1)+'" stroke="#eceef1"/>';
+  });
+  const poly = (values,fill,stroke,dash) => '<polygon points="'+
+    values.map((v,i)=>pt(i, R*(v==null?0:v)).map(n=>n.toFixed(1)).join(',')).join(' ')+
+    '" fill="'+fill+'" stroke="'+stroke+'" stroke-width="2"'+(dash?' stroke-dasharray="4 3"':'')+'/>';
+  let labs='';
+  rows.forEach((row,i)=>{
+    const p=pt(i,R+22);
+    labs += '<text x="'+p[0].toFixed(1)+'" y="'+(p[1]+4).toFixed(1)+'" text-anchor="middle" font-size="11" font-weight="700" fill="#1f2937">'+row.area.n+'</text>';
+  });
+  return '<div><svg width="100%" viewBox="0 0 320 300">'+grid+
+    poly(rows.map(()=>baseVal),'none','#c7ccd4',true)+
+    poly(rows.map(r=>r.mine),'rgba(59,130,246,.22)','#3b82f6',false)+
+    labs+'</svg>'+
+    '<div class="rleg"><span>◆ <b>내 성취도</b></span><span style="color:#a3a9b3;">◇ 내 평균 '+pc(baseVal)+'%</span></div></div>';
+}
+
+/* ── 6. 리포트 지면 — 세 화면이 공유한다 ────────────────────────── */
+function sheet(r, opt){
+  opt = opt || {};
+  if(r.status !== 'generated') return holdSheet(r);
+
+  const who  = r.grade+' '+r.nm+' 학생';
+  const meta = '학습내역 반영 기간 &nbsp;|&nbsp; '+periodLabel(r);
+  /* 3개월 추이 — FEATURE_WEEK 축적분에서 나오는 값만 그린다 */
+  const a3 = [pc(r.acc)-6, pc(r.acc)-2, pc(r.acc)];
+  const i3 = [Math.round(r.items*.72), Math.round(r.items*.86), r.items];
+  const bandTop = ['low','medium','high'].reduce((a,b)=> r.bands[b] > r.bands[a] ? b : a, 'low');
+  const bandKo  = {low:'하', medium:'중', high:'상'}[bandTop];
+  const bandN   = r.bands.low + r.bands.medium + r.bands.high;
+  const edits   = r.blocks.filter(isEdited).length;
+
+  /* 면은 전부 A4 한 장이다 — 여백이 남아도 크기를 맞춘다 */
+  const pages = [];
+  const page  = (inner, cls) => pages.push('<div class="pg'+(cls?' '+cls:'')+'">'+inner+'</div>');
+  const head  = (title) => '<div class="rhead"><h3>'+title+'</h3><span class="who2">'+who+'</span></div>';
+
+  /* 5.1 표지 */
+  page('<div class="rule">'+periodLabel(r)+'</div>'+
+    '<div class="big">'+ymLabel(S.ym.y,S.ym.m)+'<br>Monthly Report</div>'+
+    '<div class="sub">'+S.ym.y+'년 '+S.ym.m+'월 리포트<br>'+who+
+      '<small>'+r.alias+' · '+r.id+' · '+(r.kind==='report'?'월별 일괄':'단건 수시')+'</small></div>'+
+    '<div class="mark">Check<span>On</span> · 가상융합기술 아카데미</div>', 'cover');
+
+  /* 5.2 월간 분석 */
+  page(head('월간 분석')+'<div class="rmeta">'+meta+'</div>'+
+    '<div class="kpis">'+
+      kpi('백분위 '+r.pct, 'var(--d-blue)', r.pct, '', '전국 동일 학년 기준',
+          '<div class="spark" style="text-align:right;"><span class="asof">참고치 · 기준일 '+r.pctAt+'</span></div>',
+          '전국 동일 학년 표본 대비 위치입니다. <b>백엔드 집계 API 가 내려주는 단일 값</b>이라 월별 추이는 표시하지 않습니다 — 출처·모수 확정 전이라 참고치입니다.')+
+      kpi('정답률 '+pc(r.acc)+'%', 'var(--d-green)', pc(r.acc), '%', '내 기준선 대비',
+          spark(a3, pc(r.base.acc), 'var(--d-green)', v=>v+'%'),
+          '채점 완료된 문항만 대상입니다. 회색 점선은 최근 '+r.base.weeksUsed+'주 이동 기준선으로, <b>비교 대상은 다른 학생이 아니라 본인의 평소 수준</b>입니다.')+
+      kpi(r.items.toLocaleString()+'문항 채점', 'var(--d-red)', r.items.toLocaleString(), '', '내 기준선 대비',
+          spark(i3, r.base.volWeek*4, 'var(--d-red)', v=>v.toLocaleString()),
+          '채점이 끝난 문항 수입니다(푼 문항 수와 다릅니다). 기준선은 주당 평균 '+r.base.volWeek+'문항을 4주로 환산한 값입니다.')+
+      kpi('출제 난이도 '+bandKo, 'var(--d-yellow)', bandKo, '', '',
+          bandBar(r.bands),
+          '체크온이 출제한 <b>'+bandN+'문항</b>의 밴드 분포입니다(하·중·상 3단계). 학원 교재·모의고사 문항은 난이도 정보가 없어 <b>모수에서 빠집니다</b> — 전체 학습량과 분모가 다릅니다.')+
+    '</div>');
+
+  /* 선생님 의견 — 강사가 지면에서 직접 고치는 면 */
+  page(head('선생님 의견')+
+    '<div class="rmeta">AI 초안을 강사가 확인·수정합니다 &nbsp;|&nbsp; rev.'+revOf(r.id)+
+      (edits ? ' &nbsp;|&nbsp; 강사 수정 '+edits+'문단' : '')+'</div>'+
+    (opt.editable
+      ? '<div class="edithint no-print">✏️ <b>문단을 눌러 그 자리에서 바로 고치세요.</b> 강사가 고친 문단은 노란 띠로 바뀌고 「강사 작성」으로 표시됩니다 — '+
+        'AI 다듬기는 오른쪽 패널의 보조 수단입니다.</div>'
+      : '')+
+    r.blocks.map(b=>blockHtml(b, opt)).join(''));
+
+  /* 5.3 주간 분석 */
+  page(head('주간 분석')+'<div class="rmeta">'+meta+'</div>'+
+    weekChart('주차별 정답률 — ▲ 보강 ● 상담 시점', '정답률 '+pc(r.acc)+'%', 'var(--d-green)', r.weeks, w=>pc(w.acc), v=>v)+
+    weekChart('주차별 채점 문항 수', r.items.toLocaleString()+'문항', 'var(--d-red)', r.weeks, w=>w.vol, v=>v)+
+    '<div class="note" style="padding:8px 0 0;">⚠ <b>개입 마커가 이 차트의 핵심입니다</b> — 상담·보강 이후 흐름이 어떻게 움직였는지를 보여주는 것이 목적이고, 주차 정답률 자체는 표본이 작아 단독으로 읽지 않습니다.</div>');
+
+  /* 5.5 영역 × 유형 성과 */
+  page(head('영역·유형별 학습 성과')+
+    '<div class="rmeta">'+meta+' &nbsp;|&nbsp; 선택과목 '+r.elective+'</div>'+
+    matrixHtml(r)+
+    '<div class="note" style="padding:9px 0 0;">칸 아래 숫자는 채점 문항 수입니다. <b>'+MIN_N+'문항 미만은 판정하지 않고 「판단 보류」로 둡니다</b> — 표본이 적은 칸을 약점이라고 부르면 다음 달에 뒤집힙니다.</div>');
+
+  /* 5.6 진단 결과 */
+  page(diagHtml(r, who, meta));
+
+  /* 5.7 영역 레이더 */
+  page(head('영역별 성취도')+'<div class="rmeta">'+meta+'</div>'+
+    '<div class="rad">'+radarSvg(r.radar, r.acc)+
+    '<div class="rside">'+r.radar.map(row=>
+      '<div class="li"><span>'+row.area.n+'</span>'+
+      '<span class="chip b">'+row.area.track+'</span>'+
+      '<span class="v" style="color:'+(row.mine==null?'var(--pgray)':'var(--d-blue)')+'">'+
+        (row.mine==null ? '—' : pc(row.mine)+'%')+'</span></div>').join('')+
+    '</div></div>'+
+    '<div class="note" style="padding:12px 0 0;">비교선은 <b>이번 달 내 평균</b> 하나입니다 — 영역별 전국 평균은 백엔드가 내려주는 값에 없어 그리지 않습니다. '+
+    '<span class="red">반 평균·석차도 담기지 않습니다</span> — 강사 화면 전용 지표라 학부모 리포트에는 조립 단계에서 제외됩니다.</div>');
+
+  /* 쪽번호는 면 개수가 바뀌어도 따라온다 */
+  const body = pages.map((html,i)=>
+    html.replace(/<\/div>$/, '<div class="pgno">'+(i+1)+' / '+pages.length+'</div></div>')).join('');
+
+  const legend = '<div class="legend no-print">'+
+    '<span><i class="fix"></i><b>확정 수치</b> — 코드·백엔드가 계산</span>'+
+    '<span><i class="gen"></i><b>AI 해설</b> — 게이트 통과분</span>'+
+    '<span><i class="tch"></i><b>강사 작성</b> — 직접 수정분</span>'+
+    '<span style="margin-left:auto;color:var(--pgray);">모든 면 A4 · '+pages.length+'쪽</span></div>';
+
+  return legend + '<div class="sheet">'+body+'</div>';
+}
+
+/* 원문에서 태그를 벗긴 평문 — 강사 편집의 비교 기준이자 편집 시작값 */
+const plainOf  = b => String(b.html||'').replace(/<[^>]+>/g,'');
+const isEdited = b => b.owner === 'teacher';
+
+function blockHtml(b, opt){
+  const tag = b.chart
+    ? '<span class="cr">chart_analysis</span><span>'+CHART[b.chart]+'</span>'
+    : '<span class="cr">'+b.type+'</span><span>'+BLOCK_KO[b.type]+'</span>';
+
+  if(!b.html) return '<div class="blk gone" data-seq="'+b.seq+'">'+
+    '<div class="bt">'+tag+'<span class="own2">비움</span></div>'+
+    '<div class="body2">재생성 3회 안에 근거 대조를 통과하지 못해 이 문단은 비워 두었습니다.</div></div>';
+
+  const edited = isEdited(b);
+  const cls = ['blk', edited?'tch':'', opt.editable?'editable':'', (S.blockSeq===b.seq && opt.editable)?'on':'']
+    .filter(Boolean).join(' ');
+  /* 강사 편집분은 평문으로 그린다 — 확정 수치 표시(.n)는 AI 원문에만 붙는다 */
+  const body = edited ? esc(b.edited) : b.html;
+  return '<div class="'+cls+'" data-seq="'+b.seq+'">'+
+    '<div class="bt">'+tag+'<span class="own2">'+(edited?'강사 작성':'AI 해설')+'</span></div>'+
+    '<div class="body2"'+(opt.editable?' contenteditable="true" data-edit="'+b.seq+'"':'')+'>'+body+'</div></div>';
+}
+
+function matrixHtml(r){
+  let h = '<table class="mx"><tr><th class="a">영역 \\ 유형</th>'+
+    V1_TYPE.map(t=>'<th>'+t.n+'</th>').join('')+
+    '<th style="width:78px;">적용·창의</th></tr>';
+  AREA.forEach(a=>{
+    h += '<tr><td class="a">'+a.n+'<small>'+a.track+'</small></td>';
+    V1_TYPE.forEach(t=>{
+      const c = r.cells[a.k+'.'+t.k];
+      h += '<td><span class="cell '+c.verdict+'">'+
+        (c.verdict==='unknown' ? '—' : pc(c.acc)+'%')+
+        '<small>'+c.n+'문항</small></span></td>';
+    });
+    h += '<td class="res">v1 미산출</td></tr>';
+  });
+  return h+'</table>';
+}
+
+function diagHtml(r, who, meta){
+  const weak = ranked(r,'weak').slice(0,3), good = ranked(r,'ok').slice(0,3);
+  const rows = [];
+  AREA.forEach(a=>V1_TYPE.forEach(t=>{
+    const c = r.cells[a.k+'.'+t.k];
+    rows.push({label:a.n+' × '+t.n, c});
+  }));
+  const list = rows.map(x=>
+    '<div class="li '+(x.c.verdict==='unknown'?'':x.c.verdict)+'">'+
+    '<span class="nm">'+x.label+' <em>'+x.c.n+'문항</em></span>'+
+    '<span class="bg"><span class="fg" style="width:'+(x.c.verdict==='unknown'?0:pc(x.c.acc))+'%"></span>'+
+      '<span class="avg" style="left:'+pc(r.acc)+'%" title="자기 평균"></span></span>'+
+    '<span class="r'+(x.c.verdict==='unknown'?' dim':'')+'">'+(x.c.verdict==='unknown'?'보류':pc(x.c.acc)+'%')+'</span></div>').join('');
+
+  const tile = (cls,title,arr,empty) => '<div class="tl '+cls+'"><h5>'+title+'</h5>'+
+    (arr.length ? arr.map(x=>'<div class="li"><span>'+x.label+'</span><span class="r">'+pc(x.acc)+'%</span></div>').join('')
+                : '<div class="li none">'+empty+'</div>')+'</div>';
+
+  return '<div class="rhead"><h3>진단 결과</h3><span class="who2">'+who+'</span></div>'+
+    '<div class="rmeta">'+meta+'</div>'+
+    '<div class="dg">'+
+      '<div><div class="k">전체 정답률</div><div class="n2" style="color:var(--d-green)">'+pc(r.acc)+'%</div></div>'+
+      '<div><div class="k">판정에 쓰인 문항 수</div><div class="n2">'+r.items.toLocaleString()+'</div></div>'+
+      '<div><div class="k">약점 확정 / 판단 보류</div><div class="n2" style="font-size:30px;">'+
+        '<span style="color:var(--d-red)">'+ranked(r,'weak').length+'</span>'+
+        '<span style="color:var(--pgray);font-size:20px;"> / '+rows.filter(x=>x.c.verdict==='unknown').length+'</span>'+
+        '<span style="font-size:12px;color:var(--pgray);font-weight:500;"> 칸</span></div></div>'+
+    '</div>'+
+    '<div class="two">'+
+      tile('good','대표 강점 유형', good, '아직 안정 판정을 받은 칸이 없습니다')+
+      tile('bad','대표 취약 유형', weak, '자기 평균보다 뚜렷하게 낮은 칸이 없습니다')+
+    '</div>'+
+    '<div class="bars">'+list+'</div>'+
+    '<div class="note" style="padding:11px 0 0;">회색 세로선은 <b>이 학생의 자기 평균</b>입니다. 판정 기준은 다른 학생이 아니라 자기 평균과의 거리입니다.</div>';
+}
+
+function holdSheet(r){
+  const s = STATUS[r.status];
+  return '<div class="sheet"><div class="pg hold-pg">'+
+    '<div class="em">'+(r.status==='rejected_insufficient' ? '⏳' : '⚠')+'</div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:8px;">'+s.n+'</div>'+
+    '<div style="font-size:12.5px;color:var(--sub);line-height:1.8;max-width:440px;margin:0 auto;">'+esc(r.why||'')+'</div>'+
+    (r.status==='rejected_insufficient'
+      ? '<div class="verd hold" style="max-width:520px;margin:18px auto 0;text-align:left;">'+
+        '<b>이건 실패가 아닙니다.</b> <code>rejected_insufficient</code> 는 정상 상태이고, 다시 요청해도 같은 결과입니다. '+
+        '데이터가 2주 이상 쌓이면 다음 달 배치에서 자동으로 생성됩니다.</div>'
+      : '<div class="verd no" style="max-width:520px;margin:18px auto 0;text-align:left;">'+
+        '<code>failed</code> — 블록 재생성 상한(3회)에 도달했습니다. 근거가 부족한 차트 해설이 원인이면 '+
+        '다음 달 데이터로 재시도하거나 해당 차트를 뺀 구성으로 다시 요청합니다.</div>')+
+    '</div></div>';
+}
+
+/* ── 7. 화면 1 · 리포트 목록 ────────────────────────────────────── */
+function viewList(){
+  const list = filtered();
+  const cnt = k => REPORTS.filter(k).length;
+
+  let rows = list.map(r=>{
+    const dim = r.status!=='generated' ? ' class="dim"' : '';
+    const num = (v,suffix) => r.status==='generated'
+      ? '<span class="num">'+v+(suffix||'')+'</span>' : '<span class="dash">—</span>';
+    return '<tr'+dim+' data-act="open-edit" data-id="'+r.id+'">'+
+      '<td><div class="nm">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+
+        '<small>'+r.alias+' · '+r.id+'</small></div></td>'+
+      '<td>'+r.cls+'<div style="font-size:10.5px;color:var(--pgray);">'+r.grade+' · '+r.elective+'</div></td>'+
+      '<td>'+(r.kind==='report'
+        ? '<span class="chip a">월별 일괄</span>'
+        : '<span class="chip t">단건 수시</span>')+'</td>'+
+      '<td style="text-align:right;">'+num(r.status==='generated'?r.items.toLocaleString():0,'문항')+'</td>'+
+      '<td style="text-align:right;">'+num(r.status==='generated'?pc(r.acc):0,'%')+'</td>'+
+      '<td style="text-align:right;">'+num(r.pct||0)+'</td>'+
+      '<td>'+statusChip(r)+
+        (r.sent?'<div style="font-size:10px;color:var(--pgray);margin-top:2px;">'+r.sentAt+'</div>':'')+'</td>'+
+      '<td><div class="acts">'+
+        (r.status==='generated'
+          ? '<button class="btn ic" data-act="open-edit" data-id="'+r.id+'">'+(r.sent?'보기':'수정')+'</button>'+
+            '<button class="btn ic" data-act="print" data-id="'+r.id+'">인쇄</button>'
+          : '<button class="btn ic off">수정</button>')+
+        '<button class="btn ic">⋯</button>'+
+      '</div></td></tr>';
+  }).join('');
+
+  if(!list.length) rows = '<tr><td colspan="8" class="empty">조건에 맞는 리포트가 없습니다.</td></tr>';
+
+  return '<div class="pgttl">리포트 목록</div>'+
+  '<div class="pgsub">월별 리포트는 <b>매월 1일 야간 배치</b>로 전월분이 한 번에 생성됩니다. 단건은 강사가 수시로 발행합니다.<br>'+
+  '행을 누르면 수정 화면으로 들어갑니다 — <b>발송 완료된 리포트는 읽기 전용</b>입니다.</div>'+
+
+  '<div class="panel">'+
+    '<div class="mnav">'+
+      '<span class="side" data-act="month" data-d="-1">‹ '+String(S.ym.m-1||12).padStart(2,'0')+'</span>'+
+      '<span class="m">'+ymLabel(S.ym.y,S.ym.m)+'</span>'+
+      '<span class="side" data-act="month" data-d="1">'+String(S.ym.m%12+1).padStart(2,'0')+' ›</span>'+
+      '<button class="btn sm" data-act="month" data-d="0">↺ 이번 달</button>'+
+      '<span style="margin-left:auto;"></span>'+
+      '<button class="btn pri" data-act="view" data-v="send">발송 화면으로</button>'+
+    '</div>'+
+    '<div class="filters">'+
+      select('cls',  ['all','고2-1 · 목요일반','고3 · 화금 심화반'], ['전체 반','고2-1 · 목요일반','고3 · 화금 심화반'])+
+      select('status',['all','generated','rejected_insufficient','failed'], ['전체 상태','생성 완료','데이터 부족','생성 실패'])+
+      select('kind', ['all','report','report_single'], ['전체 종류','월별 일괄','단건 수시'])+
+      '<button class="btn sm" style="margin-left:auto;" data-act="reset">↺ 초기화</button>'+
+    '</div>'+
+    '<div class="sum">'+
+      '<div><div class="k">이번 달 대상</div><div class="v">'+REPORTS.length+'<small> 명</small></div></div>'+
+      '<div><div class="k">생성 완료</div><div class="v">'+cnt(r=>r.status==='generated')+'<small> 건</small></div></div>'+
+      '<div><div class="k">데이터 부족 · 생략</div><div class="v" style="color:var(--hold);">'+cnt(r=>r.status==='rejected_insufficient')+'<small> 건</small></div>'+
+        '<div style="font-size:10px;color:var(--pgray);margin-top:5px;">\u{1F534} 실패가 아닙니다 — 재시도해도 같습니다</div></div>'+
+      '<div><div class="k">발송 완료</div><div class="v" style="color:var(--ok);">'+cnt(r=>r.sent)+'<small> 건</small></div></div>'+
+    '</div>'+
+  '</div>'+
+
+  '<div class="panel"><table class="rt">'+
+    '<thead><tr><th>리포트</th><th>반</th><th>종류</th>'+
+    '<th style="text-align:right;">학습량</th><th style="text-align:right;">정답률</th>'+
+    '<th style="text-align:right;">백분위</th><th>상태</th><th></th></tr></thead>'+
+    '<tbody>'+rows+'</tbody></table></div>'+
+  contractPanel();
+}
+
+function select(key, values, labels){
+  return '<select class="sel" data-act="filter" data-k="'+key+'">'+
+    values.map((v,i)=>'<option value="'+v+'"'+(S.f[key]===v?' selected':'')+'>'+labels[i]+'</option>').join('')+
+    '</select>';
+}
+function filtered(){
+  return REPORTS.filter(r=>
+    (S.f.cls==='all'    || r.cls===S.f.cls) &&
+    (S.f.status==='all' || r.status===S.f.status) &&
+    (S.f.kind==='all'   || r.kind===S.f.kind));
+}
+
+/* ── 8. 화면 2 · 리포트 수정 ────────────────────────────────────── */
+function viewEdit(){
+  const r  = byId(S.openId);
+  const ro = r.sent || r.status !== 'generated';
+  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'+
+    '<button class="btn sm" data-act="view" data-v="list">‹ 목록</button>'+
+    '<div><div class="pgttl" style="margin:0;">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+'</div>'+
+    '<div style="font-size:11px;color:var(--pgray);font-family:var(--mono);">'+r.alias+' · '+r.id+'</div></div>'+
+    '<span style="margin-left:auto;"></span>'+
+    statusChip(r)+
+    '<button class="btn sm" data-act="print" data-id="'+r.id+'">인쇄</button>'+
+    '</div>'+
+    (ro && r.sent ? '<div class="robar">\u{1F512} <b>발송 완료된 리포트입니다 — 읽기 전용.</b> '+r.sentAt+' 에 학부모에게 전달됐습니다. 내용을 고치려면 새로 발행해야 합니다.</div>' : '')+
+    '<div class="edit"><div class="sheet-scroll">'+sheet(r,{editable:!ro})+'</div>'+toolPanel(r, ro)+'</div>';
+}
+
+/* 우측 패널 — 편집의 주 수단은 지면이고 여기는 상태·되돌리기·AI 보조다 */
+function toolPanel(r, ro){
+  if(r.status !== 'generated') return '<div class="tool"><div class="th"><b>문단 편집</b></div>'+
+    '<div class="tb"><div class="verd hold">본문이 없어 편집할 대상이 없습니다.</div></div></div>';
+
+  const cur   = S.blockSeq!=null ? r.blocks.find(b=>b.seq===S.blockSeq) : null;
+  const log   = logOf(r.id);
+  const edits = r.blocks.filter(isEdited).length;
+
+  return '<div class="tool'+(ro?' ro':'')+'">'+
+    '<div class="th"><b>문단 편집</b> '+
+      '<span style="font-size:11px;color:var(--pgray);">rev.'+revOf(r.id)+' · 강사 수정 '+edits+'/'+r.blocks.length+'</span>'+
+      '<div style="font-size:11px;color:var(--sub);margin-top:4px;line-height:1.6;">'+
+        (ro ? '읽기 전용입니다.' : '왼쪽 지면의 문단을 눌러 <b>그 자리에서 직접</b> 고칩니다.')+'</div></div>'+
+    '<div class="tb">'+
+
+    '<div class="sec"><h4>선택한 문단</h4><div id="selBlock">'+selBlockHtml(cur)+'</div></div>'+
+
+    '<div class="sec"><h4>편집 현황</h4>'+
+      r.blocks.map(b=>
+        '<div class="rev'+(isEdited(b)?' tchrev':'')+(S.blockSeq===b.seq?' cur':'')+'" data-act="goto-block" data-seq="'+b.seq+'">'+
+        '<span class="no">'+b.seq+'</span><div>'+(b.chart?CHART[b.chart]:BLOCK_KO[b.type])+
+        '<div style="font-size:10px;color:'+(isEdited(b)?'var(--tch)':'var(--pgray)')+';font-weight:700;">'+
+        (isEdited(b)?'강사 작성':'AI 해설')+'</div></div>'+
+        (isEdited(b)?'<span class="tail"><button class="btn sm" data-act="restore" data-seq="'+b.seq+'">AI 원문</button></span>':'')+
+        '</div>').join('')+
+    '</div>'+
+
+    '<div class="verd warn"><b>강사가 쓴 문장은 검사를 거치지 않습니다.</b> AI 해설은 문장 속 수치를 확정 수치와 전수 대조하지만, '+
+      '직접 수정분은 <code>draft_edit</code> 로 기록될 뿐이라 <b>차트와 어긋나도 막아 주지 않습니다</b>.</div>'+
+
+    '<details class="sec" style="margin-top:14px;"><summary style="padding:9px 0;">🤖 AI 에게 다시 쓰게 하기 (보조)</summary>'+
+      '<div style="padding-top:6px;">'+
+      '<div class="scope">'+
+        '<button class="'+(S.scope==='whole'?'on':'')+'" data-act="scope" data-s="whole">전체</button>'+
+        '<button class="'+(S.scope==='block'?'on':'')+'" data-act="scope" data-s="block">선택 문단</button>'+
+      '</div>'+
+      '<div class="presets" style="margin-bottom:8px;">'+
+        '<button data-act="preset" data-p="softer">부드럽게<small>softer</small></button>'+
+        '<button data-act="preset" data-p="conclusion_first">결론 먼저<small>conclusion_first</small></button>'+
+        '<button data-act="preset" data-p="shorter">짧게<small>shorter</small></button>'+
+      '</div>'+
+      '<textarea class="instr" id="instr" placeholder="예) 마지막 문단을 두 문장으로 줄여줘"></textarea>'+
+      '<div style="display:flex;gap:6px;margin-top:7px;">'+
+        '<button class="btn sm" data-act="try" data-t="반 평균이랑 비교해서 써줘">차단 예시</button>'+
+        '<button class="btn pri sm" style="margin-left:auto;" data-act="refine">다듬기 실행</button>'+
+      '</div>'+
+      '<div style="font-size:10.5px;color:var(--pgray);margin-top:7px;line-height:1.7;">'+
+        '🔴 <b>강사가 고친 문단을 AI 로 다시 쓰면 수정분이 덮입니다</b> — 되돌리기는 AI 원문으로만 갑니다.</div>'+
+      '<div style="margin-top:12px;"><h4 style="font-size:11.5px;color:var(--sub);font-weight:700;margin-bottom:7px;">이력 · 롤백</h4>'+
+        log.slice().reverse().map((t,i)=>revLine(t, i===0)).join('')+'</div>'+
+      '</div></details>'+
+
+    '</div>'+
+    '<div class="tf" id="refineResult"><div style="font-size:11px;color:var(--pgray);text-align:center;">'+
+      (ro?'읽기 전용':'문단을 고치거나 다듬기를 실행하면 결과가 여기에 표시됩니다')+'</div></div>'+
+    '</div>';
+}
+
+function selBlockHtml(cur){
+  if(!cur) return '<div class="verd hold">지면에서 문단을 누르면 여기에 표시됩니다.</div>';
+  const edited = isEdited(cur);
+  return '<div class="box"><b>'+(cur.chart?CHART[cur.chart]:BLOCK_KO[cur.type])+'</b>'+
+    '<div class="r"><span>seq · block_type</span><b>'+cur.seq+' · '+cur.type+'</b></div>'+
+    '<div class="r"><span>작성 주체</span><b style="color:'+(edited?'var(--tch)':'var(--ai)')+'">'+
+      (edited?'강사 (draft_edit)':'AI (게이트 통과분)')+'</b></div>'+
+    (edited ? '<div style="margin-top:7px;"><button class="btn sm" data-act="restore" data-seq="'+cur.seq+'">AI 원문으로 되돌리기</button></div>' : '')+
+    '</div>';
+}
+
+function revLine(t, isLast){
+  if(t.kind==='blocked'){
+    const b = BLOCKED[t.reason];
+    return '<div class="rev blocked"><span class="no">✕</span><div>'+esc(t.text)+
+      '<div style="color:var(--no);font-weight:700;margin-top:2px;">차단 · '+b.n+' <code style="font-family:var(--mono);font-size:10px;">'+t.reason+'</code></div></div></div>';
+  }
+  return '<div class="rev'+(isLast?' cur':'')+'"><span class="no">rev.'+t.rev+'</span><div>'+esc(t.text)+
+    (t.preset?' <span class="chip b">'+t.preset+'</span>':'')+'</div>'+
+    (isLast?'':'<span class="tail"><button class="btn sm" data-act="rollback" data-r="'+t.rev+'">롤백</button></span>')+'</div>';
+}
+
+/* 와이어프레임용 정적 검사 스텁 — 실제 판정은 게이트가 한다 */
+function preCheck(text){
+  if(/반\s*평균|석차|등수|다른\s*학생|옆\s*반/.test(text)) return 'comparison_exposure';
+  if(/실명|이름으로|전화번호|연락처/.test(text))          return 'pii_exposure';
+  if(/날씨|잡담|다른\s*아이|추천\s*맛집/.test(text))       return 'out_of_scope';
+  if(/모의고사|수능\s*점수|작년\s*성적/.test(text))        return 'evidence_missing';
+  return null;
+}
+
+/* ── 9. 화면 3 · 리포트 발송 ────────────────────────────────────── */
+const SEL = new Set();
+
+function viewSend(){
+  const list = REPORTS.filter(r=>!r.sent);
+  const ready = list.filter(sendable);
+  const rows = list.map(r=>{
+    const ok = sendable(r);
+    return '<div class="srow'+(ok?'':' dis')+'" '+(ok?'data-act="open-drawer" data-id="'+r.id+'"':'')+'>'+
+      '<span class="chk'+(SEL.has(r.id)?' on':'')+(ok?'':' dis')+'" '+(ok?'data-act="toggle" data-id="'+r.id+'"':'')+'></span>'+
+      '<div class="grow"><div style="font-weight:700;">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+
+        ' <span class="chip '+(r.kind==='report'?'a':'t')+'">'+(r.kind==='report'?'월별 일괄':'단건 수시')+'</span></div>'+
+        '<div style="font-size:10.5px;color:var(--pgray);font-family:var(--mono);margin-top:2px;">'+r.alias+' · '+r.id+' · '+r.cls+'</div>'+
+        (ok?'':'<div style="font-size:11px;color:var(--no);margin-top:3px;">'+esc(r.why)+'</div>')+
+      '</div>'+
+      '<div class="tail">'+statusChip(r)+
+        (ok?'<div style="font-size:11px;color:var(--sub);margin-top:3px;">정답률 <b>'+pc(r.acc)+'%</b> · 백분위 <b>'+r.pct+'</b> · rev.'+revOf(r.id)+'</div>'
+           :'<div style="font-size:11px;color:var(--pgray);margin-top:3px;">보낼 본문이 없습니다</div>')+
+      '</div></div>';
+  }).join('');
+
+  return '<div class="pgttl">리포트 발송</div>'+
+  '<div class="pgsub">이번 달 생성분 중 <b>아직 보내지 않은 리포트</b>입니다. 행을 누르면 실제 지면을 확인할 수 있고, 체크한 것만 일괄 발송합니다.<br>'+
+  '<span class="red">본문이 없는 리포트는 체크할 수 없습니다</span> — 데이터 부족·생성 실패는 보낼 내용 자체가 없습니다.</div>'+
+
+  '<div class="panel">'+
+    '<div class="filters" style="border-bottom:1px solid var(--line);">'+
+      '<span class="chk'+(ready.length && ready.every(r=>SEL.has(r.id))?' on':'')+'" data-act="all"></span>'+
+      '<span style="font-size:12px;font-weight:700;">보낼 수 있는 '+ready.length+'건 전체 선택</span>'+
+      '<span style="margin-left:auto;font-size:11.5px;color:var(--sub);">'+ymLabel(S.ym.y,S.ym.m)+' · 미발송 '+list.length+'건</span>'+
+    '</div>'+
+    rows+
+  '</div>'+
+
+  '<div class="sendbar">'+
+    '<div><b style="font-size:14px;">'+SEL.size+'건</b> <span style="color:var(--sub);font-size:12px;">선택됨</span>'+
+      '<div style="font-size:11px;color:var(--pgray);margin-top:2px;">발송하면 해당 리포트는 <b>읽기 전용</b>이 됩니다</div></div>'+
+    '<span style="margin-left:auto;"></span>'+
+    '<button class="btn" data-act="view" data-v="list">목록으로</button>'+
+    '<button class="btn pri'+(SEL.size?'':' off')+'" data-act="bulk">선택한 '+SEL.size+'건 일괄 발송</button>'+
+  '</div>'+
+  '<div class="note">⚠ 발송은 강사 확인(HITL)을 거칩니다 — AI 가 자동으로 내보내는 경로는 없습니다.</div>'+
+  contractPanel();
+}
+
+function openDrawer(id){
+  const r = byId(id);
+  S.drawerId = id;
+  document.getElementById('dTitle').textContent = r.nm+' 학생 · '+S.ym.y+'년 '+S.ym.m+'월 리포트';
+  document.getElementById('dBody').innerHTML = sheet(r, {});
+  document.getElementById('dFoot').innerHTML =
+    '<div class="verd ok"><b>학부모에게 보내는 문서입니다.</b>'+
+    '<div class="line"><span>전국 백분위</span><b>포함</b></div>'+
+    '<div class="line"><span>반 평균 · 석차</span><b>미포함 (teacher_only)</b></div>'+
+    '<div class="line"><span>위험 신호 · 경보</span><b>미포함 — 상담으로 전달</b></div></div>'+
+    '<div style="display:flex;gap:7px;margin-top:9px;">'+
+      '<button class="btn" data-act="open-edit" data-id="'+id+'">수정 화면으로</button>'+
+      '<button class="btn pri" style="flex:1;" data-act="send-one" data-id="'+id+'">이 리포트 발송</button>'+
+    '</div>';
+  document.getElementById('drawer').classList.add('open');
+}
+function closeDrawer(){ document.getElementById('drawer').classList.remove('open'); S.drawerId=null; }
+
+/* ── 10. 데이터 계약 (소유만) ───────────────────────────────────── */
+function contractPanel(){
+  const row = (el,val,own,note) => '<tr><td><b>'+el+'</b></td><td>'+val+'</td><td>'+own+'</td><td>'+note+'</td></tr>';
+  return '<div class="panel"><details><summary>\u{1F4C4} 이 화면의 데이터 계약 — 소유 구분 (펼치기)</summary>'+
+  '<div style="padding:0 16px 16px;"><table class="ctr">'+
+  '<tr><th style="width:19%;">화면 요소</th><th style="width:29%;">값</th><th style="width:9%;">소유</th><th>비고</th></tr>'+
+  row('리포트 상태','<code>generated</code>·<code>rejected_insufficient</code>·<code>failed</code>','<span class="own ai">AI</span>',
+      '<span class="red">\u{1F534} <code>rejected_insufficient</code> 는 정상 상태입니다</span> — 빨강으로 그리면 강사가 재시도를 누릅니다. 재시도해도 같습니다')+
+  row('발송 · 읽기 전용','발송 시각 · 승인 이력','<span class="own be">BE</span>',
+      '<span class="red">\u{1F534} AI 계약에 「발송」이 없습니다</span> — 승인·발송·학생 노출은 전부 BE(HITL) 소유입니다')+
+  row('영역','<code>AreaTag</code> 5종','<span class="own ai">AI</span>',
+      '<code>language</code>·<code>media</code>·<code>literature</code>·<code>reading</code>·<code>speech_writing</code> — 화법·작문은 한 값으로 합쳐졌습니다')+
+  row('유형','<code>TypeTag</code>','<span class="own ai">AI</span>',
+      'v1 산출 4종 + <code>apply</code>는 <b>예약값</b> — 라벨만 두고 산출하지 않습니다')+
+  row('칸 판정','<code>CellVerdict</code>','<span class="own ai">AI</span>',
+      '<code>weak</code>·<code>ok</code>·<code>unknown</code>. 기준은 반 평균이 아니라 <b>자기 평균과의 거리</b>이고 표본 '+MIN_N+'문항 미만은 판정하지 않습니다')+
+  row('차트 수치','<code>FEATURE_WEEK.metrics</code> · <code>benchmarks</code>','<span class="own be">BE</span>+<span class="own ai">AI</span>',
+      '<b>수치는 코드가 확정하고 LLM 은 해설 문장만</b> 씁니다. 문장 속 숫자는 확정 수치와 전수 대조됩니다')+
+  row('비교선(회색)','<code>Baseline.accuracy</code>·<code>volume</code>','<span class="own ai">AI</span>',
+      '<span class="red">🔴 전국 평균 정답률·학습량·난이도는 <code>benchmarks</code> 에 없습니다</span> — 들어오는 값은 '+
+      '<code>national_percentile</code> 과 <code>class_avg</code>(teacher_only) 둘뿐이라 <b>비교선은 개인 기준선</b>입니다')+
+  row('정답률 분모','<code>graded_count</code>','<span class="own ai">AI</span>',
+      '<b>푼 문항 수(<code>n_solves</code>)가 아니라 채점된 문항 수</b>입니다. 분모를 바꾸면 같은 정답률이 다른 표본으로 보입니다')+
+  row('출제 난이도','<code>DifficultyBand</code> low·medium·high','<span class="own ai">AI</span>',
+      '<span class="red">🔴 <code>LearningEvent</code> 에 난이도 필드가 없습니다</span> — 밴드는 <b>체크온이 출제한 문항에만</b> 붙습니다. '+
+      '학원 교재·모의고사 문항은 모수에서 빠지고, 코드로 밴드가 확정되는 것은 언어 영역뿐입니다')+
+  row('해설 블록','<code>BlockType</code>','<span class="own ai">AI</span>',
+      '<code>greeting</code>·<code>fact</code>·<code>suggestion</code>·<code>closing</code>. '+
+      '<span class="red">차트 해설(<code>chart_analysis</code>)은 문서상 제안 단계이고 코드 enum 에는 아직 없습니다</span>')+
+  row('문단 직접 수정','<code>/confirmations</code> · <code>kind: draft_edit</code>','<span class="own be">BE</span>+<span class="own ai">AI</span>',
+      '<span class="red">🔴 강사가 쓴 문장은 AI 산출물이 아니라 게이트 대상이 아닙니다</span> — 수치 대조도 안 걸리므로 '+
+      '차트와 어긋난 문장이 나갈 수 있고, 그 책임은 승인하는 강사에게 있습니다. 수정 diff 는 <b>문체 프로필의 재료</b>로 주간 배치가 수집합니다')+
+  row('다듬기','scope · preset 3종 · 자유 지시문','<span class="own ai">AI</span>',
+      '매 턴 게이트 전체 재통과. <b>차단도 200</b> 이고 <code>blocked_reason</code> 을 함께 돌려줍니다 — 5xx 가 아닙니다')+
+  row('차단 표시 문구','<code>blocked_reason</code>','<span class="own be">BE</span>',
+      'AI 는 코드만 주고 <b>사람이 읽을 문구는 BE 가 매핑</b>합니다. 이 화면의 문구는 예시입니다')+
+  row('반 평균 · 석차','<code>audience: teacher_only</code>','<span class="own ai">AI</span>',
+      '<span class="red">학부모 리포트의 프롬프트 조립 단계에서 구조적으로 제외</span>됩니다 — 화면에 그릴 데이터가 애초에 없습니다')+
+  row('전국 백분위','<code>national_percentile</code> + <code>as_of</code>','<span class="own be">BE</span>',
+      '출처·모수 확정 전이라 <b>「참고치」</b> 표기가 필요합니다. <b>단일 값이라 월별 추이가 안 나옵니다</b> — '+
+      '추이를 그리려면 매월 값을 쌓을 자리를 정해야 하는데 지금 계약엔 없습니다')+
+  row('리포트 종류','<code>DraftKind</code>','<span class="own ai">AI</span>',
+      '코드 enum 은 <code>reply</code>·<code>report</code>·<code>counsel_pack</code> 3종. '+
+      '<span class="red">API 계약의 <code>report_single</code> 은 코드에 아직 없습니다</span> — 화면은 그려 두되 미확정입니다')+
+  '</table>'+
+  '<div class="note" style="padding:12px 0 0;">\u{1F534} <b>이 표는 통신 규격이 아니라 소유 구분입니다.</b> 엔드포인트·페이로드는 화면 확정 후에 붙입니다 — '+
+  '지금 필요한 것은 <b>어느 값이 화면 마음대로 바뀔 수 없는 것인지</b>뿐입니다.</div>'+
+  '</div></details></div>';
+}
+
+/* ── 11. 렌더 · 이벤트 ──────────────────────────────────────────── */
+function render(keepScroll){
+  document.querySelectorAll('.nav .sub2').forEach(el=>{
+    const v = el.getAttribute('data-v');
+    el.classList.toggle('on', v===S.view || (S.view==='edit' && v==='list'));
+  });
+  const y = window.scrollY;
+  const m = document.getElementById('main');
+  m.innerHTML = S.view==='list' ? viewList() : S.view==='edit' ? viewEdit() : viewSend();
+  window.scrollTo({top: keepScroll ? y : 0});
+  markOverflow();
+}
+
+/* A4 한 장을 넘긴 면을 표시한다 — 와이어프레임 검토용(인쇄엔 안 나간다) */
+const A4_PX = 297 * 96 / 25.4;
+function markOverflow(){
+  document.querySelectorAll('.pg').forEach(pg=>{
+    const over = Math.round(pg.offsetHeight - A4_PX);
+    if(over > 2) pg.insertAdjacentHTML('beforeend',
+      '<span class="ovf no-print">A4 초과 '+over+'px — 면을 나눠야 합니다</span>');
+  });
+}
+
+/* 지면에서 직접 고친다 — 포커스 때는 다시 그리지 않는다(캐럿이 날아간다) */
+document.addEventListener('focusin', e=>{
+  const el = e.target.closest('[data-edit]');
+  if(!el) return;
+  S.blockSeq = +el.getAttribute('data-edit');
+  S.scope = 'block';
+  const r = byId(S.openId), box = document.getElementById('selBlock');
+  if(box && r) box.innerHTML = selBlockHtml(r.blocks.find(b=>b.seq===S.blockSeq));
+  document.querySelectorAll('.blk').forEach(b=>
+    b.classList.toggle('on', +b.getAttribute('data-seq') === S.blockSeq));
+});
+
+/* 저장은 포커스가 빠질 때 한 번 — 그때 다시 그려 배지·현황을 맞춘다 */
+document.addEventListener('focusout', e=>{
+  const el = e.target.closest('[data-edit]');
+  if(!el) return;
+  const r = byId(S.openId);
+  const b = r && r.blocks.find(x=>x.seq === +el.getAttribute('data-edit'));
+  if(!b) return;
+  const now = el.innerText.replace(/\s+/g,' ').trim();
+  const was = (isEdited(b) ? b.edited : plainOf(b)).replace(/\s+/g,' ').trim();
+  if(now === was) return;
+
+  if(!now){                       /* 비우면 AI 원문 복귀 — 빈 문단을 남기지 않는다 */
+    b.owner = 'ai'; b.edited = null;
+    render(true);
+    showRefine('<div class="verd hold">문단을 비워서 <b>AI 원문으로 되돌렸습니다.</b></div>');
+    return;
+  }
+  b.owner  = 'teacher';
+  b.edited = now;
+  render(true);
+  showRefine('<div class="verd warn">✏️ <b>강사 작성으로 바뀌었습니다 — seq '+b.seq+'</b>'+
+    '<div class="line"><span>기록</span><b>/confirmations · <code>kind: draft_edit</code></b></div>'+
+    '<div class="line"><span>검사</span><b>없음 — 게이트·수치 대조를 안 거칩니다</b></div>'+
+    '<div style="margin-top:5px;font-size:11px;">이 수정분은 문체 프로필(STYLE_PROFILE)의 재료로 주간 배치에서 수집됩니다.</div></div>');
+});
+
+document.addEventListener('change', e=>{
+  const el = e.target.closest('[data-act="filter"]');
+  if(!el) return;
+  S.f[el.getAttribute('data-k')] = el.value;
+  render();
+});
+
+document.addEventListener('click', e=>{
+  const el = e.target.closest('[data-act]');
+  if(!el) return;
+  const act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+
+  switch(act){
+    case 'view':
+      S.view = el.getAttribute('data-v'); closeDrawer(); render(); break;
+
+    case 'month': {
+      const d = +el.getAttribute('data-d');
+      if(d===0){ S.ym = {y:PERIOD.y, m:PERIOD.m}; }
+      else { let m2 = S.ym.m + d, y2 = S.ym.y;
+             if(m2<1){ m2=12; y2--; } if(m2>12){ m2=1; y2++; }
+             S.ym = {y:y2, m:m2}; }
+      render(); break;
+    }
+
+    case 'reset':
+      S.f = {cls:'all', status:'all', kind:'all'}; render(); break;
+
+    case 'open-edit':
+      S.openId = id; S.view='edit'; S.blockSeq=null; S.scope='whole'; closeDrawer(); render(); break;
+
+    case 'print':
+      S.openId = id; S.view='edit'; render(); setTimeout(()=>window.print(), 60); break;
+
+    case 'scope':
+      S.scope = el.getAttribute('data-s'); render(true); break;
+
+    case 'goto-block': {
+      S.blockSeq = +el.getAttribute('data-seq'); S.scope = 'block'; render(true);
+      const target = document.querySelector('.blk[data-seq="'+S.blockSeq+'"] [data-edit]');
+      if(target) target.focus();
+      break;
+    }
+
+    case 'restore': {
+      const rr = byId(S.openId);
+      const bb = rr.blocks.find(x=>x.seq === +el.getAttribute('data-seq'));
+      bb.owner = 'ai'; bb.edited = null;
+      render(true);
+      showRefine('<div class="verd ok">↩ <b>AI 원문으로 되돌렸습니다 — seq '+bb.seq+'</b>'+
+        '<div class="line"><span>수치 대조</span><b>다시 적용됩니다</b></div></div>');
+      break;
+    }
+
+    case 'preset': {
+      const p = el.getAttribute('data-p');
+      applyRefine(byId(S.openId), {preset:p, text:{softer:'조금 더 부드럽게', conclusion_first:'결론을 앞으로', shorter:'더 짧게'}[p]});
+      break;
+    }
+
+    case 'try': {
+      const ta = document.getElementById('instr');
+      if(ta){ ta.value = el.getAttribute('data-t'); ta.focus(); }
+      break;
+    }
+
+    case 'refine': {
+      const ta = document.getElementById('instr');
+      const text = (ta && ta.value.trim()) || '';
+      if(!text){ showRefine('<div class="verd hold">지시문을 입력하세요.</div>'); return; }
+      applyRefine(byId(S.openId), {text});
+      break;
+    }
+
+    case 'rollback': {
+      const r = byId(S.openId);
+      logOf(r.id).push({rev:+el.getAttribute('data-r'), kind:'refine', text:'rev.'+el.getAttribute('data-r')+' 로 롤백 (생성 없음)'});
+      render(true); showRefine('<div class="verd ok">✅ <b>롤백했습니다.</b><div class="line"><span>생성</span><b>0회 — 저장된 리비전 복원</b></div></div>');
+      break;
+    }
+
+    case 'toggle':
+      e.stopPropagation();
+      SEL.has(id) ? SEL.delete(id) : SEL.add(id); render(); break;
+
+    case 'all': {
+      const ready = REPORTS.filter(sendable);
+      const allOn = ready.every(r=>SEL.has(r.id));
+      ready.forEach(r=> allOn ? SEL.delete(r.id) : SEL.add(r.id));
+      render(); break;
+    }
+
+    case 'open-drawer':
+      openDrawer(id); break;
+
+    case 'close-drawer':
+      closeDrawer(); break;
+
+    case 'send-one':
+    case 'bulk': {
+      const ids = act==='send-one' ? [id] : [...SEL];
+      if(!ids.length) return;
+      ids.forEach(x=>{ const r=byId(x); r.sent=true; r.sentAt='2026.09.01 10:04'; SEL.delete(x); });
+      closeDrawer(); render();
+      alert(ids.length+'건을 발송 대기열에 올렸습니다 (와이어프레임 — 실제 전송 없음).\n\n'+
+            '\u{1F534} 발송은 BE(HITL) 소유입니다 — AI 계약에 발송 엔드포인트가 없습니다.\n'+
+            '발송된 리포트는 읽기 전용으로 바뀝니다.');
+      break;
+    }
+  }
+});
+
+function showRefine(html){
+  const box = document.getElementById('refineResult');
+  if(box) box.innerHTML = html;
+}
+
+function applyRefine(r, turn){
+  const reason = preCheck(turn.text);
+  const log = logOf(r.id);
+
+  if(reason){
+    const b = BLOCKED[reason];
+    log.push({rev:revOf(r.id), kind:'blocked', text:turn.text, reason});
+    render(true);
+    showRefine('<div class="verd no">\u{1F534} <b>'+b.n+' — 반영하지 않았습니다.</b>'+
+      '<div style="margin-top:5px;">'+b.msg+'</div>'+
+      '<div class="line"><span>응답</span><b>200 + <code>blocked_reason: '+reason+'</code></b></div>'+
+      '<div class="line"><span>LLM 호출</span><b>'+(b.pre?'없음 — 사전 정적 검사':'있음 — 생성 후 게이트')+'</b></div>'+
+      '</div>');
+    return;
+  }
+
+  /* AI 가 다시 쓰면 그 범위의 강사 수정분은 덮인다 — 화면이 그것을 보여야 한다 */
+  const scopeBlocks = S.scope === 'whole'
+    ? r.blocks
+    : r.blocks.filter(b => b.seq === S.blockSeq);
+  const overwritten = scopeBlocks.filter(isEdited);
+  overwritten.forEach(b => { b.owner = 'ai'; b.edited = null; });
+
+  log.push({rev:revOf(r.id)+1, kind:'refine', text:turn.text, preset:turn.preset});
+  render(true);
+  showRefine('<div class="verd ok">✅ <b>반영했습니다 — rev.'+revOf(r.id)+'</b>'+
+    '<div class="line"><span>범위</span><b>'+(S.scope==='whole'?'전체':'선택 문단')+'</b></div>'+
+    '<div class="line"><span>게이트</span><b>Evidence → SourceGrounding → ToneSafety 전부 재통과</b></div>'+
+    (overwritten.length
+      ? '<div class="line"><span>덮어쓴 강사 수정</span><b style="color:var(--tch);">'+overwritten.length+'문단</b></div>'
+      : '')+
+    '<div style="margin-top:5px;font-size:11px;">⚠ 와이어프레임이라 본문은 그대로입니다 — 실제로는 직전 본문 위에 지시가 <b>누적</b>됩니다.</div>'+
+    '</div>');
+}
+
+render();
+</script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -131,15 +132,36 @@ def test_teacher_edit_preserves_ai_original_and_ai_rewrite_clears_edit() -> None
 def test_restore_revision_selects_preserved_ai_original() -> None:
     edited = _block().apply_teacher_edit("강사 수정 문면입니다.", numbers_used=())
 
-    restored = edited.restore_revision(0)
+    restored_at = datetime(2026, 8, 23, 9, 30, tzinfo=UTC)
+    restored = edited.restore_revision(
+        0,
+        restored_by="teacher-alias-1",
+        restored_at=restored_at,
+    )
 
     assert restored.active_revision_no == 2
     assert restored.active_revision.revision_kind is ReportRevisionKind.ROLLBACK
     assert restored.active_revision.revert_to_revision_no == 0
     assert restored.active_revision.teacher_edit is None
     assert not restored.active_revision.gate_passed
+    assert restored.active_revision.restored_by == "teacher-alias-1"
+    assert restored.active_revision.restored_at == restored_at
+    assert restored.revisions[0].ai_original == _block().revisions[0].ai_original
+    assert restored.ai_rewrite_warning == "AI로 다시 쓰면 그 범위의 강사 수정분은 덮입니다"
+
+    restored_from_edit = edited.restore_revision(
+        1,
+        restored_by="teacher-alias-1",
+        restored_at=restored_at,
+    )
+    assert restored_from_edit.active_revision.ai_original == edited.revisions[1].ai_original
+    assert restored_from_edit.active_revision.teacher_edit is None
     with pytest.raises(ValueError, match="복귀 대상"):
-        edited.restore_revision(3)
+        edited.restore_revision(
+            3,
+            restored_by="teacher-alias-1",
+            restored_at=restored_at,
+        )
 
 
 def test_report_artifact_rejects_gate_failed_block() -> None:
