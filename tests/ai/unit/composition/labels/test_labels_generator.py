@@ -7,15 +7,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Final
+from types import SimpleNamespace
+from typing import Any, Final, cast
 
 import pytest
 
 from ai.composition.counsel.versions import counsel_versions
 from ai.composition.labels.grounding import keep_sendable_history
+from ai.composition.labels.prompt import (
+    _PROMPT_PATH as _TEMPLATE_PATH,
+)
 from ai.composition.labels.prompt import PROMPT_VERSION, assemble_prompt
 from ai.composition.labels.provider import (
     FakeLabelSuggestProvider,
+    GatewayLabelSuggestProvider,
     LabelSettings,
     MissingLabelSuggestProvider,
     build_label_suggest_provider,
@@ -232,4 +237,70 @@ def test_the_filter_looks_at_findings_not_only_uncertain() -> None:
     )
     kept, dropped = keep_sendable_history(_history_with(blocked))
     assert kept == () and dropped == ("cm_88",)
+
+@pytest.mark.anyio
+async def test_the_provider_actually_drops_the_blocked_item_from_the_prompt() -> None:
+    """🔴 **배선을 잰다 — 필터가 실제로 프롬프트에서 빠지게 하는가.**
+
+    ⚠ 🔴 **이 검사가 없어서 뒤집기가 green 이었다**(8/22 실측): 픽스처 검사는 **대역
+    provider 를 주입**하므로 실 `GatewayLabelSuggestProvider.suggest` 를 **안 지나고**,
+    단위 검사는 `keep_sendable_history` 를 **직접** 부른다 ⇒ **provider 가 그 함수를 안 불러도
+    둘 다 통과한다.** 🔴 «함수는 맞는데 배선을 안 했다» 를 아무도 안 봤다 —
+    #382 의 `meta.versions` 와 **같은 형태**다(99 #191).
+
+    ⇒ **게이트웨이 자리에 기록기를 넣어 실제로 나간 프롬프트**를 본다.
+    """
+    sent: list[str] = []
+
+    class _RecordingGateway:
+        async def complete(self, request: object, context: object) -> object:
+            del context
+            sent.append(getattr(request, "prompt"))  # noqa: B009 — 실효값 확인
+            return SimpleNamespace(text="")
+
+    blocked = _BLOCKED_TEXT
+    if not _still_blocked(blocked):
+        pytest.fail(f"{blocked!r} 가 이제 안 걸린다 — 이 검사가 재려는 대상이 사라졌다")
+    #: 🔴 **여섯 건이다** — `MIN_HISTORY = 5` 라 다섯 건에서 하나가 빠지면 **미달**이 되고
+    #: 그때는 판정 대기 구간(99 #194)이 **전체를 태운다.** ⚠ 그러면 이 검사가 재려는
+    #: «걸린 건만 빠진다» 를 못 잰다 — **필터가 실제로 효과를 내는 구간**에서 재야 한다.
+    #: 🔴 **그 사실 자체가 이 회차의 발견이다**: 요청 하한과 필터 하한이 같은 5라서
+    #: **다섯 건 요청은 한 건만 걸려도 필터가 무효**다(99 #194 에 적었다).
+    history = _history_with(
+        "숫자로 정리해 주세요",
+        blocked,
+        "수업 시간표를 알려 주세요",
+        "다음 상담은 언제인가요",
+        "결석하면 보충이 되나요",
+        "모의고사 일정이 어떻게 되나요",
+    )
+    provider = GatewayLabelSuggestProvider(cast("Any", _RecordingGateway()))
+    await provider.suggest(guardian_ref="gd_1", history=history, context=_context())
+
+    assert len(sent) == 1, "게이트웨이가 안 불렸다 — 선검사가 통째로 막았을 수 있다"
+    assert blocked not in sent[0], (
+        f"걸린 이력이 프롬프트에 그대로 실렸다 — `keep_sendable_history` 배선이 없다: {blocked!r}"
+    )
+    assert "숫자로 정리해 주세요" in sent[0], "안 걸린 이력까지 빠졌다"
+
+def test_the_template_itself_passes_the_masking_gate() -> None:
+    """🔴 **템플릿 자신이 `redact()` 를 지나야 한다** — 안 그러면 **이력과 무관하게 항상 500** 이다.
+
+    ⚠ 🔴 **실측(8/22)으로 잡았다.** 최초 템플릿이 두 자리에서 걸렸다:
+    «학원 **강사가 학부모**의 …»(`[가-힣]{2,3}` + 호칭 `학부모` ⇒ `⟪이름1⟫` **확정 검출**) ·
+    «아래 **이력에는** …»(`이`(성씨)+`력에`+조사 ⇒ `⟪확인필요⟫`).
+    🔴 **제 프롬프트가 제 문지기에 걸렸다.** 그리고 그건 **어떤 이력을 넣어도** 500 이라는 뜻이다.
+
+    🔴 **왜 아무도 못 봤나** — 픽스처 검사는 **대역 provider** 를 주입해 실 provider 의 선검사를
+    안 지나고, 단위 검사는 `keep_sendable_history` 를 **직접** 부른다. ⇒ **조립된 프롬프트를
+    실제로 문지기에 태우는 자리가 없었다.** 이 검사가 그 자리다.
+
+    ⚠ 이 검사는 **이력 없이** 템플릿만 본다 — 이력은 `keep_sendable_history` 가 이미 거른다.
+    """
+    template = _TEMPLATE_PATH.read_text(encoding="utf-8")
+    outcome = redact(template)
+    assert not outcome.findings and not outcome.uncertain, (
+        "라벨 프롬프트 **템플릿**이 마스킹 문지기에 걸린다 — 이력과 무관하게 항상 막힌다. "
+        f"걸린 유형: {[f.type for f in outcome.findings]}"
+    )
 
