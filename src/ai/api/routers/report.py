@@ -17,7 +17,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ai.api.envelope import success_envelope
 from ai.api.version_scope import RouterScope
 from ai.contracts.execution import VersionSet
-from ai.contracts.report import ReportAudience, ReportBlock, ReportRevisionKind
+from ai.contracts.report import (
+    ReportAudience,
+    ReportBlock,
+    ReportRevisionKind,
+    ReportValueStatus,
+)
 from ai.report.assembler import assemble_report_studio_data
 from ai.report.memory_store import InMemoryReportStore
 from ai.report.store import (
@@ -26,6 +31,7 @@ from ai.report.store import (
     ReportStore,
     StoredReport,
 )
+from ai.report.vocabulary import default_report_unproduced_vocabulary
 from ai.runtime.errors import DomainException, NotFound, SnapshotInvalid
 
 router = APIRouter()
@@ -39,13 +45,6 @@ _VERSIONS: Final = VersionSet(
     contract_version="0.1",
 )
 VERSION_SCOPE: Final = RouterScope(_PREFIX, lambda: _VERSIONS)
-
-_UNPRODUCED_SECTIONS: Final = (
-    ("national_percentile", "BE 비교집단 API·원천·산식 계약이 확정되지 않음"),
-    ("monthly_trend", "현재 DiagnosisInput은 단일 기간이라 월별 시계열을 조립할 수 없음"),
-    ("weekly_accuracy_intervention", "주차별 정확도와 개입 이력 입력 필드가 없음"),
-    ("recent_six_week_baseline", "최근 6주 기준선의 기간·결측 처리 정책이 확정되지 않음"),
-)
 
 
 def _system_utc_now() -> datetime:
@@ -168,6 +167,7 @@ def _summary(report: StoredReport) -> dict[str, Any]:
 
 def _detail(report: StoredReport) -> dict[str, Any]:
     source = report.source
+    unproduced_vocabulary = default_report_unproduced_vocabulary()
     studio_data = assemble_report_studio_data(
         source.weakness_map,
         source.misconceptions,
@@ -183,8 +183,12 @@ def _detail(report: StoredReport) -> dict[str, Any]:
         "studio_data": studio_data.model_dump(mode="json"),
         "blocks": [block.model_dump(mode="json") for block in report.blocks],
         "unproduced_sections": [
-            {"key": key, "status": "not_produced", "reason": reason}
-            for key, reason in _UNPRODUCED_SECTIONS
+            {
+                "key": metric.value,
+                "status": ReportValueStatus.NOT_PRODUCED.value,
+                "reason": unproduced_vocabulary.reason_for(metric),
+            }
+            for metric in studio_data.unproduced
         ],
     }
 

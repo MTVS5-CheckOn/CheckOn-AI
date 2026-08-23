@@ -29,6 +29,7 @@ from ai.contracts.report import (
     ReportEvidenceRef,
     ReportMetricInput,
     ReportRevisionKind,
+    ReportUnproducedMetric,
 )
 from ai.report.memory_store import InMemoryReportStore
 from ai.report.store import ReportSourceSnapshot, StoredReport
@@ -176,7 +177,7 @@ def test_list_rejects_missing_request_id() -> None:
 
 
 # 상세: 정상·게이트 경계·tenant 실패
-def test_detail_assembles_guardian_data_and_reports_four_omissions() -> None:
+def test_detail_assembles_guardian_data_with_consistent_omissions() -> None:
     with _client_with(_stored_report()) as client:
         response = client.get(f"/v1/reports/{REPORT_ID}", headers=HEADERS)
 
@@ -188,12 +189,10 @@ def test_detail_assembles_guardian_data_and_reports_four_omissions() -> None:
     assert "misconception_frequency" in [block["kind"] for block in studio["blocks"]]
     assert [metric["metric_key"] for metric in studio["metrics"]] == ["home_practice_rate"]
     assert all(metric["audience"] != "teacher_only" for metric in studio["metrics"])
-    assert [item["key"] for item in data["unproduced_sections"]] == [
-        "national_percentile",
-        "monthly_trend",
-        "weekly_accuracy_intervention",
-        "recent_six_week_baseline",
-    ]
+    section_keys = [item["key"] for item in data["unproduced_sections"]]
+    assert section_keys == studio["unproduced"]
+    assert section_keys == [metric.value for metric in ReportUnproducedMetric]
+    assert all(item["reason"] for item in data["unproduced_sections"])
 
 
 def test_detail_returns_gate_rejection_as_200_status() -> None:
