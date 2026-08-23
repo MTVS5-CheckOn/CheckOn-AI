@@ -1,0 +1,17 @@
+version: report-root-cause-metrics.v1
+metric_keys:
+  confirmed: root_cause.confirmed.evidence_count
+  suspect: root_cause.suspect.evidence_count
+  propagated: root_cause.propagated.score
+area_labels:
+  language: 언어(문법)
+  media: 매체
+  literature: 문학
+  reading: 독서
+  speech_writing: 화법과작문
+type_labels:
+  fact: 사실 확인
+  infer: 추론
+  critic: 비판·평가
+  concept: 개념·지식
+  apply: 적용·창의

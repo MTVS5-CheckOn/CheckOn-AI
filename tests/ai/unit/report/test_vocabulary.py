@@ -1,5 +1,6 @@
 """리포트 블록 어휘 YAML의 실패 닫힘 검증."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from ai.contracts.report import ReportBlockKind, ReportUnproducedMetric
 from ai.report.vocabulary import (
     ReportVocabularyError,
     load_report_block_vocabulary,
+    load_report_root_cause_vocabulary,
     load_report_unproduced_vocabulary,
 )
 
@@ -20,6 +22,12 @@ def _write(tmp_path: Path, text: str) -> Path:
 
 def _write_unproduced(tmp_path: Path, text: str) -> Path:
     path = tmp_path / "unproduced_metrics.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _write_root_cause(tmp_path: Path, text: str) -> Path:
+    path = tmp_path / "root_cause_metrics.yaml"
     path.write_text(text, encoding="utf-8")
     return path
 
@@ -101,3 +109,20 @@ def test_unproduced_vocabulary_fails_closed_for_enum_mismatch(
 ) -> None:
     with pytest.raises(ReportVocabularyError, match="완전하지 않다"):
         load_report_unproduced_vocabulary(_write_unproduced(tmp_path, body))
+
+
+@pytest.mark.parametrize("section", ["metric_keys", "area_labels", "type_labels"])
+def test_root_cause_vocabulary_fails_closed_for_missing_or_extra_keys(
+    tmp_path: Path,
+    section: str,
+) -> None:
+    source = load_report_root_cause_vocabulary().model_dump(mode="json")
+    values = source[section]
+    assert isinstance(values, dict)
+    values.pop(next(iter(values)))
+    values["unknown"] = "미등록"
+
+    with pytest.raises(ReportVocabularyError, match="완전하지 않다"):
+        load_report_root_cause_vocabulary(
+            _write_root_cause(tmp_path, json.dumps(source, ensure_ascii=False))
+        )

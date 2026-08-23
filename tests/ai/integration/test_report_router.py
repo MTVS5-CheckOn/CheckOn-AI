@@ -19,7 +19,15 @@ from ai.api.routers.report import (
     set_report_clock,
     set_report_store,
 )
-from ai.contracts.diagnosis import CellVerdict, MisconceptionReport, WeaknessCell, WeaknessMap
+from ai.contracts.diagnosis import (
+    CellVerdict,
+    MisconceptionReport,
+    NodeVerdict,
+    PropagatedNode,
+    WeaknessCell,
+    WeaknessMap,
+    WeaknessNode,
+)
 from ai.contracts.problem_generation import DifficultyBand, ItemResult, ProblemItemStatus
 from ai.contracts.report import (
     ReportAudience,
@@ -33,6 +41,7 @@ from ai.contracts.report import (
 )
 from ai.report.memory_store import InMemoryReportStore
 from ai.report.store import ReportSourceSnapshot, StoredReport
+from ai.report.vocabulary import RootCauseMetricKind, default_report_root_cause_vocabulary
 
 REPORT_ID = UUID("00000000-0000-4000-8000-000000000501")
 BLOCK_ID = UUID("00000000-0000-4000-8000-000000000502")
@@ -91,6 +100,18 @@ def _stored_report(*, tenant_id: str = "tenant-a", gate_passed: bool = True) -> 
                         verdict=CellVerdict.WEAK,
                         severity=0.75,
                     ),
+                },
+                nodes={
+                    "language.grammar.fortition": WeaknessNode(
+                        verdict=NodeVerdict.WEAK_CONFIRMED,
+                        basis=("event:basis-1",),
+                    )
+                },
+                propagated={
+                    "language.grammar.phonological_change": PropagatedNode(
+                        score=0.75,
+                        from_nodes=("language.grammar.fortition",),
+                    )
                 },
             ),
             misconceptions=MisconceptionReport(
@@ -187,8 +208,20 @@ def test_detail_assembles_guardian_data_with_consistent_omissions() -> None:
     assert data["audience"] == "guardian"
     assert len(studio["blocks"]) == 6
     assert "misconception_frequency" in [block["kind"] for block in studio["blocks"]]
-    assert [metric["metric_key"] for metric in studio["metrics"]] == ["home_practice_rate"]
+    vocabulary = default_report_root_cause_vocabulary()
+    assert [metric["metric_key"] for metric in studio["metrics"]] == [
+        "home_practice_rate",
+        vocabulary.metric_key_for(RootCauseMetricKind.CONFIRMED),
+        vocabulary.metric_key_for(RootCauseMetricKind.PROPAGATED),
+    ]
     assert all(metric["audience"] != "teacher_only" for metric in studio["metrics"])
+    direct, propagated = studio["metrics"][1:]
+    assert direct["evidence"][0]["record_id"] == "event:basis-1"
+    assert propagated["evidence"][0]["source_table"] == "weakness_propagation"
+    assert propagated["evidence"][0]["record_id"].startswith("graph-node-")
+    assert "언어(문법) ×" in propagated["evidence"][0]["summary"]
+    assert "language.grammar.fortition" not in response.text
+    assert "language.grammar.phonological_change" not in response.text
     section_keys = [item["key"] for item in data["unproduced_sections"]]
     assert section_keys == studio["unproduced"]
     assert section_keys == [metric.value for metric in ReportUnproducedMetric]
