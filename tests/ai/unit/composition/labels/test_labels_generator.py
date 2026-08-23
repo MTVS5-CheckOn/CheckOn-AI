@@ -12,6 +12,7 @@ from typing import Final
 import pytest
 
 from ai.composition.counsel.versions import counsel_versions
+from ai.composition.labels.grounding import keep_sendable_history
 from ai.composition.labels.prompt import PROMPT_VERSION, assemble_prompt
 from ai.composition.labels.provider import (
     FakeLabelSuggestProvider,
@@ -23,6 +24,7 @@ from ai.composition.labels.provider import (
 from ai.contracts.execution import Capability, ExecutionContext
 from ai.contracts.labels import HistoryItem
 from ai.runtime.errors import LlmUpstreamDown
+from ai.runtime.redaction import redact
 
 _HISTORY: Final = tuple(
     HistoryItem(
@@ -145,3 +147,89 @@ def test_the_builder_picks_the_fake_by_default() -> None:
 def test_the_prompt_version_is_declared() -> None:
     """재현성(불변식 8) — 프롬프트 버전이 선언돼 있다."""
     assert PROMPT_VERSION
+
+# ── 🔴 걸린 이력만 빼고 진행 (99 #192 ⓑ · №66) ──────────────────────
+
+_BLOCKED_TEXT: Final = "오답률이 높은가요"
+"""🔴 **실측으로 고른 문면이다**(8/22) — `오`(성씨)+`답률`+조사 `이`. `findings=1 ·
+uncertain=False` 라 **선검사가 `uncertain` 만 보면 빠지는 그 틈**이기도 하다(99 #83).
+
+⚠ 🔴 **처음에 `성적표를`·`문제집이` 로 썼다가 두 검사가 `skip` 됐다** — №65 가 그 어간을
+`name_exclude` 에 넣어 **더 이상 안 걸리기 때문**이다. 🔴 **skip 은 green 이 아니다** —
+그대로 뒀으면 «걸러진다» 를 하나도 증명 못 하는 검사가 남았다.
+⚠ 그래서 `_still_blocked()` 로 **먼저 확인**하고, 이 낱말도 언젠가 `name_exclude` 에
+들어가면 그때 다시 골라야 한다 — 🔴 **두더지잡기의 대가가 여기에도 있다**(#178)."""
+
+
+def _still_blocked(text: str) -> bool:
+    outcome = redact(text)
+    return bool(outcome.uncertain or outcome.findings)
+
+
+def _history_with(*texts: str) -> tuple[HistoryItem, ...]:
+    return tuple(
+        HistoryItem(
+            record_id=f"cm_{index}",
+            direction="inbound",
+            text=text,
+            at=datetime(2026, 6, 12, 10, 11, tzinfo=UTC),
+        )
+        for index, text in enumerate(texts, start=88)
+    )
+
+
+def test_a_blocked_history_item_is_dropped_not_the_whole_request() -> None:
+    """🔴 **한 건의 오탐이 제안 전체를 죽이지 않는다**(99 #192 ⓑ).
+
+    ⚠ 🔴 **fail-closed 를 지킨다** — 걸린 건은 **안 보낸다**. 트립와이어도 그대로다.
+    """
+    blocked = _BLOCKED_TEXT
+    if not _still_blocked(blocked):
+        pytest.skip(f"{blocked!r} 가 이제 안 걸린다 — 다른 문면으로 재야 한다")
+    history = _history_with(
+        "숫자로 정리해 주세요",
+        blocked,
+        "수업 시간표를 알려 주세요",
+        "다음 상담은 언제인가요",
+        "결석하면 보충이 되나요",
+    )
+    kept, dropped = keep_sendable_history(history)
+    assert len(kept) == 4, [item.record_id for item in kept]
+    assert dropped == ("cm_89",), dropped
+    #: 🔴 **본문이 아니라 `record_id` 만** 돌려준다(불변식 3 · 99 #80).
+    assert all(not text.startswith("문제집") for text in dropped)
+
+
+def test_a_clean_history_loses_nothing() -> None:
+    """🔴 **오탐 시험** — 깨끗한 이력은 하나도 안 빠진다.
+
+    ⚠ 이게 없으면 «전부 버리는 필터» 도 위 검사를 통과한다(앵커 폭).
+    """
+    history = _history_with(
+        "숫자로 정리해 주세요",
+        "수업 시간표를 알려 주세요",
+        "다음 상담은 언제인가요",
+        "결석하면 보충이 되나요",
+        "모의고사 일정이 어떻게 되나요",
+    )
+    kept, dropped = keep_sendable_history(history)
+    assert len(kept) == len(history)
+    assert dropped == ()
+
+
+def test_the_filter_looks_at_findings_not_only_uncertain() -> None:
+    """🔴 `uncertain` 만 보면 **그 틈으로 빠진다**(99 #83 이 실측한 갈림).
+
+    트립와이어는 `findings or uncertain` 으로 막으므로, 선검사가 `uncertain` 만 보면
+    «조립은 통과인데 전송이 죽는다» 가 된다.
+    """
+    blocked = _BLOCKED_TEXT
+    if not _still_blocked(blocked):
+        pytest.skip(f"{blocked!r} 가 이제 안 걸린다")
+    outcome = redact(blocked)
+    assert outcome.findings and not outcome.uncertain, (
+        "이 문면이 `uncertain` 을 내면 이 검사가 재려는 틈이 아니다"
+    )
+    kept, dropped = keep_sendable_history(_history_with(blocked))
+    assert kept == () and dropped == ("cm_88",)
+

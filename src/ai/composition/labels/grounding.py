@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from ai.contracts.labels import HistoryItem, SuggestedLabel
+from ai.runtime.redaction import redact
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +84,50 @@ def ground_suggestions(
     return GroundingOutcome(suggestions=tuple(kept), drops=tuple(drops))
 
 
+
+
+def keep_sendable_history(
+    history: Sequence[HistoryItem],
+) -> tuple[tuple[HistoryItem, ...], tuple[str, ...]]:
+    """🔴 **이력 한 건씩** 마스킹 문지기를 태워 **보낼 수 있는 것만** 남긴다(99 #192 ⓑ).
+
+    ⚠ 🔴 **fail-closed 를 지킨다** — 걸린 이력을 **빼는 것**은 «불확실한 것을 안 보낸다» 이고
+    불변식 3 그대로다. 🔴 **트립와이어를 끄거나 우회하는 것이 아니다**(그건 №54 §2-3 이
+    금지한 자리다) — 선검사가 앞에서 거르고 트립와이어는 **마지막 관문**으로 그대로 선다.
+
+    🔴 **왜 이력 단위인가** — 종전에는 이력을 **통째로** 조립해 선검사했다. 그러면 한 건의
+    오탐이 **제안 전체를 500 으로 죽인다**(99 #192 실측: 학부모 문의 20건 중 2건). ⚠ 그리고
+    실 LLM 측정 전에 이걸 해야 한다: 걸리는 콜이 500 으로 죽으면 **그 콜이 표본에서 빠진다**
+    — 🔴 **#110(«상한이 표본을 자른다»)이 이번엔 «마스킹이 표본을 자른다» 로 나타난다.**
+
+    ⚠ 🔴 **`uncertain` 만 보지 않는다** — 트립와이어가 `findings or uncertain` 이라
+    `문제집을`(`findings=1 · uncertain=False`)이 그 틈으로 빠진다(99 #83 이 실측한 갈림).
+
+    돌려주는 둘: **남은 이력** · **뺀 `record_id`**(🔴 본문은 안 돌려준다 · 불변식 3).
+    """
+    kept: list[HistoryItem] = []
+    dropped: list[str] = []
+    for item in history:
+        outcome = redact(item.text)
+        if outcome.uncertain or outcome.findings:
+            dropped.append(item.record_id)
+        else:
+            kept.append(item)
+    if dropped:
+        #: ⚠ 🔴 **본문을 안 싣는다**(불변식 3 · 99 #80) — 건수와 `record_id` 까지다.
+        #: 🔴 그리고 이 로그가 **#193 의 계기**다 — 실 LLM 회차에서 이걸 읽는다.
+        logger.warning(
+            "라벨 이력 제외 수=%d record_ids=%s — 마스킹 문지기에 걸렸다(99 #192)",
+            len(dropped),
+            dropped,
+        )
+    return tuple(kept), tuple(dropped)
+
+
 __all__ = [
     "DROP_QUOTE_NOT_IN_RECORD",
     "DROP_UNKNOWN_RECORD_ID",
     "GroundingOutcome",
     "ground_suggestions",
+    "keep_sendable_history",
 ]
