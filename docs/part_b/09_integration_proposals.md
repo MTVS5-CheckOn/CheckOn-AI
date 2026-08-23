@@ -2017,8 +2017,16 @@ LLM_UPSTREAM_DOWN(벤더 장애)이 같은 status를 쓴다.
    tenant 술어로 역참조한다. 실제 독립 프로세스에서 running 워커 종료 → lease 만료 →
    startup drain 재발견 → recovery_count=1 → 결과 저장 → 새 프로세스 조회까지 통과했다.
    `db/models.py`·`06_erd.md`는 양자 파일이므로 머지 조건은 A 리뷰다.
-2. **OpenAPI 정본화** — 백엔드가 세운 규약을 우리가 못 지킨다. 엔드포인트 13개 전부의
-   시그니처 변경이고 **8개가 A 소유**, 공통 envelope 모델도 양자다. **B 단독 불가.**
+2. **OpenAPI 정본화** — 백엔드가 세운 규약을 우리가 못 지킨다. ~~엔드포인트 13개 전부의
+   시그니처 변경이고 **8개가 A 소유**다.~~ **엔드포인트 수 정정(2026-08-24 실측):** 중첩
+   라우터까지 순회하면 `/v1` 엔드포인트는 **16개**다. ~~10개가 A 소유다.~~
+   **소유 정정(2026-08-24 · 라우터 파일 docstring 대조):** A 명시 **7개**
+   (classify·confirmations·labels·detect·counsel 셋), B 명시 **6개**
+   (diagnosis·problems 다섯), **미확인 3개**(ops의 `/v1/health`·`/v1/ready`·
+   `/v1/meta/versions`)다. `ops.py`에 소유 표기가 없고 `docs/02_ownership.md` 라우터 트리도
+   detect.py만 명시하므로 ops 소유 확정은 A 안건으로 남긴다. #380으로 `/v1/imports` 셋이
+   삭제되고 #382로 `/v1/labels/suggest`가 추가된 현재 표면을 다시 셌다. 공통 envelope
+   모델도 양자다. **B 단독 불가.**
 3. **job 취소 HTTP 노출** — 계약에는 `cancelled`가 있는데 엔드포인트가 0개다. adapter가
    관찰 상한을 넘겨도 AI에 취소를 요청할 방법이 없다.
 

@@ -115,9 +115,11 @@ _CURRICULUM_NODES = load_skill_graph(
     _GRAPH_PATH,
     expected_taxonomy_version="v1",
 ).nodes
-_A_OWNED_REDACTION_BLOCKED_NODES = {
-    "language.grammar.fortition": "A 소유 redaction 오탐 · 정정 요청 중",
-}
+_A_OWNED_REDACTION_BLOCKED_NODES: dict[str, str] = {}
+# 2026-08-22 해소 — A 처방 #378이 whitelists.name_exclude에 `이시옷`·`성립되`를
+# 추가해 language.grammar.fortition의 redaction 오탐을 풀었다. 그 전까지 이 노드는
+# 명시적 제외였고 완주 노드 수는 56이었다. xfail 대신 제외 목록과 전용 재현 검사로
+# 남긴 경로가 해소를 검증할 수 있게 했다.
 _RUNNABLE_CURRICULUM_NODES = tuple(
     node
     for node in _CURRICULUM_NODES
@@ -566,17 +568,16 @@ def test_curriculum_matrix_has_exact_five_area_distribution() -> None:
         AreaTag.SPEECH_WRITING: 6,
         AreaTag.MEDIA: 6,
     }
-    assert len(_RUNNABLE_CURRICULUM_NODES) == 56
-    assert _A_OWNED_REDACTION_BLOCKED_NODES == {
-        "language.grammar.fortition": "A 소유 redaction 오탐 · 정정 요청 중"
-    }
+    assert len(_RUNNABLE_CURRICULUM_NODES) == 57
+    assert _A_OWNED_REDACTION_BLOCKED_NODES == {}
 
 
 @pytest.mark.parametrize("node", _RUNNABLE_CURRICULUM_NODES, ids=lambda node: node.id)
-def test_runnable_56_nodes_generate_persist_and_roundtrip_over_http(node: GraphNode) -> None:
-    """A 소유 오탐 1노드를 제외한 56노드의 실제 HTTP 완주를 증명한다.
+def test_runnable_57_nodes_generate_persist_and_roundtrip_over_http(node: GraphNode) -> None:
+    """57노드의 실제 HTTP 완주를 증명한다.
 
-    fortition은 xfail로 숨기지 않고 명시적 제외 목록과 전용 redaction 재현 검사에 남긴다.
+    fortition은 #378 전까지 xfail로 숨기지 않고 명시적 제외 목록과 전용 redaction 재현
+    검사에 남겼으며, A 처방 뒤 같은 완주 행렬에 복귀했다.
     """
     type_tag = _matrix_type(node)
     source_body, source_steps, evidence_kind, evidence_ref = (

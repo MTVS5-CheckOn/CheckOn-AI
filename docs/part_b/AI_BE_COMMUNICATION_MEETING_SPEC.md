@@ -1,7 +1,9 @@
 # CheckOn AI–BE 문제출제 통신 규약 확정 지시서
 
-- 작성일: 2026-08-21
-- AI 기준: `develop` `bc30fe9` 이상 (#363 머지 후)
+- 작성일: 2026-08-24
+- AI 기준: `develop` `cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후)
+- 문서 개정: PR #380 import API 제거 · PR #381 BE 인계 명세 확정 ·
+  PR #382 라벨 제안 동기 200
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 목적: 약점 진단 → 문제 생성 → 조회 → 수정 → 오답 약점 환류의 BE 구현 계약 지시
 - 적용 방식: 이 문서의 결정은 협의 후보가 아니라 AI 통신 경계의 확정값이다. BE와 Adapter는
@@ -398,7 +400,9 @@ problem_generation_request
 - `weakness_auto` 생산 diagnosis seam 미배선
 - `apply` type tag 미지원
 - `ai_refine` 외 revision kind 미지원
-- `language.grammar.fortition` redaction 오탐 잔여
+- ~~`language.grammar.fortition` redaction 오탐 잔여~~ **해소(2026-08-22 · PR #378):**
+  A 처방이 `whitelists.name_exclude`에 `이시옷`·`성립되`를 추가해 오탐을 풀었고,
+  57노드 전부 완주한다.
 - ~~일부 terminal·5xx 조합의 고정 HTTP fixture 미비~~ **해소(2026-08-21 · PR #362):**
   failed·cancelled 조회와 revision 요청·200·409·500·503·504 fixture를 추가했다.
 
