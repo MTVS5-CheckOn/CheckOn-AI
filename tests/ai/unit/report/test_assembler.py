@@ -98,6 +98,7 @@ def _assemble(*, include_apply: bool = False) -> ReportStudioData:
             _item("00000000-0000-4000-8000-000000000302", DifficultyBand.HIGH),
         ),
         cell_min_items=load_diagnosis_config().params.cell_min_items,
+        audience=ReportAudience.GUARDIAN,
     )
 
 
@@ -122,6 +123,35 @@ def test_guardian_assembly_physically_excludes_teacher_only_metric() -> None:
 
     assert assembled == (guardian,)
     assert all(metric.value != 63 for metric in assembled)
+
+
+def test_assembly_path_filters_guardian_and_preserves_teacher_only_metrics() -> None:
+    teacher_only = ReportMetricInput(
+        metric_key="class_average",
+        value=63,
+        audience=ReportAudience.TEACHER_ONLY,
+        evidence=_evidence("class-average-path-1"),
+    )
+
+    guardian_result = assemble_report_studio_data(
+        _weakness_map(),
+        MisconceptionReport(),
+        (_item("00000000-0000-4000-8000-000000000304", DifficultyBand.MEDIUM),),
+        cell_min_items=load_diagnosis_config().params.cell_min_items,
+        audience=ReportAudience.GUARDIAN,
+        metrics=(teacher_only,),
+    )
+    teacher_result = assemble_report_studio_data(
+        _weakness_map(),
+        MisconceptionReport(),
+        (_item("00000000-0000-4000-8000-000000000305", DifficultyBand.MEDIUM),),
+        cell_min_items=load_diagnosis_config().params.cell_min_items,
+        audience=ReportAudience.TEACHER_ONLY,
+        metrics=(teacher_only,),
+    )
+
+    assert guardian_result.metrics == ()
+    assert teacher_result.metrics == (teacher_only,)
 
 
 def test_assembler_fills_six_grounded_blocks_deterministically() -> None:
@@ -166,6 +196,7 @@ def test_sample_below_canonical_minimum_is_pending() -> None:
         MisconceptionReport(),
         (_item("00000000-0000-4000-8000-000000000303", DifficultyBand.MEDIUM),),
         cell_min_items=minimum,
+        audience=ReportAudience.GUARDIAN,
     )
 
     grid = assembled.blocks[0].payload
@@ -182,6 +213,7 @@ def test_assembler_fails_when_difficulty_numbers_have_no_evidence() -> None:
             MisconceptionReport(),
             (),
             cell_min_items=load_diagnosis_config().params.cell_min_items,
+            audience=ReportAudience.GUARDIAN,
         )
 
     with pytest.raises(ValidationError, match="numbers_used"):

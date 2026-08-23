@@ -229,6 +229,8 @@ class ReportStudioData(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    audience: ReportAudience
+    metrics: tuple[ReportMetricInput, ...] = ()
     blocks: tuple[ReportDataBlock, ...]
     unproduced: tuple[ReportUnproducedMetric, ...]
 

@@ -52,12 +52,15 @@ def assemble_report_studio_data(
     item_results: tuple[ItemResult, ...],
     *,
     cell_min_items: int,
+    audience: ReportAudience,
+    metrics: tuple[ReportMetricInput, ...] = (),
 ) -> ReportStudioData:
     """이미 확정된 진단·출제 값만 접어 여섯 데이터 블록을 만든다."""
 
     if cell_min_items < 1:
         raise ReportAssemblyError("cell_min_items는 1 이상이어야 한다")
 
+    filtered_metrics = filter_report_metrics(metrics, audience=audience)
     weakness_evidence = (
         ReportEvidenceRef(
             source_table="weakness_map",
@@ -116,6 +119,8 @@ def assemble_report_studio_data(
         ),
     )
     return ReportStudioData(
+        audience=audience,
+        metrics=filtered_metrics,
         blocks=blocks,
         unproduced=tuple(ReportUnproducedMetric),
     )
