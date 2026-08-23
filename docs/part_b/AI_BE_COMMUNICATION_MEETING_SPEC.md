@@ -400,7 +400,9 @@ problem_generation_request
 - `weakness_auto` 생산 diagnosis seam 미배선
 - `apply` type tag 미지원
 - `ai_refine` 외 revision kind 미지원
-- `language.grammar.fortition` redaction 오탐 잔여
+- ~~`language.grammar.fortition` redaction 오탐 잔여~~ **해소(2026-08-22 · PR #378):**
+  A 처방이 `whitelists.name_exclude`에 `이시옷`·`성립되`를 추가해 오탐을 풀었고,
+  57노드 전부 완주한다.
 - ~~일부 terminal·5xx 조합의 고정 HTTP fixture 미비~~ **해소(2026-08-21 · PR #362):**
   failed·cancelled 조회와 revision 요청·200·409·500·503·504 fixture를 추가했다.
 

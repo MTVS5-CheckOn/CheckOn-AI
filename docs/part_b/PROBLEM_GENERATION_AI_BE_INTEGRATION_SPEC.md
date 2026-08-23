@@ -1,7 +1,8 @@
 # AI–BE/Adapter 문제출제 통신 명세
 
-- 기준 AI 커밋: `cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후 `develop`)
-- 기준 브랜치: `develop`
+- 기준 AI 상태: `cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후
+  `develop`) + 이 PR #384의 fortition 57노드 복원(검사 실측 지점 `9147cf3`)
+- 기준 브랜치: `develop` + `codex/fortition-spec-cleanup` (PR #384)
 - 확정일: 2026-08-24 (BE 전달 명세 현행화 회차)
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 문서 개정: PR #354 enqueue-only · PR #361 재기동 복구 · PR #362 종단/수정 fixture ·
@@ -25,11 +26,15 @@
 - AI의 Kafka 참고 계약은 문항 본문을 싣지 않는 참조형 알림이다. 문항 본문은 `set_id` 기반 REST API로 조회한다.
 - 이 명세는 API 계약과 서비스 흐름을 다룬다. 실 LLM 문항 품질을 보증하지 않는다.
 
-기준 커밋에서 다시 실행한 결과는 다음과 같다.
+위 기준 AI 상태(PR #384 `9147cf3`)에서 다시 실행한 결과는 다음과 같다.
 
 - Ruff 통과
-- Mypy 543파일 통과
-- offline 3,771 passed / 20 skipped / 173 deselected / 3 xfailed
+- ~~Mypy 543파일 통과~~ **정정(2026-08-24 · PR #384 `9147cf3` 실측):** Mypy
+  **514 source files** 통과
+- ~~offline 3,771 passed / 20 skipped / 173 deselected / 3 xfailed~~
+  **정정(2026-08-24 · PR #384 `9147cf3` 실측):** offline **3,660 passed / 21 skipped /
+  165 deselected / 3 xfailed**. 종전 대비 Mypy -29파일 · passed -111 · deselected -8은
+  #380 import API 삭제분이며, skipped도 현재 실측값 21로 현행화했다.
 - ~~57노드 중 56노드 완주와 `language.grammar.fortition` 제외는 그대로 유효하다.~~
   **정정(2026-08-22 해소):** A 처방 #378이 `whitelists.name_exclude`에 `이시옷`·
   `성립되`를 추가해 redaction 오탐을 풀었고, 이제 57노드 전부 완주한다. 코드로 대조했다 —
