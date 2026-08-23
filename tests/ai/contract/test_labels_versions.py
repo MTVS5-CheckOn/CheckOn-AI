@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any, Final
 
 import pytest
@@ -48,7 +49,7 @@ _BODY: Final[dict[str, Any]] = {
 
 
 @pytest.fixture(autouse=True)
-def _reset() -> Any:
+def _reset() -> Iterator[None]:
     labels_router.reset_label_suggest_provider()
     yield
     labels_router.reset_label_suggest_provider()
