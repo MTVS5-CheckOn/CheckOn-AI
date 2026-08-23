@@ -117,7 +117,17 @@ def min_chars_for(context: DraftContext) -> int:
 
 
 PLAN_PROMPT_ID: Final = "composition/counsel_plan"
-PLAN_PROMPT_VERSION: Final = "0.1"
+PLAN_PROMPT_VERSION: Final = "0.2"
+"""🔴 **0.1 → 0.2 (2026-08-24 · 99 #198).** 템플릿 문면이 바뀌었다 — 두 줄에서
+`redact()` 가 **자기 지시문을 마스킹하고 있었다**:
+
+    «아래 **학생별** 근거 데이터에서 …»   → `⟪이름1⟫ 학생별`
+    «강조점은 **학생당** 최대 …»          → `강⟪이름2⟫ 학생당`
+
+⚠ 🔴 원인은 `name_honorific` 의 «`[가-힣]{2,3}` + 호칭 `학생`» 이다 — **「… 학생」 앞에
+2~3글자 한글이 오면 그 앞말이 이름으로 잡힌다.** 우리 지시문이 그 형태였다.
+🔴 `plan` 도 `redacted.masked_text` 를 보내므로 **막히지 않고 문면이 바뀐 채 나갔다.**
+⇒ 문면을 고쳤고, 템플릿이 바뀌었으므로 버전을 올린다."""
 
 _PLAN_PROMPT_PATH: Final = (
     Path(__file__).resolve().parents[2]

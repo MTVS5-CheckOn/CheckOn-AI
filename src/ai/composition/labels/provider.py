@@ -24,7 +24,6 @@ from ai.contracts.composition import CommStyle, Frequency, Interest, Sensitivity
 from ai.contracts.counsel import LabelSuggestion
 from ai.contracts.execution import ExecutionContext, GenerationParams
 from ai.contracts.labels import (
-    MIN_HISTORY,
     EvidenceQuote,
     HistoryItem,
     SuggestedLabel,
@@ -45,6 +44,24 @@ GENERATOR_NOT_IMPLEMENTED: Final = "label_generator_not_implemented"
 #: 프롬프트가 마스킹 문지기에 걸린 사유 — 🔴 **이력 본문이 원인**이고
 #: 그건 `redact()` 오탐일 수도 있다(99 #104·#123). 사유를 갈라 둬야 원인을 센다.
 PROMPT_REDACTION_BLOCKED: Final = "prompt_redaction_blocked"
+
+#: 🔴 **이력이 전부 걸려 조립할 것이 0건** — «제안할 근거가 없다»(빈 배열)와 **다른 사실**이다.
+HISTORY_ALL_BLOCKED: Final = "history_all_blocked"
+
+
+class LabelHistoryUnusable(RedactionUncertain):
+    """🔴 **«없다»가 아니라 «못 한다»** — 이력이 전부 마스킹 문지기에 걸렸다(99 #194).
+
+    ⚠ 🔴 **`RedactionUncertain` 을 상속한다 — 새 상태코드를 만들지 않았다.** 같은 원인
+    (마스킹 불확실)이고 `error_codes.md` §4 가 그 예외에 **500 · 상세 미노출**을 못박아 뒀다.
+    ⇒ 상태·detail 정책을 **그대로 물려받고**, 갈라진 것은 **사유 이름과 로그**다.
+
+    🔴 **강사 화면에 무엇을 보여줄지는 아직 판정 전이다**(99 #194) — 200 응답 스키마에
+    `reason` 자리가 **없고**(실측 8/24 · `LabelSuggestResponse.suggestions` 하나뿐), 새 필드는
+    **BE 가 읽어야 할 계약 표면**이라 준영님·승우님 접점이 생긴다. ⇒ 지금은 **종전과 같은
+    500** 이고, 달라진 것은 «빈 배열로 위장하지 않는다» 와 **우리 로그가 두 경우를 가른다** 는 것.
+    ⚠ 그 판정이 나면 이 클래스가 그 자리를 받는다.
+    """
 
 #: 🔴 **축 → 허용 값**의 정본은 `contracts/composition.py` 의 enum 넷이다.
 #: 여기서 값을 나열하지 않는다 — 나열하면 그 목록이 갈린다(#02).
@@ -170,20 +187,32 @@ class GatewayLabelSuggestProvider:
         #: ⚠ 🔴 실 LLM 측정 **전에** 하는 이유: 걸리는 콜이 500 이면 그 콜이 **표본에서
         #: 빠진다** — #110(«상한이 표본을 자른다»)이 «마스킹이 자른다» 로 나타난다.
         sendable, dropped_history = keep_sendable_history(history)
-        #: 🔴 **판정 대기 구간**(99 #194) — 걸러서 `MIN_HISTORY` 미만이 되면 무엇을 낼지
-        #: 아직 안 정했다. 「없다」(빈 배열)로 내면 04 §3.7 이 정의한 «게이트가 전량
-        #: 드롭했다» 와 **증거상 같아 보인다** ⇒ **지금은 종전 동작(전체 조립 → 500)을
-        #: 그대로 둔다.** 결정된 축만 고치고 안 정한 축은 **안 건드린다.**
-        if len(sendable) < MIN_HISTORY:
-            #: 🔴 **조용히 넘어가지 않는다** — 이 줄이 판정을 기다리는 경로다(99 #194).
-            logger.warning(
-                "라벨 이력이 걸러서 미달 남음=%d 뺌=%d 최소=%d — "
-                "판정 전이라 전체를 태운다(99 #194)",
-                len(sendable),
-                len(dropped_history),
-                MIN_HISTORY,
+        #: 🔴 **조립 하한을 두지 않는다 — 1건 이상이면 조립한다**(8/24 판정 · 99 #194).
+        #: 근거 넷:
+        #:   ① 04 §3.7 의 「5건 이상」은 **BE 의 대상 선정 조건**이다 [읽음 `04:665` —
+        #:      «소통 이력 5건 이상 + 라벨 미설정인 대상만»]. AI 의 조립 조건이 아니다.
+        #:   ② 🔴 **라벨은 이력 하나하나가 독립 신호다** — counsel 은 fact 가 엮여 하나를
+        #:      빼면 근거가 무너지지만(99 #195) 라벨은 그렇지 않다.
+        #:   ③ 🔴 **게이트가 이미 재고 있다** — `ground_suggestions` 가 인용 실존(id + 본문
+        #:      대조)을 본다. 근거가 약하면 거기서 떨어진다. 건수 하한을 또 두는 것은
+        #:      **같은 것을 두 번 재는 것**이다.
+        #:   ④ 프롬프트가 «근거 없으면 아무것도 내지 마라 · confidence 를 낮게» 로 이미
+        #:      지시한다(불변식 2).
+        #: ⚠ 🔴 **실측 없는 값을 정하지 않는다**(№58 규율) — 조립 하한의 실측은 **0**이고,
+        #: 종전에 `MIN_HISTORY`(=요청 하한)를 그 자리에 쓴 것이 **실측 없이 정한 값**이었다.
+        if not sendable:
+            #: 🔴 **0건은 «못 한다»이지 «없다»가 아니다** — 빈 배열로 내면 04 §3.7 이 정의한
+            #: «게이트가 전량 드롭했다» 와 **증거상 같아 보인다**(№63 §E ③ · №64 §E 규율).
+            #: ⚠ 4xx 는 안 쓴다 — **입력은 조건을 만족했고 우리가 걸러서 0이 된 것**이라
+            #: 강사가 «내가 잘못 보냈나» 로 읽는다(№66 §3-2).
+            raise LabelHistoryUnusable(
+                "이력이 전부 마스킹 문지기에 걸렸다",
+                {
+                    "reason": HISTORY_ALL_BLOCKED,
+                    "guardian_ref": guardian_ref,
+                    "dropped_history": len(dropped_history),
+                },
             )
-            sendable = tuple(history)
         prompt = assemble_prompt(sendable)
         #: 🔴 **전송 전 선검사 — fail-closed**(불변식 3 · `classify/classifier.py` 선례).
         #: `history[].text` 는 **BE 1차 마스킹 통과본이지 우리 기준의 통과분이 아니다**
