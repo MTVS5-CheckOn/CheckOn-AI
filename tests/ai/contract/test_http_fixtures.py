@@ -157,7 +157,7 @@ _BE_REQUIRED_FLOW_FIXTURES: Final = {
     "POST labels suggest request": "post_labels_suggest.request",
     "POST labels suggest 200": "post_labels_suggest.200",
     "POST labels suggest 400 body schema": "post_labels_suggest.400.body_schema",
-    "POST labels suggest 503 generator missing": "post_labels_suggest.503.generator_missing",
+    "POST labels suggest 503 upstream down": "post_labels_suggest.503.upstream_down",
     "POST counsel refine 404": "post_counsel_refine.404",
     "POST counsel refine 409 idempotency conflict": (
         "post_counsel_refine.409.idempotency_conflict"
@@ -1412,14 +1412,12 @@ def test_labels_suggest_fixtures() -> None:
     from uuid import UUID  # noqa: PLC0415
 
     from ai.api.routers import labels as labels_router  # noqa: PLC0415
-    from ai.composition.labels.provider import (  # noqa: PLC0415
-        MissingLabelSuggestProvider,
-    )
     from ai.contracts.counsel import LabelSuggestion  # noqa: PLC0415
     from ai.contracts.labels import (  # noqa: PLC0415
         EvidenceQuote,
         SuggestedLabel,
     )
+    from ai.runtime.errors import LlmUpstreamDown  # noqa: PLC0415
 
     body = {
         "guardian_ref": "gd_11b0",
@@ -1447,9 +1445,9 @@ def test_labels_suggest_fixtures() -> None:
         """🔴 게이트가 **하나는 통과시키고 하나는 드롭**하도록 둘을 낸다."""
 
         async def suggest(
-            self, *, guardian_ref: str, history: object
+            self, *, guardian_ref: str, history: object, context: object
         ) -> tuple[SuggestedLabel, ...]:
-            del history
+            del history, context
             return (
                 SuggestedLabel(
                     suggestion_id=UUID("00000000-0000-4000-8000-00000000a001"),
@@ -1481,7 +1479,20 @@ def test_labels_suggest_fixtures() -> None:
             bad = client.post(
                 "/v1/labels/suggest", headers=headers, json={"guardian_ref": "gd_1"}
             )
-        labels_router.set_label_suggest_provider(MissingLabelSuggestProvider())
+        #: 🔴 **(8/22) 뜻을 바꿨다 — 「생성기 미구현」이 아니라 「벤더 장애」다.**
+        #: #382 때는 생성기가 없어서 그 경로가 **프로덕션에서 실제로 돌았다.** 이제
+        #: 생성기가 있으므로(#191) 그 503 은 **주입해야만** 나고, 그대로 두면
+        #: **픽스처가 프로덕션에 없는 응답을 말한다.**
+        #: ⚠ 실측(8/22): 벤더 장애(`LlmUpstreamDown`)는 **503 `LLM_UPSTREAM_DOWN`** 으로
+        #: 나간다 — **같은 코드·같은 모양**이고 그건 실재하는 경로다. ⇒ 그쪽으로 옮긴다.
+        class _DownProvider:
+            async def suggest(
+                self, *, guardian_ref: str, history: object, context: object
+            ) -> tuple[SuggestedLabel, ...]:
+                del guardian_ref, history, context
+                raise LlmUpstreamDown("벤더 응답 없음", {"reason": "upstream_unavailable"})
+
+        labels_router.set_label_suggest_provider(_DownProvider())
         with TestClient(create_app()) as client:
             missing = client.post("/v1/labels/suggest", headers=headers, json=body)
     finally:
@@ -1496,13 +1507,15 @@ def test_labels_suggest_fixtures() -> None:
     assert suggestions[0]["label"] == {"axis": "comm", "value": "data"}
     assert bad.status_code == 400, bad.text
     assert isinstance(bad.json()["error"]["detail"], list), bad.json()
-    #: 🔴 **생성기가 없을 때는 200 + 빈 배열이 아니라 503 이다** — 「제안할 근거가 없다」와
-    #: 「생성기가 없다」가 증거상 같아 보이면 강사가 잘못 읽는다.
+    #: 🔴 **LLM 이 죽었을 때는 200 + 빈 배열이 아니라 503 이다** — 「제안할 근거가 없다」와
+    #: 「모델에 못 닿았다」가 증거상 같아 보이면 강사가 잘못 읽는다.
+    #: ⚠ 종전에는 이 자리가 **「생성기 미구현」**이었다(#382) — 생성기가 생기면서 그 경로가
+    #: 프로덕션에서 사라졌고, **뜻만 옮기고 검사는 남겼다**(지우면 그 규율이 사라진다).
     assert missing.status_code == 503, missing.text
     assert missing.json()["error"]["code"] == "LLM_UPSTREAM_DOWN", missing.json()
 
     _fixture("post_labels_suggest.request", body)
     _fixture("post_labels_suggest.200", ok.json())
     _fixture("post_labels_suggest.400.body_schema", bad.json())
-    _fixture("post_labels_suggest.503.generator_missing", missing.json())
+    _fixture("post_labels_suggest.503.upstream_down", missing.json())
 

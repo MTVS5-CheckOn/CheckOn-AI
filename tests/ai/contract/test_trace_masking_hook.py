@@ -62,6 +62,10 @@ _ALLOWED_GATEWAY_BUILDERS: frozenset[str] = frozenset(
         "composition/counsel/assembly.py",
         "composition/classify/provider.py",  # 문의 분류(ⓑ) — role=classifier(8/6 정정 · 99 ㊿)
         "problem_generation/provider.py",
+        #: 라벨 제안(99 #190·#191) — role=counselor. 🔴 **이력 본문이 프롬프트에
+        #: 실린다**(BE 1차 마스킹 통과본이지만 우리 문지기를 다시 지난다 · #104 축)
+        #: ⇒ 훅이 **마지막 관문**이라 조립부가 반드시 주입한다.
+        "composition/labels/provider.py",
     }
 )
 

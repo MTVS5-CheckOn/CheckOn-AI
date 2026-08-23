@@ -2,7 +2,7 @@
   "data": null,
   "error": {
     "code": "LLM_UPSTREAM_DOWN",
-    "message": "라벨 제안 생성기 미구현",
+    "message": "벤더 응답 없음",
     "detail": null
   },
   "meta": {
