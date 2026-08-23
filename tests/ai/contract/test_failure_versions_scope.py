@@ -36,6 +36,7 @@ from ai.api.app import ROUTER_VERSION_SCOPES, create_app
 from ai.api.routers.classify import reset_inquiry_class_store
 from ai.api.routers.counsel import reset_counsel_stores
 from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
+from ai.api.routers.report import reset_report_clock, reset_report_store
 from ai.db.store_factory import reset_shared_agent_runtime
 
 _HEADERS = {"X-Tenant-Id": "t1", "X-Request-Id": "rq-scope", "Idempotency-Key": "k"}
@@ -66,6 +67,8 @@ def _reset_all() -> None:
     reset_inquiry_class_store()
     reset_shared_agent_runtime()  # A·B 공용 잡 원장(99 ㊒)
     reset_counsel_stores()
+    reset_report_store()
+    reset_report_clock()
 
 
 def registered_v1_paths(app: Any) -> set[str]:  # noqa: ANN401 — FastAPI
@@ -113,6 +116,7 @@ _FAILURE_REQUESTS: Final[dict[str, tuple[str, str, dict[str, Any] | None]]] = {
     #: 🔴 라벨 제안(99 #190) — **동기 200**이라 잡이 없다. 실패는 `DomainException`
     #: 핸들러를 지난다(바디 스키마 위반 → 400 · 생성기 미구현 → 503).
     "/v1/labels": ("POST", "/v1/labels/suggest", {"bad": 1}),
+    "/v1/reports": ("GET", "/v1/reports/not-a-uuid", None),
 }
 _DIRECT_RESPONSE_PREFIXES: Final = frozenset(
     {"/v1/health", "/v1/ready", "/v1/meta/versions"}
