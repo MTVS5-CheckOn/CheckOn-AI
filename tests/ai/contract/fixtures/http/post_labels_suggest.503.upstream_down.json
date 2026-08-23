@@ -9,11 +9,11 @@
     "execution_id": null,
     "versions": {
       "pipeline": "0.1.0",
-      "engine": "counsel-pack-0.1",
+      "engine": "labels-suggest-0.1",
       "schema": "0.1",
       "contract": "0.1",
       "threshold": null,
-      "prompt": "0.4",
+      "prompt": "0.1",
       "graph": null,
       "taxonomy": null,
       "verify_config": null,

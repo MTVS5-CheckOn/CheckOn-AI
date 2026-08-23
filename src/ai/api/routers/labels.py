@@ -26,12 +26,12 @@ from pydantic import ValidationError
 
 from ai.api.envelope import success_envelope
 from ai.api.version_scope import RouterScope
-from ai.composition.counsel.versions import counsel_versions
 from ai.composition.labels.grounding import ground_suggestions
 from ai.composition.labels.provider import (
     LabelSuggestProvider,
     build_label_suggest_provider,
 )
+from ai.composition.labels.versions import labels_versions
 from ai.contracts.execution import Capability, ExecutionContext
 from ai.contracts.labels import LabelSuggestRequest, LabelSuggestResponse
 from ai.runtime.errors import SnapshotInvalid
@@ -103,7 +103,7 @@ async def post_labels_suggest(request: Request) -> dict[str, Any]:
         tenant_id=tenant_id,
         capability=Capability.COMPOSITION,
         input_snapshot_hash=f"guardian:{payload.guardian_ref}",
-        versions=counsel_versions(),
+        versions=labels_versions(),
     )
     raw = await label_suggest_provider().suggest(
         guardian_ref=payload.guardian_ref,
@@ -129,11 +129,12 @@ async def post_labels_suggest(request: Request) -> dict[str, Any]:
 
 
 #: 이 라우터의 경로 접두와 버전 세트 — `api/app.py` 가 **실패 응답**에 쓴다(99 ㊓).
-#: 🔴 **`counsel_versions` 를 빌려 쓴다 — 확인했고 의도다.** 라벨 제안은 `composition`
-#: capability 이고 4축 라벨은 counsel 초안의 톤을 고르는 그 축이다(`tone_map` 조합 키).
-#: ⚠ `VersionSet` 에는 엔드포인트를 가르는 필드가 없다 — 두 경로를 구분해야 하면 그건
-#: 계약 변경이다(양자 · `/v1/confirmations` 가 같은 판단을 적어 뒀다).
-VERSION_SCOPE: Final = RouterScope("/v1/labels", counsel_versions)
+#: ⚠ 🔴 **(8/22 정정) 종전에는 `counsel_versions` 를 빌려 썼다** — 그러면 라벨 응답의
+#: `meta.versions.prompt` 가 **counsel 프롬프트 버전**을 말한다. BE 가 그 값을 보고 있고
+#: **거짓말이다**(불변식 8). ⇒ `labels_versions()` 를 세웠다.
+#: 🔴 **`contracts/execution.py`(양자)는 안 건드렸다** — `prompt_version` 이 하나뿐이라는
+#: 제약은 **counsel 이 프롬프트를 둘 쓰기 때문**이고 라벨은 하나다(`labels/versions.py`).
+VERSION_SCOPE: Final = RouterScope("/v1/labels", labels_versions)
 
 __all__ = [
     "VERSION_SCOPE",
