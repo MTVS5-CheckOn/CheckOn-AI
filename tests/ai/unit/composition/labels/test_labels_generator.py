@@ -7,14 +7,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Final
+from types import SimpleNamespace
+from typing import Any, Final, cast
 
 import pytest
 
 from ai.composition.counsel.versions import counsel_versions
+from ai.composition.labels.grounding import keep_sendable_history
+from ai.composition.labels.prompt import (
+    _PROMPT_PATH as _TEMPLATE_PATH,
+)
 from ai.composition.labels.prompt import PROMPT_VERSION, assemble_prompt
 from ai.composition.labels.provider import (
     FakeLabelSuggestProvider,
+    GatewayLabelSuggestProvider,
     LabelSettings,
     MissingLabelSuggestProvider,
     build_label_suggest_provider,
@@ -23,6 +29,7 @@ from ai.composition.labels.provider import (
 from ai.contracts.execution import Capability, ExecutionContext
 from ai.contracts.labels import HistoryItem
 from ai.runtime.errors import LlmUpstreamDown
+from ai.runtime.redaction import redact
 
 _HISTORY: Final = tuple(
     HistoryItem(
@@ -145,3 +152,155 @@ def test_the_builder_picks_the_fake_by_default() -> None:
 def test_the_prompt_version_is_declared() -> None:
     """재현성(불변식 8) — 프롬프트 버전이 선언돼 있다."""
     assert PROMPT_VERSION
+
+# ── 🔴 걸린 이력만 빼고 진행 (99 #192 ⓑ · №66) ──────────────────────
+
+_BLOCKED_TEXT: Final = "오답률이 높은가요"
+"""🔴 **실측으로 고른 문면이다**(8/22) — `오`(성씨)+`답률`+조사 `이`. `findings=1 ·
+uncertain=False` 라 **선검사가 `uncertain` 만 보면 빠지는 그 틈**이기도 하다(99 #83).
+
+⚠ 🔴 **처음에 `성적표를`·`문제집이` 로 썼다가 두 검사가 `skip` 됐다** — №65 가 그 어간을
+`name_exclude` 에 넣어 **더 이상 안 걸리기 때문**이다. 🔴 **skip 은 green 이 아니다** —
+그대로 뒀으면 «걸러진다» 를 하나도 증명 못 하는 검사가 남았다.
+⚠ 그래서 `_still_blocked()` 로 **먼저 확인**하고, 이 낱말도 언젠가 `name_exclude` 에
+들어가면 그때 다시 골라야 한다 — 🔴 **두더지잡기의 대가가 여기에도 있다**(#178)."""
+
+
+def _still_blocked(text: str) -> bool:
+    outcome = redact(text)
+    return bool(outcome.uncertain or outcome.findings)
+
+
+def _history_with(*texts: str) -> tuple[HistoryItem, ...]:
+    return tuple(
+        HistoryItem(
+            record_id=f"cm_{index}",
+            direction="inbound",
+            text=text,
+            at=datetime(2026, 6, 12, 10, 11, tzinfo=UTC),
+        )
+        for index, text in enumerate(texts, start=88)
+    )
+
+
+def test_a_blocked_history_item_is_dropped_not_the_whole_request() -> None:
+    """🔴 **한 건의 오탐이 제안 전체를 죽이지 않는다**(99 #192 ⓑ).
+
+    ⚠ 🔴 **fail-closed 를 지킨다** — 걸린 건은 **안 보낸다**. 트립와이어도 그대로다.
+    """
+    blocked = _BLOCKED_TEXT
+    if not _still_blocked(blocked):
+        pytest.skip(f"{blocked!r} 가 이제 안 걸린다 — 다른 문면으로 재야 한다")
+    history = _history_with(
+        "숫자로 정리해 주세요",
+        blocked,
+        "수업 시간표를 알려 주세요",
+        "다음 상담은 언제인가요",
+        "결석하면 보충이 되나요",
+    )
+    kept, dropped = keep_sendable_history(history)
+    assert len(kept) == 4, [item.record_id for item in kept]
+    assert dropped == ("cm_89",), dropped
+    #: 🔴 **본문이 아니라 `record_id` 만** 돌려준다(불변식 3 · 99 #80).
+    assert all(not text.startswith("문제집") for text in dropped)
+
+
+def test_a_clean_history_loses_nothing() -> None:
+    """🔴 **오탐 시험** — 깨끗한 이력은 하나도 안 빠진다.
+
+    ⚠ 이게 없으면 «전부 버리는 필터» 도 위 검사를 통과한다(앵커 폭).
+    """
+    history = _history_with(
+        "숫자로 정리해 주세요",
+        "수업 시간표를 알려 주세요",
+        "다음 상담은 언제인가요",
+        "결석하면 보충이 되나요",
+        "모의고사 일정이 어떻게 되나요",
+    )
+    kept, dropped = keep_sendable_history(history)
+    assert len(kept) == len(history)
+    assert dropped == ()
+
+
+def test_the_filter_looks_at_findings_not_only_uncertain() -> None:
+    """🔴 `uncertain` 만 보면 **그 틈으로 빠진다**(99 #83 이 실측한 갈림).
+
+    트립와이어는 `findings or uncertain` 으로 막으므로, 선검사가 `uncertain` 만 보면
+    «조립은 통과인데 전송이 죽는다» 가 된다.
+    """
+    blocked = _BLOCKED_TEXT
+    if not _still_blocked(blocked):
+        pytest.skip(f"{blocked!r} 가 이제 안 걸린다")
+    outcome = redact(blocked)
+    assert outcome.findings and not outcome.uncertain, (
+        "이 문면이 `uncertain` 을 내면 이 검사가 재려는 틈이 아니다"
+    )
+    kept, dropped = keep_sendable_history(_history_with(blocked))
+    assert kept == () and dropped == ("cm_88",)
+
+@pytest.mark.anyio
+async def test_the_provider_actually_drops_the_blocked_item_from_the_prompt() -> None:
+    """🔴 **배선을 잰다 — 필터가 실제로 프롬프트에서 빠지게 하는가.**
+
+    ⚠ 🔴 **이 검사가 없어서 뒤집기가 green 이었다**(8/22 실측): 픽스처 검사는 **대역
+    provider 를 주입**하므로 실 `GatewayLabelSuggestProvider.suggest` 를 **안 지나고**,
+    단위 검사는 `keep_sendable_history` 를 **직접** 부른다 ⇒ **provider 가 그 함수를 안 불러도
+    둘 다 통과한다.** 🔴 «함수는 맞는데 배선을 안 했다» 를 아무도 안 봤다 —
+    #382 의 `meta.versions` 와 **같은 형태**다(99 #191).
+
+    ⇒ **게이트웨이 자리에 기록기를 넣어 실제로 나간 프롬프트**를 본다.
+    """
+    sent: list[str] = []
+
+    class _RecordingGateway:
+        async def complete(self, request: object, context: object) -> object:
+            del context
+            sent.append(getattr(request, "prompt"))  # noqa: B009 — 실효값 확인
+            return SimpleNamespace(text="")
+
+    blocked = _BLOCKED_TEXT
+    if not _still_blocked(blocked):
+        pytest.fail(f"{blocked!r} 가 이제 안 걸린다 — 이 검사가 재려는 대상이 사라졌다")
+    #: 🔴 **여섯 건이다** — `MIN_HISTORY = 5` 라 다섯 건에서 하나가 빠지면 **미달**이 되고
+    #: 그때는 판정 대기 구간(99 #194)이 **전체를 태운다.** ⚠ 그러면 이 검사가 재려는
+    #: «걸린 건만 빠진다» 를 못 잰다 — **필터가 실제로 효과를 내는 구간**에서 재야 한다.
+    #: 🔴 **그 사실 자체가 이 회차의 발견이다**: 요청 하한과 필터 하한이 같은 5라서
+    #: **다섯 건 요청은 한 건만 걸려도 필터가 무효**다(99 #194 에 적었다).
+    history = _history_with(
+        "숫자로 정리해 주세요",
+        blocked,
+        "수업 시간표를 알려 주세요",
+        "다음 상담은 언제인가요",
+        "결석하면 보충이 되나요",
+        "모의고사 일정이 어떻게 되나요",
+    )
+    provider = GatewayLabelSuggestProvider(cast("Any", _RecordingGateway()))
+    await provider.suggest(guardian_ref="gd_1", history=history, context=_context())
+
+    assert len(sent) == 1, "게이트웨이가 안 불렸다 — 선검사가 통째로 막았을 수 있다"
+    assert blocked not in sent[0], (
+        f"걸린 이력이 프롬프트에 그대로 실렸다 — `keep_sendable_history` 배선이 없다: {blocked!r}"
+    )
+    assert "숫자로 정리해 주세요" in sent[0], "안 걸린 이력까지 빠졌다"
+
+def test_the_template_itself_passes_the_masking_gate() -> None:
+    """🔴 **템플릿 자신이 `redact()` 를 지나야 한다** — 안 그러면 **이력과 무관하게 항상 500** 이다.
+
+    ⚠ 🔴 **실측(8/22)으로 잡았다.** 최초 템플릿이 두 자리에서 걸렸다:
+    «학원 **강사가 학부모**의 …»(`[가-힣]{2,3}` + 호칭 `학부모` ⇒ `⟪이름1⟫` **확정 검출**) ·
+    «아래 **이력에는** …»(`이`(성씨)+`력에`+조사 ⇒ `⟪확인필요⟫`).
+    🔴 **제 프롬프트가 제 문지기에 걸렸다.** 그리고 그건 **어떤 이력을 넣어도** 500 이라는 뜻이다.
+
+    🔴 **왜 아무도 못 봤나** — 픽스처 검사는 **대역 provider** 를 주입해 실 provider 의 선검사를
+    안 지나고, 단위 검사는 `keep_sendable_history` 를 **직접** 부른다. ⇒ **조립된 프롬프트를
+    실제로 문지기에 태우는 자리가 없었다.** 이 검사가 그 자리다.
+
+    ⚠ 이 검사는 **이력 없이** 템플릿만 본다 — 이력은 `keep_sendable_history` 가 이미 거른다.
+    """
+    template = _TEMPLATE_PATH.read_text(encoding="utf-8")
+    outcome = redact(template)
+    assert not outcome.findings and not outcome.uncertain, (
+        "라벨 프롬프트 **템플릿**이 마스킹 문지기에 걸린다 — 이력과 무관하게 항상 막힌다. "
+        f"걸린 유형: {[f.type for f in outcome.findings]}"
+    )
+

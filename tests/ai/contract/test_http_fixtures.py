@@ -156,6 +156,10 @@ _BE_REQUIRED_FLOW_FIXTURES: Final = {
     #: 요청 · 통과분 · 바디 스키마 400 · **생성기 미구현 503**(빈 배열로 위장하지 않는다).
     "POST labels suggest request": "post_labels_suggest.request",
     "POST labels suggest 200": "post_labels_suggest.200",
+    #: 🔴 걸린 이력 한 건이 섞인 경우 — 그 건만 빠지고 **200 이 나온다**(99 #192 ⓑ).
+    "POST labels suggest 200 with blocked history": (
+        "post_labels_suggest.200.with_blocked_history"
+    ),
     "POST labels suggest 400 body schema": "post_labels_suggest.400.body_schema",
     "POST labels suggest 503 upstream down": "post_labels_suggest.503.upstream_down",
     "POST counsel refine 404": "post_counsel_refine.404",
@@ -216,12 +220,13 @@ def test_be_required_flow_fixture_mapping_is_complete() -> None:
     """
 
     #: 🔴 32 → 34 (8/21 · 99 #163) — 바디 검증 400 의 **배열 detail** 을 덮으면서 둘 늘었다.
+    #: 🔴 **48 → 49 (8/22 · 99 #192 ⓑ)** — 걸린 이력이 섞인 200 을 덮었다.
     #: 🔴 **44 → 48 (8/22 · 99 #190)** — 라벨 제안 네 벌(요청·200·400·503)을 덮었다.
     #: 🔴 **42 → 44 (8/21 · 99 #105)** — refine 의 **404·409** 를 덮었다. 라우터가 이미
     #:   내던 코드인데 픽스처가 없어 계약 검사의 **예외 목록**에 적혀 있었다(로그 178).
     #: ⚠ `len(...)` 으로 빼지 않는다 — **손으로 올리는 것이 이 검사의 목적**이다(로그 145).
-    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 48
-    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 48
+    assert len(_BE_REQUIRED_FLOW_FIXTURES) == 49
+    assert len(set(_BE_REQUIRED_FLOW_FIXTURES.values())) == 49
     missing = {
         flow: fixture
         for flow, fixture in _BE_REQUIRED_FLOW_FIXTURES.items()
@@ -1514,7 +1519,34 @@ def test_labels_suggest_fixtures() -> None:
     assert missing.status_code == 503, missing.text
     assert missing.json()["error"]["code"] == "LLM_UPSTREAM_DOWN", missing.json()
 
+    #: 🔴 **걸린 이력 한 건이 섞여도 제안이 나온다**(99 #192 ⓑ · №66) — 종전에는
+    #: 그 한 건이 **제안 전체를 500 으로 죽였다.** ⚠ 대역 provider 를 그대로 쓰므로
+    #: 이 픽스처가 재는 것은 **라우터·게이트 배선**이지 모델 품질이 아니다.
+    blocked_body = {
+        **body,
+        "history": [
+            *body["history"][:2],
+            {
+                "record_id": "cm_93",
+                "direction": "inbound",
+                #: `오`(성씨)+`답률`+조사 — `redact()` 가 잡는다(실측 8/22 · 99 #192).
+                "text": "오답률이 높은가요",
+                "at": "2026-06-12T10:11:00+09:00",
+            },
+            *body["history"][2:],
+        ],
+    }
+    labels_router.set_label_suggest_provider(_StubProvider())
+    with TestClient(create_app()) as client:
+        with_blocked = client.post(
+            "/v1/labels/suggest", headers=headers, json=blocked_body
+        )
+    assert with_blocked.status_code == 200, (
+        f"걸린 이력 한 건이 제안 전체를 죽였다 — 99 #192 ⓑ 가 안 섰다: {with_blocked.text[:200]}"
+    )
+
     _fixture("post_labels_suggest.request", body)
+    _fixture("post_labels_suggest.200.with_blocked_history", with_blocked.json())
     _fixture("post_labels_suggest.200", ok.json())
     _fixture("post_labels_suggest.400.body_schema", bad.json())
     _fixture("post_labels_suggest.503.upstream_down", missing.json())

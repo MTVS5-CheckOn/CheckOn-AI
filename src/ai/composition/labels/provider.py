@@ -18,11 +18,17 @@ from typing import Final, Protocol
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ai.composition.labels.grounding import keep_sendable_history
 from ai.composition.labels.prompt import PROMPT_ID, PROMPT_VERSION, assemble_prompt
 from ai.contracts.composition import CommStyle, Frequency, Interest, Sensitivity
 from ai.contracts.counsel import LabelSuggestion
 from ai.contracts.execution import ExecutionContext, GenerationParams
-from ai.contracts.labels import EvidenceQuote, HistoryItem, SuggestedLabel
+from ai.contracts.labels import (
+    MIN_HISTORY,
+    EvidenceQuote,
+    HistoryItem,
+    SuggestedLabel,
+)
 from ai.contracts.llm import LLMProvider, LLMRequest, ModelRole
 from ai.db.repositories.run_store import default_llm_call_collector
 from ai.llm.gateway import LlmGateway
@@ -159,7 +165,26 @@ class GatewayLabelSuggestProvider:
         history: Sequence[HistoryItem],
         context: ExecutionContext,
     ) -> tuple[SuggestedLabel, ...]:
-        prompt = assemble_prompt(history)
+        #: 🔴 **이력 한 건씩 걸러 낸다**(99 #192 ⓑ · 8/22) — 종전에는 이력을 **통째로**
+        #: 조립해 선검사해서 **한 건의 오탐이 제안 전체를 500 으로 죽였다.**
+        #: ⚠ 🔴 실 LLM 측정 **전에** 하는 이유: 걸리는 콜이 500 이면 그 콜이 **표본에서
+        #: 빠진다** — #110(«상한이 표본을 자른다»)이 «마스킹이 자른다» 로 나타난다.
+        sendable, dropped_history = keep_sendable_history(history)
+        #: 🔴 **판정 대기 구간**(99 #194) — 걸러서 `MIN_HISTORY` 미만이 되면 무엇을 낼지
+        #: 아직 안 정했다. 「없다」(빈 배열)로 내면 04 §3.7 이 정의한 «게이트가 전량
+        #: 드롭했다» 와 **증거상 같아 보인다** ⇒ **지금은 종전 동작(전체 조립 → 500)을
+        #: 그대로 둔다.** 결정된 축만 고치고 안 정한 축은 **안 건드린다.**
+        if len(sendable) < MIN_HISTORY:
+            #: 🔴 **조용히 넘어가지 않는다** — 이 줄이 판정을 기다리는 경로다(99 #194).
+            logger.warning(
+                "라벨 이력이 걸러서 미달 남음=%d 뺌=%d 최소=%d — "
+                "판정 전이라 전체를 태운다(99 #194)",
+                len(sendable),
+                len(dropped_history),
+                MIN_HISTORY,
+            )
+            sendable = tuple(history)
+        prompt = assemble_prompt(sendable)
         #: 🔴 **전송 전 선검사 — fail-closed**(불변식 3 · `classify/classifier.py` 선례).
         #: `history[].text` 는 **BE 1차 마스킹 통과본이지 우리 기준의 통과분이 아니다**
         #: (04 Open-4d) ⇒ 우리 문지기를 다시 지나야 한다.
@@ -174,7 +199,12 @@ class GatewayLabelSuggestProvider:
         if outcome.uncertain or outcome.findings:
             raise RedactionUncertain(
                 "라벨 제안 프롬프트가 마스킹 문지기를 못 지났다",
-                {"reason": PROMPT_REDACTION_BLOCKED, "guardian_ref": guardian_ref},
+                {
+                    "reason": PROMPT_REDACTION_BLOCKED,
+                    "guardian_ref": guardian_ref,
+                    #: ⚠ 걸러도 미달이라 전체를 태웠다는 뜻 — 판정 대기 구간(99 #194).
+                    "dropped_history": len(history) - len(sendable),
+                },
             )
         result = await self._gateway.complete(
             LLMRequest(

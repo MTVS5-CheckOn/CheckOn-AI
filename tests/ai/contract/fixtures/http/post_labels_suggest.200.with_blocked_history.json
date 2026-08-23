@@ -1,0 +1,37 @@
+{
+  "data": {
+    "suggestions": [
+      {
+        "suggestion_id": "00000000-0000-4000-8000-00000000a001",
+        "guardian_ref": "gd_11b0",
+        "label": {
+          "axis": "comm",
+          "value": "data"
+        },
+        "confidence": 0.86,
+        "evidence_quotes": [
+          {
+            "record_id": "cm_88",
+            "quote": "숫자로 정리해 주세요"
+          }
+        ]
+      }
+    ]
+  },
+  "error": null,
+  "meta": {
+    "execution_id": "00000000-0000-4000-8000-0000000000e0",
+    "versions": {
+      "pipeline": "0.1.0",
+      "engine": "labels-suggest-0.1",
+      "schema": "0.1",
+      "contract": "0.1",
+      "threshold": null,
+      "prompt": "0.1",
+      "graph": null,
+      "taxonomy": null,
+      "verify_config": null,
+      "difficulty_calib": null
+    }
+  }
+}
