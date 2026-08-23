@@ -35,6 +35,8 @@ from ai.api.routers.ops import VERSION_SCOPE as OPS_VERSION_SCOPES
 from ai.api.routers.ops import router as ops_router
 from ai.api.routers.problem import VERSION_SCOPE as _problems_scope
 from ai.api.routers.problem import router as problem_router
+from ai.api.routers.report import VERSION_SCOPE as _report_scope
+from ai.api.routers.report import router as report_router
 from ai.api.version_scope import RouterScope, resolve_versions
 from ai.runtime.errors import DomainException
 
@@ -53,6 +55,7 @@ ROUTER_VERSION_SCOPES: tuple[RouterScope, ...] = (
     _labels_scope,
     _problems_scope,
     _diagnosis_scope,
+    _report_scope,
     *OPS_VERSION_SCOPES,
 )
 
@@ -139,6 +142,8 @@ def create_app() -> FastAPI:
     # ⚠ 양자 승인 파일 수정(라우터 등록) — problem 선례, A 리뷰. B 소유 diagnosis 라우터
     #    (Step 1 area×type 그리드 · 2026-08-12 신설)
     app.include_router(diagnosis_router)
+    # ⚠ 양자 승인 파일 수정(라우터 등록) — report capability는 B 소유, A 리뷰 필요
+    app.include_router(report_router)
     app.include_router(ops_router)
 
     @app.middleware("http")

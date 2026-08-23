@@ -1,0 +1,8 @@
+version: report-unproduced-metrics.v1
+unproduced_metrics:
+  national_percentile:
+    reason: BE 비교집단 API·원천·모수·산식 계약이 확정되지 않음
+  weekly_accuracy_intervention:
+    reason: 주차별 정확도와 개입 이력 입력 필드가 없음
+  recent_six_week_baseline:
+    reason: 최근 6주 기준선의 기간·결측 처리 정책이 확정되지 않음
