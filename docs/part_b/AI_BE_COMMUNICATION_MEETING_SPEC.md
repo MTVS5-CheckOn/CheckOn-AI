@@ -1,7 +1,9 @@
 # CheckOn AI–BE 문제출제 통신 규약 확정 지시서
 
-- 작성일: 2026-08-21
-- AI 기준: `develop` `bc30fe9` 이상 (#363 머지 후)
+- 작성일: 2026-08-24
+- AI 기준: `develop` `cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후)
+- 문서 개정: PR #380 import API 제거 · PR #381 BE 인계 명세 확정 ·
+  PR #382 라벨 제안 동기 200
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 목적: 약점 진단 → 문제 생성 → 조회 → 수정 → 오답 약점 환류의 BE 구현 계약 지시
 - 적용 방식: 이 문서의 결정은 협의 후보가 아니라 AI 통신 경계의 확정값이다. BE와 Adapter는

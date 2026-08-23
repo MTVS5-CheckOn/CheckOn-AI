@@ -1,11 +1,12 @@
 # AI–BE/Adapter 문제출제 통신 명세
 
-- 기준 AI 커밋: `daa025ef7c396fa320f53de0fe46757739924458` (`daa025e`, #379 머지 후 `develop`)
+- 기준 AI 커밋: `cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후 `develop`)
 - 기준 브랜치: `develop`
-- 확정일: 2026-08-22 (BE 전달 직전 명세 확정 회차)
+- 확정일: 2026-08-24 (BE 전달 명세 현행화 회차)
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 문서 개정: PR #354 enqueue-only · PR #361 재기동 복구 · PR #362 종단/수정 fixture ·
-  PR #371 출제·수정 최종 실측 · PR #374 도달 불가 422 문서 제거
+  PR #371 출제·수정 최종 실측 · PR #374 도달 불가 422 문서 제거 ·
+  PR #380 import API 제거 · PR #381 BE 인계 명세 확정 · PR #382 라벨 제안 동기 200
 
 ## 1. 범위와 결론
 
@@ -29,11 +30,12 @@
 - Ruff 통과
 - Mypy 543파일 통과
 - offline 3,771 passed / 20 skipped / 173 deselected / 3 xfailed
-- 57노드 중 56노드 완주와 `language.grammar.fortition` 제외는 **그대로 유효하다.** 코드로
-  대조했다 — `tests/ai/integration/test_problem_router.py`의
-  `_A_OWNED_REDACTION_BLOCKED_NODES`가 그 1노드만 담고, 같은 파일이
-  `len(_RUNNABLE_CURRICULUM_NODES) == 56`을 단언하며, 전용 재현 검사
-  `tests/ai/unit/problem_generation/test_fortition_redaction.py`가 따로 있다.
+- ~~57노드 중 56노드 완주와 `language.grammar.fortition` 제외는 그대로 유효하다.~~
+  **정정(2026-08-22 해소):** A 처방 #378이 `whitelists.name_exclude`에 `이시옷`·
+  `성립되`를 추가해 redaction 오탐을 풀었고, 이제 57노드 전부 완주한다. 코드로 대조했다 —
+  `tests/ai/integration/test_problem_router.py`의 `_A_OWNED_REDACTION_BLOCKED_NODES`는 비었고
+  같은 파일이 `len(_RUNNABLE_CURRICULUM_NODES) == 57`을 단언한다. 전용 재현 검사
+  `tests/ai/unit/problem_generation/test_fortition_redaction.py`도 그대로 남아 있다.
 - PostgreSQL integration은 이 회차에서 **실행하지 않았다.** 기준 커밋 시점 수치를 이월하지도 않는다.
 
 ### 1.1 실 LLM 5영역 실측 `[2026-08-21 · PR #348]`
