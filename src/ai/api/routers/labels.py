@@ -106,7 +106,9 @@ async def post_labels_suggest(request: Request) -> dict[str, Any]:
         versions=counsel_versions(),
     )
     raw = await label_suggest_provider().suggest(
-        guardian_ref=payload.guardian_ref, history=payload.history
+        guardian_ref=payload.guardian_ref,
+        history=payload.history,
+        context=context,
     )
     outcome = ground_suggestions(raw, history=payload.history)
     #: ⚠ 🔴 **본문·인용문을 로그에 싣지 않는다**(불변식 3 · 99 #80) — 수와 사유까지다.

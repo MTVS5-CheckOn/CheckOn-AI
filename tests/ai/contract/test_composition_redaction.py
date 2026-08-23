@@ -35,6 +35,11 @@ _ALLOWED_GATEWAY_CALLERS: frozenset[tuple[str, str]] = frozenset(
         # 문의 분류(ⓑ) — 🔴 **body_text가 원문**이라 redact()가 전송 전에 반드시 선다.
         # 구조적 보장은 `tests/ai/unit/composition/test_classify.py`가 spy provider로 검증한다.
         ("classify/classifier.py", "classify"),
+        # 라벨 제안(99 #190) — role=counselor. 🔴 **`history[].text` 가 원문 계열**이다
+        #   (BE 1차 마스킹 통과본 · 04 Open-4d) ⇒ 전송 트립와이어가 마지막 관문이다.
+        #   ⚠ 여기서 `redact()` 를 또 부르지 않는다 — 두 기준이 갈리면 «조립은 통과인데
+        #   전송이 죽는다» 가 된다(99 #83 실측).
+        ("labels/provider.py", "suggest"),
     }
 )
 
