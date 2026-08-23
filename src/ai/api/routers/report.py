@@ -25,6 +25,7 @@ from ai.contracts.report import (
 )
 from ai.report.assembler import assemble_report_studio_data
 from ai.report.memory_store import InMemoryReportStore
+from ai.report.root_cause import build_default_root_cause_metrics
 from ai.report.store import (
     ReportBlockNotFound,
     ReportRevisionConflict,
@@ -174,7 +175,7 @@ def _detail(report: StoredReport) -> dict[str, Any]:
         source.item_results,
         cell_min_items=source.cell_min_items,
         audience=ReportAudience.GUARDIAN,
-        metrics=source.metrics,
+        metrics=(*source.metrics, *build_default_root_cause_metrics(source.weakness_map)),
     )
     return {
         **_summary(report),
