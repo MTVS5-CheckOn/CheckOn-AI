@@ -327,7 +327,15 @@ class Citation(BaseModel):
 
 
 class LabelSuggestion(BaseModel):
-    """라벨 제안 부산물 — ⚠ **v1에서는 항상 빈 배열**이다(생성기 미구현 · 99 D ㊲)."""
+    """라벨 제안 부산물 — ⚠ **v1에서는 항상 빈 배열**이다(생성기 미구현 · 99 D ㊲).
+
+    ⚠ 🔴 **(2026-08-22) 라벨 제안 경로가 생겼다 — 그래도 이 필드는 여전히 빈 배열이다.**
+    라벨 제안은 `POST /v1/labels/suggest` **독립 경로**이고(04 §3.7 · 99 #190)
+    **counsel 초안의 부산물이 아니다.** 🔴 «생성기가 생겼으니 채운다» 가 아니라 **축이
+    다르다** — 그 구분을 여기 적어 두지 않으면 다음 사람이 이 필드를 채운다.
+    ⚠ 이 모델(axis·value)은 `contracts/labels.py` 의 `SuggestedLabel` 이 **품어서** 쓴다 —
+    4축 값의 정의를 한 곳에 두려는 것이고, **그쪽 때문에 이 모델을 고치지 않았다.**
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

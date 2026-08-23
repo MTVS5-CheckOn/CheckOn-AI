@@ -1,0 +1,35 @@
+{
+  "guardian_ref": "gd_11b0",
+  "history": [
+    {
+      "record_id": "cm_88",
+      "direction": "inbound",
+      "text": "숫자로 정리해 주세요",
+      "at": "2026-06-12T10:11:00+09:00"
+    },
+    {
+      "record_id": "cm_89",
+      "direction": "inbound",
+      "text": "점수 추이 표로 부탁드려요",
+      "at": "2026-06-12T10:11:00+09:00"
+    },
+    {
+      "record_id": "cm_90",
+      "direction": "inbound",
+      "text": "지난주 결과가 궁금합니다",
+      "at": "2026-06-12T10:11:00+09:00"
+    },
+    {
+      "record_id": "cm_91",
+      "direction": "inbound",
+      "text": "표로 보여 주시면 좋겠어요",
+      "at": "2026-06-12T10:11:00+09:00"
+    },
+    {
+      "record_id": "cm_92",
+      "direction": "inbound",
+      "text": "이번 달 통계도 알려 주세요",
+      "at": "2026-06-12T10:11:00+09:00"
+    }
+  ]
+}
