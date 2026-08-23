@@ -20,8 +20,10 @@ from ai.composition.labels.prompt import (
 )
 from ai.composition.labels.prompt import PROMPT_VERSION, assemble_prompt
 from ai.composition.labels.provider import (
+    HISTORY_ALL_BLOCKED,
     FakeLabelSuggestProvider,
     GatewayLabelSuggestProvider,
+    LabelHistoryUnusable,
     LabelSettings,
     MissingLabelSuggestProvider,
     build_label_suggest_provider,
@@ -357,4 +359,31 @@ def _unused_single_template_guard() -> None:
         "라벨 프롬프트 **템플릿**이 마스킹 문지기에 걸린다 — 이력과 무관하게 항상 막힌다. "
         f"걸린 유형: {[f.type for f in outcome.findings]}"
     )
+
+@pytest.mark.anyio
+async def test_an_all_blocked_history_is_a_failure_not_an_empty_list() -> None:
+    """🔴 **이력이 전부 걸리면 «없다»가 아니라 «못 한다»** (99 #194).
+
+    ⚠ 04 §3.7 은 `suggestions: []` 를 «**인용 실존 게이트가 전량 드롭했다**» 로 정의한다 —
+    «우리가 조립할 것이 없었다» 를 같은 모양으로 내면 **강사가 «이 학부모는 제안할 게
+    없구나» 로 읽는다**(№63 §E ③ · №64 §E 가 세운 규율).
+
+    ⚠ 🔴 **뒤집기가 이 검사의 부재를 알려 줬다**(8/24): «0건 처리를 빈 배열로 되돌린다» 가
+    **green** 이었다 — 0건 경로를 재는 자리가 **하나도 없었다.**
+    """
+    blocked = _BLOCKED_TEXT
+    if not _still_blocked(blocked):
+        pytest.fail(f"{blocked!r} 가 이제 안 걸린다 — 이 검사가 재려는 대상이 사라졌다")
+    #: 🔴 **전부 걸리는 이력** — 같은 문면 다섯이면 다섯 다 걸린다.
+    history = _history_with(*([blocked] * 5))
+    kept, dropped = keep_sendable_history(history)
+    assert kept == () and len(dropped) == 5, "이 이력이 전부 걸리지 않는다 — 전제가 깨졌다"
+
+    provider = GatewayLabelSuggestProvider(cast("Any", object()))
+    with pytest.raises(LabelHistoryUnusable) as caught:
+        await provider.suggest(
+            guardian_ref="gd_1", history=history, context=_context()
+        )
+    assert caught.value.detail["reason"] == HISTORY_ALL_BLOCKED  # type: ignore[index]
+    #: 🔴 **빈 배열이 아니다** — 그게 이 검사의 전부다.
 
