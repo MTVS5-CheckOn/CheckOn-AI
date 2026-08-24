@@ -24,6 +24,7 @@ from ai.api.envelope import error_envelope, versions_dict
 from ai.api.routers.detect import detection_versions
 from ai.api.routers.diagnosis import diagnosis_versions
 from ai.api.routers.problem import problem_failure_versions
+from ai.api.routers.report import report_versions
 from ai.api.version_scope import RouterScope
 from ai.composition.classify.classifier import classify_versions
 from ai.composition.counsel.versions import counsel_versions
@@ -114,8 +115,6 @@ async def meta_versions() -> dict[str, Any]:
     """구현된 capability factory의 현재 선언 버전을 모아 반환한다."""
 
     # confirmations는 classify_versions를 공유하므로 별도 capability 축으로 중복하지 않는다.
-    # ⚠ 🔴 **표기 판정 대기(2026-08-24 회신)** — 이 파일의 [공통 계약] 표기·양자 승격
-    #   여부는 준영님 판정 중이다. 이 회차는 **목록 한 줄과 주석만** 건드린다.
     # 🔴 **`ROUTER_VERSION_SCOPES` 에서 파생하지 않는다 — 뜻이 다르다**(실측 8/24):
     #     `RouterScope`   «**실패 응답**의 `meta.versions` 를 무엇으로 채우나» — **경로별 11개**
     #     여기            «운영자가 조회하는 **capability** 목록» — **중복을 뺀 축**
@@ -131,6 +130,7 @@ async def meta_versions() -> dict[str, Any]:
         #   승우님께 «다음 회차에 넣습니다» 로 고지한 그 자리다.
         "labels": versions_dict(labels_versions()),
         "problem_generation": versions_dict(problem_failure_versions()),
+        "report": versions_dict(report_versions()),
     }
     return _success(
         {

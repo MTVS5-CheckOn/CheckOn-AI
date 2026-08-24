@@ -20,6 +20,7 @@ from ai.api.routers import ops
 from ai.api.routers.detect import detection_versions
 from ai.api.routers.diagnosis import diagnosis_versions
 from ai.api.routers.problem import problem_failure_versions
+from ai.api.routers.report import report_versions
 from ai.api.version_scope import FALLBACK_VERSIONS, resolve_versions
 from ai.composition.classify.classifier import classify_versions
 from ai.composition.counsel.versions import counsel_versions
@@ -171,6 +172,7 @@ def test_meta_versions_uses_capability_factories_without_database(
             #   (`tests/ai/contract/test_meta_versions_cover_every_scope.py`).
             "labels": versions_dict(labels_versions()),
             "problem_generation": versions_dict(problem_failure_versions()),
+            "report": versions_dict(report_versions()),
         },
     }
     assert response.json()["meta"]["execution_id"] is None

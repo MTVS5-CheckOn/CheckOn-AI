@@ -23,10 +23,6 @@ _NOT_A_CAPABILITY = {
     # 왜: 운영 점검 축(health·ready·meta)이지 강사에게 파는 기능이 아니다.
     # 언제: 없어지지 않는다 — ops 는 영구히 capability 밖이다.
     "ops-0.1": "운영 점검 축 — capability 아님(영구)",
-    # 왜: `/v1/reports` 는 B(염준영) 소유 축이고, capability 표기를 이 회차에서
-    #     정하는 것은 남의 판정을 대신하는 것이다.
-    # 언제: `ops.py` 표기 판정(8/24 회신)이 오면 그때 노출 여부가 정해진다.
-    "report-0.1": "🔴 표기 판정 대기(8/24 회신) — B 축",
 }
 
 
@@ -77,6 +73,14 @@ def test_labels_is_actually_served_over_http() -> None:
     capabilities = _capabilities()
     assert "labels" in capabilities, sorted(capabilities)
     assert capabilities["labels"]["engine"] == "labels-suggest-0.1"
+
+
+def test_report_is_actually_served_over_http() -> None:
+    """#421 공통 표기 뒤 report capability가 실제 HTTP 응답에 실린다."""
+
+    capabilities = _capabilities()
+    assert "report" in capabilities, sorted(capabilities)
+    assert capabilities["report"]["engine"] == "report-0.1"
 
 
 def test_the_excuse_list_only_holds_engines_that_exist() -> None:
