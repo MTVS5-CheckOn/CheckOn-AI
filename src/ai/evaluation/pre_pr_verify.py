@@ -87,7 +87,18 @@ def verification_steps(junit_path: Path) -> tuple[VerificationStep, ...]:
         ),
         VerificationStep(
             "Pytest (offline)",
-            ("uv", "run", "--frozen", "pytest", "-p", "no:cacheprovider"),
+            (
+                "uv",
+                "run",
+                "--frozen",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                #: 🔴 **실패 이름을 남기려고 붙였다**(2026-08-24 · 99 #224).
+                #: 재현 안 되는 1회 red 가 **두 번** 났는데 **두 번 다 이름을 못 잡았다**
+                #: (#219 ⓒ · №85). ⇒ 다음에 나면 여기서 잡힌다.
+                f"--junitxml={junit_path.with_name('offline.xml')}",
+            ),
         ),
         VerificationStep(
             "Pytest (PostgreSQL integration)",
@@ -155,6 +166,57 @@ def require_postgres(database_url: str) -> None:
         ) from exc
 
 
+#: 🔴 실패 목록을 남길 자리 — **비추적**이다(`.gitignore:52` 에 `local_data/` 가 있다 · 확인함).
+#: ⚠ 🔴 저장소에 커밋하지 않는다 — 실패 문면에 본문이 실릴 수 있다(불변식 3 · 99 #80).
+_FAILURE_LOG_DIR: Final = _REPO_ROOT / "local_data"
+
+
+def failed_test_ids(junit_path: Path) -> tuple[str, ...]:
+    """junit XML 에서 **실패·오류 노드 이름**만 뽑는다(본문은 안 뽑는다)."""
+    if not junit_path.exists():
+        return ()
+    root = ElementTree.parse(junit_path).getroot()  # noqa: S314 - 로컬 pytest 산출물
+    return tuple(
+        f"{case.get('classname', '')}::{case.get('name', '')}"
+        for case in root.iter("testcase")
+        if case.find("failure") is not None or case.find("error") is not None
+    )
+
+
+def _record_failures(step: VerificationStep) -> Path | None:
+    """🔴 **실패한 검사 이름을 파일로 남긴다**(2026-08-24 · 99 #224).
+
+    ⚠ 🔴 재현을 시도하지 않는다 — 반복 실행은 시간이 얼마나 들지 모른다. 이 함수가
+    하는 일은 «**다음에 났을 때 잡히게**» 뿐이다. 재현 안 되는 1회 red 가 **두 번**
+    났고 **두 번 다 이름을 못 잡았다**(#219 ⓒ · №85) — 그게 이 자리의 이유다.
+    🔴 **이름과 오류 첫 줄까지다** — 본문·인용문은 안 싣는다(불변식 3).
+    """
+    junit = next(
+        (
+            Path(arg.removeprefix("--junitxml="))
+            for arg in step.command
+            if arg.startswith("--junitxml=")
+        ),
+        None,
+    )
+    if junit is None:
+        return None
+    names = failed_test_ids(junit)
+    if not names:
+        return None
+    if not _FAILURE_LOG_DIR.is_dir():
+        #: 🔴 디렉터리를 만들지 않는다 — 사용자 로컬 자리다. 없으면 화면 출력까지다.
+        print("  🔴 실패 검사:", *names, sep="\n    ", flush=True)
+        return None
+    target = _FAILURE_LOG_DIR / "pre_pr_verify_failures.txt"
+    target.write_text(
+        f"[{step.label}] 실패 {len(names)}건\n" + "\n".join(names) + "\n",
+        encoding="utf-8",
+    )
+    print("  🔴 실패 검사:", *names, sep="\n    ", flush=True)
+    return target
+
+
 def _run(step: VerificationStep, *, env: dict[str, str]) -> None:
     print(f"\n== {step.label} ==", flush=True)
     completed = subprocess.run(  # noqa: S603 - argv가 코드 상수이며 shell을 쓰지 않는다
@@ -164,8 +226,10 @@ def _run(step: VerificationStep, *, env: dict[str, str]) -> None:
         check=False,
     )
     if completed.returncode != 0:
+        recorded = _record_failures(step)
         raise PrePrVerificationError(
             f"{step.label} 실패(exit={completed.returncode})"
+            + (f" — 실패 목록: {recorded}" if recorded else "")
         )
 
 
