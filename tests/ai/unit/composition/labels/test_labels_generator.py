@@ -485,7 +485,12 @@ async def test_the_router_actually_merges_after_the_gate() -> None:
         """같은 `(축, 값)` 을 **둘** 낸다 — 게이트는 둘 다 통과시킨다(인용이 실존)."""
 
         async def suggest(
-            self, *, guardian_ref: str, history: object, context: object
+            self,
+            *,
+            guardian_ref: str,
+            history: object,
+            context: object,
+            counts: object = None,
         ) -> tuple[SuggestedLabel, ...]:
             del context
             first = history[0]  # type: ignore[index]

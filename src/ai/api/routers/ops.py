@@ -18,6 +18,7 @@ from ai.api.routers.problem import problem_failure_versions
 from ai.api.version_scope import RouterScope
 from ai.composition.classify.classifier import classify_versions
 from ai.composition.counsel.versions import counsel_versions
+from ai.composition.labels.versions import labels_versions
 from ai.contracts.execution import VersionSet
 from ai.db.session import get_sessionmaker
 
@@ -104,11 +105,22 @@ async def meta_versions() -> dict[str, Any]:
     """구현된 capability factory의 현재 선언 버전을 모아 반환한다."""
 
     # confirmations는 classify_versions를 공유하므로 별도 capability 축으로 중복하지 않는다.
+    # ⚠ 🔴 **표기 판정 대기(2026-08-24 회신)** — 이 파일의 [공통 계약] 표기·양자 승격
+    #   여부는 준영님 판정 중이다. 이 회차는 **목록 한 줄과 주석만** 건드린다.
+    # 🔴 **`ROUTER_VERSION_SCOPES` 에서 파생하지 않는다 — 뜻이 다르다**(실측 8/24):
+    #     `RouterScope`   «**실패 응답**의 `meta.versions` 를 무엇으로 채우나» — **경로별 11개**
+    #     여기            «운영자가 조회하는 **capability** 목록» — **중복을 뺀 축**
+    #   ⇒ 1:1 이 아니다(confirmations 는 classify 와 같은 engine, ops 는 3경로 1축).
+    #   🔴 **대신 「둘 다 갱신됐나」를 무는 가드**를 세웠다
+    #   (`tests/ai/contract/test_meta_versions_cover_every_scope.py`).
     capabilities = {
         "classify": versions_dict(classify_versions()),
         "counsel": versions_dict(counsel_versions()),
         "detect": versions_dict(detection_versions()),
         "diagnosis": versions_dict(diagnosis_versions()),
+        # 🔴 **(8/24) labels 추가** — №65 가 `labels_versions()` 를 만들고 **여기 안 붙였다**.
+        #   승우님께 «다음 회차에 넣습니다» 로 고지한 그 자리다.
+        "labels": versions_dict(labels_versions()),
         "problem_generation": versions_dict(problem_failure_versions()),
     }
     return _success(

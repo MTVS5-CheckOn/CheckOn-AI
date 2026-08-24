@@ -23,6 +23,7 @@ from ai.api.routers.problem import problem_failure_versions
 from ai.api.version_scope import FALLBACK_VERSIONS, resolve_versions
 from ai.composition.classify.classifier import classify_versions
 from ai.composition.counsel.versions import counsel_versions
+from ai.composition.labels.versions import labels_versions
 from ai.db import session as db_session
 
 
@@ -162,6 +163,13 @@ def test_meta_versions_uses_capability_factories_without_database(
             "counsel": versions_dict(counsel_versions()),
             "detect": versions_dict(detection_versions()),
             "diagnosis": versions_dict(diagnosis_versions()),
+            # 🔴 **손으로 옮겨 적은 목록이다**(`ops.py` 의 `capabilities` 사본).
+            #   №72 가 `ROUTER_VERSION_SCOPES` 에서 **파생시키려다 접었다** — 실측으로
+            #   뜻이 갈렸다(99 #210): scope 는 «실패 응답을 무엇으로 채우나»(경로별 11),
+            #   여기는 «운영자가 조회하는 capability»(중복 뺀 축 6). 1:1 이 아니다.
+            #   ⇒ 사본은 남기고, «둘 다 갱신됐나» 는 별도 가드가 문다
+            #   (`tests/ai/contract/test_meta_versions_cover_every_scope.py`).
+            "labels": versions_dict(labels_versions()),
             "problem_generation": versions_dict(problem_failure_versions()),
         },
     }

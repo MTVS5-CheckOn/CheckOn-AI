@@ -26,6 +26,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
+from ai.composition.labels.counters import LabelLayerCounts
 from ai.contracts.labels import HistoryItem, SuggestedLabel
 from ai.runtime.redaction import redact
 
@@ -54,6 +55,7 @@ def ground_suggestions(
     suggestions: Sequence[SuggestedLabel],
     *,
     history: Sequence[HistoryItem],
+    counts: LabelLayerCounts | None = None,
 ) -> GroundingOutcome:
     """인용이 **실존하는** 제안만 남긴다(결정론 · 순수 함수).
 
@@ -81,6 +83,10 @@ def ground_suggestions(
     for suggestion_id, reason in drops:
         #: ⚠ 🔴 **인용 본문을 로그에 싣지 않는다**(불변식 3 · 99 #80) — id 와 사유까지다.
         logger.info("라벨 제안 드롭 suggestion=%s reason=%s", suggestion_id, reason)
+    if counts is not None:
+        #: 🔴 **이 층이 자기 수를 낸다**(99 #208) — 라우터가 이 함수를 안 부르면
+        #: `gate_passed` 칸이 **없어서**(`-`) 종단 검사가 red 다. 그게 배선 가드다.
+        counts.record_gate(passed=len(kept), drop_reasons=[r for _, r in drops])
     return GroundingOutcome(suggestions=tuple(kept), drops=tuple(drops))
 
 
@@ -88,6 +94,8 @@ def ground_suggestions(
 
 def keep_sendable_history(
     history: Sequence[HistoryItem],
+    *,
+    counts: LabelLayerCounts | None = None,
 ) -> tuple[tuple[HistoryItem, ...], tuple[str, ...]]:
     """🔴 **이력 한 건씩** 마스킹 문지기를 태워 **보낼 수 있는 것만** 남긴다(99 #192 ⓑ).
 
@@ -121,6 +129,8 @@ def keep_sendable_history(
             len(dropped),
             dropped,
         )
+    if counts is not None:
+        counts.record_masking(kept=len(kept), dropped=len(dropped))
     return tuple(kept), tuple(dropped)
 
 

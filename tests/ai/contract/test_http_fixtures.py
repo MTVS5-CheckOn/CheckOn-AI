@@ -1450,7 +1450,12 @@ def test_labels_suggest_fixtures() -> None:
         """🔴 게이트가 **하나는 통과시키고 하나는 드롭**하도록 둘을 낸다."""
 
         async def suggest(
-            self, *, guardian_ref: str, history: object, context: object
+            self,
+            *,
+            guardian_ref: str,
+            history: object,
+            context: object,
+            counts: object = None,
         ) -> tuple[SuggestedLabel, ...]:
             del history, context
             return (
@@ -1492,7 +1497,12 @@ def test_labels_suggest_fixtures() -> None:
         #: 나간다 — **같은 코드·같은 모양**이고 그건 실재하는 경로다. ⇒ 그쪽으로 옮긴다.
         class _DownProvider:
             async def suggest(
-                self, *, guardian_ref: str, history: object, context: object
+                self,
+            *,
+            guardian_ref: str,
+            history: object,
+            context: object,
+            counts: object = None,
             ) -> tuple[SuggestedLabel, ...]:
                 del guardian_ref, history, context
                 raise LlmUpstreamDown("벤더 응답 없음", {"reason": "upstream_unavailable"})
