@@ -9,8 +9,10 @@ import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, Final, cast
+from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 
 from ai.composition.counsel.versions import counsel_versions
 from ai.composition.labels.grounding import keep_sendable_history
@@ -25,8 +27,14 @@ from ai.composition.labels.provider import (
     build_label_suggest_provider,
     parse_suggestions,
 )
+from ai.contracts.counsel import LabelSuggestion
 from ai.contracts.execution import Capability, ExecutionContext
-from ai.contracts.labels import HistoryItem
+from ai.contracts.labels import (
+    EvidenceQuote,
+    HistoryItem,
+    LabelSuggestResponse,
+    SuggestedLabel,
+)
 from ai.runtime.errors import LlmUpstreamDown
 from ai.runtime.redaction import redact
 
@@ -313,4 +321,99 @@ async def test_an_all_blocked_history_is_a_failure_not_an_empty_list() -> None:
         )
     assert caught.value.detail["reason"] == HISTORY_ALL_BLOCKED  # type: ignore[index]
     #: 🔴 **빈 배열이 아니다** — 그게 이 검사의 전부다.
+
+# ── 🔴 중복 병합 (99 #204 · №70) ────────────────────────────────────
+
+
+def _line(axis: str, value: str, confidence: str, record: str, quote: str) -> str:
+    return f"{axis} | {value} | {confidence} | {record} | {quote}"
+
+
+def test_duplicate_axes_are_merged_not_dropped() -> None:
+    """🔴 같은 `(축, 값)` 셋이 **하나로 합쳐지고 인용은 다 남는다**(99 #204).
+
+    ⚠ 🔴 **버리는 방식이 아니다** — 먼저 나온 것만 남기면 **근거가 사라지고**,
+    confidence 최고만 남기면 **나머지 인용이 사라진다.**
+    """
+    parsed = parse_suggestions(
+        "\n".join(
+            (
+                _line("interest", "attitude", "0.5", "cm_88", "숫자로"),
+                _line("interest", "attitude", "0.9", "cm_89", "점수 추이"),
+                _line("interest", "attitude", "0.3", "cm_90", "표로"),
+            )
+        ),
+        guardian_ref="gd_1",
+    )
+    assert len(parsed) == 1, [s.label.value for s in parsed]
+    assert len(parsed[0].evidence_quotes) == 3, "인용이 사라졌다 — 버리는 방식이다"
+    #: 🔴 **최댓값**이다 — 평균이면 «우리가 재서 정한 값» 이 된다.
+    assert parsed[0].confidence == 0.9
+
+
+def test_an_identical_quote_is_not_duplicated_in_the_merge() -> None:
+    """같은 `record_id` + 같은 문장이면 인용을 하나로 — 근거가 부풀지 않는다."""
+    parsed = parse_suggestions(
+        "\n".join(
+            (
+                _line("comm", "data", "0.5", "cm_88", "숫자로"),
+                _line("comm", "data", "0.7", "cm_88", "숫자로"),
+            )
+        ),
+        guardian_ref="gd_1",
+    )
+    assert len(parsed) == 1
+    assert len(parsed[0].evidence_quotes) == 1, "같은 인용이 두 번 실렸다"
+
+
+def test_different_axes_are_not_merged() -> None:
+    """🔴 **과잉 병합 시험 — 앵커 폭이다.**
+
+    ⚠ 이 검사가 없으면 «다 합치는 구현» 도 위 둘을 통과한다. 축이 다르거나 값이
+    다르면 **각자 남아야** 한다.
+    """
+    parsed = parse_suggestions(
+        "\n".join(
+            (
+                _line("comm", "data", "0.5", "cm_88", "숫자로"),
+                _line("interest", "grade", "0.6", "cm_89", "점수"),
+                _line("comm", "narrative", "0.4", "cm_90", "이야기"),
+            )
+        ),
+        guardian_ref="gd_1",
+    )
+    assert len(parsed) == 3, [
+        (s.label.axis, s.label.value) for s in parsed
+    ]
+
+
+def test_the_merge_keeps_first_appearance_order() -> None:
+    """🔴 정렬하지 않는다 — **모델의 우선순위**가 사라진다."""
+    parsed = parse_suggestions(
+        "\n".join(
+            (
+                _line("interest", "grade", "0.5", "cm_88", "점수"),
+                _line("comm", "data", "0.5", "cm_89", "숫자로"),
+                _line("interest", "grade", "0.9", "cm_90", "정답률"),
+            )
+        ),
+        guardian_ref="gd_1",
+    )
+    assert [s.label.axis for s in parsed] == ["interest", "comm"]
+
+
+def test_the_contract_rejects_duplicates_that_slipped_past_the_merge() -> None:
+    """🔴 계약이 **앞 단계가 깨진 것**을 잡는다 — 그 자리는 500 이 맞다.
+
+    ⚠ 모델 출력이 아니라 **우리 병합**이 안 돈 신호다(조립부가 먼저 합친다).
+    """
+    duplicated = SuggestedLabel(
+        suggestion_id=UUID("00000000-0000-4000-8000-00000000b001"),
+        guardian_ref="gd_1",
+        label=LabelSuggestion(axis="comm", value="data"),
+        confidence=0.5,
+        evidence_quotes=(EvidenceQuote(record_id="cm_88", quote="숫자로"),),
+    )
+    with pytest.raises(ValidationError):
+        LabelSuggestResponse(suggestions=(duplicated, duplicated))
 

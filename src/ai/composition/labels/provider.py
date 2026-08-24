@@ -151,7 +151,54 @@ def parse_suggestions(text: str, *, guardian_ref: str) -> tuple[SuggestedLabel, 
             dropped += 1
     if dropped:
         logger.info("라벨 제안 줄 드롭 guardian=%s 수=%d", guardian_ref, dropped)
-    return tuple(kept)
+    return merge_duplicate_axes(kept)
+
+
+def merge_duplicate_axes(
+    suggestions: Sequence[SuggestedLabel],
+) -> tuple[SuggestedLabel, ...]:
+    """🔴 같은 `(축, 값)` 이 여러 번 나오면 **합친다 — 버리지 않는다**(99 #204).
+
+    ⚠ 🔴 **실측(8/24 · 실 LLM)**: 한 콜이 `(interest, attitude)` 를 **3번** 냈고
+    **파서도 게이트도 안 막았다** — 둘 다 그 축이 아니다(파서는 형식, 게이트는 인용 실존).
+    ⇒ 강사 화면에 **같은 칩이 세 개** 뜬다.
+
+    🔴 **버리는 방식을 안 쓴다**:
+        ❌ 먼저 나온 것만 남긴다        → **근거가 사라진다**
+        ❌ confidence 최고만 남긴다      → **나머지 인용이 사라진다**
+        ✅ **`evidence_quotes` 를 모은다** — 강사가 «이 라벨의 근거가 셋» 을 본다
+
+    ⚠ `confidence` 는 **가장 높은 것**을 쓴다 — 평균이면 «재서 정한 값» 이 되는데
+    우리가 잰 것이 아니다. **그 판단의 최대 확신**이 맞다.
+    ⚠ 인용은 **중복 제거**한다(같은 `record_id` + 같은 문장이면 하나).
+    ⚠ `suggestion_id` 는 **첫 것**을 유지한다 — 합쳐진 것이 새 제안은 아니다.
+    🔴 **순서는 첫 등장 순**이다 — 정렬하면 모델의 우선순위가 사라진다.
+    """
+    merged: dict[tuple[str, str], SuggestedLabel] = {}
+    for suggestion in suggestions:
+        key = (suggestion.label.axis, suggestion.label.value)
+        previous = merged.get(key)
+        if previous is None:
+            merged[key] = suggestion
+            continue
+        quotes = list(previous.evidence_quotes)
+        seen = {(q.record_id, q.quote) for q in quotes}
+        for quote in suggestion.evidence_quotes:
+            if (quote.record_id, quote.quote) not in seen:
+                quotes.append(quote)
+                seen.add((quote.record_id, quote.quote))
+        merged[key] = previous.model_copy(
+            update={
+                "confidence": max(previous.confidence, suggestion.confidence),
+                "evidence_quotes": tuple(quotes),
+            }
+        )
+    if len(merged) != len(suggestions):
+        #: 🔴 **조용히 합치지 않는다** — 몇 건이 합쳐졌는지 남긴다(본문 미기재).
+        logger.info(
+            "라벨 제안 중복 병합 %d → %d", len(suggestions), len(merged)
+        )
+    return tuple(merged.values())
 
 
 class MissingLabelSuggestProvider:
@@ -299,6 +346,13 @@ def build_label_gateway(provider: LLMProvider | None = None) -> LlmGateway:
         build_openai_compat_provider,
     )
 
+    #: 🔴 **의도적으로 `capture_payloads` 를 안 감싼다**(2026-08-24 · 99 #205).
+    #: 04 §3.7 «제안 API 는 아무것도 저장하지 않는다» 를 **LLM 원장에도** 적용한다 —
+    #: 🔴 이력 본문이 프롬프트에 실리므로 원장에 남기면 **그 정책이 무너진다**(불변식 3).
+    #: ⚠ counsel(`counsel/assembly.py`)·briefing(`composition/provider.py`)은 감싼다 —
+    #: **그 축은 산출물을 저장하는 축이라 다르다.**
+    #: 🔴 **언제 바뀌나**: 라벨에 저장 정책이 생기면(확정 경로 집계 회차).
+    #: ⚠ `LLM_CALL` 계수는 남는다(`recorder`) — **본문만** 안 남는다.
     return LlmGateway(
         {ModelRole.COUNSELOR: provider or build_openai_compat_provider()},
         recorder=default_llm_call_collector(),
@@ -334,5 +388,6 @@ __all__ = [
     "LabelSuggestProvider",
     "MissingLabelSuggestProvider",
     "build_label_suggest_provider",
+    "merge_duplicate_axes",
     "parse_suggestions",
 ]

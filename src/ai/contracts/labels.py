@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ai.contracts.counsel import LabelSuggestion
 
@@ -119,6 +119,24 @@ class LabelSuggestResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     suggestions: tuple[SuggestedLabel, ...] = ()
+
+    @model_validator(mode="after")
+    def _axes_are_unique(self) -> LabelSuggestResponse:
+        """🔴 같은 `(축, 값)` 이 둘이면 **앞 단계가 깨진 것**이다(99 #204).
+
+        ⚠ 🔴 **이 검증이 모델 출력을 죽이지 않는다** — 조립부
+        (`composition/labels/provider.py::merge_duplicate_axes`)가 **먼저 합치므로**,
+        여기 걸리면 그건 «모델이 중복을 냈다» 가 아니라 **«우리 병합이 안 돌았다»** 다.
+        🔴 그래서 `raise` 가 맞다 — 500 은 우리 결함의 신호다.
+        ⚠ 순서를 뒤집어 이 검증을 **먼저** 두면 모델 중복 하나에 전체가 500 이 된다.
+        """
+        seen = [(s.label.axis, s.label.value) for s in self.suggestions]
+        duplicates = sorted({key for key in seen if seen.count(key) > 1})
+        if duplicates:
+            raise ValueError(
+                f"같은 (축, 값) 제안이 둘 이상이다 — 병합이 안 돌았다: {duplicates}"
+            )
+        return self
 
 
 __all__ = [
