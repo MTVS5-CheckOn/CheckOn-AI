@@ -62,7 +62,7 @@ def _background_drains(
     # 결정론 대역과 실제 startup 태스크가 같은 잡을 동시에 lease하지 않게 한다. 실제
     # ProblemDrainLoop를 재는 검사는 자기 본문에서 이 값을 true로 명시한다.
     monkeypatch.setenv("PG_DRAIN_ENABLED", "false")
-    from counsel_drain import drain_once
+    from counsel_drain import adrain_once
     from problem_drain import adrain_problem_once
 
     original = TestClient.post
@@ -86,7 +86,25 @@ def _background_drains(
             headers = kwargs.get("headers") or {}
             tenant = headers.get("X-Tenant-Id") if isinstance(headers, dict) else None
             if tenant:
-                drain_once(str(tenant), rotations=_DRAIN_ROTATIONS)
+                #: 🔴 **`drain_once`(동기 · `asyncio.run`)를 안 쓴다**(2026-08-24 · 99 #218).
+                #: 그건 **새 이벤트 루프**를 만드는데, `get_engine()` 이 `@lru_cache` 라
+                #: 커넥션 풀이 **프로세스 하나**이고 그 풀은 TestClient 가 앱을 돌리는
+                #: **portal 루프에 묶인다** ⇒ `STORE_BACKEND=pg` 에서
+                #: `got Future … attached to a different loop` 로 **11건이 red** 였다.
+                #: 🔴 **네 줄 아래 problem 축이 이미 `portal.call` 을 쓴다** — 이 비대칭
+                #: 자체가 «왜 counsel 만 깨지나» 의 답이었다. 여기서 **옆 축과 같아진다.**
+                #: ⚠ 🔴 `counsel_drain.drain_once`(동기)는 **안 고쳤다** — memory 백엔드로
+                #: 도는 다른 셋(`test_drain_once_bridge`·`test_counsel_job_state_residuals`
+                #: ·`test_http_fixtures`)이 그대로 쓴다. 바꾼 것은 **부르는 방식**뿐이다.
+                if self.portal is None:
+                    raise RuntimeError("TestClient 앱 이벤트 루프가 열리지 않았다")
+                self.portal.call(
+                    partial(
+                        adrain_once,
+                        str(tenant),
+                        rotations=_DRAIN_ROTATIONS,
+                    )
+                )
         if (
             problem_drain_enabled
             and response.status_code == 202
