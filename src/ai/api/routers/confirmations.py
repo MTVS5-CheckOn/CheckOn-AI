@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import Counter
 from typing import Any, Final
 
 from fastapi import APIRouter, Request
@@ -64,6 +65,14 @@ LABEL_KEY_INVALID: Final = "label_key_invalid"
 #: ⚠ 🔴 `LABEL_KEY_INVALID` 와 **갈랐다** — 그건 «키가 틀렸다» 이고 이건 «**정정값**이
 #: 틀렸다» 다. BE 가 고쳐야 할 자리가 **다르다**(키는 우리가 준 값, 정정값은 강사 입력).
 LABEL_VALUE_AXIS_MISMATCH: Final = "label_value_axis_mismatch"
+
+#: 🔴 **라벨 확정 집계**(2026-08-25 · 99 #233) — 키는 `(axis, 제안값, 확정값, action)` 넷.
+#: ⚠ 🔴 **`tenant_id`·`guardian_ref` 는 키에 없다**(위 `_accept_label` 주석 참조).
+#: 🔴 **재시작하면 0이 된다** — 프로세스 안 카운터다. 「군집의 착수 근거」로 누적이
+#: 필요한지는 **재서 넘겼다**(#233) — 꺼내는 통로의 모양이 그 답에 달렸다.
+#: ⚠ 🔴 워커가 여럿이면 **프로세스마다 따로 센다** — 합계를 볼 자리가 아직 없다.
+#: 🔴 **400 으로 거절된 확정은 안 센다** — 「강사가 확정했다」가 부풀려진다.
+label_confirmations: Final[Counter[tuple[str, str, str, str]]] = Counter()
 
 #: `classification`이 받지 않는 action의 사유 코드.
 ACTION_NOT_SUPPORTED = "action_not_supported"
@@ -196,15 +205,21 @@ def _accept_label(
             "확정·거절에 정정값이 실림",
             {"reason": CORRECTED_VALUE_NOT_ALLOWED, "detail": "값을 버리지 않는다"},
         )
-    #: 🔴 **집계 다섯 칸** — 🔴 `guardian_ref` 는 **일부러 안 싣는다**(이 함수의 전부다).
-    logger.info(
-        "confirmations.label tenant=%s axis=%s suggested=%s confirmed=%s action=%s",
-        tenant_id,
-        axis,
-        suggested,
-        corrected if corrected is not None else suggested,
-        confirmation.action.value,
-    )
+    #: 🔴 **줄이 아니라 카운터다**(2026-08-25 · 99 #233 판정).
+    #: ⚠ 🔴 종전에는 요청마다 `logger.info` **한 줄**을 뱉었다. 그 한 줄에서 두 문제가
+    #: 나왔다: ⓐ **재식별** — 줄엔 `guardian_ref` 가 없어도 **stdout 은 순서가 남아**
+    #: 한 학부모의 4축을 연달아 확정하면 **연속된 네 줄이 한 사람**이었다 ⓑ **못 꺼냄** —
+    #: `%s` 한 줄이라 세려면 **다시 파싱**해야 했다.
+    #: ⇒ 🔴 **줄을 없애면 순서가 없어지고, 세는 것이 곧 값이 된다.**
+    #: 🔴 선례: `db/repositories/counsel_context_store.py` 의 `self.miss_absent`
+    #: (프로세스 안 정수 · 개인 데이터 미보존 · 99 #23) — 그 형식을 따른다.
+    #: 🔴 **`tenant_id` 로 안 가른다** — «가르면 무엇이 좋아지나» 를 못 적었고, 테넌트가
+    #: 적으면 **그 자체가 식별 축**이 된다(#233 이 그 얘기였다).
+    #: 🔴 **`guardian_ref` 는 카운터 키에도 안 들어간다** — №92 판정의 전부다.
+    label_confirmations[
+        (axis, suggested, corrected if corrected is not None else suggested,
+         confirmation.action.value)
+    ] += 1
     return success_envelope(
         data=ConfirmationResponse(accepted=True).model_dump(mode="json"),
         execution_id=str(uuid.uuid4()),
