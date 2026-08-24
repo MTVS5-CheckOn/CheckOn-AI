@@ -54,6 +54,7 @@ def assemble_report_studio_data(
     cell_min_items: int,
     audience: ReportAudience,
     metrics: tuple[ReportMetricInput, ...] = (),
+    # 근거 없는 지표를 만들지 않으며, BE 스냅숏 지표 경로가 배선될 때 채운다.
 ) -> ReportStudioData:
     """이미 확정된 진단·출제 값만 접어 여섯 데이터 블록을 만든다."""
 
