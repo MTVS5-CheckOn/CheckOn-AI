@@ -22,7 +22,7 @@ from ai.composition.labels.grounding import keep_sendable_history
 from ai.composition.labels.prompt import PROMPT_ID, PROMPT_VERSION, assemble_prompt
 from ai.contracts.composition import CommStyle, Frequency, Interest, Sensitivity
 from ai.contracts.counsel import LabelSuggestion
-from ai.contracts.execution import ExecutionContext, GenerationParams
+from ai.contracts.execution import ExecutionContext
 from ai.contracts.labels import (
     EvidenceQuote,
     HistoryItem,
@@ -30,6 +30,7 @@ from ai.contracts.labels import (
 )
 from ai.contracts.llm import LLMProvider, LLMRequest, ModelRole
 from ai.db.repositories.run_store import default_llm_call_collector
+from ai.llm.determinism import deterministic_params
 from ai.llm.gateway import LlmGateway
 from ai.runtime.env_files import ENV_FILES
 from ai.runtime.errors import LlmUpstreamDown, RedactionUncertain
@@ -76,8 +77,21 @@ _AXIS_VALUES: Final[dict[str, type[CommStyle | Sensitivity | Interest | Frequenc
 #: ⚠ 인용문에 `|` 가 들어갈 수 있어 **앞 넷만 가른다**(`maxsplit=4`).
 _LINE_FIELDS: Final = 5
 
-_GEN_PARAMS: Final = GenerationParams(temperature=0.0)
-"""🔴 **결정론**(불변식 8) — 같은 이력이면 같은 제안이어야 강사가 두 번 열었을 때 안 흔들린다."""
+_GEN_PARAMS: Final = deterministic_params()
+"""🔴 **재현 축의 정본은 `llm/determinism.py` 다** — 여기서 값을 만들지 않는다.
+
+⚠ 🔴 **(8/24 실측) 종전에는 `GenerationParams(temperature=0.0)` 를 직접 만들었고, 실 LLM
+4콜이 전부 `400` 이었다.** 원인이 저장소에 **이미 적혀 있었다**
+(`llm/providers/openai_compat.py` · 99 #51 · 2026-08-13 직접 curl):
+
+    Unsupported value: 'temperature' does not support 0 with this model.
+    Only the default (1) value is supported.
+
+🔴 **재현을 만드는 것은 `seed` 이지 `temperature` 가 아니다**(8/4 실측 — `temperature=0.0`
+인데 같은 입력이 다른 출력을 냈다). `deterministic_params()` 가 그 판단의 정본이고,
+counsel·briefing 이 **이미 그것을 쓴다** — 라벨만 자기 값을 만들었다.
+⚠ 🔴 **그 함수가 보증하는 것은 «요청이 흔들리지 않는다» 까지다**(8/13 실측: 같은 seed
+8회에 3종) — «같은 제안이 나온다» 가 아니다. §E 의 결정론 측정이 그 위에서 읽힌다."""
 
 
 class LabelSuggestProvider(Protocol):

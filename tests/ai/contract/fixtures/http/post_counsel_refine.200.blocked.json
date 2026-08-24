@@ -14,7 +14,7 @@
       "schema": "0.1",
       "contract": "0.1",
       "threshold": null,
-      "prompt": "0.4",
+      "prompt": "0.5",
       "graph": null,
       "taxonomy": null,
       "verify_config": null,
