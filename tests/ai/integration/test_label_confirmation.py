@@ -8,8 +8,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
+from collections.abc import Iterator
 from typing import Final
 
 import pytest
@@ -25,7 +25,7 @@ from ai.api.routers.confirmations import (
 )
 
 
-def _counts() -> dict[tuple[str, str, str, str], int]:
+def _counts(client: TestClient) -> dict[tuple[str, str, str, str], int]:
     """🔴 집계를 **인터페이스로** 읽는다(2026-08-25 · 99 #239).
 
     ⚠ 🔴 종전에는 검사가 `Counter` **객체에 직접** 붙어 있었다 — 그래서 저장소를
@@ -34,9 +34,18 @@ def _counts() -> dict[tuple[str, str, str, str], int]:
     🔴 그래서 이건 «인터페이스가 틀렸다» 가 아니라 «검사가 구현에 붙어 있었다» 다 —
     지금은 **PG 구현으로 갈아끼워도 이 검사들이 안 바뀐다.**
     """
-    #: 🔴 `snapshot()` 이 **`async`** 다(99 #241) — 갈아끼울 것이 PG 라 그래야 한다.
-    #: ⚠ 검사는 동기라 여기서 한 번만 돌린다 — **단언 내용은 안 바뀐다.**
-    return asyncio.run(label_confirmation_store().snapshot())
+    #: 🔴 **`asyncio.run` 을 쓰지 않는다**(2026-08-25 · 99 #243).
+    #: ⚠ 🔴 그건 **새 루프**를 만드는데, `#218` 이 정확히 그것으로 **11 failed** 였다:
+    #: «TestClient 가 앱을 **자기 루프(portal)** 에서 돌려 pg 연결이 그 루프에 묶이는데
+    #:   `asyncio.run` 이 새 루프에서 그 풀을 다시 쓴다» ⇒ `attached to a different loop`.
+    #: 🔴 인메모리라 지금은 안 터지지만 **PG 가 오는 순간 터진다** — 이 회차의 목적이
+    #: 「PG 가 왔을 때 안 터지게」였다.
+    #: 🔴 **선례를 따른다**(`tests/ai/conftest.py` 의 problem 축 · #218 ⓓ):
+    #: `TestClient.portal` 로 **앱과 같은 루프**에서 읽는다. `add` 는 라우터가 `await`
+    #: 하므로 이미 앱 루프다.
+    if client.portal is None:
+        raise RuntimeError("TestClient 앱 이벤트 루프가 열리지 않았다")
+    return client.portal.call(label_confirmation_store().snapshot)
 
 _HEADERS = {"X-Tenant-Id": "t_lc", "X-Request-Id": "r_lc"}
 
@@ -51,8 +60,14 @@ def _reset_counts() -> None:
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(create_app(), raise_server_exceptions=False)
+def client() -> Iterator[TestClient]:
+    """🔴 **컨텍스트로 연다** — 그래야 `portal`(앱 이벤트 루프)이 산다(99 #243).
+
+    ⚠ 종전에는 `TestClient(...)` 를 그냥 돌려줘서 `portal is None` 이었고, 요청은
+    돌지만 **앱 루프로 무언가를 부를 수 없었다.**
+    """
+    with TestClient(create_app(), raise_server_exceptions=False) as test_client:
+        yield test_client
 
 
 def _post(client: TestClient, body: dict[str, object]) -> Response:
@@ -78,12 +93,12 @@ def test_a_confirmed_label_is_accepted_and_only_the_aggregate_is_logged(
     assert response.status_code == 200, response.text
     assert response.json()["data"]["accepted"] is True
     #: 🔴 **줄이 아니라 카운터다**(99 #233).
-    assert _counts().get(("comm", "data", "data", "confirmed"), 0) == 1
+    assert _counts(client).get(("comm", "data", "data", "confirmed"), 0) == 1
     #: 🔴 **이 단언이 #233 을 닫는다** — 줄이 남아 있으면 순서로 재식별이 된다.
     assert not [m for m in caplog.messages if "confirmations.label" in m], caplog.messages
     #: 🔴 개인 참조가 **카운터 키에도** 없다 — №92 판정의 전부다.
-    assert all("gd_11b0" not in "".join(key) for key in _counts()), (
-        list(_counts())
+    assert all("gd_11b0" not in "".join(key) for key in _counts(client)), (
+        list(_counts(client))
     )
 
 
@@ -102,7 +117,7 @@ def test_a_corrected_label_records_the_new_value(
             },
         )
     assert response.status_code == 200, response.text
-    assert _counts().get(("comm", "data", "narrative", "corrected"), 0) == 1
+    assert _counts(client).get(("comm", "data", "narrative", "corrected"), 0) == 1
 
 
 def test_a_value_outside_the_enum_is_400(client: TestClient) -> None:
@@ -169,8 +184,8 @@ def test_a_guardian_ref_with_colons_still_parses(
             },
         )
     assert response.status_code == 200, response.text
-    assert _counts().get(("interest", "grade", "grade", "confirmed"), 0) == 1
-    assert all("gd:11:b0" not in "".join(key) for key in _counts())
+    assert _counts(client).get(("interest", "grade", "grade", "confirmed"), 0) == 1
+    assert all("gd:11:b0" not in "".join(key) for key in _counts(client))
 
 
 #: 🔴 네 축 **전수** — 축마다 「남의 축 값」 하나(99 #232).
@@ -269,10 +284,10 @@ def test_four_confirmations_are_counted_and_split_by_key(client: TestClient) -> 
     ]
     for body in bodies:
         assert _post(client, {"kind": "label", **body}).status_code == 200
-    assert sum(_counts().values()) == 4
-    assert _counts().get(("comm", "data", "data", "confirmed"), 0) == 2
-    assert _counts().get(("comm", "data", "data", "rejected"), 0) == 1
-    assert _counts().get(("interest", "grade", "attitude", "corrected"), 0) == 1
+    assert sum(_counts(client).values()) == 4
+    assert _counts(client).get(("comm", "data", "data", "confirmed"), 0) == 2
+    assert _counts(client).get(("comm", "data", "data", "rejected"), 0) == 1
+    assert _counts(client).get(("interest", "grade", "attitude", "corrected"), 0) == 1
 
 
 def test_a_rejected_400_is_not_counted(client: TestClient) -> None:
@@ -287,7 +302,7 @@ def test_a_rejected_400_is_not_counted(client: TestClient) -> None:
         },
     ):
         assert _post(client, {"kind": "label", **bad}).status_code == 400
-    assert sum(_counts().values()) == 0, _counts()
+    assert sum(_counts(client).values()) == 0, _counts(client)
 
 
 def test_the_seam_survives_a_store_that_actually_awaits(
@@ -307,6 +322,6 @@ def test_the_seam_survives_a_store_that_actually_awaits(
     ):
         assert _post(client, {"kind": "label", **body}).status_code == 200
     #: 🔴 **단언이 위 검사들과 똑같다** — 읽는 방법도 안 바뀌었다.
-    assert _counts()[("comm", "data", "data", "confirmed")] == 1
-    assert _counts()[("interest", "grade", "grade", "rejected")] == 1
-    assert sum(_counts().values()) == 2
+    assert _counts(client)[("comm", "data", "data", "confirmed")] == 1
+    assert _counts(client)[("interest", "grade", "grade", "rejected")] == 1
+    assert sum(_counts(client).values()) == 2
