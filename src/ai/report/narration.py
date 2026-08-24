@@ -11,7 +11,14 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ai.contracts.execution import ExecutionContext, VersionSet
-from ai.contracts.llm import CallOutcome, LlmError, LLMRequest, ModelRole, RedactionBlocked
+from ai.contracts.llm import (
+    CallOutcome,
+    LlmError,
+    LLMRequest,
+    ModelRole,
+    ParseFailed,
+    RedactionBlocked,
+)
 from ai.contracts.report import (
     ReportAudience,
     ReportBlock,
@@ -312,6 +319,11 @@ class ReportNarrator:
                     reason="redaction_blocked",
                     attempts=attempt,
                 )
+            except ParseFailed:
+                # ParseFailed·FieldMissing은 LlmError 하위형이지만 벤더 장애가 아니다.
+                # 계약의 블록 단위 재생성 예산을 모두 쓴 뒤 기존 소진 사유로 수렴한다.
+                retry_reason = "generation_exhausted"
+                continue
             except LlmError:
                 return _empty_section(
                     block_type,
@@ -325,8 +337,8 @@ class ReportNarrator:
                 continue
             try:
                 draft = parse(result.text, ReportNarrationDraft)
-            except LlmError as error:
-                retry_reason = type(error).__name__
+            except ParseFailed:
+                retry_reason = "generation_exhausted"
                 continue
 
             block = _draft_block(

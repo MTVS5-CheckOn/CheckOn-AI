@@ -2410,12 +2410,40 @@ fake를 선택한 경우에는 경고 로그와 `fake-report` provider 표기로
 따라서 이후 주입 seam은 단위 검사에서 대역을 꽂는 것만으로 완료라 하지 않고, 주입 없는
 프로덕션 조립 루트가 실제 의존성을 채우는 검사까지 함께 둔다.
 
+### 2-34. 리포트 문장화 파싱 실패의 죽은 재생성 분기 `[해소 · 2026-08-25 · 재시도 분기 복원]`
+
+실 LLM 재실측에서 리포트 6회가 모두 `template_only`로 끝났다. 외부 호출은 30콜이었고
+재생성은 0회였으며, 원장에는 `parse_fail` 18건이 남았지만 HTTP 섹션 사유는 전부
+`llm_unavailable`이었다. `fact`·`chart_analysis`는 성공 0/6이었다. 이 값은 타임아웃
+근거가 아니라 문장화 실패 경로를 드러낸 재현 결과다.
+
+원인은 예외 계층을 잡는 순서였다. 게이트웨이는 구조화 출력 실패를 `LLMResult`의 실패
+outcome으로 반환하지 않고 `ParseFailed`로 다시 던진다. 그런데 `ParseFailed`가
+`LlmError`의 하위형인데도 리포트가 `except LlmError`를 먼저 두어, `contracts/llm.py`가
+명시한 「`PARSE_FAIL`·`FIELD_MISSING`은 블록 단위 3회 이내 재시도」 정책을 실행 전에
+무력화했다. 파싱 실패를 벤더 장애인 `llm_unavailable`로 오기한 것도 같은 원인이다.
+
+선례와 경고는 이미 있었다. `composition/classify/classifier.py`와
+`composition/counsel/provider.py`, `problem_generation/application/workflow.py`는
+`ParseFailed`를 별도로 잡는다. 특히 `problem_generation/application/refiner.py:226`은
+`ParseFailed`·`FieldMissing`이 상위 `except LlmError`로 새면 재생성 예산을 못 쓴다고
+문장으로 경고한다. 리포트 새 축이 그 선례 밖에서 자라며 같은 함정을 다시 밟았다.
+
+검사가 못 잡은 이유는 기존 `FakeProvider` 시나리오가 파싱 가능한 응답이나 결정론 게이트
+거부만 돌려주고, 게이트웨이가 실제로 다시 던지는 `ParseFailed`를 한 번도 만들지 않았기
+때문이다. 프로덕션 예외 이음매만 검사에서 빠진 점에서 「검사에서만 꽂히는 이음매」의
+사촌이다. 이번 해소는 예외 계층을 바꾸지 않고 `RedactionBlocked` → `ParseFailed` →
+`LlmError` 순서를 고정했다. 파싱 실패와 필드 누락은 정확히 3회를 쓰고
+`generation_exhausted`로 끝나며, redaction 차단은 1회에서 종단한다. `fact`와
+`chart_analysis`의 실 LLM 성공 0/6은 프롬프트·스키마 재측정 뒤 판단할 별건이다.
+
 ## §3. OPEN 총괄 표 (잔여만 — 해소분은 §0)
 
 | 번호 | 항목 | B 권고안 | 담당 | 관련 part_b |
 | --- | --- | --- | --- | --- |
 | **B-15** `[A 판정 정정 · 2026-08-25 · ⓒ]` | 리포트·브리핑 공통 결정론 텍스트 게이트의 중립 경계 | 경계를 넘는 예외를 이름 하나·프로덕션 한 곳으로 고정한다. 둘째가 생겨 소비 축이 셋째가 되면 일반/브리핑 고유 검사를 먼저 가르고 ⓐ로 승격한다 | A+B | §2-29 |
 | **B-20** `[해소 · 2026-08-25]` | **`POST /v1/reports`가 narrator 미배선으로 프로덕션 500이었지만, 검사는 대역을 직접 주입해 green이었다.** 검사에서만 꽂히는 이음매의 세 번째 사례 | provider·startup 조립과 주입 없는 앱 기동 검사를 함께 두고, 명시 주입은 덮지 않으며 fake 선택은 경고·산출물 표기로 구분한다 | B | §2-33 |
+| **B-21** `[해소 · 2026-08-25]` | **리포트가 `ParseFailed`를 상위 `LlmError`로 먼저 잡아 3회 재생성 계약을 무력화하고 파싱 실패를 `llm_unavailable`로 오기했다.** 실측 30콜에서 6/6 `template_only`·재생성 0·`parse_fail` 18건 | 예외 계층은 유지하고 `RedactionBlocked` → `ParseFailed` → `LlmError` 순서로 잡는다. FakeProvider 예외 시나리오로 파싱 실패·필드 누락은 3회 소진, redaction 차단은 1회 종단을 고정한다 | B | §2-34 |
 | B-3 잔여 | taxonomy 경계 사례 7건 판정 | 태깅 골든셋 시드와 동시 확정 | A+B | 04·06 §5 |
 | Open-12 | F17 OCR 실명→alias·OCR 소유 (P2) | 스캔·매칭·마스킹=BE 유지, 판독 소유는 벤더 선정과 함께 | BE(+A·B) | 02 §1-C |
 | B-2 | 공용 계약 리뷰·구현·14항목 승인 완료 — **문서 동기화 3/7 완료, 4건 잔여(§2-10)** | 잔여 4건 소유자 반영 요청 | A+B | 02 §5 |
