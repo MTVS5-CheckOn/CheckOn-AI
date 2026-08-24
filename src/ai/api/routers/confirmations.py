@@ -38,6 +38,12 @@ from ai.runtime.errors import NotFound, SnapshotInvalid
 
 logger = logging.getLogger(__name__)
 
+from ai.api.routers.confirmations_openapi import (  # noqa: E402
+    CONFIRMATIONS_OPERATION_ID,
+    CONFIRMATIONS_SUMMARY,
+    CONFIRMATIONS_TAG,
+)
+
 router = APIRouter()
 
 _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id")
@@ -86,7 +92,12 @@ def _format_validation_error(exc: ValidationError) -> list[dict[str, str]]:
     ]
 
 
-@router.post("/v1/confirmations")
+@router.post(
+    "/v1/confirmations",
+    operation_id=CONFIRMATIONS_OPERATION_ID,
+    tags=[CONFIRMATIONS_TAG],
+    summary=CONFIRMATIONS_SUMMARY,
+)
 async def post_confirmations(request: Request) -> dict[str, Any]:
     """강사 확정·정정 수신 — 동기 200.
 

@@ -40,6 +40,12 @@ from ai.runtime.errors import SnapshotInvalid
 
 logger = logging.getLogger(__name__)
 
+from ai.api.routers.labels_openapi import (  # noqa: E402
+    LABELS_OPERATION_ID,
+    LABELS_SUMMARY,
+    LABELS_TAG,
+)
+
 router = APIRouter()
 
 _REQUIRED_HEADERS: Final = ("X-Tenant-Id", "X-Request-Id")
@@ -70,7 +76,12 @@ def _format_validation_error(exc: ValidationError) -> list[dict[str, str]]:
     ]
 
 
-@router.post("/v1/labels/suggest")
+@router.post(
+    "/v1/labels/suggest",
+    operation_id=LABELS_OPERATION_ID,
+    tags=[LABELS_TAG],
+    summary=LABELS_SUMMARY,
+)
 async def post_labels_suggest(request: Request) -> dict[str, Any]:
     """라벨 제안 — 동기 200.
 
