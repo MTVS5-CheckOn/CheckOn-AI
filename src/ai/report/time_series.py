@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from statistics import fmean
 from zoneinfo import ZoneInfo
 
-from ai.contracts.diagnosis import DiagnosisEvent, DiagnosisInput
+from ai.contracts.diagnosis import DiagnosisEvent, DiagnosisInput, Period
 from ai.contracts.report import (
     ReportAudience,
     ReportEvidenceRef,
@@ -43,11 +43,28 @@ def build_time_series_metrics(
 ) -> tuple[ReportMetricInput, ...]:
     """기간 안의 채점 이벤트로 월·주 추이와 최근 6주 개인 기준선을 만든다."""
 
+    return build_time_series_metrics_from_events(
+        diagnosis_input.events,
+        period=diagnosis_input.period,
+        vocabulary=vocabulary,
+        timezone=timezone,
+    )
+
+
+def build_time_series_metrics_from_events(
+    events: tuple[DiagnosisEvent, ...],
+    *,
+    period: Period,
+    vocabulary: ReportTimeSeriesVocabulary,
+    timezone: ZoneInfo,
+) -> tuple[ReportMetricInput, ...]:
+    """스냅숏의 최소 시계열 입력을 월·주 지표로 접는다."""
+
     monthly: dict[str, list[DiagnosisEvent]] = defaultdict(list)
     weekly: dict[str, list[DiagnosisEvent]] = defaultdict(list)
-    for event in diagnosis_input.events:
+    for event in events:
         local_day = _local_day(event, timezone)
-        if not diagnosis_input.period.from_date <= local_day <= diagnosis_input.period.to_date:
+        if not period.from_date <= local_day <= period.to_date:
             continue
         monthly[local_day.strftime("%Y-%m")].append(event)
         weekly[_monday_of(local_day).isoformat()].append(event)
@@ -80,6 +97,22 @@ def build_default_time_series_metrics(
     vocabulary = default_report_time_series_vocabulary()
     return build_time_series_metrics(
         diagnosis_input,
+        vocabulary=vocabulary,
+        timezone=ZoneInfo(vocabulary.timezone_name),
+    )
+
+
+def build_default_time_series_metrics_from_events(
+    events: tuple[DiagnosisEvent, ...],
+    *,
+    period: Period,
+) -> tuple[ReportMetricInput, ...]:
+    """기본 어휘와 시간대로 최소 시계열 스냅숏을 접는다."""
+
+    vocabulary = default_report_time_series_vocabulary()
+    return build_time_series_metrics_from_events(
+        events,
+        period=period,
         vocabulary=vocabulary,
         timezone=ZoneInfo(vocabulary.timezone_name),
     )
@@ -203,5 +236,7 @@ def _metric(
 __all__ = [
     "ReportTimeSeriesError",
     "build_default_time_series_metrics",
+    "build_default_time_series_metrics_from_events",
     "build_time_series_metrics",
+    "build_time_series_metrics_from_events",
 ]

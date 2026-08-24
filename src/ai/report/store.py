@@ -8,9 +8,18 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ai.contracts.diagnosis import MisconceptionReport, WeaknessMap
+from ai.contracts.diagnosis import DiagnosisEvent, MisconceptionReport, Period, WeaknessMap
 from ai.contracts.problem_generation import ItemResult
 from ai.contracts.report import ReportBlock, ReportMetricInput
+
+
+class ReportTimeSeriesSnapshot(BaseModel):
+    """시계열 조립에 실제로 쓰는 진단 기간과 이벤트만 보존한다."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    period: Period
+    events: tuple[DiagnosisEvent, ...] = ()
 
 
 class ReportSourceSnapshot(BaseModel):
@@ -22,6 +31,7 @@ class ReportSourceSnapshot(BaseModel):
     misconceptions: MisconceptionReport
     item_results: tuple[ItemResult, ...] = Field(min_length=1)
     metrics: tuple[ReportMetricInput, ...] = ()
+    time_series: ReportTimeSeriesSnapshot | None = None
     cell_min_items: int = Field(ge=1)
 
 
@@ -97,5 +107,6 @@ __all__ = [
     "ReportRevisionConflict",
     "ReportSourceSnapshot",
     "ReportStore",
+    "ReportTimeSeriesSnapshot",
     "StoredReport",
 ]
