@@ -35,6 +35,7 @@ from ai.api.routers.classify import reset_inquiry_class_store
 from ai.api.routers.counsel import reset_counsel_stores
 from ai.api.routers.detect import reset_detection_store, reset_idempotency_store
 from ai.composition.counsel.prompt import PROMPT_VERSION
+from ai.composition.counsel.provider import PLAN_PROMPT_VERSION
 from ai.db.repositories.run_store import InMemoryRunStore
 from ai.db.store_factory import reset_shared_agent_runtime
 
@@ -199,10 +200,13 @@ def test_counsel_response_and_ledger_agree_on_prompt_version() -> None:
         "이 변경은 값만 바꾼다(null → '0.2')"
     )
 
-    #: ⚠ plan 프롬프트(0.1)는 유실되지 않는다 — 축이 다르다.
+    #: ⚠ plan 프롬프트는 유실되지 않는다 — 축이 다르다.
     #:   AI_RUN = 실행의 대표 프롬프트 · LLM_CALL = 호출별 프롬프트.
+    #: ⚠ 🔴 **(8/24) 값을 재진술하지 않는다** — 종전에는 `"0.1"` 이 박혀 있었고,
+    #:   №67 이 plan 템플릿을 고쳐 **0.2** 로 올리자 red 가 났다. 값이 아니라 **정본을
+    #:   가리킨다** — «가드 없는 재진술은 또 갈린다»(#02 가 반복해서 남긴 것).
     call_versions = [c.prompt_version for c in store.calls]
-    assert "0.1" in call_versions and PROMPT_VERSION in call_versions, (
+    assert PLAN_PROMPT_VERSION in call_versions and PROMPT_VERSION in call_versions, (
         f"LLM_CALL에 plan·초안 버전이 둘 다 남지 않았다: {call_versions} — "
         "AI_RUN이 하나만 들 수 있는 이유가 이 축 분리인데 그 축이 비었다"
     )
