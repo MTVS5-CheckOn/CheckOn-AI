@@ -37,6 +37,31 @@ prompts:
     role: generator
     template: problem_generation/refine.txt
     response_schema_name: GeneratedItem
+  - prompt_id: report.greeting.v1
+    version: v1
+    role: reporter
+    template: report/greeting.txt
+    response_schema_name: ReportNarrationDraft
+  - prompt_id: report.fact.v1
+    version: v1
+    role: reporter
+    template: report/fact.txt
+    response_schema_name: ReportNarrationDraft
+  - prompt_id: report.chart_analysis.v1
+    version: v1
+    role: reporter
+    template: report/chart_analysis.txt
+    response_schema_name: ReportNarrationDraft
+  - prompt_id: report.suggestion.v1
+    version: v1
+    role: reporter
+    template: report/suggestion.txt
+    response_schema_name: ReportNarrationDraft
+  - prompt_id: report.closing.v1
+    version: v1
+    role: reporter
+    template: report/closing.txt
+    response_schema_name: ReportNarrationDraft
   # 문의 분류(ⓑ) — 04 §3.5 · part_a/01 §4-ⓑ.
   # role=classifier는 `contracts/llm.py`의 `ModelRole.CLASSIFIER`("문의 분류·태깅 제안")다 —
   # 초기 커밋부터 있던 값이다. 종전 generator였고 "CLASSIFIER가 없어서"라는 주석이 붙어

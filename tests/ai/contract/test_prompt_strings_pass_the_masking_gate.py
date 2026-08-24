@@ -92,6 +92,13 @@ def test_the_sweeps_actually_find_something() -> None:
     ⚠ 세 축을 **따로** 센다. 하나가 비어도 합계로는 안 보인다.
     """
     assert len(_a_owned_templates()) >= 4, "A 소유 템플릿 순회가 깨졌다"
+    report_templates = [
+        path
+        for path in _a_owned_templates()
+        if path.relative_to(_TEMPLATES_ROOT).as_posix().startswith("report/")
+    ]
+    # A 권고(2026-08-24): B가 추가한 리포트 템플릿도 이 순회 가드의 대상이다.
+    assert len(report_templates) == 5, "리포트 템플릿 다섯이 마스킹 순회에서 빠졌다"
     assert len(_axis_rule_strings()) >= 4, "`tone_map.axis_rules` 순회가 깨졌다"
     assert len(_gate_feedback_strings()) >= 4, "게이트 사유 순회가 깨졌다"
     assert len(_buffer_lexicon_strings()) >= 20, "완충 어휘 순회가 깨졌다"
