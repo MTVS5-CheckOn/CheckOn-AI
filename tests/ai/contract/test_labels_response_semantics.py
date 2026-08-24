@@ -136,12 +136,18 @@ def test_the_two_zero_cases_do_not_look_alike() -> None:
     )
 
 
-def test_the_suggestion_shape_is_pinned_and_differs_from_the_04_example() -> None:
-    """🔴 **04 예시와 실제 응답이 갈린 자리를 고정한다**(99 #215 · 2026-08-24 실측).
+def test_the_suggestion_shape_is_the_contract() -> None:
+    """🔴 **제안 객체의 모양이 계약이다** — `label: {axis, value}` **중첩**(99 #215 판정).
 
-    04 §3.7 예시는 `axis`·`value` 를 **최상위**에 두는데 실제는 `label` **중첩**이다.
-    🔴 어느 쪽이 맞는지는 **BE 합의 사항**이라 이 회차에서 안 골랐다 — 대신 **현행을
-    못 박아** 합의 전에 조용히 바뀌지 않게 한다. 합의가 나면 이 검사부터 고친다.
+    ⚠ 🔴 **현행 고정이 아니라 계약 고정이다**(8/24 판정 반영). 직전 판은 «합의 전에
+    조용히 안 바뀌게» 였고, 이제는 «이 모양이 04 §3.7 이 약속한 것» 이다.
+
+    🔴 **왜 중첩인가**: `LabelSuggestion(axis, value)` 은 **재사용 모델**이고
+    `SuggestedLabel` 이 그것을 **품는다** — 4축 값의 정의를 **한 곳**에 두려는 것이다
+    (`contracts/counsel.py` 의 `LabelSuggestion` docstring). 평평하게 펴면 그 재사용이
+    깨지고 4축 정의가 **두 곳으로 갈린다.**
+    ⚠ 🔴 `operationId` 와 다르다 — 그건 **BE 의 메서드명**이 되지만(남의 코드) 응답
+    스키마는 **우리 계약**이고 BE 는 그것을 파싱할 뿐이다. 그 둘을 갈라서 정했다.
     """
     line = "comm | data | 0.7 | r-1 | 지난주 과제를 모두 제출했습니다"
     for client in _client(line):
@@ -155,8 +161,8 @@ def test_the_suggestion_shape_is_pinned_and_differs_from_the_04_example() -> Non
         "suggestion_id",
     ], sorted(suggestion)
     assert sorted(suggestion["label"]) == ["axis", "value"]
-    #: 🔴 **04 예시가 말하는 모양은 아직 아니다** — 이 단언이 red 가 되면 합의가 반영된 것이다.
-    assert "axis" not in suggestion, "04 예시대로 평탄해졌다면 99 #215 를 닫아라"
+    #: 🔴 **평탄화 금지** — 최상위에 `axis` 가 나타나면 4축 정의가 두 곳으로 갈린 것이다.
+    assert "axis" not in suggestion, "제안 객체를 평평하게 폈다 — 04 §3.7 예시가 계약이다"
 
 
 def test_an_out_of_range_confidence_drops_only_that_line() -> None:
