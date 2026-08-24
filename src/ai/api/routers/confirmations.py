@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections import Counter
 from typing import Any, Final
 
 from fastapi import APIRouter, Request
@@ -39,6 +38,11 @@ from ai.contracts.confirmations import (
     LabelCorrection,
 )
 from ai.db.repositories.inquiry_class_store import InquiryClassStore
+from ai.db.repositories.label_confirmation_store import (
+    LabelConfirmationStore,
+    build_label_confirmation_store,
+    reset_default_label_confirmation_store,
+)
 from ai.db.store_factory import (
     build_inquiry_class_store,
     reset_default_inquiry_class_store,
@@ -66,24 +70,37 @@ LABEL_KEY_INVALID: Final = "label_key_invalid"
 #: 틀렸다» 다. BE 가 고쳐야 할 자리가 **다르다**(키는 우리가 준 값, 정정값은 강사 입력).
 LABEL_VALUE_AXIS_MISMATCH: Final = "label_value_axis_mismatch"
 
-#: 🔴 **라벨 확정 집계**(2026-08-25 · 99 #233) — 키는 `(axis, 제안값, 확정값, action)` 넷.
-#: ⚠ 🔴 **`tenant_id`·`guardian_ref` 는 키에 없다**(위 `_accept_label` 주석 참조).
-#: 🔴 **재시작하면 0이 된다** — 프로세스 안 카운터다. 「군집의 착수 근거」로 누적이
-#: 필요한지는 **재서 넘겼다**(#233) — 꺼내는 통로의 모양이 그 답에 달렸다.
-#: ⚠ 🔴 워커가 여럿이면 **프로세스마다 따로 센다** — 합계를 볼 자리가 아직 없다.
-#: 🔴 **400 으로 거절된 확정은 안 센다** — 「강사가 확정했다」가 부풀려진다.
-label_confirmations: Final[Counter[tuple[str, str, str, str]]] = Counter()
+_label_store: LabelConfirmationStore | None = None
+
+
+def label_confirmation_store() -> LabelConfirmationStore:
+    """🔴 라벨 확정 **집계** 저장소 — 주입분이 있으면 그것, 없으면 공용.
+
+    🔴 **인터페이스 뒤에 둔 이유**(2026-08-25 · 99 #239): 구현이 **둘이 될 것이 이미
+    정해졌다** — 지금은 프로세스 안 카운터이고, 실측상 **재배포마다 0 이 되는데 「군집의
+    착수 근거」는 한 달 단위**라 누적이 필요하면 **PG** 다. 🔴 그건 `db/models.py` 와
+    마이그레이션이라 **양자 승인**이고, 승인이 나면 **구현 하나를 더하는 것으로 끝난다**
+    (라우터도 검사도 안 바뀐다). ⚠ **꺼내는 HTTP 통로는 여전히 안 만든다**(#239).
+    """
+    return _label_store if _label_store is not None else build_label_confirmation_store()
+
+
+def set_label_confirmation_store(store: LabelConfirmationStore) -> None:
+    """저장소 주입 — `set_inquiry_class_store` 선례와 같은 규약."""
+    global _label_store
+    _label_store = store
 
 
 def reset_label_confirmations() -> None:
-    """🔴 집계를 비운다 — **모듈 규약**을 따른다(2026-08-25 · 99 #237).
+    """검사 격리용 — 주입을 걷고 공용 저장소를 비운다(99 #237).
 
-    ⚠ 🔴 검사가 `label_confirmations.clear()` 를 **다섯 군데에서 손으로** 불렀다.
-    🔴 새 검사가 그걸 잊으면 **앞 검사의 수를 물려받는데, red 로도 skip 으로도 안
-    나타난다 — 수가 그냥 틀린다**(#226 «green 인데 아무것도 안 재고 있다» 의 그 종류).
-    ⇒ 같은 모듈의 `reset_inquiry_class_store()` 와 **같은 규약**으로 둔다.
+    ⚠ 🔴 검사가 `clear()` 를 **손으로** 부르던 자리를 이 규약이 대신한다 — 잊으면
+    앞 검사의 수를 물려받는데 **red 로도 skip 으로도 안 나타난다.**
     """
-    label_confirmations.clear()
+    global _label_store
+    _label_store = None
+    reset_default_label_confirmation_store()
+
 
 #: `classification`이 받지 않는 action의 사유 코드.
 ACTION_NOT_SUPPORTED = "action_not_supported"
@@ -227,10 +244,14 @@ def _accept_label(
     #: 🔴 **`tenant_id` 로 안 가른다** — «가르면 무엇이 좋아지나» 를 못 적었고, 테넌트가
     #: 적으면 **그 자체가 식별 축**이 된다(#233 이 그 얘기였다).
     #: 🔴 **`guardian_ref` 는 카운터 키에도 안 들어간다** — №92 판정의 전부다.
-    label_confirmations[
-        (axis, suggested, corrected if corrected is not None else suggested,
-         confirmation.action.value)
-    ] += 1
+    label_confirmation_store().add(
+        (
+            axis,
+            suggested,
+            corrected if corrected is not None else suggested,
+            confirmation.action.value,
+        )
+    )
     return success_envelope(
         data=ConfirmationResponse(accepted=True).model_dump(mode="json"),
         execution_id=str(uuid.uuid4()),
@@ -380,7 +401,8 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
 VERSION_SCOPE: Final = RouterScope("/v1/confirmations", classify_versions)
 
 __all__ = [
-    "label_confirmations",
+    "label_confirmation_store",
+    "set_label_confirmation_store",
     "reset_label_confirmations",
     "ACTION_NOT_SUPPORTED",
     "CORRECTED_VALUE_MISSING",
