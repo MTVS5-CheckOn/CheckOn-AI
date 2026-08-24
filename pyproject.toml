@@ -86,4 +86,9 @@ markers = [
 #: opt-in이 `.env`를 읽게 되돌린 대신(운영에서 안 먹어 브리핑 11건이 죽었다) **막는 자리를
 #: 테스트 진입점으로 옮겼다.** ⚠ `pre_pr_verify`의 `env.pop`은 프로세스 env만 지워서
 #: `.env`가 다시 올라온다 — 이 핀이 그 구멍을 막는다. **빼면 게이트가 약해진다.**
+#: 🔴 **`xpass` 를 red 로 만든다(2026-08-24 · 99 #226 ⓒ)** — 기본값(`false`)이면
+#: «xfail 로 표시했는데 실제로는 통과» 가 **조용히 지나간다**: 고쳐졌는데 아무도 안 알려준다.
+#: ⚠ 🔴 **켜기 전에 쟀다** — `--runxfail` 로 셋을 돌려 **3 failed**(전부 아직 실패)를 확인했고
+#: ⇒ **이 값을 켜서 red 가 되는 검사는 0개**다. 안 재고 켰다면 몇 개가 깨질지 몰랐다.
+xfail_strict = true
 addopts = "-m 'not integration and not external' -p store_backend_pin -p llm_provider_pin -p console_env_pin -p real_llm_optin_pin"
