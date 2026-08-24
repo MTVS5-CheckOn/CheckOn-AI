@@ -68,7 +68,15 @@ _VERSIONS: Final = VersionSet(
     schema_version="0.1",
     contract_version="0.1",
 )
-VERSION_SCOPE: Final = RouterScope(_PREFIX, lambda: _VERSIONS)
+
+
+def report_versions() -> VersionSet:
+    """리포트 응답·생성 실행이 공유하는 버전 세트."""
+
+    return _VERSIONS
+
+
+VERSION_SCOPE: Final = RouterScope(_PREFIX, report_versions)
 
 
 def _system_utc_now() -> datetime:
@@ -280,7 +288,7 @@ def _detail(report: StoredReport) -> dict[str, Any]:
 
 
 def _success(data: dict[str, Any], request_id: str) -> dict[str, Any]:
-    return success_envelope(data, request_id, _VERSIONS)
+    return success_envelope(data, request_id, report_versions())
 
 
 def _source_hash(source: ReportSourceSnapshot) -> str:
@@ -339,7 +347,7 @@ async def create_report(request: Request) -> dict[str, Any]:
         NAMESPACE_URL,
         f"report:{tenant_id}:{body.report_id}:{source_hash}:{prompt_version}",
     )
-    versions = _VERSIONS.model_copy(update={"prompt_version": prompt_version})
+    versions = report_versions().model_copy(update={"prompt_version": prompt_version})
     existing = await _store.get(tenant_id=tenant_id, report_id=body.report_id)
     if existing is not None:
         if existing.guardian_ref != body.guardian_ref or existing.source != body.source:
@@ -527,6 +535,7 @@ async def restore_ai_original(
 __all__ = [
     "VERSION_SCOPE",
     "create_report",
+    "report_versions",
     "require_report_narrator",
     "reset_report_clock",
     "reset_report_narrator",
