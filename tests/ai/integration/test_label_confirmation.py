@@ -17,9 +17,21 @@ from httpx import Response
 
 from ai.api.app import create_app
 from ai.api.routers.confirmations import (
-    label_confirmations,
+    label_confirmation_store,
     reset_label_confirmations,
 )
+
+
+def _counts() -> dict[tuple[str, str, str, str], int]:
+    """🔴 집계를 **인터페이스로** 읽는다(2026-08-25 · 99 #239).
+
+    ⚠ 🔴 종전에는 검사가 `Counter` **객체에 직접** 붙어 있었다 — 그래서 저장소를
+    인터페이스 뒤로 넣자 **읽는 자리 다섯이 같이 바뀌었다.** 🔴 바뀐 것은 «**읽는 방법**»
+    이고 «**무엇을 재는가**» 는 그대로다(키도 기대값도 안 바뀌었다).
+    🔴 그래서 이건 «인터페이스가 틀렸다» 가 아니라 «검사가 구현에 붙어 있었다» 다 —
+    지금은 **PG 구현으로 갈아끼워도 이 검사들이 안 바뀐다.**
+    """
+    return label_confirmation_store().snapshot()
 
 _HEADERS = {"X-Tenant-Id": "t_lc", "X-Request-Id": "r_lc"}
 
@@ -61,12 +73,12 @@ def test_a_confirmed_label_is_accepted_and_only_the_aggregate_is_logged(
     assert response.status_code == 200, response.text
     assert response.json()["data"]["accepted"] is True
     #: 🔴 **줄이 아니라 카운터다**(99 #233).
-    assert label_confirmations[("comm", "data", "data", "confirmed")] == 1
+    assert _counts().get(("comm", "data", "data", "confirmed"), 0) == 1
     #: 🔴 **이 단언이 #233 을 닫는다** — 줄이 남아 있으면 순서로 재식별이 된다.
     assert not [m for m in caplog.messages if "confirmations.label" in m], caplog.messages
     #: 🔴 개인 참조가 **카운터 키에도** 없다 — №92 판정의 전부다.
-    assert all("gd_11b0" not in "".join(key) for key in label_confirmations), (
-        list(label_confirmations)
+    assert all("gd_11b0" not in "".join(key) for key in _counts()), (
+        list(_counts())
     )
 
 
@@ -85,7 +97,7 @@ def test_a_corrected_label_records_the_new_value(
             },
         )
     assert response.status_code == 200, response.text
-    assert label_confirmations[("comm", "data", "narrative", "corrected")] == 1
+    assert _counts().get(("comm", "data", "narrative", "corrected"), 0) == 1
 
 
 def test_a_value_outside_the_enum_is_400(client: TestClient) -> None:
@@ -152,8 +164,8 @@ def test_a_guardian_ref_with_colons_still_parses(
             },
         )
     assert response.status_code == 200, response.text
-    assert label_confirmations[("interest", "grade", "grade", "confirmed")] == 1
-    assert all("gd:11:b0" not in "".join(key) for key in label_confirmations)
+    assert _counts().get(("interest", "grade", "grade", "confirmed"), 0) == 1
+    assert all("gd:11:b0" not in "".join(key) for key in _counts())
 
 
 #: 🔴 네 축 **전수** — 축마다 「남의 축 값」 하나(99 #232).
@@ -252,10 +264,10 @@ def test_four_confirmations_are_counted_and_split_by_key(client: TestClient) -> 
     ]
     for body in bodies:
         assert _post(client, {"kind": "label", **body}).status_code == 200
-    assert sum(label_confirmations.values()) == 4
-    assert label_confirmations[("comm", "data", "data", "confirmed")] == 2
-    assert label_confirmations[("comm", "data", "data", "rejected")] == 1
-    assert label_confirmations[("interest", "grade", "attitude", "corrected")] == 1
+    assert sum(_counts().values()) == 4
+    assert _counts().get(("comm", "data", "data", "confirmed"), 0) == 2
+    assert _counts().get(("comm", "data", "data", "rejected"), 0) == 1
+    assert _counts().get(("interest", "grade", "attitude", "corrected"), 0) == 1
 
 
 def test_a_rejected_400_is_not_counted(client: TestClient) -> None:
@@ -270,4 +282,4 @@ def test_a_rejected_400_is_not_counted(client: TestClient) -> None:
         },
     ):
         assert _post(client, {"kind": "label", **bad}).status_code == 400
-    assert sum(label_confirmations.values()) == 0, dict(label_confirmations)
+    assert sum(_counts().values()) == 0, _counts()
