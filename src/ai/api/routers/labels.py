@@ -30,6 +30,7 @@ from ai.composition.labels.grounding import ground_suggestions
 from ai.composition.labels.provider import (
     LabelSuggestProvider,
     build_label_suggest_provider,
+    merge_duplicate_axes,
 )
 from ai.composition.labels.versions import labels_versions
 from ai.contracts.execution import Capability, ExecutionContext
@@ -111,16 +112,23 @@ async def post_labels_suggest(request: Request) -> dict[str, Any]:
         context=context,
     )
     outcome = ground_suggestions(raw, history=payload.history)
+    #: 🔴 **병합은 게이트 뒤다**(2026-08-24 · 99 #206). 앞에 두면 병합된 제안이 인용을
+    #: 여럿 들고, 게이트가 «하나라도 실패하면 전체 드롭» 이라 **«근거 실존» 이 «근거 묶음
+    #: 전부 실존» 으로 조용히 바뀐다** — 진짜 인용 둘이 있는 제안이 지어낸 인용 하나 때문에
+    #: 통째로 사라진다(불변식 2 의 **반대편**이다).
+    #: ⚠ 각 층이 자기 물음만 본다 — 게이트는 «근거가 실존하나»(판정), 병합은 «같은 라벨을
+    #: 두 번 안 보여준다»(**표시**). 🔴 **표시는 판정 뒤에 온다.**
+    suggestions = merge_duplicate_axes(outcome.suggestions)
     #: ⚠ 🔴 **본문·인용문을 로그에 싣지 않는다**(불변식 3 · 99 #80) — 수와 사유까지다.
     logger.info(
         "라벨 제안 tenant=%s guardian=%s 제안=%d 드롭=%d",
         tenant_id,
         payload.guardian_ref,
-        len(outcome.suggestions),
+        len(suggestions),
         len(outcome.drops),
     )
     return success_envelope(
-        data=LabelSuggestResponse(suggestions=outcome.suggestions).model_dump(
+        data=LabelSuggestResponse(suggestions=suggestions).model_dump(
             mode="json"
         ),
         execution_id=str(context.execution_id),
