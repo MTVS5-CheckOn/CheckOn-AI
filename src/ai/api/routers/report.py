@@ -15,6 +15,17 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ai.api.envelope import success_envelope
+from ai.api.routers.report_openapi import (
+    REPORT_BLOCK_OPERATION_ID,
+    REPORT_BLOCK_RESTORE_OPERATION_ID,
+    REPORT_BLOCK_RESTORE_SUMMARY,
+    REPORT_BLOCK_SUMMARY,
+    REPORT_OPERATION_ID,
+    REPORT_SUMMARY,
+    REPORTS_OPERATION_ID,
+    REPORTS_SUMMARY,
+    REPORTS_TAG,
+)
 from ai.api.version_scope import RouterScope
 from ai.contracts.execution import VersionSet
 from ai.contracts.report import (
@@ -244,7 +255,12 @@ async def _save_block(
     return updated
 
 
-@router.get(_PREFIX)
+@router.get(
+    _PREFIX,
+    tags=[REPORTS_TAG],
+    operation_id=REPORTS_OPERATION_ID,
+    summary=REPORTS_SUMMARY,
+)
 async def list_reports(request: Request) -> dict[str, Any]:
     """현재 tenant가 소유한 리포트 목록만 반환한다."""
 
@@ -253,7 +269,12 @@ async def list_reports(request: Request) -> dict[str, Any]:
     return _success({"reports": [_summary(report) for report in reports]}, request_id)
 
 
-@router.get(f"{_PREFIX}/{{report_id}}")
+@router.get(
+    f"{_PREFIX}/{{report_id}}",
+    tags=[REPORTS_TAG],
+    operation_id=REPORT_OPERATION_ID,
+    summary=REPORT_SUMMARY,
+)
 async def get_report(report_id: str, request: Request) -> dict[str, Any]:
     """guardian audience로 여섯 결정론 블록과 전체 본문 리비전을 반환한다."""
 
@@ -262,7 +283,12 @@ async def get_report(report_id: str, request: Request) -> dict[str, Any]:
     return _success(_detail(report), request_id)
 
 
-@router.patch(f"{_PREFIX}/{{report_id}}/blocks/{{block_id}}")
+@router.patch(
+    f"{_PREFIX}/{{report_id}}/blocks/{{block_id}}",
+    tags=[REPORTS_TAG],
+    operation_id=REPORT_BLOCK_OPERATION_ID,
+    summary=REPORT_BLOCK_SUMMARY,
+)
 async def save_teacher_edit(
     report_id: str,
     block_id: str,
@@ -287,7 +313,12 @@ async def save_teacher_edit(
     return _success(_detail(updated), request_id)
 
 
-@router.post(f"{_PREFIX}/{{report_id}}/blocks/{{block_id}}/restore")
+@router.post(
+    f"{_PREFIX}/{{report_id}}/blocks/{{block_id}}/restore",
+    tags=[REPORTS_TAG],
+    operation_id=REPORT_BLOCK_RESTORE_OPERATION_ID,
+    summary=REPORT_BLOCK_RESTORE_SUMMARY,
+)
 async def restore_ai_original(
     report_id: str,
     block_id: str,

@@ -9,8 +9,9 @@
    앞 세 줄은 체크온_발행내역_재사용_v1 의 것을 그대로 쓴다 — 같은 제품의 같은 셸이다.
    그 아래는 리포트 지면에만 필요해서 새로 세웠다. 색을 이 블록 밖에서 쓰지 않는다. */
 :root{
-  --ink:#1f2937;--sub:#6b7280;--line:#e5e7eb;--line2:#d1d5db;--bg:#f1f3f5;
-  --accent:#2563eb;--brand:#ff9a3c;--soft:#eff6ff;
+  /* CheckOn-App globals.css의 표면·본문·경계·행동색을 리포트 스튜디오에도 맞춘다. */
+  --ink:#202939;--sub:#667085;--line:#e2e7ee;--line2:#d2d8e0;--bg:#f7f8fa;
+  --accent:#4c75dd;--brand:#fda36a;--soft:#eef3ff;
   --d-blue:#3b82f6;--d-green:#5cb894;--d-yellow:#f0c04a;--d-red:#e2574c;--d-track:#e8eaed;
 
   /* A4 — CSS mm 은 96dpi 고정비라 화면 794×1123px 과 인쇄가 정확히 같다 */
@@ -23,6 +24,15 @@
   --no:#991b1b;--no-bg:#fff7f7;--no-line:#fca5a5;
   --hold:#475569;--hold-bg:#f8fafc;--hold-line:#cbd5e1;
   --mono:ui-monospace,Menlo,Consolas,monospace;
+
+  /* 역할별 타입 스케일 — 화면·A4 지면이 같은 위계를 공유한다 */
+  --fs-display:38px;--fs-metric:44px;--fs-metric-compact:30px;
+  --fs-page-title:20px;--fs-screen-title:16px;--fs-section-title:14px;
+  --fs-body-strong:13px;--fs-body:12px;--fs-meta:11px;--fs-caption:10px;--fs-footnote:9px;
+
+  /* 역할별 간격 스케일 — 인라인·카드·섹션·지면의 리듬을 고정한다 */
+  --space-hair:2px;--space-xs:4px;--space-sm:6px;--space-md:8px;
+  --space-lg:10px;--space-xl:14px;--space-section:18px;--space-page-section:22px;
 }
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Pretendard','Apple SD Gothic Neo','Segoe UI',sans-serif;}
 body{background:var(--bg);color:var(--ink);font-size:13px;}
@@ -30,11 +40,11 @@ body{background:var(--bg);color:var(--ink);font-size:13px;}
 /* ══════════ 2. 셸 ══════════ */
 .app{display:grid;grid-template-columns:212px 1fr;min-height:100vh;}
 .nav{background:#fff;border-right:1px solid var(--line);padding:18px 12px;}
-.logo{font-size:21px;font-weight:800;color:var(--brand);padding:0 8px 2px;letter-spacing:-.5px;}
+.logo{font-size:var(--fs-page-title);font-weight:800;color:var(--brand);padding:0 8px 2px;letter-spacing:-.5px;}
 .logo span{color:#5bc8f5;}
-.who{font-size:11.5px;color:var(--sub);padding:8px 8px 10px;font-weight:600;}
+.who{font-size:var(--fs-meta);color:var(--sub);padding:8px 8px 10px;font-weight:600;}
 .acad{width:100%;border:1px solid var(--line2);border-radius:8px;padding:7px 9px;font-size:12px;background:#fff;margin-bottom:14px;}
-.nav a{display:block;padding:9px 10px;border-radius:8px;color:#374151;text-decoration:none;font-size:12.5px;margin-bottom:2px;cursor:pointer;}
+.nav a{display:block;padding:9px 10px;border-radius:8px;color:#374151;text-decoration:none;font-size:var(--fs-body);margin-bottom:2px;cursor:pointer;}
 .nav a:hover{background:#f8fafc;}
 .nav a.on{background:#f1f5f9;font-weight:700;color:#111827;}
 .nav .sub2{display:block;padding:7px 10px 7px 22px;font-size:12px;color:var(--sub);border-radius:8px;cursor:pointer;}
@@ -44,9 +54,9 @@ body{background:var(--bg);color:var(--ink);font-size:13px;}
 .main{padding:16px 20px 40px;min-width:0;}
 
 /* ══════════ 3. 공용 컴포넌트 — 발행내역 v1 과 동일 ══════════ */
-.pgttl{font-size:16px;font-weight:800;margin-bottom:3px;}
-.pgsub{font-size:11.5px;color:var(--sub);margin-bottom:12px;line-height:1.7;}
-.panel{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;}
+.pgttl{font-size:var(--fs-screen-title);font-weight:800;margin-bottom:3px;}
+.pgsub{font-size:var(--fs-meta);color:var(--sub);margin-bottom:12px;line-height:1.7;}
+.panel{background:#fff;border:1px solid var(--line);border-radius:18px;margin-bottom:10px;box-shadow:0 2px 8px rgba(32,41,57,.06);}
 .btn{padding:7px 13px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:12px;cursor:pointer;color:#374151;}
 .btn:hover{border-color:var(--accent);color:var(--accent);}
 .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;}
@@ -57,11 +67,12 @@ body{background:var(--bg);color:var(--ink);font-size:13px;}
 .btn.ic{padding:4px 8px;font-size:12px;line-height:1.3;}
 .sel{border:1px solid var(--line2);border-radius:999px;padding:6px 11px;font-size:12px;background:#fff;cursor:pointer;}
 .filters{display:flex;gap:7px;align-items:center;padding:12px 16px;flex-wrap:wrap;}
-.note{font-size:11.5px;color:var(--sub);line-height:1.75;padding:12px 16px;}
+.note{font-size:var(--fs-meta);color:var(--sub);line-height:1.75;padding:12px 16px;}
+.note.page-note{padding:var(--space-lg) 0 0;}
 .note b{color:#374151;}
 .red{color:#b91c1c;font-weight:700;}
 .sec{margin-bottom:16px;}
-.sec>h4{font-size:11.5px;color:var(--sub);font-weight:700;margin-bottom:7px;}
+.sec>h4{font-size:var(--fs-meta);color:var(--sub);font-weight:700;margin-bottom:7px;}
 .box{border:1px solid var(--line);border-radius:9px;padding:11px 13px;font-size:12px;line-height:1.8;background:#fcfcfd;}
 .box .r{display:flex;justify-content:space-between;gap:10px;}
 .box .r span{color:var(--sub);}
@@ -75,7 +86,7 @@ body{background:var(--bg);color:var(--ink);font-size:13px;}
 .verd.warn{background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn);}
 .verd.no{background:var(--no-bg);border:1px solid var(--no-line);color:var(--no);}
 .verd.hold{background:var(--hold-bg);border:1px solid var(--hold-line);color:var(--hold);}
-.verd code{background:rgba(0,0,0,.06);border-radius:4px;padding:1px 5px;font-size:10.5px;font-family:var(--mono);}
+.verd code{background:rgba(0,0,0,.06);border-radius:4px;padding:1px 5px;font-size:var(--fs-caption);font-family:var(--mono);}
 .verd .line{display:flex;justify-content:space-between;gap:10px;border-top:1px dotted rgba(0,0,0,.14);margin-top:7px;padding-top:6px;}
 .tg{font-size:10px;padding:2px 8px;border-radius:5px;font-weight:700;}
 .tg.free{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-line);}
@@ -85,38 +96,73 @@ body{background:var(--bg);color:var(--ink);font-size:13px;}
 .chk.on{background:var(--accent);border-color:var(--accent);}
 .chk.on::after{content:'\2713';color:#fff;font-size:11px;position:absolute;left:2px;top:-2px;}
 .chk.dis{background:#f3f4f6;border-style:dashed;cursor:not-allowed;}
-.ctr{width:100%;border-collapse:collapse;font-size:11.5px;}
+.ctr{width:100%;border-collapse:collapse;font-size:var(--fs-meta);}
 .ctr th,.ctr td{border-bottom:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top;}
-.ctr th{background:#fafbfc;color:var(--sub);font-size:10.5px;font-weight:700;}
-.ctr code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:10.5px;font-family:var(--mono);color:#374151;}
-.own{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:4px;font-weight:700;color:#fff;}
+.ctr th{background:#fafbfc;color:var(--sub);font-size:var(--fs-caption);font-weight:700;}
+.ctr code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:var(--fs-caption);font-family:var(--mono);color:#374151;}
+.own{display:inline-block;font-size:var(--fs-footnote);padding:1px 6px;border-radius:4px;font-weight:700;color:#fff;}
 .own.ai{background:#b45309;} .own.be{background:#0e7490;} .own.fe{background:#7c3aed;}
 details summary{cursor:pointer;font-size:12px;font-weight:700;padding:11px 16px;}
 
 /* ══════════ 4. 목록 ══════════ */
+/* CheckOn-App parent-reports.tsx의 76px 카드 행·NEW 배지·메타정보·우측 이동 구조를 데스크톱 스튜디오에 확장한다. */
+.studio-hero{position:relative;overflow:hidden;display:flex;align-items:center;gap:18px;background:var(--brand);color:#4c3024;border-radius:18px;padding:20px 22px;margin-bottom:12px;box-shadow:0 2px 8px rgba(32,41,57,.06);}
+.studio-hero::after{content:'';position:absolute;right:-34px;top:-52px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.25);}
+.studio-hero .eyebrow{font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:5px;}
+.studio-hero h2{font-size:20px;line-height:1.25;letter-spacing:-.02em;}
+.studio-hero p{font-size:11px;line-height:1.65;margin-top:5px;color:#694838;}
+.studio-hero .hero-stat{margin-left:auto;display:grid;grid-template-columns:repeat(2,82px);gap:8px;position:relative;z-index:1;}
+.studio-hero .hero-stat div{background:rgba(255,255,255,.72);border-radius:12px;padding:10px;text-align:center;}
+.studio-hero .hero-stat b{display:block;font-size:20px;line-height:1.1;}
+.studio-hero .hero-stat span{font-size:9px;font-weight:700;color:#694838;}
 .mnav{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);}
-.mnav .m{font-size:17px;font-weight:800;min-width:110px;text-align:center;font-variant-numeric:tabular-nums;}
-.mnav .side{font-size:12.5px;color:var(--pgray);cursor:pointer;padding:5px 9px;border-radius:6px;font-variant-numeric:tabular-nums;}
+.mnav .m{font-size:var(--fs-screen-title);font-weight:800;min-width:110px;text-align:center;font-variant-numeric:tabular-nums;}
+.mnav .side{font-size:var(--fs-body);color:var(--pgray);cursor:pointer;padding:5px 9px;border-radius:6px;font-variant-numeric:tabular-nums;}
 .mnav .side:hover{background:#f8fafc;color:var(--accent);}
 .sum{display:flex;border-top:1px solid var(--line);}
 .sum div{flex:1;padding:11px 16px;border-right:1px solid var(--line);}
 .sum div:last-child{border:none;}
-.sum .k{font-size:10.5px;color:var(--sub);}
-.sum .v{font-size:15px;font-weight:800;margin-top:3px;}
+.sum .k{font-size:var(--fs-caption);color:var(--sub);}
+.sum .v{font-size:var(--fs-section-title);font-weight:800;margin-top:3px;}
 .sum .v small{font-size:11px;color:var(--pgray);font-weight:500;}
 .rt{width:100%;border-collapse:collapse;font-size:12px;}
-.rt th{background:#fafbfc;color:var(--sub);font-size:10.5px;font-weight:700;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);}
+.rt th{background:#fafbfc;color:var(--sub);font-size:var(--fs-caption);font-weight:700;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);}
 .rt td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle;}
 .rt tr:last-child td{border-bottom:none;}
 .rt tbody tr{cursor:pointer;}
 .rt tbody tr:hover{background:#fbfdff;}
 .rt tr.dim{background:#fcfcfd;}
 .rt tr.dim:hover{background:#fafafa;}
-.rt .nm{font-weight:700;font-size:12.5px;}
-.rt .nm small{display:block;font-weight:500;font-size:10.5px;color:var(--pgray);margin-top:2px;font-family:var(--mono);}
+.rt .nm{font-weight:700;font-size:var(--fs-body);}
+.rt .nm small{display:block;font-weight:500;font-size:var(--fs-caption);color:var(--pgray);margin-top:2px;font-family:var(--mono);}
 .rt .num{font-variant-numeric:tabular-nums;font-weight:700;}
 .rt .dash{color:var(--pgray);font-weight:500;}
 .rt .acts{display:flex;gap:4px;justify-content:flex-end;}
+.report-cards{overflow-x:auto;overflow-y:hidden;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 2px 8px rgba(32,41,57,.06);margin-bottom:10px;}
+.report-cards .report-card{min-width:920px;}
+.report-cards .srow,.report-cards .filters{min-width:720px;}
+.report-card{display:grid;grid-template-columns:42px minmax(220px,1.4fr) minmax(130px,.8fr) repeat(3,minmax(72px,.45fr)) minmax(118px,.7fr) 112px;gap:12px;align-items:center;min-height:78px;padding:12px 16px;border-bottom:1px solid #edf0f2;cursor:pointer;}
+.report-card:last-child{border-bottom:none;}
+.report-card:hover{background:#fffdf0;}
+.report-card.dim{background:#fafbfc;}
+.report-avatar{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--soft);color:var(--accent);font-size:14px;font-weight:800;}
+.report-primary{min-width:0;}
+.report-primary .title{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:800;}
+.report-primary .meta{font-size:10px;color:var(--sub);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.new-badge{font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;background:var(--brand);color:#7d452c;}
+.report-field .label{font-size:9px;color:var(--pgray);margin-bottom:3px;}
+.report-field .value{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;}
+.report-actions{display:flex;justify-content:flex-end;gap:4px;}
+.list-tools{display:grid;grid-template-columns:minmax(230px,1fr) 160px auto;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);}
+.search{width:100%;height:36px;border:1px solid var(--line2);border-radius:10px;background:#fff;padding:0 12px;font-size:12px;color:var(--ink);}
+.search:focus{outline:2px solid rgba(76,117,221,.18);border-color:var(--accent);}
+.resultbar{display:flex;align-items:center;gap:8px;padding:9px 16px;background:#fafbfc;border-bottom:1px solid var(--line);font-size:10px;color:var(--sub);}
+.pager{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-top:1px solid var(--line);}
+.pager .page-info{font-size:11px;color:var(--sub);font-variant-numeric:tabular-nums;}
+.service-empty{padding:48px 20px;text-align:center;background:#fff;}
+.service-empty .icon{font-size:28px;margin-bottom:8px;}
+.service-empty b{display:block;font-size:13px;}
+.service-empty p{font-size:11px;color:var(--sub);line-height:1.6;margin-top:5px;}
 .st{font-size:11px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-weight:700;}
 .st i{width:6px;height:6px;border-radius:50%;display:inline-block;background:var(--pgray);}
 .st.done{color:#1d4ed8;} .st.done i{background:var(--d-blue);}
@@ -133,15 +179,15 @@ details summary{cursor:pointer;font-size:12px;font-weight:700;padding:11px 16px;
 .tool .tf{padding:12px 15px;border-top:1px solid var(--line);background:#fafbfc;}
 .tool.ro .tb,.tool.ro .tf{opacity:.42;pointer-events:none;}
 .scope{display:flex;gap:6px;margin-bottom:10px;}
-.scope button{flex:1;padding:7px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:11.5px;cursor:pointer;color:#374151;}
+.scope button{flex:1;padding:7px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:var(--fs-meta);cursor:pointer;color:#374151;}
 .scope button.on{border-color:var(--accent);background:var(--soft);color:#1d4ed8;font-weight:700;}
 .presets{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
-.presets button{padding:9px 6px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:11.5px;cursor:pointer;color:#374151;line-height:1.4;}
+.presets button{padding:9px 6px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:var(--fs-meta);cursor:pointer;color:#374151;line-height:1.4;}
 .presets button:hover{border-color:var(--accent);color:var(--accent);}
-.presets button small{display:block;font-size:9.5px;color:var(--pgray);margin-top:2px;font-family:var(--mono);}
+.presets button small{display:block;font-size:var(--fs-footnote);color:var(--pgray);margin-top:2px;font-family:var(--mono);}
 textarea.instr{width:100%;min-height:62px;border:1px solid var(--line2);border-radius:8px;padding:9px 10px;font-size:12px;resize:vertical;line-height:1.6;}
 textarea.instr:focus{outline:none;border-color:var(--accent);}
-.rev{display:flex;align-items:flex-start;gap:8px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:5px;font-size:11.5px;line-height:1.6;}
+.rev{display:flex;align-items:flex-start;gap:8px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:5px;font-size:var(--fs-meta);line-height:1.6;}
 .rev .no{font-weight:800;font-family:var(--mono);color:var(--sub);flex:0 0 auto;}
 .rev.cur{border-color:var(--accent);background:#fbfdff;}
 .rev.blocked{border-color:var(--no-line);background:var(--no-bg);}
@@ -151,14 +197,29 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 .rev .tail{margin-left:auto;flex:0 0 auto;}
 
 /* ══════════ 6. 발송 ══════════ */
-.srow{display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;}
+/* 목록과 같은 앱 카드 문법을 유지하고, 앱 상세 화면의 sticky CTA를 다건 발송 바에 적용한다. */
+.srow{display:flex;align-items:center;gap:12px;min-height:78px;padding:12px 16px;border-bottom:1px solid #edf0f2;cursor:pointer;}
 .srow:last-child{border-bottom:none;}
 .srow:hover{background:#fbfdff;}
 .srow.dis{background:#fcfcfd;cursor:default;}
 .srow.dis:hover{background:#fcfcfd;}
 .srow .grow{flex:1;min-width:0;}
 .srow .tail{margin-left:auto;text-align:right;flex:0 0 auto;}
-.sendbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 16px;box-shadow:0 -3px 14px rgba(0,0,0,.06);}
+.sendbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px 18px;box-shadow:0 -3px 14px rgba(32,41,57,.08);}
+.delivery-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px;}
+.delivery-overview .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 15px;box-shadow:0 2px 8px rgba(32,41,57,.04);}
+.delivery-overview .card span{font-size:10px;color:var(--sub);}
+.delivery-overview .card b{display:block;font-size:20px;margin-top:4px;}
+.delivery-checks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:10px;}
+.delivery-checks div{background:#fff;padding:11px 13px;font-size:10px;line-height:1.55;color:var(--sub);}
+.delivery-checks b{display:block;color:var(--ink);font-size:11px;margin-bottom:2px;}
+.send-confirm{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(32,41,57,.38);padding:24px;}
+.send-confirm .modal{width:min(440px,100%);background:#fff;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 50px rgba(32,41,57,.22);padding:20px;}
+.send-confirm h3{font-size:17px;margin-bottom:7px;}
+.send-confirm p{font-size:11px;line-height:1.7;color:var(--sub);}
+.send-confirm .summary{background:#f7f8fa;border-radius:12px;padding:12px;margin:14px 0;font-size:11px;line-height:1.7;}
+.send-confirm .actions{display:flex;justify-content:flex-end;gap:8px;}
+.toast{position:fixed;right:24px;bottom:24px;z-index:90;max-width:380px;background:#202939;color:#fff;border-radius:12px;padding:12px 15px;box-shadow:0 10px 30px rgba(32,41,57,.24);font-size:11px;line-height:1.6;}
 .drawer{position:fixed;top:0;right:0;width:640px;max-width:100vw;height:100vh;background:#fff;border-left:1px solid var(--line2);box-shadow:-8px 0 26px rgba(0,0,0,.1);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .2s;z-index:50;}
 .drawer.open{transform:none;}
 .dh{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);}
@@ -167,7 +228,7 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 /* A4 실물 폭(794px)이 드로어보다 넓다 — zoom 은 레이아웃까지 줄여서 가로 스크롤이 안 생긴다 */
 .dbody .sheet,.dbody .legend{zoom:.72;}
 .dfoot{border-top:1px solid var(--line);padding:12px 16px;background:#fafbfc;}
-.x{cursor:pointer;color:var(--pgray);font-size:17px;}
+.x{cursor:pointer;color:var(--pgray);font-size:var(--fs-screen-title);}
 
 /* ══════════ 7. 리포트 지면 ══════════
    수정 화면 좌측 · 발송 드로어 · 인쇄 미리보기가 이 하나를 공유한다. */
@@ -177,42 +238,42 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 .pg{position:relative;display:flex;flex-direction:column;width:var(--pw);min-height:var(--ph);
     background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:var(--pmar);margin-bottom:14px;
     box-shadow:0 2px 10px rgba(30,55,100,.05);}
-.pgno{position:absolute;left:0;right:0;bottom:7mm;text-align:center;font-size:9px;color:var(--pgray);letter-spacing:.06em;}
+.pgno{position:absolute;left:0;right:0;bottom:7mm;text-align:center;font-size:var(--fs-footnote);color:var(--pgray);letter-spacing:.06em;}
 .ovf{position:absolute;top:6px;right:8px;background:var(--no-bg);border:1px solid var(--no-line);color:var(--no);
-     font-size:9.5px;font-weight:800;border-radius:5px;padding:2px 7px;}
+     font-size:var(--fs-footnote);font-weight:800;border-radius:5px;padding:2px 7px;}
 .legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--sub);background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 14px;margin-bottom:10px;width:var(--pw);margin-left:auto;margin-right:auto;}
 .legend b{color:#374151;}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px;}
 .legend .fix{background:var(--accent);} .legend .gen{background:var(--ai);} .legend .tch{background:var(--tch);}
 .cover{justify-content:flex-start;}
 .cover .rule{border-bottom:1px solid var(--ink);padding-bottom:7px;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;}
-.cover .big{margin-top:70px;text-align:right;font-size:38px;font-weight:300;line-height:1.24;color:#4b5563;letter-spacing:-.01em;}
+.cover .big{margin-top:70px;text-align:right;font-size:var(--fs-display);font-weight:300;line-height:1.24;color:#4b5563;letter-spacing:-.01em;}
 .cover .sub{text-align:right;margin-top:14px;font-size:13px;font-weight:700;line-height:1.8;}
-.cover .sub small{display:block;font-weight:500;color:var(--sub);font-family:var(--mono);font-size:10.5px;margin-top:5px;}
-.cover .mark{margin-top:auto;padding-top:56px;text-align:center;font-size:19px;font-weight:800;color:var(--brand);letter-spacing:-.5px;}
+.cover .sub small{display:block;font-weight:500;color:var(--sub);font-family:var(--mono);font-size:var(--fs-caption);margin-top:5px;}
+.cover .mark{margin-top:auto;padding-top:56px;text-align:center;font-size:var(--fs-page-title);font-weight:800;color:var(--brand);letter-spacing:-.5px;}
 .cover .mark span{color:#5bc8f5;}
 .rhead{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1.5px solid var(--ink);padding-bottom:9px;margin-bottom:6px;}
-.rhead h3{font-size:19px;font-weight:800;letter-spacing:-.02em;}
+.rhead h3{font-size:var(--fs-page-title);font-weight:800;letter-spacing:-.02em;}
 .rhead .who2{font-size:13px;font-weight:700;}
-.rmeta{text-align:right;font-size:10.5px;color:var(--sub);margin-bottom:22px;font-variant-numeric:tabular-nums;}
+.rmeta{text-align:right;font-size:var(--fs-caption);color:var(--sub);margin-bottom:var(--space-page-section);font-variant-numeric:tabular-nums;}
 .kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px 34px;}
 .kpi .kh{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
-.tag{font-size:11.5px;font-weight:800;color:#fff;border-radius:6px;padding:4px 10px;white-space:nowrap;}
+.tag{font-size:var(--fs-meta);font-weight:800;color:#fff;border-radius:6px;padding:4px 10px;white-space:nowrap;}
 .kpi .cmp{font-size:10px;color:var(--pgray);}
 .kpi .cmp::before{content:'\25CB\00A0';}
 .kpi .row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
-.kpi .v{font-size:44px;font-weight:800;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}
-.kpi .v small{font-size:17px;font-weight:700;margin-left:1px;}
-.kpi .foot{font-size:9.5px;color:var(--pgray);line-height:1.7;margin-top:10px;padding-top:8px;border-top:1px dotted var(--pline);}
+.kpi .v{font-size:var(--fs-metric);font-weight:800;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}
+.kpi .v small{font-size:var(--fs-screen-title);font-weight:700;margin-left:1px;}
+.kpi .foot{font-size:var(--fs-footnote);color:var(--pgray);line-height:1.7;margin-top:var(--space-lg);padding-top:var(--space-md);border-top:1px dotted var(--pline);}
 .spark{flex:0 0 172px;}
-.spark .xs{display:flex;justify-content:space-between;font-size:9.5px;color:var(--pgray);margin-top:2px;}
+.spark .xs{display:flex;justify-content:space-between;font-size:var(--fs-footnote);color:var(--pgray);margin-top:2px;}
 .spark .xs b{font-weight:800;}
 .bandbar{display:flex;height:14px;border-radius:99px;overflow:hidden;background:var(--d-track);margin-top:14px;}
 .bandbar i{display:block;height:100%;}
-.bandlg{display:flex;justify-content:space-between;font-size:9.5px;color:var(--sub);margin-top:7px;}
+.bandlg{display:flex;justify-content:space-between;font-size:var(--fs-footnote);color:var(--sub);margin-top:7px;}
 .bandlg i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:4px;}
 .bandlg b{font-weight:800;color:var(--ink);}
-.asof{display:inline-block;font-size:9.5px;color:var(--pgray);border:1px solid var(--pline);border-radius:5px;padding:2px 7px;margin-top:16px;}
+.asof{display:inline-block;font-size:var(--fs-footnote);color:var(--pgray);border:1px solid var(--pline);border-radius:5px;padding:2px 7px;margin-top:16px;}
 .wk{margin-bottom:19px;}
 .wk .wh{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
 .wbars{display:flex;align-items:flex-end;gap:4px;height:60px;border-bottom:1.5px solid var(--pline);}
@@ -225,63 +286,107 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 .wxs{display:flex;gap:4px;margin-top:5px;}
 .wxs span{flex:1;text-align:center;font-size:9px;color:var(--pgray);}
 .wxs span.on{color:var(--ink);font-weight:800;}
-.mx{width:100%;border-collapse:collapse;font-size:11.5px;}
+.week-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px;}
+.week-card{border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 14px;break-inside:avoid;}
+.week-card .label{font-size:var(--fs-caption);color:var(--sub);font-weight:700;margin-bottom:6px;}
+.week-card .value{font-size:22px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums;}
+.week-card .detail{font-size:var(--fs-footnote);color:var(--sub);line-height:1.55;margin-top:5px;}
+.week-table{width:100%;border-collapse:separate;border-spacing:0;margin-top:12px;font-size:var(--fs-meta);border:1px solid var(--line);border-radius:12px;overflow:hidden;break-inside:avoid;}
+.week-table th,.week-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums;}
+.week-table th{background:#f7f8fa;color:var(--sub);font-size:var(--fs-caption);font-weight:700;}
+.week-table th:first-child,.week-table td:first-child{text-align:left;}
+.week-table tr:last-child td{border-bottom:none;}
+.week-table .focus{font-weight:800;color:var(--ink);}
+.week-table .review{font-weight:800;color:var(--d-red);}
+.week-insight{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;break-inside:avoid;}
+.week-insight .item{border-left:3px solid var(--accent);background:#f7f9ff;border-radius:0 10px 10px 0;padding:9px 12px;font-size:var(--fs-meta);line-height:1.65;}
+.week-insight .item.warn{border-left-color:var(--d-red);background:#fff8f7;}
+.report-data-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;break-inside:avoid;}
+.data-panel{border:1px solid var(--line);border-radius:12px;background:#fff;padding:11px 13px;break-inside:avoid;}
+.data-panel h5{font-size:var(--fs-meta);font-weight:800;margin-bottom:8px;}
+.data-panel .subcopy{font-size:var(--fs-footnote);color:var(--sub);line-height:1.55;margin-top:6px;}
+.outcome-row{display:grid;grid-template-columns:24px 1fr 92px;align-items:center;gap:8px;padding:5px 0;font-size:var(--fs-caption);}
+.outcome-row .stack{height:10px;display:flex;border-radius:99px;overflow:hidden;background:var(--d-track);}
+.outcome-row .correct{background:var(--d-green);border-top:2px solid var(--ink);}
+.outcome-row .review{background:var(--d-red);background-image:repeating-linear-gradient(135deg,transparent,transparent 3px,rgba(255,255,255,.7) 3px,rgba(255,255,255,.7) 5px);}
+.outcome-row .nums{text-align:right;font-variant-numeric:tabular-nums;}
+.week-mini{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;align-items:end;height:76px;padding-top:15px;border-bottom:1px solid var(--line);}
+.week-mini .col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;}
+.week-mini .bar{width:62%;min-height:5px;border-radius:3px 3px 0 0;background:var(--accent);}
+.week-mini .val{font-size:9px;font-weight:800;}
+.week-mini-labels{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px;font-size:9px;color:var(--sub);text-align:center;}
+.evidence-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px;break-inside:avoid;}
+.evidence-strip .item{border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 14px;}
+.evidence-strip .label{font-size:var(--fs-caption);color:var(--sub);font-weight:700;}
+.evidence-strip .value{font-size:18px;font-weight:800;margin-top:5px;}
+.evidence-strip .detail{font-size:var(--fs-footnote);color:var(--sub);line-height:1.55;margin-top:4px;}
+.dense-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:14px;font-size:var(--fs-meta);break-inside:avoid;}
+.dense-table th,.dense-table td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;}
+.dense-table th{background:#f7f8fa;color:var(--sub);font-size:var(--fs-caption);}
+.dense-table tr:last-child td{border-bottom:none;}
+.dense-table .num{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;}
+.mx{width:100%;border-collapse:collapse;font-size:var(--fs-meta);}
 .mx th,.mx td{border:1px solid var(--pline);padding:7px 8px;text-align:center;}
-.mx th{background:#fafbfc;color:var(--sub);font-size:10.5px;font-weight:700;}
+.mx th{background:#fafbfc;color:var(--sub);font-size:var(--fs-caption);font-weight:700;}
 .mx th.a{text-align:left;width:126px;}
 .mx td.a{text-align:left;font-weight:700;}
-.mx td.a small{display:block;font-weight:500;font-size:9.5px;color:var(--pgray);}
+.mx td.a small{display:block;font-weight:500;font-size:var(--fs-footnote);color:var(--pgray);}
 .mx td.res{color:var(--pgray);background:repeating-linear-gradient(135deg,#fafafa,#fafafa 4px,#f4f4f5 4px,#f4f4f5 8px);font-size:10px;}
 .cell{display:block;font-weight:800;font-size:13px;font-variant-numeric:tabular-nums;}
-.cell small{display:block;font-weight:500;font-size:9.5px;color:var(--pgray);margin-top:1px;}
+.cell small{display:block;font-weight:500;font-size:var(--fs-footnote);color:var(--pgray);margin-top:1px;}
 .cell.weak{color:var(--d-red);} .cell.ok{color:var(--d-green);} .cell.unknown{color:var(--pgray);}
+.cell.weak::before{content:'▼\00A0';} .cell.ok::before{content:'◆\00A0';} .cell.unknown::before{content:'◇\00A0';}
 .dg{display:flex;gap:38px;align-items:center;margin-bottom:22px;}
-.dg .n2{font-size:44px;font-weight:800;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}
+.dg .n2{font-size:var(--fs-metric);font-weight:800;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}
+.dg .n2.compact{font-size:var(--fs-metric-compact);}
+.dg .hold-count{color:var(--pgray);font-size:var(--fs-page-title);}
+.dg .unit{font-size:var(--fs-body);color:var(--pgray);font-weight:500;}
 .dg .k{font-size:11px;color:var(--sub);margin-bottom:5px;}
 .two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:22px;}
 .tl{border:1px solid var(--pline);border-radius:9px;overflow:hidden;}
-.tl h5{font-size:11.5px;font-weight:800;color:#fff;padding:7px 12px;}
+.tl h5{font-size:var(--fs-meta);font-weight:800;color:#fff;padding:7px 12px;}
 .tl.good h5{background:#1d4ed8;} .tl.bad h5{background:var(--d-red);}
-.tl .li{display:flex;align-items:center;gap:9px;padding:8px 12px;border-top:1px solid var(--pline);font-size:11.5px;}
+.tl .li{display:flex;align-items:center;gap:9px;padding:8px 12px;border-top:1px solid var(--pline);font-size:var(--fs-meta);}
 .tl .li:first-of-type{border-top:none;}
 .tl .li .r{margin-left:auto;font-weight:800;font-variant-numeric:tabular-nums;}
 .tl .li.none{color:var(--pgray);}
-.bars .li{display:flex;align-items:center;gap:10px;padding:7px 2px;font-size:11.5px;border-bottom:1px solid var(--pline);}
+.bars .li{display:flex;align-items:center;gap:10px;padding:7px 2px;font-size:var(--fs-meta);border-bottom:1px solid var(--pline);}
 .bars .li:last-child{border-bottom:none;}
 .bars .nm{flex:0 0 180px;}
 .bars .nm em{font-style:normal;color:var(--pgray);font-size:10px;}
 .bars .bg{flex:1;height:8px;border-radius:99px;background:var(--d-track);position:relative;}
 .bars .fg{height:100%;border-radius:99px;background:var(--pgray);}
-.bars .li.weak .fg{background:var(--d-red);} .bars .li.ok .fg{background:var(--d-blue);}
+.bars .li.weak .fg{background:var(--d-red);background-image:repeating-linear-gradient(135deg,transparent,transparent 3px,rgba(255,255,255,.7) 3px,rgba(255,255,255,.7) 5px);}
+.bars .li.ok .fg{background:var(--d-blue);border-top:2px solid var(--ink);}
 .bars .avg{position:absolute;top:-3px;width:2px;height:14px;background:#cbd5e1;border-radius:1px;}
 .bars .r{flex:0 0 48px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;}
 .bars .r.dim{color:var(--pgray);font-weight:500;}
 .rad{display:grid;grid-template-columns:320px minmax(0,1fr);gap:24px;align-items:center;}
-.rleg{display:flex;gap:15px;justify-content:center;font-size:10.5px;color:var(--sub);margin-top:4px;}
+.rleg{display:flex;gap:15px;justify-content:center;font-size:var(--fs-caption);color:var(--sub);margin-top:4px;}
 .rleg b{color:var(--ink);}
 .rside .li{display:flex;align-items:center;gap:8px;border:1px solid var(--pline);border-radius:8px;padding:9px 12px;margin-bottom:6px;font-size:12px;}
-.rside .li .v{margin-left:auto;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}
+.rside .li .v{margin-left:auto;font-size:var(--fs-section-title);font-weight:800;font-variant-numeric:tabular-nums;}
 .addgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:18px;}
 .addbox{border:1px solid var(--pline);border-radius:9px;padding:11px 13px;background:#fcfcfd;}
-.addbox h5{font-size:11.5px;font-weight:800;margin-bottom:8px;}
+.addbox h5{font-size:var(--fs-meta);font-weight:800;margin-bottom:8px;}
 .mbar{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--pline);font-size:11px;}
 .mbar:last-child{border-bottom:none;}
 .mbar .nm{flex:0 0 128px;line-height:1.45;}
 .mbar .bg{height:7px;flex:1;background:var(--d-track);border-radius:99px;overflow:hidden;}
 .mbar .fg{display:block;height:100%;background:var(--d-blue);border-radius:99px;}
 .mbar .v{flex:0 0 44px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;}
-.cause{border:1px solid var(--pline);border-radius:9px;padding:10px 12px;margin-bottom:8px;font-size:11.5px;line-height:1.65;}
+.cause{border:1px solid var(--pline);border-radius:9px;padding:10px 12px;margin-bottom:8px;font-size:var(--fs-meta);line-height:1.65;}
 .cause .ct{display:flex;align-items:center;gap:7px;font-weight:800;margin-bottom:5px;}
 .cause .score{margin-left:auto;color:var(--d-red);font-variant-numeric:tabular-nums;}
 .evidence{margin-top:5px;padding-top:5px;border-top:1px dotted var(--line2);color:var(--sub);}
 .evidence b{color:var(--ink);}
 .facttbl{width:100%;border-collapse:collapse;font-size:11px;margin-top:16px;}
 .facttbl th,.facttbl td{border-bottom:1px solid var(--pline);padding:7px 8px;text-align:left;vertical-align:top;}
-.facttbl th{background:#fafbfc;color:var(--sub);font-size:10.5px;}
+.facttbl th{background:#fafbfc;color:var(--sub);font-size:var(--fs-caption);}
 .facttbl td.num{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;}
 /* 해설 문단 — 지면에서 그대로 편집한다(강사 직접 수정 · draft_edit) */
-.blk{border-left:3px solid var(--ai);background:var(--ai-bg);border-radius:0 9px 9px 0;padding:11px 15px 12px 14px;margin-bottom:8px;font-size:12.5px;line-height:1.85;}
-.blk .bt{font-size:9.5px;font-weight:800;color:var(--ai);font-family:var(--mono);margin-bottom:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.blk{border-left:3px solid var(--ai);background:var(--ai-bg);border-radius:0 9px 9px 0;padding:11px 15px 12px 14px;margin-bottom:8px;font-size:var(--fs-body);line-height:1.85;}
+.blk .bt{font-size:var(--fs-footnote);font-weight:800;color:var(--ai);font-family:var(--mono);margin-bottom:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .blk .bt .cr{background:#fff;border:1px solid var(--ai-line);border-radius:4px;padding:0 5px;}
 .blk .bt .own2{margin-left:auto;font-family:inherit;letter-spacing:.02em;}
 .blk .body2{outline:none;border-radius:5px;}
@@ -296,12 +401,70 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 .blk.tch.editable:hover{background:#fff6e0;}
 .blk.gone{background:var(--hold-bg);border-left-color:var(--hold-line);color:var(--hold);}
 .blk.gone .bt{color:var(--hold);}
-.edithint{font-size:10.5px;color:var(--sub);background:#fff;border:1px dashed var(--line2);border-radius:8px;padding:8px 12px;margin-bottom:10px;}
+.edithint{font-size:var(--fs-caption);color:var(--sub);background:#fff;border:1px dashed var(--line2);border-radius:8px;padding:8px 12px;margin-bottom:10px;}
 .edithint b{color:var(--ink);}
 .n{border-bottom:1px dotted var(--accent);font-weight:800;color:#1d4ed8;font-variant-numeric:tabular-nums;}
 .robar{display:flex;align-items:center;gap:9px;background:var(--ok-bg);border:1px solid var(--ok-line);color:var(--ok);border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:10px;}
 .hold-pg{text-align:center;justify-content:center;}
-.hold-pg .em{font-size:34px;margin-bottom:14px;}
+.hold-pg .em{font-size:var(--fs-display);margin-bottom:14px;}
+
+/* 정적 배치는 클래스가 맡고, 데이터로 달라지는 길이·색만 인라인 style 로 남긴다 */
+.push{margin-left:auto;}
+.right{text-align:right;}
+.mt0{margin-top:0;}
+.mt-sm{margin-top:var(--space-sm);}
+.mt-md{margin-top:var(--space-md);}
+.mt-lg{margin-top:var(--space-lg);}
+.mt-xl{margin-top:var(--space-xl);}
+.section-heading{font-size:var(--fs-body);margin-bottom:var(--space-md);}
+.caption-copy{font-size:var(--fs-caption);color:var(--pgray);}
+.meta-copy{font-size:var(--fs-meta);color:var(--sub);}
+.mono-copy{font-family:var(--mono);}
+.screen-head{display:flex;align-items:center;gap:var(--space-lg);margin-bottom:12px;}
+.screen-head .pgttl{margin:0;}
+.action-row{display:flex;gap:var(--space-sm);margin-top:7px;}
+.refine-summary{padding:9px 0;}
+.presets-spaced{margin-bottom:var(--space-md);}
+.drawer-actions{display:flex;gap:7px;margin-top:9px;}
+.contract-body{padding:0 16px 16px;}
+.contract-note{padding:12px 0 0;}
+.facttbl.flush{margin-top:0;}
+.empty.compact{padding:16px 0;}
+.verd.page-callout{margin-top:12px;}
+.hold-title{font-size:var(--fs-screen-title);font-weight:800;margin-bottom:8px;}
+.hold-copy{font-size:var(--fs-body);color:var(--sub);line-height:1.8;max-width:440px;margin:0 auto;}
+.hold-detail{max-width:520px;margin:var(--space-section) auto 0;text-align:left;}
+.tool-note{font-size:var(--fs-meta);color:var(--sub);margin-top:4px;line-height:1.6;}
+.refine-note{font-size:var(--fs-caption);color:var(--pgray);margin-top:7px;line-height:1.7;}
+.refine-foot{text-align:center;font-size:var(--fs-meta);color:var(--pgray);}
+.matrix-reserved{width:78px;}
+.contract-element{width:19%;}.contract-value{width:29%;}.contract-owner{width:9%;}
+.grade-meta,.sent-meta,.summary-explain,.row-id,.send-note{font-size:var(--fs-caption);color:var(--pgray);}
+.sent-meta,.row-id,.send-note{margin-top:var(--space-hair);}
+.summary-explain{margin-top:5px;}
+.summary-value.hold{color:var(--hold);}.summary-value.ok{color:var(--ok);}
+.filter-edge{border-bottom:1px solid var(--line);}
+.row-title,.selection-title{font-weight:700;}
+.row-id{font-family:var(--mono);}
+.row-error{font-size:var(--fs-meta);color:var(--no);margin-top:3px;}
+.row-stat{font-size:var(--fs-meta);color:var(--sub);margin-top:3px;}
+.row-empty{font-size:var(--fs-meta);color:var(--pgray);margin-top:3px;}
+.selection-meta{margin-left:auto;font-size:var(--fs-meta);color:var(--sub);}
+.send-count{font-size:var(--fs-section-title);}.send-label{color:var(--sub);font-size:var(--fs-body);}
+.drawer-send{flex:1;}
+.blocked-copy{color:var(--no);font-weight:700;margin-top:var(--space-hair);}
+.status-detail{margin-top:5px;font-size:var(--fs-meta);}
+.teacher-copy{color:var(--tch);}
+.metric-accuracy{color:var(--d-green);}.metric-weak{color:var(--d-red);}
+.rside .li .v.mine{color:var(--d-blue);}.rside .li .v.muted{color:var(--pgray);}
+.owner-ai{color:var(--ai);}.owner-teacher{color:var(--tch);}
+.kpi,.wk,.mx,.two,.addgrid,.addbox,.cause,.facttbl,.blk,.rad,.bars .li{break-inside:avoid;}
+.bandbar i:nth-child(1){background-image:repeating-linear-gradient(90deg,transparent,transparent 5px,rgba(255,255,255,.8) 5px,rgba(255,255,255,.8) 7px);}
+.bandbar i:nth-child(2){background-image:repeating-linear-gradient(135deg,transparent,transparent 4px,rgba(255,255,255,.8) 4px,rgba(255,255,255,.8) 6px);}
+.bandbar i:nth-child(3){background-image:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(255,255,255,.85) 3px,rgba(255,255,255,.85) 5px);}
+.monthly-pg .kpis{flex:1;align-content:space-evenly;}
+.weekly-pg .wk{margin-bottom:var(--space-page-section);}
+.weekly-pg .addgrid{margin-top:var(--space-page-section);}
 
 /* ══════════ 8. 인쇄 — 지면이 이미 A4 라 그대로 한 장씩 나간다 ══════════ */
 @page{size:A4;margin:0;}
@@ -396,7 +559,7 @@ const MIN_N = 10;                 /* 셀 판정에 필요한 최소 문항 수 �
 const PERIOD = {y:2026, m:8};     /* 화면 기본 월 */
 
 /* ── 출제 축 → 새 화면 요소 대응표 ────────────────────────────────
-   주차별 오개념·노드 커버리지 ← DiagnosisEvent.occurred_at(월요일 버킷) + misconception_tag · skill_node_id
+   주차별 반복 실수·공부한 유형 ← DiagnosisEvent.occurred_at(월요일 버킷) + misconception_tag · skill_node_id
    셀 취약도                  ← WeaknessCell.severity
    선택 오답·형식·태그 확정   ← DiagnosisEvent.chosen_no · correct_no · item_format · tag_confirmed
    노드 판정·근거             ← WeaknessMap.nodes[*].verdict · basis
@@ -526,9 +689,9 @@ function build(b){
     excludedMissingMisconceptionTag:(b.seed+1)%3
   };
   R.nodes = [
-    {nodeId:NODE[0].k, area:NODE[0].area, verdict:'weak_confirmed', basis:['채점 이벤트 8건','영역×유형 셀 판정 1건']},
-    {nodeId:NODE[2].k, area:NODE[2].area, verdict:'suspect', basis:['채점 이벤트 5건']},
-    {nodeId:NODE[4].k, area:NODE[4].area, verdict:'ok', basis:['채점 이벤트 12건']}
+    {nodeId:NODE[0].k, area:NODE[0].area, verdict:'weak_confirmed', basis:['실제 채점 기록 8건','영역×문제유형 결과 1건']},
+    {nodeId:NODE[2].k, area:NODE[2].area, verdict:'suspect', basis:['실제 채점 기록 5건']},
+    {nodeId:NODE[4].k, area:NODE[4].area, verdict:'ok', basis:['실제 채점 기록 12건']}
   ];
   R.propagated = [
     {nodeId:NODE[1].k, area:NODE[1].area, score:.72+(r()*.12), fromNodes:[NODE[0].k]},
@@ -594,6 +757,12 @@ const S = {
   view:'list',                 /* list | edit | send */
   ym:{y:PERIOD.y, m:PERIOD.m},
   f:{cls:'all', status:'all', kind:'all'},
+  q:'',
+  sort:'updated_desc',
+  page:1,
+  pageSize:5,
+  pendingSend:[],
+  toast:null,
   openId:null,
   scope:'whole',               /* whole | block */
   blockSeq:null,
@@ -643,12 +812,13 @@ function spark(series, baseVal, color, fmt){
     '<div class="xs"><span>'+(PERIOD.m-2)+'월</span><span>'+(PERIOD.m-1)+'월</span><b>'+PERIOD.m+'월</b></div></div>';
 }
 
+/* 아래 차트의 인라인 style 은 데이터가 막대 길이·계열 색을 결정하므로 정적 클래스로 옮길 수 없다. */
 /* 출제 난이도 분포 — 하·중·상 3밴드(DifficultyBand). 추이가 아니라 분포다 */
 function bandBar(bands){
   const order = [['low','하','var(--d-green)'], ['medium','중','var(--d-yellow)'], ['high','상','var(--d-red)']];
   const total = order.reduce((s,[k])=>s+bands[k], 0) || 1;
   return '<div class="spark"><div class="bandbar">'+
-    order.map(([k,,c])=>'<i style="width:'+(bands[k]/total*100)+'%;background:'+c+'"></i>').join('')+
+    order.map(([k,,c])=>'<i style="width:'+(bands[k]/total*100)+'%;background-color:'+c+'"></i>').join('')+
     '</div><div class="bandlg">'+
     order.map(([k,ko,c])=>'<span><i style="background:'+c+'"></i>'+ko+' <b>'+bands[k]+'</b></span>').join('')+
     '</div></div>';
@@ -677,25 +847,103 @@ function weekChart(title, chip, color, weeks, pick, fmt){
     xs += '<span'+(on?' class="on"':'')+'>'+(i>=weeks.length-4 ? (i-weeks.length+5)+'주' : '')+'</span>';
   });
   return '<div class="wk"><div class="wh"><span class="tag" style="background:'+color+'">'+chip+'</span>'+
-    '<span style="font-size:11px;color:var(--sub);">'+title+'</span></div>'+
+    '<span class="meta-copy">'+title+'</span></div>'+
     '<div class="wbars">'+bars+'</div><div class="wxs">'+xs+'</div></div>';
 }
 
-/* DiagnosisEvent 기반 주차 사실 — detection/features.py와 같은 occurred_at의 월요일 버킷.
-   MIN_N 미만은 막대 수치를 숨기고 판단 보류로 남긴다. */
-function weeklyFactChart(title, chip, color, weeks, pick, fmt){
-  const eligible=weeks.filter(w=>w.eventN>=MIN_N), vals=eligible.map(pick), hi=Math.max.apply(null,vals)||1;
-  let bars='', xs='';
-  weeks.forEach((w,i)=>{
-    const on=i>=weeks.length-4, hold=w.eventN<MIN_N, value=hold?0:pick(w);
-    bars += '<div class="c'+(on&&!hold?' on':'')+'" style="--bar:'+color+'">'+
-      '<span class="t">'+(on?(hold?'보류':fmt(value)):'')+'</span>'+
-      '<span class="b" style="height:'+(hold?6:Math.max(6,value/hi*100))+'%"></span></div>';
-    xs += '<span'+(on?' class="on"':'')+'>'+(on?(i-weeks.length+5)+'주':'')+'</span>';
-  });
-  return '<div class="wk"><div class="wh"><span class="tag" style="background:'+color+'">'+chip+'</span>'+
-    '<span style="font-size:11px;color:var(--sub);">'+title+'</span></div>'+
-    '<div class="wbars">'+bars+'</div><div class="wxs">'+xs+'</div></div>';
+function weekSummaryCard(label, value, detail){
+  return '<div class="week-card"><div class="label">'+label+'</div>'+
+    '<div class="value">'+value+'</div><div class="detail">'+detail+'</div></div>';
+}
+
+function weeklyTable(weeks){
+  const rows=weeks.map((w,i)=>{
+    const correct=Math.round(w.eventN*w.acc), review=w.eventN-correct, hold=w.eventN<MIN_N;
+    return '<tr><td class="focus">'+(i+1)+'주</td><td>'+w.eventN+'문항</td>'+
+      '<td>'+correct+'개</td><td class="review">▲ '+review+'개</td><td>'+pc(w.acc)+'%</td>'+
+      '<td>'+(hold?'판단 보류':'● '+w.mis+'건')+'</td><td>◆ '+w.nodeN+'종</td></tr>';
+  }).join('');
+  return '<table class="week-table"><thead><tr><th>주차</th><th>학습 기록</th><th>맞힌 문항</th>'+
+    '<th>다시 볼 문항</th><th>정답률</th><th>반복 실수</th><th>공부한 유형</th></tr></thead>'+
+    '<tbody>'+rows+'</tbody></table>';
+}
+
+function weeklyOutcomePanel(weeks){
+  const rows=weeks.map((w,i)=>{
+    const correct=Math.round(w.eventN*w.acc), review=w.eventN-correct;
+    return '<div class="outcome-row"><b>'+(i+1)+'주</b><span class="stack">'+
+      '<i class="correct" style="width:'+(correct/w.eventN*100)+'%"></i>'+
+      '<i class="review" style="width:'+(review/w.eventN*100)+'%"></i></span>'+
+      '<span class="nums">◆ '+correct+' · ▲ '+review+'</span></div>';
+  }).join('');
+  return '<div class="data-panel"><h5>맞힌 문항과 다시 볼 문항</h5>'+rows+
+    '<div class="subcopy">◆ 맞힘 · ▲ 다시 보기 — 색 없이도 기호와 숫자로 구분합니다.</div></div>';
+}
+
+function weeklyMiniPanel(title, symbol, weeks, pick, holdSmall){
+  const vals=weeks.map(w=>holdSmall&&w.eventN<MIN_N?0:pick(w)), hi=Math.max.apply(null,vals)||1;
+  return '<div class="data-panel"><h5>'+title+'</h5><div class="week-mini">'+weeks.map((w,i)=>{
+    const hold=holdSmall&&w.eventN<MIN_N, value=hold?0:pick(w);
+    return '<div class="col"><span class="val">'+(hold?'보류':symbol+' '+value)+'</span>'+
+      '<span class="bar" style="height:'+Math.max(5,value/hi*100)+'%"></span></div>';
+  }).join('')+'</div><div class="week-mini-labels">'+weeks.map((_,i)=>'<span>'+(i+1)+'주</span>').join('')+'</div></div>';
+}
+
+function weeklyChangeTableHtml(weeks){
+  const recent=weeks.slice(-4), start=weeks.length-4;
+  return '<table class="dense-table"><tr><th>주차 변화</th><th>정답률</th><th>학습 기록</th><th>한눈에 보기</th></tr>'+recent.map((w,i)=>{
+    const prev=weeks[start+i-1], accDelta=pc(w.acc)-pc(prev.acc), recordDelta=w.eventN-prev.eventN;
+    const mark=accDelta>0?'▲':accDelta<0?'▼':'→', recordMark=recordDelta>0?'▲':recordDelta<0?'▼':'→';
+    return '<tr><td><b>'+(i+1)+'주</b></td><td class="num">'+mark+' '+Math.abs(accDelta)+'%p</td>'+
+      '<td class="num">'+recordMark+' '+Math.abs(recordDelta)+'문항</td><td>정답률 '+(accDelta>0?'상승':accDelta<0?'하락':'유지')+' · 기록 '+(recordDelta>0?'증가':recordDelta<0?'감소':'유지')+'</td></tr>';
+  }).join('')+'</table>';
+}
+
+function teacherEvidenceHtml(r){
+  const recent=r.weeks.slice(-4), latest=recent[recent.length-1];
+  const weak=ranked(r,'weak')[0], repeat=recent.filter(w=>w.eventN>=MIN_N).reduce((s,w)=>s+w.mis,0);
+  return '<div class="evidence-strip">'+
+    '<div class="item"><div class="label">의견에 반영한 학습량</div><div class="value">'+r.items.toLocaleString()+'문항</div><div class="detail">판정에 쓰인 채점 기록</div></div>'+
+    '<div class="item"><div class="label">먼저 보완할 유형</div><div class="value">'+(weak?weak.label:'확정 없음')+'</div><div class="detail">'+(weak?pc(weak.acc)+'% · 자기 평균 '+pc(r.acc)+'%':'표본을 더 모아 확인')+'</div></div>'+
+    '<div class="item"><div class="label">최근 4주 반복 실수</div><div class="value">'+repeat+'건</div><div class="detail">최근 주 정답률 '+pc(latest.acc)+'%</div></div>'+
+    '</div><table class="dense-table"><tr><th>선생님이 확인한 질문</th><th>기록에서 확인한 답</th></tr>'+
+    '<tr><td>이번 달에 무엇이 부족했나?</td><td><b>'+(weak?weak.label+' · '+pc(weak.acc)+'%':'확정된 약점 없음')+'</b></td></tr>'+
+    '<tr><td>최근 흐름은 어떤가?</td><td><b>'+pc(recent[0].acc)+'% → '+pc(latest.acc)+'%</b></td></tr>'+
+    '<tr><td>다음 상담에서 무엇을 볼까?</td><td><b>반복 실수 '+repeat+'건의 유형과 근거 문항</b></td></tr></table>';
+}
+
+function priorityTableHtml(r){
+  const rows=ranked(r,'weak').slice(0,4);
+  return '<table class="dense-table"><tr><th>먼저 보완할 순서</th><th>정답률</th><th>채점 문항</th><th>자기 평균과 차이</th></tr>'+
+    (rows.length?rows.map((x,i)=>'<tr><td><b>'+(i+1)+'. '+x.label+'</b></td><td class="num">'+pc(x.acc)+'%</td>'+
+      '<td class="num">'+x.n+'문항</td><td class="num">▼ '+Math.max(0,pc(r.acc)-pc(x.acc))+'%p</td></tr>').join(''):
+      '<tr><td colspan="4" class="empty compact">이번 달에 확정된 보완 유형이 없습니다.</td></tr>')+'</table>';
+}
+
+function rootAreaTableHtml(r){
+  const rows=AREA.map(a=>{
+    const nodeRows=r.nodes.filter(x=>x.area===a.k), rootRows=r.propagated.filter(x=>x.area===a.k);
+    const repeat=r.misconceptions.byArea.filter(x=>x.groupKey===a.k).reduce((s,x)=>s+x.count,0);
+    return '<tr><td><b>'+a.n+'</b></td><td class="num">'+nodeRows.filter(x=>x.verdict==='weak_confirmed').length+'건</td>'+
+      '<td class="num">'+nodeRows.filter(x=>x.verdict==='suspect').length+'건</td><td class="num">'+rootRows.length+'건</td><td class="num">'+repeat+'건</td></tr>';
+  }).join('');
+  return '<table class="dense-table"><tr><th>영역</th><th>약점 확정</th><th>더 확인</th><th>이어진 약점</th><th>반복 실수</th></tr>'+rows+'</table>';
+}
+
+function nextCheckTableHtml(r){
+  const rows=r.nodes.filter(x=>x.verdict==='suspect').map(x=>({label:nodeLabel(x.nodeId),reason:'기록을 더 모아 확인'}))
+    .concat(r.propagated.map(x=>({label:nodeLabel(x.nodeId),reason:'앞선 유형과 함께 다시 확인'})));
+  return '<table class="dense-table"><tr><th>다음 기록에서 다시 볼 유형</th><th>왜 다시 보나</th></tr>'+
+    (rows.length?rows.map(x=>'<tr><td><b>'+x.label+'</b></td><td>'+x.reason+'</td></tr>').join(''):
+      '<tr><td colspan="2" class="empty compact">다음 기록에서 별도로 다시 볼 유형이 없습니다.</td></tr>')+'</table>';
+}
+
+function areaConclusionTableHtml(r){
+  return '<table class="dense-table"><tr><th>영역</th><th>채점 문항</th><th>정답률</th><th>이번 달 해석</th></tr>'+r.radar.map(row=>{
+    const diff=row.mine==null?null:pc(row.mine)-pc(r.acc);
+    const message=diff==null?'판단할 기록이 부족해요':diff<=-10?'▲ 먼저 보완해요':diff>=5?'◆ 안정적으로 잘하고 있어요':'● 평소 수준과 비슷해요';
+    return '<tr><td><b>'+row.area.n+'</b></td><td class="num">'+row.n+'문항</td><td class="num">'+(row.mine==null?'—':pc(row.mine)+'%')+'</td><td>'+message+'</td></tr>';
+  }).join('')+'</table>';
 }
 
 function severityHtml(r){
@@ -709,7 +957,7 @@ function severityHtml(r){
     (rows.length?rows.slice(0,5).map(x=>'<div class="mbar"><span class="nm">'+x.label+'</span>'+
       '<span class="bg"><span class="fg" style="width:'+pc(x.value)+'%;background:var(--d-red)"></span></span>'+
       '<span class="v">'+pc(x.value)+'%</span></div>').join(''):
-      '<div class="empty" style="padding:16px 0;">심각도가 산출된 취약 칸이 없습니다.</div>')+'</div>';
+      '<div class="empty compact">심각도가 산출된 취약 칸이 없습니다.</div>')+'</div>';
 }
 
 function eventBreakdownHtml(r){
@@ -717,30 +965,37 @@ function eventBreakdownHtml(r){
   return '<div class="addbox"><h5>선택 오답 분포</h5>'+r.wrongChoices.filter(x=>x.count>0).map(x=>
     '<div class="mbar"><span class="nm">'+x.no+'번 선지</span><span class="bg"><span class="fg" style="width:'+(x.count/maxChoice*100)+'%"></span></span>'+
     '<span class="v">'+x.count+'건</span></div>').join('')+'</div>'+
-    '<div class="addbox"><h5>문항 형식 · 태그 확정</h5>'+r.formats.filter(x=>x.count>0).map(x=>
-    '<div class="mbar"><span class="nm">'+x.label+'</span><span class="v" style="margin-left:auto;">'+x.count+'건</span></div>').join('')+
-    '<div class="evidence"><b>강사 확정 태그</b> '+r.tagConfirmed.yes+' / '+r.tagConfirmed.total+'건 · '+pc(r.tagConfirmed.yes/r.tagConfirmed.total)+'%</div></div>';
+    '<div class="addbox"><h5>문제 형식 · 강사 확인</h5>'+r.formats.filter(x=>x.count>0).map(x=>
+    '<div class="mbar"><span class="nm">'+x.label+'</span><span class="v push">'+x.count+'건</span></div>').join('')+
+    '<div class="evidence"><b>강사가 분류를 확인한 기록</b> '+r.tagConfirmed.yes+' / '+r.tagConfirmed.total+'건 · '+pc(r.tagConfirmed.yes/r.tagConfirmed.total)+'%</div></div>';
 }
 
 function rootEvidenceHtml(r, who, meta){
   const verdictKo={weak_confirmed:'약점 확정', suspect:'약점 의심', ok:'양호'};
   const roots=r.propagated.slice().sort((a,b)=>b.score-a.score);
-  const rootRows=roots.length ? roots.map(x=>'<div class="cause"><div class="ct"><span class="chip warn">근본 원인 후보</span>'+
-    '<span>'+nodeLabel(x.nodeId)+'</span><span class="score">score '+x.score.toFixed(2)+'</span></div>'+
-    '<div class="evidence"><b>전파 출발</b> '+x.fromNodes.map(nodeLabel).join(' · ')+'</div></div>').join(''):
-    '<div class="empty">근본 원인 후보가 없습니다.</div>';
+  const rootRows=roots.length ? roots.map(x=>'<div class="cause"><div class="ct"><span class="chip warn">이어진 약점</span>'+
+    '<span>'+nodeLabel(x.nodeId)+'</span><span class="score">연결 정도 '+pc(x.score)+'/100</span></div>'+
+    '<div class="evidence"><b>함께 살펴볼 앞선 유형</b> '+x.fromNodes.map(nodeLabel).join(' · ')+'</div></div>').join(''):
+    '<div class="empty">이어져 나타난 약점이 없습니다.</div>';
   const nodeRows=r.nodes.length ? r.nodes.map(x=>'<div class="cause"><div class="ct"><span>'+nodeLabel(x.nodeId)+'</span>'+
     '<span class="chip '+(x.verdict==='weak_confirmed'?'warn':'b')+'">'+verdictKo[x.verdict]+'</span></div>'+
-    '<div class="evidence"><b>판정 근거</b> '+x.basis.join(' · ')+'</div></div>').join(''):
-    '<div class="empty">표시할 노드 판정 근거가 없습니다.</div>';
+    '<div class="evidence"><b>확인한 기록</b> '+x.basis.join(' · ')+'</div></div>').join(''):
+    '<div class="empty">표시할 학습 유형 기록이 없습니다.</div>';
   const byNode=r.misconceptions.byNode.length ? r.misconceptions.byNode.map(x=>
     '<tr><td>'+nodeLabel(x.groupKey)+'</td><td>'+MISCONCEPTION_KO[x.tag]+'</td><td class="num">'+x.count+'건</td></tr>').join(''):
-    '<tr><td colspan="3" class="empty">노드별 오개념 기록이 없습니다.</td></tr>';
-  return '<div class="rhead"><h3>진단 근거 · 근본 원인</h3><span class="who2">'+who+'</span></div>'+
-    '<div class="rmeta">'+meta+'</div><div class="addgrid"><div><h4 style="font-size:12px;margin-bottom:8px;">근본 원인 후보</h4>'+rootRows+'</div>'+
-    '<div><h4 style="font-size:12px;margin-bottom:8px;">노드 판정과 basis</h4>'+nodeRows+'</div></div>'+
-    '<table class="facttbl"><tr><th>노드 표시</th><th>오개념</th><th style="text-align:right;">빈도</th></tr>'+byNode+'</table>'+
-    '<div class="note" style="padding:11px 0 0;">노드 ID 대신 <b>영역 × 유형 한글 표기</b>를 사용합니다. 후보 점수와 전파 출발, 판정 근거를 함께 읽어야 결론만 남지 않습니다.</div>';
+    '<tr><td colspan="3" class="empty">학습 유형별 반복 실수 기록이 없습니다.</td></tr>';
+  const repeat=r.misconceptions.byNode.reduce((s,x)=>s+x.count,0);
+  return '<div class="rhead"><h3>어디에서 막혔는지</h3><span class="who2">'+who+'</span></div>'+
+    '<div class="rmeta">'+meta+'</div>'+
+    '<div class="evidence-strip"><div class="item"><div class="label">약점으로 확인</div><div class="value">'+r.nodes.filter(x=>x.verdict==='weak_confirmed').length+'개 유형</div><div class="detail">기록이 충분해 확인된 항목</div></div>'+
+    '<div class="item"><div class="label">조금 더 확인</div><div class="value">'+r.nodes.filter(x=>x.verdict==='suspect').length+'개 유형</div><div class="detail">다음 기록까지 지켜볼 항목</div></div>'+
+    '<div class="item"><div class="label">유형별 반복 실수</div><div class="value">'+repeat+'건</div><div class="detail">실수 유형이 남은 기록</div></div></div>'+
+    '<div class="addgrid"><div><h4 class="section-heading">약점이 이어진 흐름</h4>'+rootRows+'</div>'+
+    '<div><h4 class="section-heading">확인한 학습 유형</h4>'+nodeRows+'</div></div>'+
+    '<table class="facttbl"><tr><th>학습 유형</th><th>반복 실수</th><th class="right">횟수</th></tr>'+byNode+'</table>'+
+    rootAreaTableHtml(r)+
+    nextCheckTableHtml(r)+
+    '<div class="note page-note">어려운 내부 이름 대신 <b>영역 × 문제유형</b>으로 표시했습니다. 약점 하나만 보지 않고, 함께 막힌 유형과 실제 기록을 같이 봅니다.</div>';
 }
 
 function areaEvidenceHtml(r){
@@ -753,12 +1008,12 @@ function areaEvidenceHtml(r){
   const misconceptions=r.misconceptions.byArea.length ? r.misconceptions.byArea.map(x=>{
     const area=AREA.find(a=>a.k===x.groupKey);
     return '<tr><td>'+(area?area.n:'표시명 미확인')+'</td><td>'+MISCONCEPTION_KO[x.tag]+'</td><td class="num">'+x.count+'건</td></tr>';
-  }).join(''):'<tr><td colspan="3" class="empty">영역별 오개념 기록이 없습니다.</td></tr>';
-  return '<div class="addgrid"><div class="addbox"><h5>영역별 채점 모수 · 노드 판정</h5>'+
-    '<table class="facttbl" style="margin-top:0;"><tr><th>영역</th><th style="text-align:right;">채점</th><th style="text-align:right;">확정 / 의심 / 근본</th></tr>'+summary+'</table></div>'+
-    '<div class="addbox"><h5>영역별 오개념 빈도</h5><table class="facttbl" style="margin-top:0;"><tr><th>영역</th><th>오개념</th><th style="text-align:right;">빈도</th></tr>'+misconceptions+'</table></div></div>'+
-    '<div class="verd hold" style="margin-top:12px;"><b>오개념 집계 제외</b> · 선택 번호 없음 '+r.misconceptions.excludedMissingChosenNo+'건 · 오개념 라벨 없음 '+r.misconceptions.excludedMissingMisconceptionTag+'건<br>'+
-    '<span style="font-size:10.5px;">0건도 그대로 표시합니다. 제외 건수를 숨기면 오개념 빈도의 분모를 전체 기록으로 오해할 수 있습니다.</span></div>';
+  }).join(''):'<tr><td colspan="3" class="empty">영역별 반복 실수 기록이 없습니다.</td></tr>';
+  return '<div class="addgrid"><div class="addbox"><h5>영역별 판정에 사용한 문항</h5>'+
+    '<table class="facttbl flush"><tr><th>영역</th><th class="right">채점</th><th class="right">약점 / 더 확인 / 이어진 약점</th></tr>'+summary+'</table></div>'+
+    '<div class="addbox"><h5>영역별 반복 실수</h5><table class="facttbl flush"><tr><th>영역</th><th>실수 유형</th><th class="right">횟수</th></tr>'+misconceptions+'</table></div></div>'+
+    '<div class="verd hold page-callout"><b>반복 실수 집계에서 빠진 기록</b> · 선택 번호 없음 '+r.misconceptions.excludedMissingChosenNo+'건 · 실수 분류 없음 '+r.misconceptions.excludedMissingMisconceptionTag+'건<br>'+
+    '<span class="caption-copy">0건도 그대로 표시합니다. 빠진 기록을 숨기면 전체 기록이 모두 분류된 것으로 오해할 수 있습니다.</span></div>';
 }
 
 /* 영역 레이더 5축 — AreaTag 정본이 5영역이다.
@@ -788,7 +1043,7 @@ function radarSvg(rows, baseVal){
     poly(rows.map(()=>baseVal),'none','#c7ccd4',true)+
     poly(rows.map(r=>r.mine),'rgba(59,130,246,.22)','#3b82f6',false)+
     labs+'</svg>'+
-    '<div class="rleg"><span>◆ <b>내 성취도</b></span><span style="color:#a3a9b3;">◇ 내 평균 '+pc(baseVal)+'%</span></div></div>';
+    '<div class="rleg"><span>◆ <b>내 성취도</b></span><span class="caption-copy">◇ 내 평균 '+pc(baseVal)+'%</span></div></div>';
 }
 
 /* ── 6. 리포트 지면 — 세 화면이 공유한다 ────────────────────────── */
@@ -822,8 +1077,8 @@ function sheet(r, opt){
   page(head('월간 분석')+'<div class="rmeta">'+meta+'</div>'+
     '<div class="kpis">'+
       kpi('백분위 '+r.pct, 'var(--d-blue)', r.pct, '', '전국 동일 학년 기준',
-          '<div class="spark" style="text-align:right;"><span class="asof">참고치 · 기준일 '+r.pctAt+'</span></div>',
-          '전국 동일 학년 표본 대비 위치입니다. <b>백엔드 집계 API 가 내려주는 단일 값</b>이라 월별 추이는 표시하지 않습니다 — 출처·모수 확정 전이라 참고치입니다.')+
+          '<div class="spark right"><span class="asof">참고치 · 기준일 '+r.pctAt+'</span></div>',
+          '전국 동일 학년 표본 대비 위치입니다. <b>현재 한 번만 제공되는 값</b>이라 월별 추이는 표시하지 않습니다 — 비교 기준과 참여 인원이 확정되기 전이라 참고치입니다.')+
       kpi('정답률 '+pc(r.acc)+'%', 'var(--d-green)', pc(r.acc), '%', '내 기준선 대비',
           spark(a3, pc(r.base.acc), 'var(--d-green)', v=>v+'%'),
           '채점 완료된 문항만 대상입니다. 회색 점선은 최근 '+r.base.weeksUsed+'주 이동 기준선으로, <b>비교 대상은 다른 학생이 아니라 본인의 평소 수준</b>입니다.')+
@@ -832,8 +1087,8 @@ function sheet(r, opt){
           '채점이 끝난 문항 수입니다(푼 문항 수와 다릅니다). 기준선은 주당 평균 '+r.base.volWeek+'문항을 4주로 환산한 값입니다.')+
       kpi('출제 난이도 '+bandKo, 'var(--d-yellow)', bandKo, '', '',
           bandBar(r.bands),
-          '체크온이 출제한 <b>'+bandN+'문항</b>의 밴드 분포입니다(하·중·상 3단계). 학원 교재·모의고사 문항은 난이도 정보가 없어 <b>모수에서 빠집니다</b> — 전체 학습량과 분모가 다릅니다.')+
-    '</div>');
+          '체크온이 출제한 <b>'+bandN+'문항</b>의 난이도 분포입니다(하·중·상 3단계). 학원 교재·모의고사 문항은 난이도 정보가 없어 <b>이 계산에서 빠집니다</b> — 전체 학습량과 문항 수가 다릅니다.')+
+    '</div>', 'monthly-pg');
 
   /* 선생님 의견 — 강사가 지면에서 직접 고치는 면 */
   page(head('선생님 의견')+
@@ -843,24 +1098,49 @@ function sheet(r, opt){
       ? '<div class="edithint no-print">✏️ <b>문단을 눌러 그 자리에서 바로 고치세요.</b> 강사가 고친 문단은 노란 띠로 바뀌고 「강사 작성」으로 표시됩니다 — '+
         'AI 다듬기는 오른쪽 패널의 보조 수단입니다.</div>'
       : '')+
-    r.blocks.map(b=>blockHtml(b, opt)).join(''));
+    r.blocks.map(b=>blockHtml(b, opt)).join('')+
+    teacherEvidenceHtml(r));
 
-  /* 5.3 주간 분석 */
+  /* 5.3 주간 분석 — 계약·내부 용어 대신 학부모가 바로 행동으로 옮길 수 있는 말로 쓴다 */
+  const recentWeeks = r.weeks.slice(-4);
+  const eligibleWeeks = recentWeeks.filter(w=>w.eventN>=MIN_N);
+  const bestWeek = recentWeeks.reduce((a,b)=>b.acc>a.acc?b:a);
+  const latestWeek = recentWeeks[recentWeeks.length-1];
+  const previousWeek = recentWeeks[recentWeeks.length-2];
+  const weeklyRecords = recentWeeks.reduce((sum,w)=>sum+w.eventN,0);
+  const repeatedMistakes = eligibleWeeks.reduce((sum,w)=>sum+w.mis,0);
+  const reviewCounts = recentWeeks.map(w=>w.eventN-Math.round(w.eventN*w.acc));
+  const reviewIndex = reviewCounts.reduce((best,value,index)=>value>reviewCounts[best]?index:best,0);
+  const delta = pc(latestWeek.acc)-pc(previousWeek.acc);
+  const deltaMark = delta>0?'▲ ':delta<0?'▼ ':'→ ';
   page(head('주간 분석')+'<div class="rmeta">'+meta+'</div>'+
-    weekChart('주차별 정답률 — ▲ 보강 ● 상담 시점', '정답률 '+pc(r.acc)+'%', 'var(--d-green)', r.weeks, w=>pc(w.acc), v=>v)+
-    weekChart('주차별 채점 문항 수', r.items.toLocaleString()+'문항', 'var(--d-red)', r.weeks, w=>w.vol, v=>v)+
-    '<div class="addgrid" style="margin-top:8px;">'+
-      weeklyFactChart('월요일 시작 주차의 오개념 태그 건수', '오개념', 'var(--d-yellow)', r.weeks, w=>w.mis, v=>v+'건')+
-      weeklyFactChart('월요일 시작 주차의 서로 다른 학습 노드 수', '노드 커버리지', 'var(--d-blue)', r.weeks, w=>w.nodeN, v=>v+'종')+
+    '<div class="week-summary">'+
+      weekSummaryCard('최근 주 정답률', pc(latestWeek.acc)+'%', deltaMark+Math.abs(delta)+'%p · 전주 대비')+
+      weekSummaryCard('이번 4주 학습 기록', weeklyRecords+'문항', '주차별로 확인 가능한 기록 합계')+
+      weekSummaryCard('반복해서 틀린 기록', repeatedMistakes+'건', '표본이 충분한 주만 합산')+
     '</div>'+
-    '<div class="note" style="padding:8px 0 0;">⚠ <b>개입 마커가 이 차트의 핵심입니다</b> — 상담·보강 이후 흐름이 어떻게 움직였는지를 보여주는 것이 목적이고, 주차 정답률 자체는 표본이 작아 단독으로 읽지 않습니다.</div>');
+    weekChart('지난 12주 정답률 흐름 — ▲ 보강 · ● 상담', '최근 '+pc(latestWeek.acc)+'%', 'var(--d-green)', r.weeks, w=>pc(w.acc), v=>v+'%')+
+    weeklyTable(recentWeeks)+
+    '<div class="report-data-grid">'+
+      weeklyOutcomePanel(recentWeeks)+
+      weeklyMiniPanel('반복해서 틀린 기록', '●', recentWeeks, w=>w.mis, true)+
+      weeklyMiniPanel('공부한 유형 수', '◆', recentWeeks, w=>w.nodeN, false)+
+    '</div>'+
+    weeklyChangeTableHtml(r.weeks)+
+    '<div class="week-insight">'+
+      '<div class="item"><b>◆ 가장 잘 풀린 주</b><br>'+(recentWeeks.indexOf(bestWeek)+1)+'주 · 정답률 '+pc(bestWeek.acc)+'% ('+Math.round(bestWeek.eventN*bestWeek.acc)+' / '+bestWeek.eventN+'문항)</div>'+
+      '<div class="item warn"><b>▲ 먼저 다시 볼 주</b><br>'+(reviewIndex+1)+'주 · 다시 볼 문항 '+reviewCounts[reviewIndex]+'개, 반복 실수 '+(recentWeeks[reviewIndex].eventN<MIN_N?'판단 보류':recentWeeks[reviewIndex].mis+'건')+'</div>'+
+    '</div>'+
+    '<div class="note page-note"><b>읽는 법</b> · 「공부한 유형」은 그 주에 기록된 서로 다른 영역×문제유형 수입니다. '+
+    '<b>'+MIN_N+'문항 미만인 주는 반복 실수를 판단 보류</b>로 두며, 상담·보강 뒤의 흐름과 함께 읽습니다.</div>', 'weekly-pg');
 
   /* 5.5 영역 × 유형 성과 */
   page(head('영역·유형별 학습 성과')+
     '<div class="rmeta">'+meta+' &nbsp;|&nbsp; 선택과목 '+r.elective+'</div>'+
     matrixHtml(r)+
     '<div class="addgrid">'+severityHtml(r)+eventBreakdownHtml(r)+'</div>'+
-    '<div class="note" style="padding:9px 0 0;">칸 아래 숫자는 채점 문항 수입니다. <b>'+MIN_N+'문항 미만은 판정하지 않고 「판단 보류」로 둡니다</b> — 표본이 적은 칸을 약점이라고 부르면 다음 달에 뒤집힙니다.</div>');
+    priorityTableHtml(r)+
+    '<div class="note page-note">칸 아래 숫자는 채점 문항 수입니다. <b>'+MIN_N+'문항 미만은 판정하지 않고 「판단 보류」로 둡니다</b> — 표본이 적은 칸을 약점이라고 부르면 다음 달에 뒤집힙니다.</div>');
 
   /* 5.6 진단 결과 */
   page(diagHtml(r, who, meta));
@@ -874,12 +1154,13 @@ function sheet(r, opt){
     '<div class="rside">'+r.radar.map(row=>
       '<div class="li"><span>'+row.area.n+'</span>'+
       '<span class="chip b">'+row.area.track+'</span>'+
-      '<span class="v" style="color:'+(row.mine==null?'var(--pgray)':'var(--d-blue)')+'">'+
+      '<span class="v '+(row.mine==null?'muted':'mine')+'">'+
         (row.mine==null ? '—' : pc(row.mine)+'%')+'</span></div>').join('')+
     '</div></div>'+
     areaEvidenceHtml(r)+
-    '<div class="note" style="padding:12px 0 0;">비교선은 <b>이번 달 내 평균</b> 하나입니다 — 영역별 전국 평균은 백엔드가 내려주는 값에 없어 그리지 않습니다. '+
-    '<span class="red">반 평균·석차도 담기지 않습니다</span> — 강사 화면 전용 지표라 학부모 리포트에는 조립 단계에서 제외됩니다.</div>');
+    areaConclusionTableHtml(r)+
+    '<div class="note page-note">비교선은 <b>이번 달 내 평균</b> 하나입니다 — 영역별 전국 평균은 현재 제공되는 기록에 없어 그리지 않습니다. '+
+    '<span class="red">반 평균·석차도 담기지 않습니다</span> — 강사 화면에서만 보는 정보라 학부모용에서는 제외됩니다.</div>');
 
   /* 쪽번호는 면 개수가 바뀌어도 따라온다 */
   const body = pages.map((html,i)=>
@@ -889,7 +1170,7 @@ function sheet(r, opt){
     '<span><i class="fix"></i><b>확정 수치</b> — 코드·백엔드가 계산</span>'+
     '<span><i class="gen"></i><b>AI 해설</b> — 게이트 통과분</span>'+
     '<span><i class="tch"></i><b>강사 작성</b> — 직접 수정분</span>'+
-    '<span style="margin-left:auto;color:var(--pgray);">모든 면 A4 · '+pages.length+'쪽</span></div>';
+    '<span class="push caption-copy">모든 면 A4 · '+pages.length+'쪽</span></div>';
 
   return legend + '<div class="sheet">'+body+'</div>';
 }
@@ -900,8 +1181,8 @@ const isEdited = b => b.owner === 'teacher';
 
 function blockHtml(b, opt){
   const tag = b.chart
-    ? '<span class="cr">chart_analysis</span><span>'+CHART[b.chart]+'</span>'
-    : '<span class="cr">'+b.type+'</span><span>'+BLOCK_KO[b.type]+'</span>';
+    ? '<span class="cr no-print">chart_analysis</span><span>'+CHART[b.chart]+'</span>'
+    : '<span class="cr no-print">'+b.type+'</span><span>'+BLOCK_KO[b.type]+'</span>';
 
   if(!b.html) return '<div class="blk gone" data-seq="'+b.seq+'">'+
     '<div class="bt">'+tag+'<span class="own2">비움</span></div>'+
@@ -913,14 +1194,14 @@ function blockHtml(b, opt){
   /* 강사 편집분은 평문으로 그린다 — 확정 수치 표시(.n)는 AI 원문에만 붙는다 */
   const body = edited ? esc(b.edited) : b.html;
   return '<div class="'+cls+'" data-seq="'+b.seq+'">'+
-    '<div class="bt">'+tag+'<span class="own2">'+(edited?'강사 작성':'AI 해설')+'</span></div>'+
+    '<div class="bt">'+tag+'<span class="own2 no-print">'+(edited?'강사 작성':'AI 해설')+'</span></div>'+
     '<div class="body2"'+(opt.editable?' contenteditable="true" data-edit="'+b.seq+'"':'')+'>'+body+'</div></div>';
 }
 
 function matrixHtml(r){
   let h = '<table class="mx"><tr><th class="a">영역 \\ 유형</th>'+
     V1_TYPE.map(t=>'<th>'+t.n+'</th>').join('')+
-    '<th style="width:78px;">적용·창의</th></tr>';
+    '<th class="matrix-reserved">적용·창의</th></tr>';
   AREA.forEach(a=>{
     h += '<tr><td class="a">'+a.n+'<small>'+a.track+'</small></td>';
     V1_TYPE.forEach(t=>{
@@ -929,7 +1210,7 @@ function matrixHtml(r){
         (c.verdict==='unknown' ? '—' : pc(c.acc)+'%')+
         '<small>'+c.n+'문항</small></span></td>';
     });
-    h += '<td class="res">v1 미산출</td></tr>';
+    h += '<td class="res">아직 제공되지 않음</td></tr>';
   });
   return h+'</table>';
 }
@@ -955,32 +1236,32 @@ function diagHtml(r, who, meta){
   return '<div class="rhead"><h3>진단 결과</h3><span class="who2">'+who+'</span></div>'+
     '<div class="rmeta">'+meta+'</div>'+
     '<div class="dg">'+
-      '<div><div class="k">전체 정답률</div><div class="n2" style="color:var(--d-green)">'+pc(r.acc)+'%</div></div>'+
+      '<div><div class="k">전체 정답률</div><div class="n2 metric-accuracy">'+pc(r.acc)+'%</div></div>'+
       '<div><div class="k">판정에 쓰인 문항 수</div><div class="n2">'+r.items.toLocaleString()+'</div></div>'+
-      '<div><div class="k">약점 확정 / 판단 보류</div><div class="n2" style="font-size:30px;">'+
-        '<span style="color:var(--d-red)">'+ranked(r,'weak').length+'</span>'+
-        '<span style="color:var(--pgray);font-size:20px;"> / '+rows.filter(x=>x.c.verdict==='unknown').length+'</span>'+
-        '<span style="font-size:12px;color:var(--pgray);font-weight:500;"> 칸</span></div></div>'+
+      '<div><div class="k">약점 확정 / 판단 보류</div><div class="n2 compact">'+
+        '<span class="metric-weak">'+ranked(r,'weak').length+'</span>'+
+        '<span class="hold-count"> / '+rows.filter(x=>x.c.verdict==='unknown').length+'</span>'+
+        '<span class="unit"> 칸</span></div></div>'+
     '</div>'+
     '<div class="two">'+
       tile('good','대표 강점 유형', good, '아직 안정 판정을 받은 칸이 없습니다')+
       tile('bad','대표 취약 유형', weak, '자기 평균보다 뚜렷하게 낮은 칸이 없습니다')+
     '</div>'+
     '<div class="bars">'+list+'</div>'+
-    '<div class="note" style="padding:11px 0 0;">회색 세로선은 <b>이 학생의 자기 평균</b>입니다. 판정 기준은 다른 학생이 아니라 자기 평균과의 거리입니다.</div>';
+    '<div class="note page-note">회색 세로선은 <b>이 학생의 자기 평균</b>입니다. 판정 기준은 다른 학생이 아니라 자기 평균과의 거리입니다.</div>';
 }
 
 function holdSheet(r){
   const s = STATUS[r.status];
   return '<div class="sheet"><div class="pg hold-pg">'+
     '<div class="em">'+(r.status==='rejected_insufficient' ? '⏳' : '⚠')+'</div>'+
-    '<div style="font-size:16px;font-weight:800;margin-bottom:8px;">'+s.n+'</div>'+
-    '<div style="font-size:12.5px;color:var(--sub);line-height:1.8;max-width:440px;margin:0 auto;">'+esc(r.why||'')+'</div>'+
+    '<div class="hold-title">'+s.n+'</div>'+
+    '<div class="hold-copy">'+esc(r.why||'')+'</div>'+
     (r.status==='rejected_insufficient'
-      ? '<div class="verd hold" style="max-width:520px;margin:18px auto 0;text-align:left;">'+
+      ? '<div class="verd hold hold-detail">'+
         '<b>이건 실패가 아닙니다.</b> <code>rejected_insufficient</code> 는 정상 상태이고, 다시 요청해도 같은 결과입니다. '+
         '데이터가 2주 이상 쌓이면 다음 달 배치에서 자동으로 생성됩니다.</div>'
-      : '<div class="verd no" style="max-width:520px;margin:18px auto 0;text-align:left;">'+
+      : '<div class="verd no hold-detail">'+
         '<code>failed</code> — 블록 재생성 상한(3회)에 도달했습니다. 근거가 부족한 차트 해설이 원인이면 '+
         '다음 달 데이터로 재시도하거나 해당 차트를 뺀 구성으로 다시 요청합니다.</div>')+
     '</div></div>';
@@ -989,38 +1270,41 @@ function holdSheet(r){
 /* ── 7. 화면 1 · 리포트 목록 ────────────────────────────────────── */
 function viewList(){
   const list = filtered();
-  const cnt = k => REPORTS.filter(k).length;
+  const source = S.ym.y===PERIOD.y && S.ym.m===PERIOD.m ? REPORTS : [];
+  const cnt = k => source.filter(k).length;
+  const pageCount = Math.max(1, Math.ceil(list.length/S.pageSize));
+  S.page = Math.min(S.page, pageCount);
+  const visible = list.slice((S.page-1)*S.pageSize, S.page*S.pageSize);
 
-  let rows = list.map(r=>{
-    const dim = r.status!=='generated' ? ' class="dim"' : '';
+  let rows = visible.map(r=>{
+    const dim = r.status!=='generated' ? ' dim' : '';
     const num = (v,suffix) => r.status==='generated'
       ? '<span class="num">'+v+(suffix||'')+'</span>' : '<span class="dash">—</span>';
-    return '<tr'+dim+' data-act="open-edit" data-id="'+r.id+'">'+
-      '<td><div class="nm">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+
-        '<small>'+r.alias+' · '+r.id+'</small></div></td>'+
-      '<td>'+r.cls+'<div style="font-size:10.5px;color:var(--pgray);">'+r.grade+' · '+r.elective+'</div></td>'+
-      '<td>'+(r.kind==='report'
-        ? '<span class="chip a">월별 일괄</span>'
-        : '<span class="chip t">단건 수시</span>')+'</td>'+
-      '<td style="text-align:right;">'+num(r.status==='generated'?r.items.toLocaleString():0,'문항')+'</td>'+
-      '<td style="text-align:right;">'+num(r.status==='generated'?pc(r.acc):0,'%')+'</td>'+
-      '<td style="text-align:right;">'+num(r.pct||0)+'</td>'+
-      '<td>'+statusChip(r)+
-        (r.sent?'<div style="font-size:10px;color:var(--pgray);margin-top:2px;">'+r.sentAt+'</div>':'')+'</td>'+
-      '<td><div class="acts">'+
+    return '<div class="report-card'+dim+'" data-act="open-edit" data-id="'+r.id+'">'+
+      '<span class="report-avatar">'+r.nm.charAt(0)+'</span>'+
+      '<div class="report-primary"><div class="title">'+r.nm+' 학생'+(!r.sent&&r.status==='generated'?'<span class="new-badge">검토 전</span>':'')+'</div>'+
+        '<div class="meta">'+S.ym.y+'년 '+S.ym.m+'월 · '+r.alias+' · '+r.id+' · '+r.grade+' '+r.elective+'</div></div>'+
+      '<div class="report-field"><div class="label">반 · 발행 방식</div><div class="value">'+r.cls+'<br>'+(r.kind==='report'?'월별 일괄':'단건 수시')+'</div></div>'+
+      '<div class="report-field"><div class="label">학습량</div><div class="value">'+num(r.status==='generated'?r.items.toLocaleString():0,'문항')+'</div></div>'+
+      '<div class="report-field"><div class="label">정답률</div><div class="value">'+num(r.status==='generated'?pc(r.acc):0,'%')+'</div></div>'+
+      '<div class="report-field"><div class="label">백분위</div><div class="value">'+num(r.pct||0,'')+'</div></div>'+
+      '<div class="report-field"><div class="label">상태</div><div class="value">'+statusChip(r)+(r.sent?'<div class="sent-meta">'+r.sentAt+'</div>':'')+'</div></div>'+
+      '<div class="report-actions">'+
         (r.status==='generated'
           ? '<button class="btn ic" data-act="open-edit" data-id="'+r.id+'">'+(r.sent?'보기':'수정')+'</button>'+
             '<button class="btn ic" data-act="print" data-id="'+r.id+'">인쇄</button>'
           : '<button class="btn ic off">수정</button>')+
         '<button class="btn ic">⋯</button>'+
-      '</div></td></tr>';
+      '</div></div>';
   }).join('');
 
-  if(!list.length) rows = '<tr><td colspan="8" class="empty">조건에 맞는 리포트가 없습니다.</td></tr>';
+  if(!list.length) rows = '<div class="service-empty"><div class="icon">▤</div><b>'+(
+    source.length?'조건에 맞는 리포트가 없습니다.':'이 달에 생성된 리포트가 없습니다.')+'</b><p>'+(
+    source.length?'검색어나 필터를 바꾸고 다시 확인해 주세요.':'리포트가 생성되면 학생별 검토 카드가 이곳에 나타납니다.')+'</p></div>';
 
-  return '<div class="pgttl">리포트 목록</div>'+
-  '<div class="pgsub">월별 리포트는 <b>매월 1일 야간 배치</b>로 전월분이 한 번에 생성됩니다. 단건은 강사가 수시로 발행합니다.<br>'+
-  '행을 누르면 수정 화면으로 들어갑니다 — <b>발송 완료된 리포트는 읽기 전용</b>입니다.</div>'+
+  return '<div class="studio-hero"><div><div class="eyebrow">CHECKON REPORT STUDIO</div><h2>리포트 목록</h2>'+
+  '<p>학생별 월간 리포트를 검토하고, 수정한 뒤 학부모에게 발송합니다.</p></div>'+
+  '<div class="hero-stat"><div><b>'+cnt(r=>r.status==='generated')+'</b><span>생성 완료</span></div><div><b>'+cnt(r=>r.sent)+'</b><span>발송 완료</span></div></div></div>'+
 
   '<div class="panel">'+
     '<div class="mnav">'+
@@ -1028,30 +1312,34 @@ function viewList(){
       '<span class="m">'+ymLabel(S.ym.y,S.ym.m)+'</span>'+
       '<span class="side" data-act="month" data-d="1">'+String(S.ym.m%12+1).padStart(2,'0')+' ›</span>'+
       '<button class="btn sm" data-act="month" data-d="0">↺ 이번 달</button>'+
-      '<span style="margin-left:auto;"></span>'+
+      '<span class="push"></span>'+
       '<button class="btn pri" data-act="view" data-v="send">발송 화면으로</button>'+
     '</div>'+
     '<div class="filters">'+
       select('cls',  ['all','고2-1 · 목요일반','고3 · 화금 심화반'], ['전체 반','고2-1 · 목요일반','고3 · 화금 심화반'])+
       select('status',['all','generated','rejected_insufficient','failed'], ['전체 상태','생성 완료','데이터 부족','생성 실패'])+
       select('kind', ['all','report','report_single'], ['전체 종류','월별 일괄','단건 수시'])+
-      '<button class="btn sm" style="margin-left:auto;" data-act="reset">↺ 초기화</button>'+
+      '<button class="btn sm push" data-act="reset">↺ 초기화</button>'+
     '</div>'+
+    '<div class="list-tools"><input class="search" id="reportSearch" value="'+esc(S.q)+'" placeholder="학생명 · 리포트 ID · 반 검색" aria-label="리포트 검색">'+
+      '<select class="sel" data-act="sort" aria-label="리포트 정렬">'+
+        '<option value="updated_desc"'+(S.sort==='updated_desc'?' selected':'')+'>최근 수정순</option>'+
+        '<option value="accuracy_desc"'+(S.sort==='accuracy_desc'?' selected':'')+'>정답률 높은순</option>'+
+        '<option value="name_asc"'+(S.sort==='name_asc'?' selected':'')+'>학생 이름순</option></select>'+
+      '<button class="btn" data-act="apply-search">검색</button></div>'+
     '<div class="sum">'+
-      '<div><div class="k">이번 달 대상</div><div class="v">'+REPORTS.length+'<small> 명</small></div></div>'+
+      '<div><div class="k">이번 달 대상</div><div class="v">'+source.length+'<small> 명</small></div></div>'+
       '<div><div class="k">생성 완료</div><div class="v">'+cnt(r=>r.status==='generated')+'<small> 건</small></div></div>'+
-      '<div><div class="k">데이터 부족 · 생략</div><div class="v" style="color:var(--hold);">'+cnt(r=>r.status==='rejected_insufficient')+'<small> 건</small></div>'+
-        '<div style="font-size:10px;color:var(--pgray);margin-top:5px;">\u{1F534} 실패가 아닙니다 — 재시도해도 같습니다</div></div>'+
-      '<div><div class="k">발송 완료</div><div class="v" style="color:var(--ok);">'+cnt(r=>r.sent)+'<small> 건</small></div></div>'+
+      '<div><div class="k">데이터 부족 · 생략</div><div class="v summary-value hold">'+cnt(r=>r.status==='rejected_insufficient')+'<small> 건</small></div>'+
+        '<div class="summary-explain">\u{1F534} 실패가 아닙니다 — 재시도해도 같습니다</div></div>'+
+      '<div><div class="k">발송 완료</div><div class="v summary-value ok">'+cnt(r=>r.sent)+'<small> 건</small></div></div>'+
     '</div>'+
   '</div>'+
 
-  '<div class="panel"><table class="rt">'+
-    '<thead><tr><th>리포트</th><th>반</th><th>종류</th>'+
-    '<th style="text-align:right;">학습량</th><th style="text-align:right;">정답률</th>'+
-    '<th style="text-align:right;">백분위</th><th>상태</th><th></th></tr></thead>'+
-    '<tbody>'+rows+'</tbody></table></div>'+
-  contractPanel();
+  '<div class="report-cards"><div class="resultbar"><b>'+list.length+'건</b> 검색 결과<span>·</span><span>페이지당 '+S.pageSize+'건</span>'+(
+    S.q?'<span class="chip a">검색: '+esc(S.q)+'</span>':'')+'</div>'+rows+(
+    list.length?'<div class="pager"><button class="btn sm'+(S.page===1?' off':'')+'" data-act="page" data-page="'+(S.page-1)+'">‹ 이전</button>'+
+      '<span class="page-info">'+S.page+' / '+pageCount+'</span><button class="btn sm'+(S.page===pageCount?' off':'')+'" data-act="page" data-page="'+(S.page+1)+'">다음 ›</button></div>':'')+'</div>';
 }
 
 function select(key, values, labels){
@@ -1060,21 +1348,26 @@ function select(key, values, labels){
     '</select>';
 }
 function filtered(){
-  return REPORTS.filter(r=>
+  if(S.ym.y!==PERIOD.y || S.ym.m!==PERIOD.m) return [];
+  const q=S.q.trim().toLowerCase();
+  const rows=REPORTS.filter(r=>
     (S.f.cls==='all'    || r.cls===S.f.cls) &&
     (S.f.status==='all' || r.status===S.f.status) &&
-    (S.f.kind==='all'   || r.kind===S.f.kind));
+    (S.f.kind==='all'   || r.kind===S.f.kind) &&
+    (!q || [r.nm,r.alias,r.id,r.cls,r.grade,r.elective].join(' ').toLowerCase().includes(q)));
+  return rows.sort((a,b)=>S.sort==='accuracy_desc' ? (b.acc||0)-(a.acc||0) :
+    S.sort==='name_asc' ? a.nm.localeCompare(b.nm) : b.id.localeCompare(a.id));
 }
 
 /* ── 8. 화면 2 · 리포트 수정 ────────────────────────────────────── */
 function viewEdit(){
   const r  = byId(S.openId);
   const ro = r.sent || r.status !== 'generated';
-  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'+
+  return '<div class="screen-head">'+
     '<button class="btn sm" data-act="view" data-v="list">‹ 목록</button>'+
-    '<div><div class="pgttl" style="margin:0;">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+'</div>'+
-    '<div style="font-size:11px;color:var(--pgray);font-family:var(--mono);">'+r.alias+' · '+r.id+'</div></div>'+
-    '<span style="margin-left:auto;"></span>'+
+    '<div><div class="pgttl">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+'</div>'+
+    '<div class="meta-copy mono-copy">'+r.alias+' · '+r.id+'</div></div>'+
+    '<span class="push"></span>'+
     statusChip(r)+
     '<button class="btn sm" data-act="print" data-id="'+r.id+'">인쇄</button>'+
     '</div>'+
@@ -1093,8 +1386,8 @@ function toolPanel(r, ro){
 
   return '<div class="tool'+(ro?' ro':'')+'">'+
     '<div class="th"><b>문단 편집</b> '+
-      '<span style="font-size:11px;color:var(--pgray);">rev.'+revOf(r.id)+' · 강사 수정 '+edits+'/'+r.blocks.length+'</span>'+
-      '<div style="font-size:11px;color:var(--sub);margin-top:4px;line-height:1.6;">'+
+      '<span class="meta-copy">rev.'+revOf(r.id)+' · 강사 수정 '+edits+'/'+r.blocks.length+'</span>'+
+      '<div class="tool-note">'+
         (ro ? '읽기 전용입니다.' : '왼쪽 지면의 문단을 눌러 <b>그 자리에서 직접</b> 고칩니다.')+'</div></div>'+
     '<div class="tb">'+
 
@@ -1104,7 +1397,7 @@ function toolPanel(r, ro){
       r.blocks.map(b=>
         '<div class="rev'+(isEdited(b)?' tchrev':'')+(S.blockSeq===b.seq?' cur':'')+'" data-act="goto-block" data-seq="'+b.seq+'">'+
         '<span class="no">'+b.seq+'</span><div>'+(b.chart?CHART[b.chart]:BLOCK_KO[b.type])+
-        '<div style="font-size:10px;color:'+(isEdited(b)?'var(--tch)':'var(--pgray)')+';font-weight:700;">'+
+        '<div class="caption-copy '+(isEdited(b)?'owner-teacher':'')+'">'+
         (isEdited(b)?'강사 작성':'AI 해설')+'</div></div>'+
         (isEdited(b)?'<span class="tail"><button class="btn sm" data-act="restore" data-seq="'+b.seq+'">AI 원문</button></span>':'')+
         '</div>').join('')+
@@ -1113,30 +1406,30 @@ function toolPanel(r, ro){
     '<div class="verd warn"><b>강사가 쓴 문장은 검사를 거치지 않습니다.</b> AI 해설은 문장 속 수치를 확정 수치와 전수 대조하지만, '+
       '직접 수정분은 <code>draft_edit</code> 로 기록될 뿐이라 <b>차트와 어긋나도 막아 주지 않습니다</b>.</div>'+
 
-    '<details class="sec" style="margin-top:14px;"><summary style="padding:9px 0;">🤖 AI 에게 다시 쓰게 하기 (보조)</summary>'+
-      '<div style="padding-top:6px;">'+
+    '<details class="sec mt-xl"><summary class="refine-summary">🤖 AI 에게 다시 쓰게 하기 (보조)</summary>'+
+      '<div class="mt-sm">'+
       '<div class="scope">'+
         '<button class="'+(S.scope==='whole'?'on':'')+'" data-act="scope" data-s="whole">전체</button>'+
         '<button class="'+(S.scope==='block'?'on':'')+'" data-act="scope" data-s="block">선택 문단</button>'+
       '</div>'+
-      '<div class="presets" style="margin-bottom:8px;">'+
+      '<div class="presets presets-spaced">'+
         '<button data-act="preset" data-p="softer">부드럽게<small>softer</small></button>'+
         '<button data-act="preset" data-p="conclusion_first">결론 먼저<small>conclusion_first</small></button>'+
         '<button data-act="preset" data-p="shorter">짧게<small>shorter</small></button>'+
       '</div>'+
       '<textarea class="instr" id="instr" placeholder="예) 마지막 문단을 두 문장으로 줄여줘"></textarea>'+
-      '<div style="display:flex;gap:6px;margin-top:7px;">'+
+      '<div class="action-row">'+
         '<button class="btn sm" data-act="try" data-t="반 평균이랑 비교해서 써줘">차단 예시</button>'+
-        '<button class="btn pri sm" style="margin-left:auto;" data-act="refine">다듬기 실행</button>'+
+        '<button class="btn pri sm push" data-act="refine">다듬기 실행</button>'+
       '</div>'+
-      '<div style="font-size:10.5px;color:var(--pgray);margin-top:7px;line-height:1.7;">'+
+      '<div class="refine-note">'+
         '🔴 <b>강사가 고친 문단을 AI 로 다시 쓰면 수정분이 덮입니다</b> — 되돌리기는 AI 원문으로만 갑니다.</div>'+
-      '<div style="margin-top:12px;"><h4 style="font-size:11.5px;color:var(--sub);font-weight:700;margin-bottom:7px;">이력 · 롤백</h4>'+
+      '<div class="mt-lg"><h4 class="section-heading">이력 · 롤백</h4>'+
         log.slice().reverse().map((t,i)=>revLine(t, i===0)).join('')+'</div>'+
       '</div></details>'+
 
     '</div>'+
-    '<div class="tf" id="refineResult"><div style="font-size:11px;color:var(--pgray);text-align:center;">'+
+    '<div class="tf" id="refineResult"><div class="refine-foot">'+
       (ro?'읽기 전용':'문단을 고치거나 다듬기를 실행하면 결과가 여기에 표시됩니다')+'</div></div>'+
     '</div>';
 }
@@ -1146,9 +1439,9 @@ function selBlockHtml(cur){
   const edited = isEdited(cur);
   return '<div class="box"><b>'+(cur.chart?CHART[cur.chart]:BLOCK_KO[cur.type])+'</b>'+
     '<div class="r"><span>seq · block_type</span><b>'+cur.seq+' · '+cur.type+'</b></div>'+
-    '<div class="r"><span>작성 주체</span><b style="color:'+(edited?'var(--tch)':'var(--ai)')+'">'+
+    '<div class="r"><span>작성 주체</span><b class="'+(edited?'owner-teacher':'owner-ai')+'">'+
       (edited?'강사 (draft_edit)':'AI (게이트 통과분)')+'</b></div>'+
-    (edited ? '<div style="margin-top:7px;"><button class="btn sm" data-act="restore" data-seq="'+cur.seq+'">AI 원문으로 되돌리기</button></div>' : '')+
+    (edited ? '<div class="mt-md"><button class="btn sm" data-act="restore" data-seq="'+cur.seq+'">AI 원문으로 되돌리기</button></div>' : '')+
     '</div>';
 }
 
@@ -1156,7 +1449,7 @@ function revLine(t, isLast){
   if(t.kind==='blocked'){
     const b = BLOCKED[t.reason];
     return '<div class="rev blocked"><span class="no">✕</span><div>'+esc(t.text)+
-      '<div style="color:var(--no);font-weight:700;margin-top:2px;">차단 · '+b.n+' <code style="font-family:var(--mono);font-size:10px;">'+t.reason+'</code></div></div></div>';
+      '<div class="blocked-copy">차단 · '+b.n+' <code class="mono-copy">'+t.reason+'</code></div></div></div>';
   }
   return '<div class="rev'+(isLast?' cur':'')+'"><span class="no">rev.'+t.rev+'</span><div>'+esc(t.text)+
     (t.preset?' <span class="chip b">'+t.preset+'</span>':'')+'</div>'+
@@ -1176,45 +1469,67 @@ function preCheck(text){
 const SEL = new Set();
 
 function viewSend(){
-  const list = REPORTS.filter(r=>!r.sent);
+  const source = S.ym.y===PERIOD.y && S.ym.m===PERIOD.m ? REPORTS : [];
+  const list = source.filter(r=>!r.sent);
   const ready = list.filter(sendable);
   const rows = list.map(r=>{
     const ok = sendable(r);
     return '<div class="srow'+(ok?'':' dis')+'" '+(ok?'data-act="open-drawer" data-id="'+r.id+'"':'')+'>'+
       '<span class="chk'+(SEL.has(r.id)?' on':'')+(ok?'':' dis')+'" '+(ok?'data-act="toggle" data-id="'+r.id+'"':'')+'></span>'+
-      '<div class="grow"><div style="font-weight:700;">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+
+      '<span class="report-avatar">'+r.nm.charAt(0)+'</span>'+
+      '<div class="grow"><div class="row-title">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+
         ' <span class="chip '+(r.kind==='report'?'a':'t')+'">'+(r.kind==='report'?'월별 일괄':'단건 수시')+'</span></div>'+
-        '<div style="font-size:10.5px;color:var(--pgray);font-family:var(--mono);margin-top:2px;">'+r.alias+' · '+r.id+' · '+r.cls+'</div>'+
-        (ok?'':'<div style="font-size:11px;color:var(--no);margin-top:3px;">'+esc(r.why)+'</div>')+
+        '<div class="row-id">'+r.alias+' · '+r.id+' · '+r.cls+'</div>'+
+        (ok?'':'<div class="row-error">'+esc(r.why)+'</div>')+
       '</div>'+
       '<div class="tail">'+statusChip(r)+
-        (ok?'<div style="font-size:11px;color:var(--sub);margin-top:3px;">정답률 <b>'+pc(r.acc)+'%</b> · 백분위 <b>'+r.pct+'</b> · rev.'+revOf(r.id)+'</div>'
-           :'<div style="font-size:11px;color:var(--pgray);margin-top:3px;">보낼 본문이 없습니다</div>')+
-      '</div></div>';
+        (ok?'<div class="row-stat">정답률 <b>'+pc(r.acc)+'%</b> · 백분위 <b>'+r.pct+'</b> · rev.'+revOf(r.id)+'</div>'
+           :'<div class="row-empty">보낼 본문이 없습니다</div>')+
+      '</div><span class="meta-copy">›</span></div>';
   }).join('');
+  const rowBody=rows || '<div class="service-empty"><div class="icon">✓</div><b>발송할 리포트가 없습니다.</b>'+
+    '<p>'+(source.length?'이 달의 리포트가 모두 발송됐습니다.':'리포트가 생성된 달을 선택해 주세요.')+'</p></div>';
 
-  return '<div class="pgttl">리포트 발송</div>'+
-  '<div class="pgsub">이번 달 생성분 중 <b>아직 보내지 않은 리포트</b>입니다. 행을 누르면 실제 지면을 확인할 수 있고, 체크한 것만 일괄 발송합니다.<br>'+
-  '<span class="red">본문이 없는 리포트는 체크할 수 없습니다</span> — 데이터 부족·생성 실패는 보낼 내용 자체가 없습니다.</div>'+
+  return '<div class="studio-hero"><div><div class="eyebrow">CHECKON REPORT DELIVERY</div><h2>학부모에게 보낼 리포트</h2>'+
+  '<p>실제 PDF 지면을 확인하고, 검토가 끝난 리포트만 선택해 발송합니다.</p></div>'+
+  '<div class="hero-stat"><div><b>'+ready.length+'</b><span>발송 가능</span></div><div><b>'+list.length+'</b><span>미발송</span></div></div></div>'+
 
-  '<div class="panel">'+
-    '<div class="filters" style="border-bottom:1px solid var(--line);">'+
+  '<div class="delivery-overview"><div class="card"><span>발송 가능</span><b>'+ready.length+'건</b></div>'+
+    '<div class="card"><span>현재 선택</span><b>'+SEL.size+'건</b></div>'+
+    '<div class="card"><span>발송 제외</span><b>'+(list.length-ready.length)+'건</b></div></div>'+
+  '<div class="delivery-checks"><div><b>✓ 학부모용 데이터</b>teacher_only 제외</div>'+
+    '<div><b>✓ 게이트 통과</b>ready만 선택 가능</div><div><b>✓ PDF 8쪽</b>A4 오버플로 0</div>'+
+    '<div><b>✓ 발송 후 잠금</b>읽기 전용 전환</div></div>'+
+
+  '<div class="report-cards">'+
+    '<div class="filters filter-edge">'+
       '<span class="chk'+(ready.length && ready.every(r=>SEL.has(r.id))?' on':'')+'" data-act="all"></span>'+
-      '<span style="font-size:12px;font-weight:700;">보낼 수 있는 '+ready.length+'건 전체 선택</span>'+
-      '<span style="margin-left:auto;font-size:11.5px;color:var(--sub);">'+ymLabel(S.ym.y,S.ym.m)+' · 미발송 '+list.length+'건</span>'+
+      '<span class="selection-title">보낼 수 있는 '+ready.length+'건 전체 선택</span>'+
+      '<span class="selection-meta">'+ymLabel(S.ym.y,S.ym.m)+' · 미발송 '+list.length+'건</span>'+
     '</div>'+
-    rows+
+    rowBody+
   '</div>'+
 
   '<div class="sendbar">'+
-    '<div><b style="font-size:14px;">'+SEL.size+'건</b> <span style="color:var(--sub);font-size:12px;">선택됨</span>'+
-      '<div style="font-size:11px;color:var(--pgray);margin-top:2px;">발송하면 해당 리포트는 <b>읽기 전용</b>이 됩니다</div></div>'+
-    '<span style="margin-left:auto;"></span>'+
+    '<div><b class="send-count">'+SEL.size+'건</b> <span class="send-label">선택됨</span>'+
+      '<div class="send-note">발송하면 해당 리포트는 <b>읽기 전용</b>이 됩니다</div></div>'+
+    '<span class="push"></span>'+
     '<button class="btn" data-act="view" data-v="list">목록으로</button>'+
     '<button class="btn pri'+(SEL.size?'':' off')+'" data-act="bulk">선택한 '+SEL.size+'건 일괄 발송</button>'+
   '</div>'+
-  '<div class="note">⚠ 발송은 강사 확인(HITL)을 거칩니다 — AI 가 자동으로 내보내는 경로는 없습니다.</div>'+
-  contractPanel();
+  '<div class="note">발송 전 최종 PDF와 대상을 확인해 주세요. 발송 완료 후에는 읽기 전용으로 전환됩니다.</div>'+
+  sendConfirmHtml();
+}
+
+function sendConfirmHtml(){
+  if(!S.pendingSend.length) return '';
+  const reports=S.pendingSend.map(byId).filter(Boolean);
+  return '<div class="send-confirm" role="dialog" aria-modal="true" aria-label="리포트 발송 확인"><div class="modal">'+
+    '<h3>'+reports.length+'건을 발송할까요?</h3><p>발송 대기열에 등록되면 이 리포트는 수정할 수 없습니다. 학부모에게 보이는 최종 PDF를 다시 확인해 주세요.</p>'+
+    '<div class="summary"><b>대상</b> · '+reports.map(r=>r.nm).join(' · ')+'<br><b>문서</b> · 학부모용 8쪽 PDF<br>'+
+    '<b>처리</b> · BE 발송 대기열 등록 후 읽기 전용</div><div class="actions">'+
+    '<button class="btn" data-act="cancel-send">취소</button><button class="btn pri" data-act="confirm-send">확인하고 발송</button>'+
+    '</div></div></div>';
 }
 
 function openDrawer(id){
@@ -1227,65 +1542,15 @@ function openDrawer(id){
     '<div class="line"><span>전국 백분위</span><b>포함</b></div>'+
     '<div class="line"><span>반 평균 · 석차</span><b>미포함 (teacher_only)</b></div>'+
     '<div class="line"><span>위험 신호 · 경보</span><b>미포함 — 상담으로 전달</b></div></div>'+
-    '<div style="display:flex;gap:7px;margin-top:9px;">'+
+    '<div class="drawer-actions">'+
       '<button class="btn" data-act="open-edit" data-id="'+id+'">수정 화면으로</button>'+
-      '<button class="btn pri" style="flex:1;" data-act="send-one" data-id="'+id+'">이 리포트 발송</button>'+
+      '<button class="btn pri drawer-send" data-act="send-one" data-id="'+id+'">이 리포트 발송</button>'+
     '</div>';
   document.getElementById('drawer').classList.add('open');
 }
 function closeDrawer(){ document.getElementById('drawer').classList.remove('open'); S.drawerId=null; }
 
-/* ── 10. 데이터 계약 (소유만) ───────────────────────────────────── */
-function contractPanel(){
-  const row = (el,val,own,note) => '<tr><td><b>'+el+'</b></td><td>'+val+'</td><td>'+own+'</td><td>'+note+'</td></tr>';
-  return '<div class="panel"><details><summary>\u{1F4C4} 이 화면의 데이터 계약 — 소유 구분 (펼치기)</summary>'+
-  '<div style="padding:0 16px 16px;"><table class="ctr">'+
-  '<tr><th style="width:19%;">화면 요소</th><th style="width:29%;">값</th><th style="width:9%;">소유</th><th>비고</th></tr>'+
-  row('리포트 상태','<code>generated</code>·<code>rejected_insufficient</code>·<code>failed</code>','<span class="own ai">AI</span>',
-      '<span class="red">\u{1F534} <code>rejected_insufficient</code> 는 정상 상태입니다</span> — 빨강으로 그리면 강사가 재시도를 누릅니다. 재시도해도 같습니다')+
-  row('발송 · 읽기 전용','발송 시각 · 승인 이력','<span class="own be">BE</span>',
-      '<span class="red">\u{1F534} AI 계약에 「발송」이 없습니다</span> — 승인·발송·학생 노출은 전부 BE(HITL) 소유입니다')+
-  row('영역','<code>AreaTag</code> 5종','<span class="own ai">AI</span>',
-      '<code>language</code>·<code>media</code>·<code>literature</code>·<code>reading</code>·<code>speech_writing</code> — 화법·작문은 한 값으로 합쳐졌습니다')+
-  row('유형','<code>TypeTag</code>','<span class="own ai">AI</span>',
-      'v1 산출 4종 + <code>apply</code>는 <b>예약값</b> — 라벨만 두고 산출하지 않습니다')+
-  row('칸 판정','<code>CellVerdict</code>','<span class="own ai">AI</span>',
-      '<code>weak</code>·<code>ok</code>·<code>unknown</code>. 기준은 반 평균이 아니라 <b>자기 평균과의 거리</b>이고 표본 '+MIN_N+'문항 미만은 판정하지 않습니다')+
-  row('차트 수치','<code>FEATURE_WEEK.metrics</code> · <code>benchmarks</code>','<span class="own be">BE</span>+<span class="own ai">AI</span>',
-      '<b>수치는 코드가 확정하고 LLM 은 해설 문장만</b> 씁니다. 문장 속 숫자는 확정 수치와 전수 대조됩니다')+
-  row('비교선(회색)','<code>Baseline.accuracy</code>·<code>volume</code>','<span class="own ai">AI</span>',
-      '<span class="red">🔴 전국 평균 정답률·학습량·난이도는 <code>benchmarks</code> 에 없습니다</span> — 들어오는 값은 '+
-      '<code>national_percentile</code> 과 <code>class_avg</code>(teacher_only) 둘뿐이라 <b>비교선은 개인 기준선</b>입니다')+
-  row('정답률 분모','<code>graded_count</code>','<span class="own ai">AI</span>',
-      '<b>푼 문항 수(<code>n_solves</code>)가 아니라 채점된 문항 수</b>입니다. 분모를 바꾸면 같은 정답률이 다른 표본으로 보입니다')+
-  row('출제 난이도','<code>DifficultyBand</code> low·medium·high','<span class="own ai">AI</span>',
-      '<span class="red">🔴 <code>LearningEvent</code> 에 난이도 필드가 없습니다</span> — 밴드는 <b>체크온이 출제한 문항에만</b> 붙습니다. '+
-      '학원 교재·모의고사 문항은 모수에서 빠지고, 코드로 밴드가 확정되는 것은 언어 영역뿐입니다')+
-  row('해설 블록','<code>BlockType</code>','<span class="own ai">AI</span>',
-      '<code>greeting</code>·<code>fact</code>·<code>suggestion</code>·<code>closing</code>. '+
-      '<span class="red">차트 해설(<code>chart_analysis</code>)은 문서상 제안 단계이고 코드 enum 에는 아직 없습니다</span>')+
-  row('문단 직접 수정','<code>/confirmations</code> · <code>kind: draft_edit</code>','<span class="own be">BE</span>+<span class="own ai">AI</span>',
-      '<span class="red">🔴 강사가 쓴 문장은 AI 산출물이 아니라 게이트 대상이 아닙니다</span> — 수치 대조도 안 걸리므로 '+
-      '차트와 어긋난 문장이 나갈 수 있고, 그 책임은 승인하는 강사에게 있습니다. 수정 diff 는 <b>문체 프로필의 재료</b>로 주간 배치가 수집합니다')+
-  row('다듬기','scope · preset 3종 · 자유 지시문','<span class="own ai">AI</span>',
-      '매 턴 게이트 전체 재통과. <b>차단도 200</b> 이고 <code>blocked_reason</code> 을 함께 돌려줍니다 — 5xx 가 아닙니다')+
-  row('차단 표시 문구','<code>blocked_reason</code>','<span class="own be">BE</span>',
-      'AI 는 코드만 주고 <b>사람이 읽을 문구는 BE 가 매핑</b>합니다. 이 화면의 문구는 예시입니다')+
-  row('반 평균 · 석차','<code>audience: teacher_only</code>','<span class="own ai">AI</span>',
-      '<span class="red">학부모 리포트의 프롬프트 조립 단계에서 구조적으로 제외</span>됩니다 — 화면에 그릴 데이터가 애초에 없습니다')+
-  row('전국 백분위','<code>national_percentile</code> + <code>as_of</code>','<span class="own be">BE</span>',
-      '출처·모수 확정 전이라 <b>「참고치」</b> 표기가 필요합니다. <b>단일 값이라 월별 추이가 안 나옵니다</b> — '+
-      '추이를 그리려면 매월 값을 쌓을 자리를 정해야 하는데 지금 계약엔 없습니다')+
-  row('리포트 종류','<code>DraftKind</code>','<span class="own ai">AI</span>',
-      '코드 enum 은 <code>reply</code>·<code>report</code>·<code>counsel_pack</code> 3종. '+
-      '<span class="red">API 계약의 <code>report_single</code> 은 코드에 아직 없습니다</span> — 화면은 그려 두되 미확정입니다')+
-  '</table>'+
-  '<div class="note" style="padding:12px 0 0;">\u{1F534} <b>이 표는 통신 규격이 아니라 소유 구분입니다.</b> 엔드포인트·페이로드는 화면 확정 후에 붙입니다 — '+
-  '지금 필요한 것은 <b>어느 값이 화면 마음대로 바뀔 수 없는 것인지</b>뿐입니다.</div>'+
-  '</div></details></div>';
-}
-
-/* ── 11. 렌더 · 이벤트 ──────────────────────────────────────────── */
+/* ── 10. 렌더 · 이벤트 ──────────────────────────────────────────── */
 function render(keepScroll){
   document.querySelectorAll('.nav .sub2').forEach(el=>{
     const v = el.getAttribute('data-v');
@@ -1294,6 +1559,7 @@ function render(keepScroll){
   const y = window.scrollY;
   const m = document.getElementById('main');
   m.innerHTML = S.view==='list' ? viewList() : S.view==='edit' ? viewEdit() : viewSend();
+  if(S.toast) m.insertAdjacentHTML('beforeend','<div class="toast" role="status">'+esc(S.toast)+'</div>');
   window.scrollTo({top: keepScroll ? y : 0});
   markOverflow();
 }
@@ -1343,14 +1609,20 @@ document.addEventListener('focusout', e=>{
   showRefine('<div class="verd warn">✏️ <b>강사 작성으로 바뀌었습니다 — seq '+b.seq+'</b>'+
     '<div class="line"><span>기록</span><b>/confirmations · <code>kind: draft_edit</code></b></div>'+
     '<div class="line"><span>검사</span><b>없음 — 게이트·수치 대조를 안 거칩니다</b></div>'+
-    '<div style="margin-top:5px;font-size:11px;">이 수정분은 문체 프로필(STYLE_PROFILE)의 재료로 주간 배치에서 수집됩니다.</div></div>');
+    '<div class="status-detail">이 수정분은 문체 프로필(STYLE_PROFILE)의 재료로 주간 배치에서 수집됩니다.</div></div>');
 });
 
 document.addEventListener('change', e=>{
-  const el = e.target.closest('[data-act="filter"]');
-  if(!el) return;
-  S.f[el.getAttribute('data-k')] = el.value;
-  render();
+  const filter = e.target.closest('[data-act="filter"]');
+  if(filter){ S.f[filter.getAttribute('data-k')] = filter.value; S.page=1; render(); return; }
+  const sort = e.target.closest('[data-act="sort"]');
+  if(sort){ S.sort=sort.value; S.page=1; render(); }
+});
+
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Enter' || e.target.id!=='reportSearch') return;
+  e.preventDefault();
+  S.q=e.target.value.trim(); S.page=1; render();
 });
 
 document.addEventListener('click', e=>{
@@ -1368,11 +1640,22 @@ document.addEventListener('click', e=>{
       else { let m2 = S.ym.m + d, y2 = S.ym.y;
              if(m2<1){ m2=12; y2--; } if(m2>12){ m2=1; y2++; }
              S.ym = {y:y2, m:m2}; }
-      render(); break;
+      S.page=1; render(); break;
     }
 
     case 'reset':
-      S.f = {cls:'all', status:'all', kind:'all'}; render(); break;
+      S.f = {cls:'all', status:'all', kind:'all'}; S.q=''; S.sort='updated_desc'; S.page=1; render(); break;
+
+    case 'apply-search': {
+      const input=document.getElementById('reportSearch');
+      S.q=input?input.value.trim():''; S.page=1; render(); break;
+    }
+
+    case 'page': {
+      const next=+el.getAttribute('data-page');
+      if(next<1) return;
+      S.page=next; render(); break;
+    }
 
     case 'open-edit':
       S.openId = id; S.view='edit'; S.blockSeq=null; S.scope='whole'; closeDrawer(); render(); break;
@@ -1448,11 +1731,20 @@ document.addEventListener('click', e=>{
     case 'bulk': {
       const ids = act==='send-one' ? [id] : [...SEL];
       if(!ids.length) return;
+      S.pendingSend=ids; closeDrawer(); render();
+      break;
+    }
+
+    case 'cancel-send':
+      S.pendingSend=[]; render(); break;
+
+    case 'confirm-send': {
+      const ids=S.pendingSend.slice();
       ids.forEach(x=>{ const r=byId(x); r.sent=true; r.sentAt='2026.09.01 10:04'; SEL.delete(x); });
-      closeDrawer(); render();
-      alert(ids.length+'건을 발송 대기열에 올렸습니다 (와이어프레임 — 실제 전송 없음).\n\n'+
-            '\u{1F534} 발송은 BE(HITL) 소유입니다 — AI 계약에 발송 엔드포인트가 없습니다.\n'+
-            '발송된 리포트는 읽기 전용으로 바뀝니다.');
+      S.pendingSend=[];
+      S.toast=ids.length+'건을 발송 대기열에 등록했습니다. 발송된 리포트는 읽기 전용입니다.';
+      render();
+      setTimeout(()=>{ const toast=document.querySelector('.toast'); if(toast) toast.remove(); S.toast=null; },3200);
       break;
     }
   }
@@ -1472,7 +1764,7 @@ function applyRefine(r, turn){
     log.push({rev:revOf(r.id), kind:'blocked', text:turn.text, reason});
     render(true);
     showRefine('<div class="verd no">\u{1F534} <b>'+b.n+' — 반영하지 않았습니다.</b>'+
-      '<div style="margin-top:5px;">'+b.msg+'</div>'+
+      '<div class="mt-sm">'+b.msg+'</div>'+
       '<div class="line"><span>응답</span><b>200 + <code>blocked_reason: '+reason+'</code></b></div>'+
       '<div class="line"><span>LLM 호출</span><b>'+(b.pre?'없음 — 사전 정적 검사':'있음 — 생성 후 게이트')+'</b></div>'+
       '</div>');
@@ -1492,9 +1784,9 @@ function applyRefine(r, turn){
     '<div class="line"><span>범위</span><b>'+(S.scope==='whole'?'전체':'선택 문단')+'</b></div>'+
     '<div class="line"><span>게이트</span><b>Evidence → SourceGrounding → ToneSafety 전부 재통과</b></div>'+
     (overwritten.length
-      ? '<div class="line"><span>덮어쓴 강사 수정</span><b style="color:var(--tch);">'+overwritten.length+'문단</b></div>'
+      ? '<div class="line"><span>덮어쓴 강사 수정</span><b class="teacher-copy">'+overwritten.length+'문단</b></div>'
       : '')+
-    '<div style="margin-top:5px;font-size:11px;">⚠ 와이어프레임이라 본문은 그대로입니다 — 실제로는 직전 본문 위에 지시가 <b>누적</b>됩니다.</div>'+
+    '<div class="status-detail">⚠ 와이어프레임이라 본문은 그대로입니다 — 실제로는 직전 본문 위에 지시가 <b>누적</b>됩니다.</div>'+
     '</div>');
 }
 

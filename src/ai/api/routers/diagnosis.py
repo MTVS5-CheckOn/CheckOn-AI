@@ -24,6 +24,11 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ai.api.envelope import success_envelope
+from ai.api.routers.diagnosis_openapi import (
+    DIAGNOSIS_OPERATION_ID,
+    DIAGNOSIS_SUMMARY,
+    DIAGNOSIS_TAG,
+)
 from ai.api.version_scope import RouterScope
 from ai.contracts.diagnosis import (
     CellVerdict,
@@ -221,7 +226,12 @@ def _response_data(result: DiagnosisResult, *, cell_min_items: int) -> dict[str,
     }
 
 
-@router.post(_ENDPOINT)
+@router.post(
+    _ENDPOINT,
+    tags=[DIAGNOSIS_TAG],
+    operation_id=DIAGNOSIS_OPERATION_ID,
+    summary=DIAGNOSIS_SUMMARY,
+)
 async def post_diagnosis(request: Request) -> dict[str, Any]:
     """학생 1명의 약점 지도를 계산한다 — 헤더·바디 검증 → 멱등 → 결정론 판정 → 원장."""
 

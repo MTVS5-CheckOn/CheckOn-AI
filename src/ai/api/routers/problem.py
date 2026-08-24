@@ -17,6 +17,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ai.agents.supervisor import Supervisor, system_utc_now
 from ai.api.envelope import success_envelope
+from ai.api.routers.problem_openapi import (
+    PROBLEM_ITEM_OPERATION_ID,
+    PROBLEM_ITEM_REVISION_OPERATION_ID,
+    PROBLEM_ITEM_REVISION_SUMMARY,
+    PROBLEM_ITEM_SUMMARY,
+    PROBLEM_ITEMS_OPERATION_ID,
+    PROBLEM_ITEMS_SUMMARY,
+    PROBLEM_JOB_OPERATION_ID,
+    PROBLEM_JOB_SUMMARY,
+    PROBLEMS_OPERATION_ID,
+    PROBLEMS_SUMMARY,
+    PROBLEMS_TAG,
+)
 from ai.api.version_scope import RouterScope
 from ai.contracts.agents import TERMINAL_PHASES, JobPhase, WorkerJob
 from ai.contracts.diagnosis import DiagnosisResult
@@ -527,7 +540,13 @@ async def _run_next_for_tenant(tenant_id: str) -> WorkerJob | None:
         return await runner.run_next(tenant_id=tenant_id)
 
 
-@router.post("/v1/problems", status_code=202)
+@router.post(
+    "/v1/problems",
+    status_code=202,
+    tags=[PROBLEMS_TAG],
+    operation_id=PROBLEMS_OPERATION_ID,
+    summary=PROBLEMS_SUMMARY,
+)
 async def post_problem(request: Request, response: Response) -> dict[str, Any]:
     """문제 세트 생성 잡을 넣고 최초·재반환 모두 202를 돌려준다."""
 
@@ -591,7 +610,12 @@ async def post_problem(request: Request, response: Response) -> dict[str, Any]:
     return envelope
 
 
-@router.get("/v1/problems/{job_id}")
+@router.get(
+    "/v1/problems/{job_id}",
+    tags=[PROBLEMS_TAG],
+    operation_id=PROBLEM_JOB_OPERATION_ID,
+    summary=PROBLEM_JOB_SUMMARY,
+)
 async def get_problem(
     job_id: str, request: Request, response: Response
 ) -> dict[str, Any]:
@@ -800,7 +824,12 @@ async def _revision_no(
     return await _item_store_for(tenant_id).current_revision_no(set_id, slot_index)
 
 
-@router.get("/v1/problems/{set_id}/items")
+@router.get(
+    "/v1/problems/{set_id}/items",
+    tags=[PROBLEMS_TAG],
+    operation_id=PROBLEM_ITEMS_OPERATION_ID,
+    summary=PROBLEM_ITEMS_SUMMARY,
+)
 async def get_problem_items(set_id: str, request: Request) -> dict[str, Any]:
     """Step3 검토 목록을 상태 카운터와 함께 반환한다."""
 
@@ -850,7 +879,12 @@ async def get_problem_items(set_id: str, request: Request) -> dict[str, Any]:
     )
 
 
-@router.get("/v1/problems/{set_id}/items/{slot_index}")
+@router.get(
+    "/v1/problems/{set_id}/items/{slot_index}",
+    tags=[PROBLEMS_TAG],
+    operation_id=PROBLEM_ITEM_OPERATION_ID,
+    summary=PROBLEM_ITEM_SUMMARY,
+)
 async def get_problem_item(
     set_id: str, slot_index: int, request: Request
 ) -> dict[str, Any]:
@@ -989,7 +1023,12 @@ async def get_problem_item(
     )
 
 
-@router.post("/v1/problems/{set_id}/items/{slot_index}/revisions")
+@router.post(
+    "/v1/problems/{set_id}/items/{slot_index}/revisions",
+    tags=[PROBLEMS_TAG],
+    operation_id=PROBLEM_ITEM_REVISION_OPERATION_ID,
+    summary=PROBLEM_ITEM_REVISION_SUMMARY,
+)
 async def post_problem_item_revision(
     set_id: str, slot_index: int, request: Request
 ) -> dict[str, Any]:
