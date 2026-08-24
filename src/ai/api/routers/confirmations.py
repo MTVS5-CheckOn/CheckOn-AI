@@ -157,7 +157,7 @@ _LABEL_AXIS_VALUES: Final = {
 }
 
 
-def _accept_label(
+async def _accept_label(
     confirmation: ConfirmationRequest, *, tenant_id: str
 ) -> dict[str, Any]:
     """🔴 `kind=label` 확정을 **받는다** — 🔴 **개별 확정을 영속하지 않는다**(№92 판정).
@@ -244,7 +244,7 @@ def _accept_label(
     #: 🔴 **`tenant_id` 로 안 가른다** — «가르면 무엇이 좋아지나» 를 못 적었고, 테넌트가
     #: 적으면 **그 자체가 식별 축**이 된다(#233 이 그 얘기였다).
     #: 🔴 **`guardian_ref` 는 카운터 키에도 안 들어간다** — №92 판정의 전부다.
-    label_confirmation_store().add(
+    await label_confirmation_store().add(
         (
             axis,
             suggested,
@@ -288,7 +288,7 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
         ) from exc
 
     if confirmation.kind is ConfirmationKind.LABEL:
-        return _accept_label(confirmation, tenant_id=tenant_id)
+        return await _accept_label(confirmation, tenant_id=tenant_id)
 
     if confirmation.kind is not ConfirmationKind.CLASSIFICATION:
         # 🔴 조용히 버리지 않는다 — 제안 생성기가 없어 확정할 대상이 없다.

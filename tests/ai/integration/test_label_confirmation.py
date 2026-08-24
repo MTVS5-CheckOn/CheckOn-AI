@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Final
 
 import pytest
+from awaiting_label_store import AwaitingLabelConfirmationStore
 from fastapi.testclient import TestClient
 from httpx import Response
 
@@ -19,6 +21,7 @@ from ai.api.app import create_app
 from ai.api.routers.confirmations import (
     label_confirmation_store,
     reset_label_confirmations,
+    set_label_confirmation_store,
 )
 
 
@@ -31,7 +34,9 @@ def _counts() -> dict[tuple[str, str, str, str], int]:
     🔴 그래서 이건 «인터페이스가 틀렸다» 가 아니라 «검사가 구현에 붙어 있었다» 다 —
     지금은 **PG 구현으로 갈아끼워도 이 검사들이 안 바뀐다.**
     """
-    return label_confirmation_store().snapshot()
+    #: 🔴 `snapshot()` 이 **`async`** 다(99 #241) — 갈아끼울 것이 PG 라 그래야 한다.
+    #: ⚠ 검사는 동기라 여기서 한 번만 돌린다 — **단언 내용은 안 바뀐다.**
+    return asyncio.run(label_confirmation_store().snapshot())
 
 _HEADERS = {"X-Tenant-Id": "t_lc", "X-Request-Id": "r_lc"}
 
@@ -283,3 +288,25 @@ def test_a_rejected_400_is_not_counted(client: TestClient) -> None:
     ):
         assert _post(client, {"kind": "label", **bad}).status_code == 400
     assert sum(_counts().values()) == 0, _counts()
+
+
+def test_the_seam_survives_a_store_that_actually_awaits(
+    client: TestClient, request: pytest.FixtureRequest
+) -> None:
+    """🔴 **갈아끼울 대상(PG)과 같은 모양으로 갈아끼워도 안 바뀐다**(99 #241).
+
+    ⚠ 🔴 №98 의 뒤집기는 «빈 **인메모리** 구현» 이었다 — 🔴 **실제로 갈아끼울 것(PG)으로는
+    안 재봤다.** PG 는 `asyncpg` 를 타므로 `await` 가 **진짜로 도는** 구현이라야 이음매를
+    잰다. 이 검사가 그 자리다: 대역을 꽂고 **위 검사들과 같은 단언**을 그대로 돌린다.
+    """
+    set_label_confirmation_store(AwaitingLabelConfirmationStore())
+    request.addfinalizer(reset_label_confirmations)
+    for body in (
+        {"suggestion_id": "gd_1:comm:data", "action": "confirmed"},
+        {"suggestion_id": "gd_2:interest:grade", "action": "rejected"},
+    ):
+        assert _post(client, {"kind": "label", **body}).status_code == 200
+    #: 🔴 **단언이 위 검사들과 똑같다** — 읽는 방법도 안 바뀌었다.
+    assert _counts()[("comm", "data", "data", "confirmed")] == 1
+    assert _counts()[("interest", "grade", "grade", "rejected")] == 1
+    assert sum(_counts().values()) == 2

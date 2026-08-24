@@ -27,16 +27,29 @@ LabelConfirmationKey = tuple[str, str, str, str]
 class LabelConfirmationStore(Protocol):
     """라벨 확정 집계 — **더하고 읽는다.** 그 둘뿐이다."""
 
-    def add(self, key: LabelConfirmationKey) -> None:
-        """확정 하나를 집계에 더한다. 🔴 400 으로 거절된 것은 안 부른다."""
+    async def add(self, key: LabelConfirmationKey) -> None:
+        """확정 하나를 집계에 더한다. 🔴 400 으로 거절된 것은 안 부른다.
+
+        🔴 **`async` 다**(2026-08-25 · 99 #241) — 갈아끼울 것이 **PG(asyncpg)** 라
+        `async` 가 **아닐 수 없다.** ⚠ 종전 sync 였고, 그러면 승인 나는 순간
+        Protocol·라우터·검사가 **전부** 바뀐다 ⇒ «구현 하나 더하면 끝» 이 거짓이 된다.
+        🔴 선례가 전부 그렇다: `InquiryClassStore.apply_confirmation` · `run_store.record_run`
+        · `agent_job.add` — **저장소 계열은 예외 없이 `async def`** 다.
+        """
         ...
 
-    def snapshot(self) -> dict[LabelConfirmationKey, int]:
+    async def snapshot(self) -> dict[LabelConfirmationKey, int]:
         """지금까지의 집계 — 🔴 **읽는 쪽도 개인 참조를 못 담는다**(키가 넷뿐이다)."""
         ...
 
     def clear(self) -> None:
-        """비운다 — 검사 격리용(모듈 규약 · 99 #237)."""
+        """비운다 — 검사 격리용(모듈 규약 · 99 #237).
+
+        🔴 **여기만 sync 로 둔다.** 이유: 이건 **검사 격리 전용**이고 프로덕션 경로가
+        안 부른다 — `reset_*` 규약이 동기 픽스처에서 불린다(`reset_inquiry_class_store`
+        선례도 동기다). ⚠ PG 구현이 생기면 그 `clear` 는 **아무것도 안 하거나** 테스트
+        전용 truncate 가 되는데, 어느 쪽이든 **동기 자리에서 불린다.**
+        """
         ...
 
 
@@ -50,10 +63,10 @@ class InMemoryLabelConfirmationStore:
     def __init__(self) -> None:
         self._counts: Counter[LabelConfirmationKey] = Counter()
 
-    def add(self, key: LabelConfirmationKey) -> None:
+    async def add(self, key: LabelConfirmationKey) -> None:
         self._counts[key] += 1
 
-    def snapshot(self) -> dict[LabelConfirmationKey, int]:
+    async def snapshot(self) -> dict[LabelConfirmationKey, int]:
         return dict(self._counts)
 
     def clear(self) -> None:
