@@ -60,7 +60,8 @@ _A_OWNED_ROUTES: Final = [
 ]
 
 #: 🔴 **태그가 없어도 되는 자리** — «왜» 와 «언제 없어지나» 를 반드시 적는다.
-#: 실측(8/24 · `/openapi.json`): `default` 그룹에 **12개**가 있었고 A 소유는 셋뿐이었다.
+#: 실측(8/24 · `/openapi.json`): `default` 그룹에 **13개**가 있었고 A 소유는 셋뿐이었다
+#: ⇒ 이 회차 뒤 **10개**가 남는다(아래 목록과 같은 수여야 한다 — 그걸 다음 검사가 문다).
 _NOT_A_OWNED: Final = {
     # 왜: `/v1/diagnosis`·`/v1/problems*` 는 B(염준영) 소유 축이다 — 남의 라우터에
     #     `operationId` 를 붙이는 것은 그쪽 BE 메서드명을 우리가 정하는 것이다.
@@ -120,7 +121,7 @@ def test_a_owned_route_is_tagged_and_has_a_frozen_operation_id(
 def test_no_a_owned_route_falls_into_the_default_group() -> None:
     """🔴 **이 회차의 진짜 가드** — 새 A 라우터가 태그 없이 생기면 red.
 
-    ⚠ 🔴 **`default` 그룹 자체는 안 비어 있다** — B 소유 아홉이 남는다(실측 8/24).
+    ⚠ 🔴 **`default` 그룹 자체는 안 비어 있다** — B 소유 **열**이 남는다(실측 8/24).
     그건 결함이 아니라 **소유 경계**다: 남의 축에 `operationId` 를 붙이는 것은 그쪽
     BE 메서드명을 우리가 정하는 것이다(§C 로 전달했다).
     """
@@ -140,3 +141,19 @@ def test_the_exception_list_only_holds_routes_that_exist() -> None:
     """면제 목록이 **죽은 문자열**로 남지 않게 — 경로가 사라지면 여기서 red."""
     stale = _NOT_A_OWNED - set(_spec()["paths"])
     assert not stale, f"없어진 경로가 면제 목록에 남았다: {sorted(stale)}"
+
+
+def test_the_default_group_holds_exactly_the_excused_routes() -> None:
+    """🔴 **「몇 개가 남았나」를 수로 문다** — 보고에 적은 수가 실제와 갈리지 않게.
+
+    ⚠ 실측 8/24: 이 회차 **전 13 · 후 10**. 종전 보고 초안이 «12 → 9» 로 적었다가
+    갈렸다 — 🔴 **수를 손으로 세면 틀린다. 검사가 세게 한다**(로그 190).
+    """
+    untagged = {
+        path
+        for path, operations in _spec()["paths"].items()
+        for operation in operations.values()
+        if not operation.get("tags")
+    }
+    assert untagged == _NOT_A_OWNED, sorted(untagged ^ _NOT_A_OWNED)
+    assert len(untagged) == 10, sorted(untagged)
