@@ -60,25 +60,17 @@ _A_OWNED_ROUTES: Final = [
 ]
 
 #: 🔴 **태그가 없어도 되는 자리** — «왜» 와 «언제 없어지나» 를 반드시 적는다.
-#: 실측(8/24 · `/openapi.json`): `default` 그룹에 **13개**가 있었고 A 소유는 셋뿐이었다
-#: ⇒ 이 회차 뒤 **10개**가 남는다(아래 목록과 같은 수여야 한다 — 그걸 다음 검사가 문다).
-_NOT_A_OWNED: Final = {
-    # 왜: `/v1/diagnosis`·`/v1/problems*` 는 B(염준영) 소유 축이다 — 남의 라우터에
-    #     `operationId` 를 붙이는 것은 그쪽 BE 메서드명을 우리가 정하는 것이다.
-    # 언제: B 가 같은 처방을 하면 없어진다(전달함 — №74 §C).
-    "/v1/diagnosis",
-    "/v1/problems",
-    "/v1/problems/{job_id}",
-    "/v1/problems/{set_id}/items",
-    "/v1/problems/{set_id}/items/{slot_index}",
-    "/v1/problems/{set_id}/items/{slot_index}/revisions",
-    # 왜: `/v1/reports*` 도 B 소유(`report-0.1` · 99 #210 표기 판정 대기 8/24 회신).
-    # 언제: 그 회신이 오면 정해진다.
-    "/v1/reports",
-    "/v1/reports/{report_id}",
-    "/v1/reports/{report_id}/blocks/{block_id}",
-    "/v1/reports/{report_id}/blocks/{block_id}/restore",
-}
+#: ~~실측(8/24 · `/openapi.json`): `default` 그룹에 13개가 있었고 A 소유 셋을 고정한 뒤
+#: B 소유 열 경로가 남았다. 왜: `/v1/diagnosis`·`/v1/problems*`·`/v1/reports*`는 B 축이라
+#: A가 BE 메서드명을 대신 정하지 않는다. 언제: B가 같은 처방을 하면 없어진다(№74 §C).~~
+#: ~~`/v1/diagnosis` · `/v1/problems` · `/v1/problems/{job_id}` ·
+#: `/v1/problems/{set_id}/items` · `/v1/problems/{set_id}/items/{slot_index}` ·
+#: `/v1/problems/{set_id}/items/{slot_index}/revisions` · `/v1/reports` ·
+#: `/v1/reports/{report_id}` · `/v1/reports/{report_id}/blocks/{block_id}` ·
+#: `/v1/reports/{report_id}/blocks/{block_id}/restore`~~
+#: **해소(2026-08-24 · PR #402):** B가 같은 처방을 완료해 열 경로 전부가 태그를 받았다.
+#: A가 적어 둔 해소 계기가 발생한 자리이므로 활성 면제 집합은 비운다.
+_NOT_A_OWNED: Final[frozenset[str]] = frozenset()
 
 
 def _spec() -> dict[str, Any]:
@@ -156,4 +148,5 @@ def test_the_default_group_holds_exactly_the_excused_routes() -> None:
         if not operation.get("tags")
     }
     assert untagged == _NOT_A_OWNED, sorted(untagged ^ _NOT_A_OWNED)
-    assert len(untagged) == 10, sorted(untagged)
+    # 모든 A·B 경로가 도메인 태그를 받아 `default` 그룹이 완전히 비어야 한다.
+    assert len(untagged) == 0, sorted(untagged)
