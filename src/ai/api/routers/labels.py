@@ -36,7 +36,8 @@ from ai.composition.labels.provider import (
 from ai.composition.labels.versions import labels_versions
 from ai.contracts.execution import Capability, ExecutionContext
 from ai.contracts.labels import LabelSuggestRequest, LabelSuggestResponse
-from ai.runtime.errors import SnapshotInvalid
+from ai.contracts.llm import LlmError
+from ai.runtime.errors import SnapshotInvalid, domain_error_for
 
 logger = logging.getLogger(__name__)
 
@@ -122,12 +123,18 @@ async def post_labels_suggest(request: Request) -> dict[str, Any]:
     #: 층마다 자기 칸을 채우고, 안 불린 층은 `-` 로 남는다 ⇒ 종단 검사가 그 수를 본다.
     #: №66·№67·№71 이 연속으로 낸 「뒤집기 green」의 처방이 이것이다.
     counts = LabelLayerCounts()
-    raw = await label_suggest_provider().suggest(
-        guardian_ref=payload.guardian_ref,
-        history=payload.history,
-        context=context,
-        counts=counts,
-    )
+    try:
+        raw = await label_suggest_provider().suggest(
+            guardian_ref=payload.guardian_ref,
+            history=payload.history,
+            context=context,
+            counts=counts,
+        )
+    except LlmError as exc:
+        #: 전송 예산은 게이트웨이에서 이미 소진됐다. 라우터는 공용 매핑표만 적용한다.
+        #: `LabelHistoryUnusable`은 `DomainException` 계열이라 이 경계에 잡히지 않으며,
+        #: 마스킹 전량 차단의 500 INTERNAL·상세 미노출 계약도 그대로 유지된다.
+        raise domain_error_for(exc) from exc
     outcome = ground_suggestions(raw, history=payload.history, counts=counts)
     #: 🔴 **병합은 게이트 뒤다**(2026-08-24 · 99 #206). 앞에 두면 병합된 제안이 인용을
     #: 여럿 들고, 게이트가 «하나라도 실패하면 전체 드롭» 이라 **«근거 실존» 이 «근거 묶음

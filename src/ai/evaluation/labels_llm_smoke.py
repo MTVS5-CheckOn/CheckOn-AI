@@ -8,14 +8,15 @@
 **목적은 기능 추가가 아니라 실측이다.** 게이트·프롬프트는 스모크 통과를 위해 손대지
 않는다 — 걸리면 걸린 대로 보고한다.
 
-🔴 **재는 것 여섯**(순서가 곧 위험 순서다):
+🔴 **재는 것 일곱**(순서가 곧 위험 순서다):
     ① **파서 드롭** — 형식이 틀린 줄. 🔴 전부 드롭되면 `suggestions: []` 가 나가고
       04 는 그것을 «게이트가 전량 드롭» 으로 정의한다 ⇒ **500 도 400 도 안 나는데 비어 있다**
     ② 게이트 드롭 — 인용 실존에서 떨어진 수(id 날조 · 인용 변형)
-    ③ 최종 제안 수 · 축 분포
-    ④ 소요 — p50 · p95 · **max**(`call_timeouts.yaml` 은 `max` 없이 값을 안 넣는다 · №58)
-    ⑤ 이력 마스킹 제외 건수(99 #192 ⓑ · #193 계기)
-    ⑥ 재시도 · 실패
+    ③ 병합 감소 — 게이트 통과분과 라우터 최종 반환분의 차이
+    ④ 최종 제안 수 · 축 분포
+    ⑤ 소요 — p50 · p95 · **max**(`call_timeouts.yaml` 은 `max` 없이 값을 안 넣는다 · №58)
+    ⑥ 이력 마스킹 제외 건수(99 #192 ⓑ · #193 계기)
+    ⑦ 재시도 · 실패
 
 🔴 **본문·인용문은 수만 남긴다**(불변식 3 · 99 #80). 원장이 필요하면 `local_data/` 로
 (№58 선례 — 그 폴더는 추적되지 않는다).
@@ -182,10 +183,10 @@ async def _one(
         grounded=len(outcome.suggestions),
         merged=len(merged),
         dropped_history=len(dropped),
-        axes=tuple(s.label.axis for s in outcome.suggestions),
+        axes=tuple(s.label.axis for s in merged),
         parser_drops=counter.dropped,
         signature=tuple(
-            sorted((s.label.axis, s.label.value) for s in outcome.suggestions)
+            sorted((s.label.axis, s.label.value) for s in merged)
         ),
     )
 
@@ -208,7 +209,12 @@ def _report(totals: Totals) -> None:
     print(f"② 게이트 드롭 {parsed - grounded}  (파서 {parsed} → 게이트 {grounded})")
     #: 🔴 병합 감소 — 같은 `(축, 값)` 중복(99 #204)이 실물에서 얼마나 나오나.
     print(f"③ 병합 감소 {grounded - merged}  (게이트 {grounded} → 병합 {merged})")
-    print(f"④ 최종 제안 {merged} · 축 분포 {dict(Counter(a for r in ok for a in r.axes))}")
+    axes = Counter(a for r in ok for a in r.axes)
+    if sum(axes.values()) != merged:
+        raise AssertionError(
+            "축 분포가 최종 제안 수와 다르다 — Run.axes가 병합 전 객체를 읽었는지 확인하라"
+        )
+    print(f"④ 최종 제안 {merged} · 축 분포 {dict(axes)}")
     if ok:
         latencies = [r.latency_ms for r in ok]
         print(
