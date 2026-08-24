@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 from xml.etree import ElementTree
@@ -171,6 +172,20 @@ def require_postgres(database_url: str) -> None:
 _FAILURE_LOG_DIR: Final = _REPO_ROOT / "local_data"
 
 
+#: 🔴 이력 상한 — **모든 루프에 상한**(불변식 6). 파일이 무한히 자라지 않게 앞을 자른다.
+_FAILURE_LOG_MAX_LINES: Final = 200
+
+
+def _trim(text: str) -> str:
+    """상한을 넘으면 **앞을 자르되 무엇을 버렸는지 적는다**(조용히 버리지 않는다)."""
+    lines = text.splitlines(keepends=True)
+    if len(lines) <= _FAILURE_LOG_MAX_LINES:
+        return text
+    dropped = len(lines) - _FAILURE_LOG_MAX_LINES
+    kept = lines[-_FAILURE_LOG_MAX_LINES:]
+    return f"[…앞 {dropped}줄을 상한({_FAILURE_LOG_MAX_LINES}줄)으로 버렸다…]\n" + "".join(kept)
+
+
 def failed_test_ids(junit_path: Path) -> tuple[str, ...]:
     """junit XML 에서 **실패·오류 노드 이름**만 뽑는다(본문은 안 뽑는다)."""
     if not junit_path.exists():
@@ -209,10 +224,17 @@ def _record_failures(step: VerificationStep) -> Path | None:
         print("  🔴 실패 검사:", *names, sep="\n    ", flush=True)
         return None
     target = _FAILURE_LOG_DIR / "pre_pr_verify_failures.txt"
-    target.write_text(
-        f"[{step.label}] 실패 {len(names)}건\n" + "\n".join(names) + "\n",
-        encoding="utf-8",
+    #: 🔴 **누적한다 — 덮어쓰지 않는다**(2026-08-24 · 99 #224 보완).
+    #: 재현 안 되는 red 는 **여러 실행에 걸쳐** 나타나므로 한 파일을 덮으면
+    #: «두 번째와 세 번째가 같은 검사인가» 를 못 본다 — 그게 #224 의 계기를 못 재게 만든다.
+    #: ⚠ 🔴 시각은 **파일에만** 쓴다(저장소에 커밋 안 함 · `local_data/` 는 `.gitignore:52`).
+    stamp = datetime.now(UTC).astimezone().isoformat(timespec="seconds")
+    entry = (
+        f"[{stamp}] [{step.label}] 실패 {len(names)}건\n"
+        + "".join(f"  {name}\n" for name in names)
     )
+    previous = target.read_text(encoding="utf-8") if target.exists() else ""
+    target.write_text(_trim(previous + entry), encoding="utf-8")
     print("  🔴 실패 검사:", *names, sep="\n    ", flush=True)
     return target
 

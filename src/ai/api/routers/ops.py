@@ -1,5 +1,14 @@
 """운영 liveness·readiness·버전 조회 라우터."""
 
+#: 🔴 **[공통 계약 · 변경 시 양쪽 축 확인]** — A 셋(detect·classify·counsel)과
+#: B 둘(diagnosis·problem)을 **전부 읽는다.** 한 축이 고치면 반대 축이 깨진다.
+#: ⚠ 양자 승인 13목록에는 **없다** — 이 파일은 **읽기만** 하고 시그니처를 정하지 않는다.
+#:   `app.py`·`envelope.py` 와 달리 여기를 고쳐도 **상대 계약이 안 바뀐다** —
+#:   상대가 바뀌면 여기가 깨질 뿐이다. 그래서 양자 승인의 무게는 과하다.
+#: 🔴 «확인해라」가 말뿐이 되지 않게, 그 확인을 무는 검사를 적어 둔다:
+#:   `tests/ai/contract/test_meta_versions_cover_every_scope.py`
+#: 🔴 소유: 공통 (A·B) · 표기 확정 2026-08-24 (A 제안 ⓒ · B 수용)
+
 from __future__ import annotations
 
 import asyncio

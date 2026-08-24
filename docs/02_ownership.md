@@ -129,6 +129,11 @@ ai/
 │   ├── envelope.py                     [공통 계약]  공통 응답 조립(data·error·meta envelope) — 〃
 │   ├── version_scope.py                [박진희]★   실패 응답의 버전 스코프 — ⚠ **소비자가 A·B 둘**
 │   └── routers/                                    ← 라우터는 해당 capability 오너를 따름
+│       │  ⚠ 🔴 **`ops.py` 는 예외다(2026-08-24 · ⓒ 표기 · A 제안 · B 수용)** — 대응
+│       │    capability 가 없고 A 셋(detect·classify·counsel)·B 둘(diagnosis·problem)의
+│       │    버전 팩토리를 **전부 읽는다** ⇒ **공통 (A·B)**.
+│       │    🔴 양자 승인 13목록에는 **안 넣는다** — 읽기만 하고 시그니처를 안 정한다.
+│       │    확인을 무는 검사: `tests/ai/contract/test_meta_versions_cover_every_scope.py`
 │       └── detect.py                   [박진희]    감지 라우터 (POST /v1/detect)
 │
 
