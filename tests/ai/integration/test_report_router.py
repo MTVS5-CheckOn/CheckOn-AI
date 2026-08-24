@@ -9,16 +9,20 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from fake_provider import FakeProvider
 from fastapi.testclient import TestClient
 from httpx import Response
 
 from ai.api.app import create_app
 from ai.api.routers.report import (
     reset_report_clock,
+    reset_report_narrator,
     reset_report_store,
     set_report_clock,
+    set_report_narrator,
     set_report_store,
 )
+from ai.composition.briefing_gate import check_brief_gate
 from ai.contracts.diagnosis import (
     CellVerdict,
     DiagnosisEvent,
@@ -30,6 +34,8 @@ from ai.contracts.diagnosis import (
     WeaknessMap,
     WeaknessNode,
 )
+from ai.contracts.execution import ExecutionContext
+from ai.contracts.llm import ModelRole
 from ai.contracts.problem_generation import DifficultyBand, ItemResult, ProblemItemStatus
 from ai.contracts.report import (
     ReportAudience,
@@ -39,10 +45,19 @@ from ai.contracts.report import (
     ReportEvidenceRef,
     ReportMetricInput,
     ReportRevisionKind,
+    ReportStudioData,
     ReportUnproducedMetric,
 )
+from ai.contracts.report_narration import ReportNarrationDraft
 from ai.contracts.taxonomy import AreaTag, TypeTag
+from ai.llm.gateway import LlmGateway
 from ai.report.memory_store import InMemoryReportStore
+from ai.report.narration import (
+    ReportNarrationResult,
+    ReportNarrationSection,
+    ReportNarrationStatus,
+    ReportNarrator,
+)
 from ai.report.store import ReportSourceSnapshot, ReportTimeSeriesSnapshot, StoredReport
 from ai.report.vocabulary import (
     RootCauseMetricKind,
@@ -183,24 +198,172 @@ def _stored_report(
 def _isolate() -> Iterator[None]:
     reset_report_store()
     reset_report_clock()
+    reset_report_narrator()
     yield
     reset_report_store()
     reset_report_clock()
+    reset_report_narrator()
 
 
-def _client_with(report: StoredReport | None = None) -> TestClient:
+def _client_with(
+    report: StoredReport | None = None,
+    *,
+    narrator: ReportNarrator | _RejectedNarrator | None = None,
+) -> TestClient:
     store = InMemoryReportStore()
     if report is not None:
         asyncio.run(store.put(report))
     set_report_store(store)
     set_report_clock(lambda: LATER)
+    if narrator is not None:
+        set_report_narrator(narrator)
     return TestClient(create_app(), raise_server_exceptions=False)
+
+
+def _narrator(steps: tuple[str, ...]) -> tuple[ReportNarrator, FakeProvider]:
+    provider = FakeProvider(steps, name="fake-report-http")
+    gateway = LlmGateway(
+        {ModelRole.REPORTER: provider},
+        transport_retry={ModelRole.REPORTER: 0},
+    )
+    return (
+        ReportNarrator(
+            gateway,
+            text_gate=check_brief_gate,
+            clock=lambda: NOW,
+        ),
+        provider,
+    )
+
+
+def _draft(content: str) -> str:
+    return ReportNarrationDraft(content=content, numbers_used=()).model_dump_json()
+
+
+class _RejectedNarrator:
+    async def generate(
+        self,
+        studio_data: ReportStudioData,
+        *,
+        execution_context: ExecutionContext,
+        teacher_instruction: str | None = None,
+    ) -> ReportNarrationResult:
+        del studio_data, teacher_instruction
+        return ReportNarrationResult(
+            sections=tuple(
+                ReportNarrationSection(
+                    block_type=kind,
+                    status=ReportNarrationStatus.REJECTED_INSUFFICIENT,
+                    prompt_id=f"report.{kind.value}.v1",
+                    prompt_version="v1",
+                    attempts=0,
+                    reason="evidence_missing",
+                )
+                for kind in ReportBlockKind
+            ),
+            generated_at=NOW,
+            versions=execution_context.versions,
+        )
+
+
+def _create_body() -> dict[str, Any]:
+    report = _stored_report()
+    return {
+        "report_id": str(report.report_id),
+        "guardian_ref": report.guardian_ref,
+        "source": report.source.model_dump(mode="json"),
+    }
 
 
 def _data(response: Response) -> dict[str, Any]:  # noqa: ANN401 — HTTP JSON envelope
     body = response.json()
     data: dict[str, Any] = body["data"]
     return data
+
+
+# 생성: 정상·게이트 경계·근거 부재·tenant·헤더 실패
+def test_create_generates_five_blocks_and_get_serves_them() -> None:
+    narrator, provider = _narrator(
+        (
+            _draft("학습 기록을 함께 살펴보겠습니다."),
+            _draft("확인된 학습 사실을 정리했습니다."),
+            _draft("차트에서 확인된 흐름을 정리했습니다."),
+            _draft("취약한 내용을 차근차근 복습해 보세요."),
+            _draft("다음 기록에서도 변화를 살펴보겠습니다."),
+        )
+    )
+    with _client_with(narrator=narrator) as client:
+        created = client.post("/v1/reports", headers=HEADERS, json=_create_body())
+        fetched = client.get(f"/v1/reports/{REPORT_ID}", headers=HEADERS)
+
+    assert created.status_code == 200
+    assert _data(created)["status"] == "ready"
+    assert [item["status"] for item in _data(created)["sections"]] == ["ready"] * 5
+    assert fetched.status_code == 200
+    assert [block["block_type"] for block in _data(fetched)["blocks"]] == [
+        kind.value for kind in ReportBlockKind
+    ]
+    assert len(provider.requests) == 5
+    assert all("class_average" not in request.prompt for request in provider.requests)
+    assert all("teacher-metric" not in request.prompt for request in provider.requests)
+
+
+def test_create_returns_template_only_as_200_without_persisting_blocks() -> None:
+    rejected = _draft("이 내용은 문제아를 위한 기록입니다.")
+    narrator, provider = _narrator((rejected,) * 15)
+    with _client_with(narrator=narrator) as client:
+        created = client.post("/v1/reports", headers=HEADERS, json=_create_body())
+        fetched = client.get(f"/v1/reports/{REPORT_ID}", headers=HEADERS)
+
+    assert created.status_code == 200
+    assert _data(created)["status"] == "template_only"
+    assert _data(created)["blocks"] == []
+    assert {item["reason"] for item in _data(created)["sections"]} == {
+        "forbidden:문제아"
+    }
+    assert len(provider.requests) == 15
+    assert fetched.status_code == 404
+
+
+def test_create_returns_evidence_missing_as_200_without_calling_a_provider() -> None:
+    with _client_with(narrator=_RejectedNarrator()) as client:
+        response = client.post("/v1/reports", headers=HEADERS, json=_create_body())
+
+    assert response.status_code == 200
+    assert _data(response)["status"] == "rejected_insufficient"
+    assert {item["reason"] for item in _data(response)["sections"]} == {
+        "evidence_missing"
+    }
+    assert _data(response)["blocks"] == []
+
+
+def test_created_report_is_hidden_from_another_tenant() -> None:
+    narrator, _provider = _narrator((_draft("학습 기록을 정리했습니다."),) * 5)
+    with _client_with(narrator=narrator) as client:
+        created = client.post("/v1/reports", headers=HEADERS, json=_create_body())
+        hidden = client.get(
+            f"/v1/reports/{REPORT_ID}",
+            headers={"X-Tenant-Id": "tenant-b", "X-Request-Id": "request-b"},
+        )
+
+    assert created.status_code == 200
+    assert hidden.status_code == 404
+
+
+def test_create_rejects_missing_request_id_before_generation() -> None:
+    narrator, provider = _narrator((_draft("학습 기록을 정리했습니다."),) * 5)
+    with _client_with(narrator=narrator) as client:
+        response = client.post(
+            "/v1/reports",
+            headers={"X-Tenant-Id": "tenant-a"},
+            json=_create_body(),
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["detail"] == {
+        "missing_headers": ["X-Request-Id"]
+    }
+    assert not provider.requests
 
 
 # 목록: 정상·경계·실패
