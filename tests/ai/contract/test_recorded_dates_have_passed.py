@@ -108,7 +108,14 @@ def _parse_commit_stamp(raw: str) -> datetime.date:
 
 
 def _newest_commit_date() -> datetime.date:
-    """저장소의 최신 커밋 날짜 — 기준이다(`git log --date=short`가 정본)."""
+    """저장소의 최신 커밋 날짜 — 기준이다(`git log --date=short`가 정본).
+
+    🔴 **오늘 날짜를 적었으면 「커밋한 뒤에」 돌려라**(2026-08-25 · 99 #234).
+    기준이 **최신 커밋**이라, 오늘 날짜를 문서에 적고 **커밋 전에** 이 검사를 돌리면
+    기준이 아직 어제여서 red 다. 커밋하면 기준이 그날로 올라가 통과한다.
+    ⚠ 🔴 **가드의 결함이 아니라 「순서」다** — 로그 138·197(«뒤집기 시험은 커밋한 뒤에»)과
+    같은 뿌리다. `%ad`는 커밋한 사람의 **지역 시간대**로 찍히므로 이 가드는 **이미 KST** 다
+    (№92 가 «UTC 로 잰다» 고 적은 것은 틀렸다 — 로그 208)."""
     result = subprocess.run(
         ["git", "log", "-1", "--format=%ad", "--date=short"],
         cwd=_ROOT, capture_output=True, text=True, check=False,

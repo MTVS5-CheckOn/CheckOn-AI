@@ -462,6 +462,7 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 {
   "kind": "tag",                        // tag | label | classification | draft_edit
   "suggestion_id": "uuid",              // 제안 API가 반환했던 ID
+                                        // 🔴 `kind=label` 이면 **`guardian_ref:axis:value`** 다(99 #235)
   "action": "corrected",                // confirmed | rejected | corrected
   "corrected_value": {                  // corrected일 때만 — 강사가 고친 최종값
     "area_tag": "language",             // 수능 6영역 enum (Open-11 확정 7/15)
@@ -696,7 +697,10 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 {
   "data": {
     "suggestions": [{
-      "suggestion_id": "uuid", "guardian_ref": "gd_11b0",
+      // 🔴 **`guardian_ref:axis:value`**(2026-08-25 · 99 #235) — 강사가 확정
+      //    (`POST /v1/confirmations`)에 **그대로** 보내는 키다. UUID 였을 때는
+      //    확정 라우터가 못 읽어 **400** 이었다(확정 경로가 서 있는데 못 밟았다).
+      "suggestion_id": "gd_11b0:comm:data", "guardian_ref": "gd_11b0",
       // 🔴 **왜 중첩인가** — `LabelSuggestion(axis, value)` 은 **재사용 모델**이고
       //    `SuggestedLabel` 이 그것을 **품어서** 쓴다. 4축 값의 정의를 **한 곳**에 두려는
       //    것이다(`contracts/counsel.py` 의 `LabelSuggestion` docstring). 평평하게 펴면

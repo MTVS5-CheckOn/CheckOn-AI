@@ -15,8 +15,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
-from uuid import UUID
+from typing import Annotated, Final
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -89,6 +88,24 @@ class EvidenceQuote(BaseModel):
     quote: NonEmptyStr
 
 
+#: 🔴 `suggestion_id` 형식 — `guardian_ref:axis:value`(99 #235).
+#: ⚠ 🔴 축·값을 **열거형 그대로** 박는다 — «아무 문자열 둘» 로 두면 계약이 안 무는 것이다.
+#: 🔴 `guardian_ref` 는 `:` 을 담아도 된다(확정이 `rsplit(":", 2)` 로 읽는다 · 99 #231).
+_SUGGESTION_ID_PATTERN: Final = (
+    r"^.+:(?:"
+    r"comm:(?:data|"
+    r"narrative)|"
+    r"sensitivity:(?:anxious|"
+    r"direct)|"
+    r"interest:(?:grade|"
+    r"attitude|"
+    r"admission)|"
+    r"frequency:(?:frequent|"
+    r"monthly)"
+    r")$"
+)
+
+
 class SuggestedLabel(BaseModel):
     """제안 1건 — 축·값 + 근거.
 
@@ -99,7 +116,16 @@ class SuggestedLabel(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    suggestion_id: UUID
+    suggestion_id: Annotated[str, Field(pattern=_SUGGESTION_ID_PATTERN)]
+    """🔴 **`guardian_ref:axis:value`**(2026-08-25 · 99 #235) — 강사가 확정을 누를 때
+    `POST /v1/confirmations` 에 **그대로** 보내는 키다.
+
+    🔴 **UUID 였다** — 그러면 확정 라우터(`guardian_ref:axis:value` 만 받는다)에 넣을 수
+    없어 **400** 이었다: 확정 경로가 서 있는데 **아무도 못 밟았다**.
+    🔴 **형식을 계약이 문다** — «비어 있지 않은 문자열» 로 두면 갈린다.
+    ⚠ 🔴 **키는 유일하다**: 유일성 검증이 `(축, 값)` 쌍 기준이라 `comm|data` 와
+    `comm|narrative` 가 함께 올 수 있는데, **값이 키에 들어가므로** 둘은 다른 키다.
+    ⚠ `guardian_ref` 안의 `:` 은 무해하다 — 확정이 `rsplit(":", 2)` 로 읽는다(99 #231)."""
     guardian_ref: NonEmptyStr
     label: LabelSuggestion
     confidence: Annotated[float, Field(ge=0.0, le=1.0)]
