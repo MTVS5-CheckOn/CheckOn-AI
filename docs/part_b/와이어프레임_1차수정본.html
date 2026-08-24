@@ -138,7 +138,9 @@ details summary{cursor:pointer;font-size:12px;font-weight:700;padding:11px 16px;
 .rt .num{font-variant-numeric:tabular-nums;font-weight:700;}
 .rt .dash{color:var(--pgray);font-weight:500;}
 .rt .acts{display:flex;gap:4px;justify-content:flex-end;}
-.report-cards{overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 2px 8px rgba(32,41,57,.06);margin-bottom:10px;}
+.report-cards{overflow-x:auto;overflow-y:hidden;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 2px 8px rgba(32,41,57,.06);margin-bottom:10px;}
+.report-cards .report-card{min-width:920px;}
+.report-cards .srow,.report-cards .filters{min-width:720px;}
 .report-card{display:grid;grid-template-columns:42px minmax(220px,1.4fr) minmax(130px,.8fr) repeat(3,minmax(72px,.45fr)) minmax(118px,.7fr) 112px;gap:12px;align-items:center;min-height:78px;padding:12px 16px;border-bottom:1px solid #edf0f2;cursor:pointer;}
 .report-card:last-child{border-bottom:none;}
 .report-card:hover{background:#fffdf0;}
@@ -151,6 +153,16 @@ details summary{cursor:pointer;font-size:12px;font-weight:700;padding:11px 16px;
 .report-field .label{font-size:9px;color:var(--pgray);margin-bottom:3px;}
 .report-field .value{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;}
 .report-actions{display:flex;justify-content:flex-end;gap:4px;}
+.list-tools{display:grid;grid-template-columns:minmax(230px,1fr) 160px auto;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);}
+.search{width:100%;height:36px;border:1px solid var(--line2);border-radius:10px;background:#fff;padding:0 12px;font-size:12px;color:var(--ink);}
+.search:focus{outline:2px solid rgba(76,117,221,.18);border-color:var(--accent);}
+.resultbar{display:flex;align-items:center;gap:8px;padding:9px 16px;background:#fafbfc;border-bottom:1px solid var(--line);font-size:10px;color:var(--sub);}
+.pager{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-top:1px solid var(--line);}
+.pager .page-info{font-size:11px;color:var(--sub);font-variant-numeric:tabular-nums;}
+.service-empty{padding:48px 20px;text-align:center;background:#fff;}
+.service-empty .icon{font-size:28px;margin-bottom:8px;}
+.service-empty b{display:block;font-size:13px;}
+.service-empty p{font-size:11px;color:var(--sub);line-height:1.6;margin-top:5px;}
 .st{font-size:11px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-weight:700;}
 .st i{width:6px;height:6px;border-radius:50%;display:inline-block;background:var(--pgray);}
 .st.done{color:#1d4ed8;} .st.done i{background:var(--d-blue);}
@@ -194,6 +206,20 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 .srow .grow{flex:1;min-width:0;}
 .srow .tail{margin-left:auto;text-align:right;flex:0 0 auto;}
 .sendbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px 18px;box-shadow:0 -3px 14px rgba(32,41,57,.08);}
+.delivery-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px;}
+.delivery-overview .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 15px;box-shadow:0 2px 8px rgba(32,41,57,.04);}
+.delivery-overview .card span{font-size:10px;color:var(--sub);}
+.delivery-overview .card b{display:block;font-size:20px;margin-top:4px;}
+.delivery-checks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:10px;}
+.delivery-checks div{background:#fff;padding:11px 13px;font-size:10px;line-height:1.55;color:var(--sub);}
+.delivery-checks b{display:block;color:var(--ink);font-size:11px;margin-bottom:2px;}
+.send-confirm{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(32,41,57,.38);padding:24px;}
+.send-confirm .modal{width:min(440px,100%);background:#fff;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 50px rgba(32,41,57,.22);padding:20px;}
+.send-confirm h3{font-size:17px;margin-bottom:7px;}
+.send-confirm p{font-size:11px;line-height:1.7;color:var(--sub);}
+.send-confirm .summary{background:#f7f8fa;border-radius:12px;padding:12px;margin:14px 0;font-size:11px;line-height:1.7;}
+.send-confirm .actions{display:flex;justify-content:flex-end;gap:8px;}
+.toast{position:fixed;right:24px;bottom:24px;z-index:90;max-width:380px;background:#202939;color:#fff;border-radius:12px;padding:12px 15px;box-shadow:0 10px 30px rgba(32,41,57,.24);font-size:11px;line-height:1.6;}
 .drawer{position:fixed;top:0;right:0;width:640px;max-width:100vw;height:100vh;background:#fff;border-left:1px solid var(--line2);box-shadow:-8px 0 26px rgba(0,0,0,.1);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .2s;z-index:50;}
 .drawer.open{transform:none;}
 .dh{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);}
@@ -731,6 +757,12 @@ const S = {
   view:'list',                 /* list | edit | send */
   ym:{y:PERIOD.y, m:PERIOD.m},
   f:{cls:'all', status:'all', kind:'all'},
+  q:'',
+  sort:'updated_desc',
+  page:1,
+  pageSize:5,
+  pendingSend:[],
+  toast:null,
   openId:null,
   scope:'whole',               /* whole | block */
   blockSeq:null,
@@ -1238,9 +1270,13 @@ function holdSheet(r){
 /* ── 7. 화면 1 · 리포트 목록 ────────────────────────────────────── */
 function viewList(){
   const list = filtered();
-  const cnt = k => REPORTS.filter(k).length;
+  const source = S.ym.y===PERIOD.y && S.ym.m===PERIOD.m ? REPORTS : [];
+  const cnt = k => source.filter(k).length;
+  const pageCount = Math.max(1, Math.ceil(list.length/S.pageSize));
+  S.page = Math.min(S.page, pageCount);
+  const visible = list.slice((S.page-1)*S.pageSize, S.page*S.pageSize);
 
-  let rows = list.map(r=>{
+  let rows = visible.map(r=>{
     const dim = r.status!=='generated' ? ' dim' : '';
     const num = (v,suffix) => r.status==='generated'
       ? '<span class="num">'+v+(suffix||'')+'</span>' : '<span class="dash">—</span>';
@@ -1262,7 +1298,9 @@ function viewList(){
       '</div></div>';
   }).join('');
 
-  if(!list.length) rows = '<div class="empty">조건에 맞는 리포트가 없습니다.</div>';
+  if(!list.length) rows = '<div class="service-empty"><div class="icon">▤</div><b>'+(
+    source.length?'조건에 맞는 리포트가 없습니다.':'이 달에 생성된 리포트가 없습니다.')+'</b><p>'+(
+    source.length?'검색어나 필터를 바꾸고 다시 확인해 주세요.':'리포트가 생성되면 학생별 검토 카드가 이곳에 나타납니다.')+'</p></div>';
 
   return '<div class="studio-hero"><div><div class="eyebrow">CHECKON REPORT STUDIO</div><h2>리포트 목록</h2>'+
   '<p>학생별 월간 리포트를 검토하고, 수정한 뒤 학부모에게 발송합니다.</p></div>'+
@@ -1283,8 +1321,14 @@ function viewList(){
       select('kind', ['all','report','report_single'], ['전체 종류','월별 일괄','단건 수시'])+
       '<button class="btn sm push" data-act="reset">↺ 초기화</button>'+
     '</div>'+
+    '<div class="list-tools"><input class="search" id="reportSearch" value="'+esc(S.q)+'" placeholder="학생명 · 리포트 ID · 반 검색" aria-label="리포트 검색">'+
+      '<select class="sel" data-act="sort" aria-label="리포트 정렬">'+
+        '<option value="updated_desc"'+(S.sort==='updated_desc'?' selected':'')+'>최근 수정순</option>'+
+        '<option value="accuracy_desc"'+(S.sort==='accuracy_desc'?' selected':'')+'>정답률 높은순</option>'+
+        '<option value="name_asc"'+(S.sort==='name_asc'?' selected':'')+'>학생 이름순</option></select>'+
+      '<button class="btn" data-act="apply-search">검색</button></div>'+
     '<div class="sum">'+
-      '<div><div class="k">이번 달 대상</div><div class="v">'+REPORTS.length+'<small> 명</small></div></div>'+
+      '<div><div class="k">이번 달 대상</div><div class="v">'+source.length+'<small> 명</small></div></div>'+
       '<div><div class="k">생성 완료</div><div class="v">'+cnt(r=>r.status==='generated')+'<small> 건</small></div></div>'+
       '<div><div class="k">데이터 부족 · 생략</div><div class="v summary-value hold">'+cnt(r=>r.status==='rejected_insufficient')+'<small> 건</small></div>'+
         '<div class="summary-explain">\u{1F534} 실패가 아닙니다 — 재시도해도 같습니다</div></div>'+
@@ -1292,8 +1336,10 @@ function viewList(){
     '</div>'+
   '</div>'+
 
-  '<div class="report-cards">'+rows+'</div>'+
-  contractPanel();
+  '<div class="report-cards"><div class="resultbar"><b>'+list.length+'건</b> 검색 결과<span>·</span><span>페이지당 '+S.pageSize+'건</span>'+(
+    S.q?'<span class="chip a">검색: '+esc(S.q)+'</span>':'')+'</div>'+rows+(
+    list.length?'<div class="pager"><button class="btn sm'+(S.page===1?' off':'')+'" data-act="page" data-page="'+(S.page-1)+'">‹ 이전</button>'+
+      '<span class="page-info">'+S.page+' / '+pageCount+'</span><button class="btn sm'+(S.page===pageCount?' off':'')+'" data-act="page" data-page="'+(S.page+1)+'">다음 ›</button></div>':'')+'</div>';
 }
 
 function select(key, values, labels){
@@ -1302,10 +1348,15 @@ function select(key, values, labels){
     '</select>';
 }
 function filtered(){
-  return REPORTS.filter(r=>
+  if(S.ym.y!==PERIOD.y || S.ym.m!==PERIOD.m) return [];
+  const q=S.q.trim().toLowerCase();
+  const rows=REPORTS.filter(r=>
     (S.f.cls==='all'    || r.cls===S.f.cls) &&
     (S.f.status==='all' || r.status===S.f.status) &&
-    (S.f.kind==='all'   || r.kind===S.f.kind));
+    (S.f.kind==='all'   || r.kind===S.f.kind) &&
+    (!q || [r.nm,r.alias,r.id,r.cls,r.grade,r.elective].join(' ').toLowerCase().includes(q)));
+  return rows.sort((a,b)=>S.sort==='accuracy_desc' ? (b.acc||0)-(a.acc||0) :
+    S.sort==='name_asc' ? a.nm.localeCompare(b.nm) : b.id.localeCompare(a.id));
 }
 
 /* ── 8. 화면 2 · 리포트 수정 ────────────────────────────────────── */
@@ -1418,7 +1469,8 @@ function preCheck(text){
 const SEL = new Set();
 
 function viewSend(){
-  const list = REPORTS.filter(r=>!r.sent);
+  const source = S.ym.y===PERIOD.y && S.ym.m===PERIOD.m ? REPORTS : [];
+  const list = source.filter(r=>!r.sent);
   const ready = list.filter(sendable);
   const rows = list.map(r=>{
     const ok = sendable(r);
@@ -1435,10 +1487,19 @@ function viewSend(){
            :'<div class="row-empty">보낼 본문이 없습니다</div>')+
       '</div><span class="meta-copy">›</span></div>';
   }).join('');
+  const rowBody=rows || '<div class="service-empty"><div class="icon">✓</div><b>발송할 리포트가 없습니다.</b>'+
+    '<p>'+(source.length?'이 달의 리포트가 모두 발송됐습니다.':'리포트가 생성된 달을 선택해 주세요.')+'</p></div>';
 
   return '<div class="studio-hero"><div><div class="eyebrow">CHECKON REPORT DELIVERY</div><h2>학부모에게 보낼 리포트</h2>'+
   '<p>실제 PDF 지면을 확인하고, 검토가 끝난 리포트만 선택해 발송합니다.</p></div>'+
   '<div class="hero-stat"><div><b>'+ready.length+'</b><span>발송 가능</span></div><div><b>'+list.length+'</b><span>미발송</span></div></div></div>'+
+
+  '<div class="delivery-overview"><div class="card"><span>발송 가능</span><b>'+ready.length+'건</b></div>'+
+    '<div class="card"><span>현재 선택</span><b>'+SEL.size+'건</b></div>'+
+    '<div class="card"><span>발송 제외</span><b>'+(list.length-ready.length)+'건</b></div></div>'+
+  '<div class="delivery-checks"><div><b>✓ 학부모용 데이터</b>teacher_only 제외</div>'+
+    '<div><b>✓ 게이트 통과</b>ready만 선택 가능</div><div><b>✓ PDF 8쪽</b>A4 오버플로 0</div>'+
+    '<div><b>✓ 발송 후 잠금</b>읽기 전용 전환</div></div>'+
 
   '<div class="report-cards">'+
     '<div class="filters filter-edge">'+
@@ -1446,7 +1507,7 @@ function viewSend(){
       '<span class="selection-title">보낼 수 있는 '+ready.length+'건 전체 선택</span>'+
       '<span class="selection-meta">'+ymLabel(S.ym.y,S.ym.m)+' · 미발송 '+list.length+'건</span>'+
     '</div>'+
-    rows+
+    rowBody+
   '</div>'+
 
   '<div class="sendbar">'+
@@ -1456,8 +1517,19 @@ function viewSend(){
     '<button class="btn" data-act="view" data-v="list">목록으로</button>'+
     '<button class="btn pri'+(SEL.size?'':' off')+'" data-act="bulk">선택한 '+SEL.size+'건 일괄 발송</button>'+
   '</div>'+
-  '<div class="note">⚠ 발송은 강사 확인(HITL)을 거칩니다 — AI 가 자동으로 내보내는 경로는 없습니다.</div>'+
-  contractPanel();
+  '<div class="note">발송 전 최종 PDF와 대상을 확인해 주세요. 발송 완료 후에는 읽기 전용으로 전환됩니다.</div>'+
+  sendConfirmHtml();
+}
+
+function sendConfirmHtml(){
+  if(!S.pendingSend.length) return '';
+  const reports=S.pendingSend.map(byId).filter(Boolean);
+  return '<div class="send-confirm" role="dialog" aria-modal="true" aria-label="리포트 발송 확인"><div class="modal">'+
+    '<h3>'+reports.length+'건을 발송할까요?</h3><p>발송 대기열에 등록되면 이 리포트는 수정할 수 없습니다. 학부모에게 보이는 최종 PDF를 다시 확인해 주세요.</p>'+
+    '<div class="summary"><b>대상</b> · '+reports.map(r=>r.nm).join(' · ')+'<br><b>문서</b> · 학부모용 8쪽 PDF<br>'+
+    '<b>처리</b> · BE 발송 대기열 등록 후 읽기 전용</div><div class="actions">'+
+    '<button class="btn" data-act="cancel-send">취소</button><button class="btn pri" data-act="confirm-send">확인하고 발송</button>'+
+    '</div></div></div>';
 }
 
 function openDrawer(id){
@@ -1478,57 +1550,7 @@ function openDrawer(id){
 }
 function closeDrawer(){ document.getElementById('drawer').classList.remove('open'); S.drawerId=null; }
 
-/* ── 10. 데이터 계약 (소유만) ───────────────────────────────────── */
-function contractPanel(){
-  const row = (el,val,own,note) => '<tr><td><b>'+el+'</b></td><td>'+val+'</td><td>'+own+'</td><td>'+note+'</td></tr>';
-  return '<div class="panel"><details><summary>\u{1F4C4} 이 화면의 데이터 계약 — 소유 구분 (펼치기)</summary>'+
-  '<div class="contract-body"><table class="ctr">'+
-  '<tr><th class="contract-element">화면 요소</th><th class="contract-value">값</th><th class="contract-owner">소유</th><th>비고</th></tr>'+
-  row('리포트 상태','<code>generated</code>·<code>rejected_insufficient</code>·<code>failed</code>','<span class="own ai">AI</span>',
-      '<span class="red">\u{1F534} <code>rejected_insufficient</code> 는 정상 상태입니다</span> — 빨강으로 그리면 강사가 재시도를 누릅니다. 재시도해도 같습니다')+
-  row('발송 · 읽기 전용','발송 시각 · 승인 이력','<span class="own be">BE</span>',
-      '<span class="red">\u{1F534} AI 계약에 「발송」이 없습니다</span> — 승인·발송·학생 노출은 전부 BE(HITL) 소유입니다')+
-  row('영역','<code>AreaTag</code> 5종','<span class="own ai">AI</span>',
-      '<code>language</code>·<code>media</code>·<code>literature</code>·<code>reading</code>·<code>speech_writing</code> — 화법·작문은 한 값으로 합쳐졌습니다')+
-  row('유형','<code>TypeTag</code>','<span class="own ai">AI</span>',
-      'v1 산출 4종 + <code>apply</code>는 <b>예약값</b> — 라벨만 두고 산출하지 않습니다')+
-  row('칸 판정','<code>CellVerdict</code>','<span class="own ai">AI</span>',
-      '<code>weak</code>·<code>ok</code>·<code>unknown</code>. 기준은 반 평균이 아니라 <b>자기 평균과의 거리</b>이고 표본 '+MIN_N+'문항 미만은 판정하지 않습니다')+
-  row('차트 수치','<code>FEATURE_WEEK.metrics</code> · <code>benchmarks</code>','<span class="own be">BE</span>+<span class="own ai">AI</span>',
-      '<b>수치는 코드가 확정하고 LLM 은 해설 문장만</b> 씁니다. 문장 속 숫자는 확정 수치와 전수 대조됩니다')+
-  row('비교선(회색)','<code>Baseline.accuracy</code>·<code>volume</code>','<span class="own ai">AI</span>',
-      '<span class="red">🔴 전국 평균 정답률·학습량·난이도는 <code>benchmarks</code> 에 없습니다</span> — 들어오는 값은 '+
-      '<code>national_percentile</code> 과 <code>class_avg</code>(teacher_only) 둘뿐이라 <b>비교선은 개인 기준선</b>입니다')+
-  row('정답률 분모','<code>graded_count</code>','<span class="own ai">AI</span>',
-      '<b>푼 문항 수(<code>n_solves</code>)가 아니라 채점된 문항 수</b>입니다. 분모를 바꾸면 같은 정답률이 다른 표본으로 보입니다')+
-  row('출제 난이도','<code>DifficultyBand</code> low·medium·high','<span class="own ai">AI</span>',
-      '<span class="red">🔴 <code>LearningEvent</code> 에 난이도 필드가 없습니다</span> — 밴드는 <b>체크온이 출제한 문항에만</b> 붙습니다. '+
-      '학원 교재·모의고사 문항은 모수에서 빠지고, 코드로 밴드가 확정되는 것은 언어 영역뿐입니다')+
-  row('해설 블록','<code>BlockType</code>','<span class="own ai">AI</span>',
-      '<code>greeting</code>·<code>fact</code>·<code>suggestion</code>·<code>closing</code>. '+
-      '<span class="red">차트 해설(<code>chart_analysis</code>)은 문서상 제안 단계이고 코드 enum 에는 아직 없습니다</span>')+
-  row('문단 직접 수정','<code>/confirmations</code> · <code>kind: draft_edit</code>','<span class="own be">BE</span>+<span class="own ai">AI</span>',
-      '<span class="red">🔴 강사가 쓴 문장은 AI 산출물이 아니라 게이트 대상이 아닙니다</span> — 수치 대조도 안 걸리므로 '+
-      '차트와 어긋난 문장이 나갈 수 있고, 그 책임은 승인하는 강사에게 있습니다. 수정 diff 는 <b>문체 프로필의 재료</b>로 주간 배치가 수집합니다')+
-  row('다듬기','scope · preset 3종 · 자유 지시문','<span class="own ai">AI</span>',
-      '매 턴 게이트 전체 재통과. <b>차단도 200</b> 이고 <code>blocked_reason</code> 을 함께 돌려줍니다 — 5xx 가 아닙니다')+
-  row('차단 표시 문구','<code>blocked_reason</code>','<span class="own be">BE</span>',
-      'AI 는 코드만 주고 <b>사람이 읽을 문구는 BE 가 매핑</b>합니다. 이 화면의 문구는 예시입니다')+
-  row('반 평균 · 석차','<code>audience: teacher_only</code>','<span class="own ai">AI</span>',
-      '<span class="red">학부모 리포트의 프롬프트 조립 단계에서 구조적으로 제외</span>됩니다 — 화면에 그릴 데이터가 애초에 없습니다')+
-  row('전국 백분위','<code>national_percentile</code> + <code>as_of</code>','<span class="own be">BE</span>',
-      '출처·모수 확정 전이라 <b>「참고치」</b> 표기가 필요합니다. <b>단일 값이라 월별 추이가 안 나옵니다</b> — '+
-      '추이를 그리려면 매월 값을 쌓을 자리를 정해야 하는데 지금 계약엔 없습니다')+
-  row('리포트 종류','<code>DraftKind</code>','<span class="own ai">AI</span>',
-      '코드 enum 은 <code>reply</code>·<code>report</code>·<code>counsel_pack</code> 3종. '+
-      '<span class="red">API 계약의 <code>report_single</code> 은 코드에 아직 없습니다</span> — 화면은 그려 두되 미확정입니다')+
-  '</table>'+
-  '<div class="note contract-note">\u{1F534} <b>이 표는 통신 규격이 아니라 소유 구분입니다.</b> 엔드포인트·페이로드는 화면 확정 후에 붙입니다 — '+
-  '지금 필요한 것은 <b>어느 값이 화면 마음대로 바뀔 수 없는 것인지</b>뿐입니다.</div>'+
-  '</div></details></div>';
-}
-
-/* ── 11. 렌더 · 이벤트 ──────────────────────────────────────────── */
+/* ── 10. 렌더 · 이벤트 ──────────────────────────────────────────── */
 function render(keepScroll){
   document.querySelectorAll('.nav .sub2').forEach(el=>{
     const v = el.getAttribute('data-v');
@@ -1537,6 +1559,7 @@ function render(keepScroll){
   const y = window.scrollY;
   const m = document.getElementById('main');
   m.innerHTML = S.view==='list' ? viewList() : S.view==='edit' ? viewEdit() : viewSend();
+  if(S.toast) m.insertAdjacentHTML('beforeend','<div class="toast" role="status">'+esc(S.toast)+'</div>');
   window.scrollTo({top: keepScroll ? y : 0});
   markOverflow();
 }
@@ -1590,10 +1613,16 @@ document.addEventListener('focusout', e=>{
 });
 
 document.addEventListener('change', e=>{
-  const el = e.target.closest('[data-act="filter"]');
-  if(!el) return;
-  S.f[el.getAttribute('data-k')] = el.value;
-  render();
+  const filter = e.target.closest('[data-act="filter"]');
+  if(filter){ S.f[filter.getAttribute('data-k')] = filter.value; S.page=1; render(); return; }
+  const sort = e.target.closest('[data-act="sort"]');
+  if(sort){ S.sort=sort.value; S.page=1; render(); }
+});
+
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Enter' || e.target.id!=='reportSearch') return;
+  e.preventDefault();
+  S.q=e.target.value.trim(); S.page=1; render();
 });
 
 document.addEventListener('click', e=>{
@@ -1611,11 +1640,22 @@ document.addEventListener('click', e=>{
       else { let m2 = S.ym.m + d, y2 = S.ym.y;
              if(m2<1){ m2=12; y2--; } if(m2>12){ m2=1; y2++; }
              S.ym = {y:y2, m:m2}; }
-      render(); break;
+      S.page=1; render(); break;
     }
 
     case 'reset':
-      S.f = {cls:'all', status:'all', kind:'all'}; render(); break;
+      S.f = {cls:'all', status:'all', kind:'all'}; S.q=''; S.sort='updated_desc'; S.page=1; render(); break;
+
+    case 'apply-search': {
+      const input=document.getElementById('reportSearch');
+      S.q=input?input.value.trim():''; S.page=1; render(); break;
+    }
+
+    case 'page': {
+      const next=+el.getAttribute('data-page');
+      if(next<1) return;
+      S.page=next; render(); break;
+    }
 
     case 'open-edit':
       S.openId = id; S.view='edit'; S.blockSeq=null; S.scope='whole'; closeDrawer(); render(); break;
@@ -1691,11 +1731,20 @@ document.addEventListener('click', e=>{
     case 'bulk': {
       const ids = act==='send-one' ? [id] : [...SEL];
       if(!ids.length) return;
+      S.pendingSend=ids; closeDrawer(); render();
+      break;
+    }
+
+    case 'cancel-send':
+      S.pendingSend=[]; render(); break;
+
+    case 'confirm-send': {
+      const ids=S.pendingSend.slice();
       ids.forEach(x=>{ const r=byId(x); r.sent=true; r.sentAt='2026.09.01 10:04'; SEL.delete(x); });
-      closeDrawer(); render();
-      alert(ids.length+'건을 발송 대기열에 올렸습니다 (와이어프레임 — 실제 전송 없음).\n\n'+
-            '\u{1F534} 발송은 BE(HITL) 소유입니다 — AI 계약에 발송 엔드포인트가 없습니다.\n'+
-            '발송된 리포트는 읽기 전용으로 바뀝니다.');
+      S.pendingSend=[];
+      S.toast=ids.length+'건을 발송 대기열에 등록했습니다. 발송된 리포트는 읽기 전용입니다.';
+      render();
+      setTimeout(()=>{ const toast=document.querySelector('.toast'); if(toast) toast.remove(); S.toast=null; },3200);
       break;
     }
   }

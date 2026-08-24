@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CheckOn 리포트 스튜디오 · FR(FE)–AI–BE 구현 명세</title>
+<style>
+:root{
+  --ink:#202939;--sub:#667085;--muted:#98a2b3;--line:#e2e7ee;--divider:#edf0f2;
+  --bg:#f7f8fa;--paper:#fff;--brand:#fda36a;--brand-soft:#fffcec;--action:#4c75dd;
+  --ok:#26856b;--ok-bg:#e8f6f1;--warn:#8a6612;--warn-bg:#fff9d2;--no:#c74444;--no-bg:#fff2f1;
+  --radius:18px;--shadow:0 2px 8px rgba(32,41,57,.06);--mono:ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Pretendard','Apple SD Gothic Neo','Segoe UI',sans-serif;font-size:14px;line-height:1.65}
+a{color:inherit}
+.top{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.topin{max-width:1180px;margin:auto;display:flex;align-items:center;gap:18px;padding:12px 22px}
+.brand{font-weight:900;color:#d96534;white-space:nowrap}.brand span{color:#4c75dd}
+.top nav{display:flex;gap:4px;overflow:auto}.top nav a{font-size:12px;text-decoration:none;padding:7px 10px;border-radius:8px;white-space:nowrap;color:var(--sub)}
+.top nav a:hover{background:var(--brand-soft);color:var(--ink)}
+.wrap{max-width:1180px;margin:auto;padding:26px 22px 60px}
+.hero{position:relative;overflow:hidden;background:var(--brand);color:#4c3024;border-radius:24px;padding:34px;box-shadow:var(--shadow)}
+.hero::after{content:'';position:absolute;right:-70px;top:-90px;width:260px;height:260px;border-radius:50%;background:rgba(255,255,255,.24)}
+.eyebrow{font-size:11px;font-weight:900;letter-spacing:.12em}.hero h1{font-size:30px;line-height:1.25;margin:8px 0 10px;letter-spacing:-.04em}.hero p{max-width:760px;margin:0;color:#694838}
+.hero .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}.hero .meta span{background:rgba(255,255,255,.7);border-radius:999px;padding:5px 10px;font-size:11px;font-weight:700}
+.section{scroll-margin-top:78px;margin-top:28px}.section h2{font-size:21px;margin:0 0 5px;letter-spacing:-.025em}.lead{margin:0 0 13px;color:var(--sub);font-size:13px}
+.grid{display:grid;gap:12px}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+.metric small{display:block;color:var(--sub);font-size:11px}.metric strong{display:block;font-size:26px;line-height:1.2;margin:5px 0}.metric p{margin:0;color:var(--sub);font-size:11px}
+.badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800;white-space:nowrap}
+.live{background:var(--ok-bg);color:var(--ok)}.proposal{background:var(--warn-bg);color:var(--warn)}.gap{background:var(--no-bg);color:var(--no)}.owner{background:#eef3ff;color:var(--action)}
+.callout{border-radius:14px;padding:13px 15px;font-size:12px;line-height:1.7;margin:12px 0}.callout.warn{background:var(--warn-bg);color:#6f5611}.callout.no{background:var(--no-bg);color:#8e3333}.callout.info{background:#eef7ff;color:#315e85}
+table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:12px}
+th,td{padding:10px 11px;border-bottom:1px solid var(--divider);text-align:left;vertical-align:top}th{background:#fafbfc;color:var(--sub);font-size:10px;letter-spacing:.02em}tr:last-child td{border-bottom:0}
+code,.code{font-family:var(--mono);font-size:11px;background:#f1f3f6;border-radius:5px;padding:1px 5px}.route{font-family:var(--mono);font-size:11px;font-weight:700;word-break:break-all}.method{display:inline-block;min-width:46px;text-align:center;border-radius:5px;padding:2px 5px;font:800 9px var(--mono);color:#fff}.get{background:#2f80b7}.patch{background:#8b5cf6}.post{background:#26856b}
+.flow{display:grid;grid-template-columns:1fr 36px 1fr 36px 1fr;align-items:stretch}.flow .box{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px}.flow .box h3{font-size:14px;margin:0 0 7px}.flow .box p{font-size:11px;color:var(--sub);margin:0}.arrow{display:grid;place-items:center;color:var(--action);font-size:22px;font-weight:900}
+.state{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid var(--divider)}.state:last-child{border:0}.dot{display:grid;place-items:center;width:25px;height:25px;border-radius:50%;background:#eef3ff;color:var(--action);font-size:10px;font-weight:900;flex:0 0 auto}.state b{font-size:12px}.state p{font-size:11px;color:var(--sub);margin:2px 0 0}
+pre{margin:0;background:#202939;color:#e8edf5;border-radius:14px;padding:16px;overflow:auto;font:11px/1.65 var(--mono)}
+.check{display:flex;gap:9px;padding:9px 0;border-bottom:1px solid var(--divider);font-size:12px}.check:last-child{border:0}.check i{font-style:normal;color:var(--ok);font-weight:900}
+.foot{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);font-size:11px;color:var(--sub)}
+@media(max-width:850px){.g4,.g3,.g2{grid-template-columns:1fr}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg);height:34px}.top nav{display:none}.hero{padding:24px}.hero h1{font-size:24px}.wrap{padding:18px 14px 40px}.table-scroll{overflow:auto}table{min-width:760px}}
+@media print{.top{display:none}.wrap{max-width:none;padding:0}.hero{box-shadow:none}.card,table{box-shadow:none}.section{break-inside:avoid}body{background:#fff}}
+</style>
+</head>
+<body>
+<header class="top"><div class="topin"><div class="brand">Check<span>On</span> · Report Contract</div><nav>
+  <a href="#facts">현행 사실</a><a href="#screen">화면 계약</a><a href="#api">API 경계</a><a href="#flow">발송 흐름</a><a href="#errors">상태·오류</a><a href="#ownership">소유</a><a href="#done">완료 기준</a>
+</nav></div></header>
+<main class="wrap">
+<section class="hero">
+  <div class="eyebrow">REPORT STUDIO · FR(FE)–AI–BE</div>
+  <h1>리포트 조회·수정·발송 구현 명세</h1>
+  <p>이 문서는 리포트 영역만 다룬다. 저장소에서 확인한 현행 계약과 앞으로 필요한 BE 집계·발송 계약을 분리해, FR(FE)·AI·BE가 같은 상태와 필드를 구현하도록 고정한다.</p>
+  <div class="meta"><span>기준일 2026-08-24</span><span>학부모 PDF 8쪽</span><span>tenant 격리 필수</span><span>발송은 BE(HITL) 소유</span></div>
+</section>
+
+<section class="section" id="facts"><h2>1. 지금 저장소에서 확인된 사실</h2><p class="lead">초록은 이미 존재하는 계약, 노랑은 이 명세의 제안, 빨강은 연결 전에 반드시 닫아야 할 차이다.</p>
+  <div class="grid g4">
+    <div class="card metric"><small>AI 리포트 HTTP</small><strong>4개</strong><p>목록·상세·블록 수정·원문 복귀</p></div>
+    <div class="card metric"><small>AI 발송 HTTP</small><strong>0개</strong><p><code>/send</code>는 검사로 부재를 고정</p></div>
+    <div class="card metric"><small>FR(FE) 학부모 조회</small><strong>2개</strong><p>목록·상세 경로, 현재 mock gateway</p></div>
+    <div class="card metric"><small>PDF 페이지</small><strong>8 ↔ 7</strong><p>스튜디오 8쪽, 앱 상수는 7쪽</p></div>
+  </div>
+  <div class="callout no"><b>연결 전 차단점.</b> AI 목록 응답에는 학생명·반·월·발송 상태·페이지 수가 없고, FR(FE)의 <code>ParentReport</code>에는 AI의 <code>status</code>·<code>block_count</code>·<code>updated_at</code>이 없다. 한쪽 타입을 다른 쪽에 바로 꽂을 수 없다.</div>
+</section>
+
+<section class="section" id="screen"><h2>2. 운영 화면 계약</h2><p class="lead">목록과 발송 화면은 같은 리포트 행 모델을 쓰되, 발송 화면은 준비 조건을 통과한 행만 선택할 수 있다.</p>
+  <div class="grid g2">
+    <div class="card"><span class="badge owner">FR(FE) · 목록</span><h3>리포트 목록</h3>
+      <div class="state"><span class="dot">1</span><div><b>월·반·상태·종류 필터</b><p>필터가 바뀌면 1쪽으로 복귀하고 query key에 조건을 포함한다.</p></div></div>
+      <div class="state"><span class="dot">2</span><div><b>학생명·ID·반 검색</b><p>Enter와 검색 버튼을 모두 지원하고 결과 수를 노출한다.</p></div></div>
+      <div class="state"><span class="dot">3</span><div><b>정렬·페이지 이동</b><p>최근 수정순 기본, 페이지 크기 20 권장. URL query와 동기화한다.</p></div></div>
+      <div class="state"><span class="dot">4</span><div><b>행 단위 작업</b><p>상세·수정·인쇄를 분리하고 발송 완료 행은 읽기 전용이다.</p></div></div>
+    </div>
+    <div class="card"><span class="badge owner">FR(FE) · 발송</span><h3>리포트 발송</h3>
+      <div class="state"><span class="dot">1</span><div><b>준비 상태를 먼저 표시</b><p>guardian audience, gate 통과, PDF 준비, 수신자 연결을 각각 보여 준다.</p></div></div>
+      <div class="state"><span class="dot">2</span><div><b>선택 가능 행만 체크</b><p>불가 행은 이유를 숨기지 않고 체크박스를 비활성화한다.</p></div></div>
+      <div class="state"><span class="dot">3</span><div><b>PDF 확인 후 2단계 발송</b><p>미리보기 → 대상 재확인 → 대기열 등록 순서를 강제한다.</p></div></div>
+      <div class="state"><span class="dot">4</span><div><b>중복 요청과 부분 실패</b><p>idempotency key로 중복을 막고 각 report_id 결과를 따로 반환한다.</p></div></div>
+    </div>
+  </div>
+  <h3>공통 목록 행 ViewModel</h3>
+  <div class="table-scroll"><table><tr><th>필드</th><th>화면 용도</th><th>원천</th><th>필수</th><th>비고</th></tr>
+    <tr><td><code>report_id</code></td><td>상세·수정·발송 키</td><td>AI</td><td>예</td><td>UUID 문자열</td></tr>
+    <tr><td><code>student_display_name</code> / <code>class_name</code></td><td>행 제목·검색</td><td>BE</td><td>예</td><td>AI의 guardian_ref를 화면에 직접 노출하지 않는다.</td></tr>
+    <tr><td><code>period</code> / <code>report_kind</code></td><td>월·종류 필터</td><td>BE</td><td>예</td><td>AI 현행 목록에는 없음</td></tr>
+    <tr><td><code>ai_status</code></td><td>ready / gate_rejected</td><td>AI</td><td>예</td><td>AI 현행 값 그대로 보존</td></tr>
+    <tr><td><code>delivery_status</code></td><td>미발송·대기·완료·실패</td><td>BE</td><td>예</td><td>AI 상태와 합치지 않는다.</td></tr>
+    <tr><td><code>block_count</code> / <code>updated_at</code></td><td>완성도·정렬</td><td>AI</td><td>예</td><td>현행 목록에 존재</td></tr>
+    <tr><td><code>page_count</code> / <code>pdf_status</code></td><td>인쇄·발송 준비</td><td>BE/FE 렌더</td><td>발송 시</td><td>현재 기준 8쪽</td></tr>
+    <tr><td><code>recipient_status</code></td><td>학부모 연결 여부</td><td>BE</td><td>발송 시</td><td>connected / missing / blocked</td></tr>
+  </table></div>
+</section>
+
+<section class="section" id="api"><h2>3. HTTP 경계</h2><p class="lead">제안 경로는 승인된 구현이 아니다. BE가 AI 응답과 학생·학부모·발송 정보를 합치는 facade 후보이며, 실제 경로 확정 전까지 FR(FE)가 하드코딩하면 안 된다.</p>
+  <div class="table-scroll"><table><tr><th>상태</th><th>경로</th><th>operationId</th><th>소유</th><th>역할</th></tr>
+    <tr><td><span class="badge live">현행</span></td><td><span class="method get">GET</span> <span class="route">/v1/reports</span></td><td><code>listReports</code></td><td>AI</td><td>tenant별 report_id·guardian_ref·status·block_count·updated_at</td></tr>
+    <tr><td><span class="badge live">현행</span></td><td><span class="method get">GET</span> <span class="route">/v1/reports/{report_id}</span></td><td><code>getReport</code></td><td>AI</td><td>guardian audience 상세·studio_data·blocks·미산출 사유</td></tr>
+    <tr><td><span class="badge live">현행</span></td><td><span class="method patch">PATCH</span> <span class="route">/v1/reports/{report_id}/blocks/{block_id}</span></td><td><code>updateReportBlock</code></td><td>AI</td><td>base_revision_no 기반 강사 수정, 충돌 409</td></tr>
+    <tr><td><span class="badge live">현행</span></td><td><span class="method post">POST</span> <span class="route">/v1/reports/{report_id}/blocks/{block_id}/restore</span></td><td><code>restoreReportBlock</code></td><td>AI</td><td>보존된 AI 원문 리비전 복귀</td></tr>
+    <tr><td><span class="badge proposal">제안</span></td><td><span class="method get">GET</span> <span class="route">/v1/teacher/report-studio/reports</span></td><td>미확정</td><td>BE</td><td>검색·필터·정렬·페이지를 포함한 스튜디오 목록 facade</td></tr>
+    <tr><td><span class="badge proposal">제안</span></td><td><span class="method get">GET</span> <span class="route">/v1/teacher/report-studio/reports/{report_id}</span></td><td>미확정</td><td>BE</td><td>AI 상세 + 학생·수신자·PDF·발송 상태 집계</td></tr>
+    <tr><td><span class="badge proposal">제안</span></td><td><span class="method post">POST</span> <span class="route">/v1/teacher/report-studio/deliveries:bulk</span></td><td>미확정</td><td>BE</td><td>다건 대기열 등록, report별 성공·실패 반환</td></tr>
+    <tr><td><span class="badge gap">부재 고정</span></td><td><span class="method post">POST</span> <span class="route">/v1/reports/{report_id}/send</span></td><td>없음</td><td>AI</td><td>추가 금지. 발송은 AI 책임이 아니다.</td></tr>
+  </table></div>
+  <div class="grid g2" style="margin-top:12px">
+    <div><h3>AI 현행 목록 응답</h3><pre>{
+  "data": {
+    "reports": [{
+      "report_id": "uuid",
+      "guardian_ref": "guardian-ref",
+      "status": "ready",
+      "block_count": 7,
+      "updated_at": "2026-08-24T06:00:00Z"
+    }]
+  },
+  "request_id": "...",
+  "versions": { "engine_version": "report-0.1" }
+}</pre></div>
+    <div><h3>BE 목록 facade 제안 형태</h3><pre>{
+  "items": [{
+    "reportId": "uuid",
+    "studentDisplayName": "김○○",
+    "className": "고2-1 · 목요일반",
+    "period": "2026-08",
+    "aiStatus": "ready",
+    "deliveryStatus": "not_sent",
+    "pageCount": 8,
+    "recipientStatus": "connected",
+    "updatedAt": "2026-08-24T06:00:00Z"
+  }],
+  "page": { "number": 1, "size": 20, "totalElements": 8 }
+}</pre></div>
+  </div>
+</section>
+
+<section class="section" id="flow"><h2>4. 발송 흐름과 불변식</h2><p class="lead">AI는 학부모용 내용을 제공하고, BE가 승인·PDF·수신자·대기열을 소유하며, FR(FE)는 상태를 숨기지 않는다.</p>
+  <div class="flow">
+    <div class="box"><span class="badge owner">FR(FE)</span><h3>1. 목록·미리보기</h3><p>BE facade 조회 → 준비 조건 표시 → 강사가 PDF 8쪽 확인 → report_id 선택</p></div><div class="arrow">→</div>
+    <div class="box"><span class="badge owner">BE</span><h3>2. 원자적 재검증</h3><p>tenant·권한·recipient·ready·PDF hash·중복 키를 서버에서 다시 확인</p></div><div class="arrow">→</div>
+    <div class="box"><span class="badge owner">BE</span><h3>3. 대기열·결과</h3><p>delivery job 생성 → report 잠금 → 각 ID별 queued/rejected 반환 → 앱 노출</p></div>
+  </div>
+  <div class="grid g3" style="margin-top:12px">
+    <div class="card"><h3>발송 가능 조건</h3><div class="check"><i>✓</i><span><code>ai_status == ready</code></span></div><div class="check"><i>✓</i><span><code>audience == guardian</code></span></div><div class="check"><i>✓</i><span><code>recipient_status == connected</code></span></div><div class="check"><i>✓</i><span><code>pdf_status == ready</code></span></div></div>
+    <div class="card"><h3>중복·동시성</h3><div class="check"><i>✓</i><span><code>Idempotency-Key</code> 필수</span></div><div class="check"><i>✓</i><span>같은 키·같은 body는 같은 결과</span></div><div class="check"><i>✓</i><span>수정 리비전이 바뀌면 발송 거부</span></div><div class="check"><i>✓</i><span>부분 실패를 200으로 뭉개지 않음</span></div></div>
+    <div class="card"><h3>발송 후</h3><div class="check"><i>✓</i><span>리포트 읽기 전용</span></div><div class="check"><i>✓</i><span>actor·시간·채널·PDF hash 감사</span></div><div class="check"><i>✓</i><span>학부모 앱 목록에 발행일·쪽수 제공</span></div><div class="check"><i>✓</i><span>재발송은 별도 delivery 기록</span></div></div>
+  </div>
+</section>
+
+<section class="section" id="errors"><h2>5. 상태·오류·캐시</h2><p class="lead">AI 산출 상태와 BE 발송 상태는 다른 축이다. 한 개의 status enum으로 합치지 않는다.</p>
+  <div class="grid g2">
+    <div class="card"><h3>상태 매트릭스</h3><table><tr><th>축</th><th>값</th><th>FR(FE) 표현</th></tr>
+      <tr><td>AI</td><td><code>ready</code></td><td>검토·발송 후보</td></tr><tr><td>AI</td><td><code>gate_rejected</code></td><td>발송 불가, 수정·재검토</td></tr>
+      <tr><td>BE</td><td><code>not_sent</code></td><td>미발송</td></tr><tr><td>BE</td><td><code>queued</code></td><td>발송 처리 중</td></tr>
+      <tr><td>BE</td><td><code>delivered</code></td><td>발송 완료·읽기 전용</td></tr><tr><td>BE</td><td><code>failed</code></td><td>실패 이유·재시도 가능 여부</td></tr>
+    </table></div>
+    <div class="card"><h3>HTTP 처리</h3><table><tr><th>응답</th><th>FR(FE) 처리</th></tr>
+      <tr><td>400 / 422</td><td>필드 오류를 필터·발송 확인 영역 가까이에 표시</td></tr><tr><td>401 / 403</td><td>세션 또는 tenant 권한 화면으로 이동</td></tr>
+      <tr><td>404</td><td>목록에서 제거 후 “이미 삭제됨” 안내</td></tr><tr><td>409 <code>REVISION_CONFLICT</code></td><td>강제 덮어쓰기 금지, 최신 상세 재조회</td></tr>
+      <tr><td>429 / 503</td><td>Retry-After를 따르고 선택 상태를 유지</td></tr><tr><td>부분 실패</td><td>성공 행은 잠그고 실패 행만 선택 유지</td></tr>
+    </table></div>
+  </div>
+  <div class="callout info"><b>캐시.</b> 목록 query key에는 tenant·월·반·상태·종류·검색·정렬·페이지를 포함한다. 블록 수정 성공 시 상세과 해당 목록 행을 함께 갱신하고, 409에서는 optimistic state를 버린 뒤 서버 상태를 다시 받는다.</div>
+</section>
+
+<section class="section" id="ownership"><h2>6. 소유와 금지선</h2>
+  <div class="table-scroll"><table><tr><th>주체</th><th>소유</th><th>하지 않는 것</th></tr>
+    <tr><td><span class="badge owner">FR(FE)</span></td><td>필터·검색·페이지·로딩/빈/오류·미리보기·2단계 확인·캐시</td><td>발송 가능 여부를 화면 값만 보고 최종 확정하지 않음</td></tr>
+    <tr><td><span class="badge owner">AI</span></td><td>tenant 격리 조회·guardian audience·결정론 데이터·블록 리비전·409</td><td>수신자·승인·PDF 저장·발송·앱 노출을 소유하지 않음</td></tr>
+    <tr><td><span class="badge owner">BE</span></td><td>교사 권한·학생/학부모 매핑·목록 facade·PDF artifact·HITL·발송·감사·잠금</td><td>AI의 gate 상태나 evidence 의미를 임의 재정의하지 않음</td></tr>
+  </table></div>
+</section>
+
+<section class="section" id="done"><h2>7. 구현 완료 기준</h2><div class="grid g2">
+  <div class="card"><h3>FR(FE)</h3><div class="check"><i>✓</i><span>검색·필터·정렬·페이지가 URL과 동기화된다.</span></div><div class="check"><i>✓</i><span>loading·empty·error·partial failure가 각각 보인다.</span></div><div class="check"><i>✓</i><span>불가 행은 이유와 함께 비활성화된다.</span></div><div class="check"><i>✓</i><span>7쪽 하드코딩을 제거하고 pageCount를 사용한다.</span></div></div>
+  <div class="card"><h3>AI·BE 통합</h3><div class="check"><i>✓</i><span>X-Tenant-Id·X-Request-Id가 끝까지 전달된다.</span></div><div class="check"><i>✓</i><span>409 충돌에서 원문과 최신 리비전이 보존된다.</span></div><div class="check"><i>✓</i><span>발송 API는 idempotency와 부분 결과를 제공한다.</span></div><div class="check"><i>✓</i><span>발송 완료 PDF hash와 학부모 앱 artifact가 같다.</span></div></div>
+  </div>
+  <div class="callout warn"><b>결정 필요.</b> BE facade 경로·operationId·delivery enum·수신자 연결 계약·PDF artifact 저장 위치는 아직 저장소에 확정 계약이 없다. 이 다섯 가지를 승인하기 전에는 FR(FE)가 제안값을 상수로 굳히지 않는다.</div>
+</section>
+
+<footer class="foot"><b>근거 파일</b> · <code>src/ai/api/routers/report.py</code> · <code>src/ai/contracts/report.py</code> · <code>tests/ai/integration/test_report_router.py</code> · <code>CheckOn-App/src/features/parent/reports/parent-reports.tsx</code> · <code>CheckOn-App/src/features/parent/api/types.ts</code> · <code>CheckOn-App/src/features/parent/api/gateway.ts</code></footer>
+</main>
+</body>
+</html>
