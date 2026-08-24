@@ -4,20 +4,27 @@
 - AI 기준: ~~`develop` `cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후)~~
   **현행화(2026-08-24 · 본 PR):** `develop` `6eb88f195d9f3e261dc1d404c377c1bbbfe554b6`
   (`6eb88f1`) + 본 PR의 진단 리포트 입력 계약 확장
-  **현행화(2026-08-24 · PR C):** `develop` `dc5c2b7cb331115c63b03ff35ecef9226f63ca9f`
-  (`dc5c2b7`, #425 머지 후) + 본 PR C의 BE 리포트 지시서 확정
+  ~~**현행화(2026-08-24 · PR C):** `develop` `dc5c2b7cb331115c63b03ff35ecef9226f63ca9f`
+  (`dc5c2b7`, #425 머지 후) + 본 PR C의 BE 리포트 지시서 확정~~
+  **현행화(2026-08-25 · 본 PR):** `develop` `30ec9740b14b27931586a17b355d81f2a598bc0d`
+  (`30ec974`) + 본 PR의 BE E2E 인계 반영
 - 문서 개정: PR #380 import API 제거 · PR #381 BE 인계 명세 확정 ·
-  PR #382 라벨 제안 동기 200 · 본 PR 전국 백분위·개입 이벤트 수신 계약 확정 ·
+  PR #382 라벨 제안 동기 200 · PR #414 전국 백분위·개입 이벤트 수신 계약 확정 ·
   PR #424 리포트 동기 생성 HTTP · PR #425 리포트 capability 노출 ·
-  본 PR C 리포트 BE 지시서 확정
+  PR #428 리포트 BE 지시서 확정 · PR #431 리포트 실 provider 배선 ·
+  본 PR BE E2E 인계(2026-08-24) 반영
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 목적: 약점 진단 → 문제 생성 → 조회 → 수정 → 오답 약점 환류와 리포트 생성·검토의 BE 구현 계약 지시
 - 적용 방식: 이 문서의 결정은 협의 후보가 아니라 AI 통신 경계의 확정값이다. BE와 Adapter는
   구현 중 모순을 발견했을 때만 재현 자료와 함께 변경을 요청한다.
 - 동일 지점 검증: ~~Ruff 통과 · Mypy 542 source files ·
   3,894 passed / 21 skipped / 165 deselected / 3 xfailed~~
-  **현행화(2026-08-24 · `dc5c2b7` + 본 PR C):** Ruff 통과 · Mypy 547 source files ·
-  3,940 passed / 21 skipped / 165 deselected / 3 xfailed. 본 PR C는 문서 2파일만 변경했다.
+  ~~**현행화(2026-08-24 · `dc5c2b7` + 본 PR C):** Ruff 통과 · Mypy 547 source files ·
+  3,940 passed / 21 skipped / 165 deselected / 3 xfailed~~
+  **현행화(2026-08-25 · `30ec974` + 본 PR):** Ruff 통과 · Mypy 554 source files ·
+  3,975 passed / 165 deselected / 22 xfailed. 본 PR은 이 문서 1파일만 변경했다.
+  ⚠ `skipped`가 0이 되고 `xfailed`가 22로 늘어난 것은 A의 skip→xfail 정리(#426·#427) 결과이며
+  AI 계약 변경이 아니다.
 
 ## 1. 확정 지시 요약
 
@@ -460,6 +467,11 @@ problem_generation_request
   57노드 전부 완주한다.
 - ~~일부 terminal·5xx 조합의 고정 HTTP fixture 미비~~ **해소(2026-08-21 · PR #362):**
   failed·cancelled 조회와 revision 요청·200·409·500·503·504 fixture를 추가했다.
+- **리포트 본문 문장화 품질 — 개선 진행 중(2026-08-25 실측).** 실 LLM 30콜 측정에서
+  리포트 6회가 모두 `template_only`로 종단했다. **통신 계약은 정상이고 BE 구현에
+  영향이 없다.** 상세와 BE 처리 규칙은 §20.5를 따른다.
+- **problem 5경로 OpenAPI가 기계 판독 계약이 아니다.** 요청·응답이 named schema가 아니라
+  `additionalProperties`로 노출된다. 상세와 BE 처리 규칙은 §22를 따른다.
 
 PG 운영 계약:
 
@@ -506,6 +518,12 @@ BE는 위 검증이 진행 중이어도 AI 재시작을 이유로 새 멱등키�
 - [ ] revision 충돌과 멱등 충돌을 구분한다.
 - [ ] parent-child-Outbox를 중복 없이 저장한다.
 - [ ] 공개 reason code만 화면 문구로 번역한다.
+- [ ] 운영 헬스 체크에 `GET /v1/health`를 사용한다. `GET /health`를 호출하지 않는다(§21).
+- [ ] `generation_exhausted`를 통신 오류로 처리하지 않는다(§23).
+- [ ] `dropped` slot의 `failure_detail`을 유실 없이 투영하고 사용자 화면에는 노출하지 않는다(§23).
+- [ ] `template_only` 리포트를 오류로 처리하지 않고 재요청하지 않는다(§20.5).
+- [ ] `POST /v1/reports` read timeout을 1,350초 이상으로 두고 통보 전까지 낮추지 않는다(§20.2).
+- [ ] problem 5경로 클라이언트를 자동 생성 결과가 아니라 §5~§8 기준으로 구현한다(§22.3).
 
 ## 16. 구현 결정표
 
@@ -671,6 +689,15 @@ gateway 안의 한 LLM 호출만 덮고 HTTP 요청 전체를 끊지 않는다(A
 동기/비동기 계약을 다시 확정한다. 계산 근거와 형식은 `docs/04_api_contract.md` §2.4의
 `/detect` “45 + 15 = 60초” 선례를 따른다.
 
+**이 값은 실측 전 상한이며 줄어든다(2026-08-25).** 실 LLM 측정에서 성공 호출의 지연은
+`greeting` p95 3.718초, `suggestion` p95 6.671초, `closing` p95 4.641초로 전역 90초의
+10퍼센트 미만이었다. `fact`와 `chart_analysis`는 §20.5 결함으로 성공 표본을 얻지 못해
+아직 미측정이다. 다섯 값이 모두 나오면 AI가 `call_timeouts.yaml`에 개별 값을 넣고
+최악 계산과 이 절의 숫자를 같은 변경에서 갱신해 통보한다.
+
+BE는 그때까지 **1,350초 이상**을 유지한다. 값이 줄어들 예정이라는 이유로 낮추지 않는다.
+낮춘 뒤 상한이 확정되면 이미 배포된 인프라 timeout을 다시 올려야 한다.
+
 ### 20.3 B 소유 11경로 OpenAPI 정본
 
 | 경로 | 메서드 | tag | operationId | summary |
@@ -704,3 +731,100 @@ BE는 codegen을 현재 `/openapi.json`에서 다시 수행한다.
    확인은 GET polling이며 Kafka는 뼈대뿐이다. 리포트는 동기 응답 자체가 완료 통지다.
 3. **영구히 AI 계약에 없음 — 발송.** 승인·PDF artifact·수신자·대기열·발송은 BE HITL
    소유다. BE는 AI 발송 endpoint를 기다리거나 `/v1/reports/{report_id}/send`를 호출하지 않는다.
+
+### 20.5 리포트 본문 `template_only` — 계약상 정상, 품질은 개선 중
+
+**실측(2026-08-25 · `gpt-5.6-luna` · 리포트 6회 · 외부 30콜 · 표본 절단 없음)**
+
+| prompt_id | 성공 | 성공 p50 / p95 / max | 실패 | 실패 사유 |
+| --- | ---: | --- | ---: | --- |
+| `report.greeting.v1` | 6 | 2.000 / 3.718 / 3.718초 | 0 | - |
+| `report.fact.v1` | 0 | - | 6 | parse_fail |
+| `report.chart_analysis.v1` | 0 | - | 6 | parse_fail |
+| `report.suggestion.v1` | 4 | 3.000 / 6.671 / 6.671초 | 2 | parse_fail |
+| `report.closing.v1` | 2 | 2.859 / 4.641 / 4.641초 | 4 | parse_fail |
+
+리포트 6회가 모두 `template_only`로 종단했다. redaction 차단 0건, 게이트 거부 0건이며
+원인은 AI 내부 재시도 분기 결함이다. AI가 별도 회차에서 고치고 재측정한다.
+
+**BE 처리 규칙 — 이 결함은 BE 구현에 영향이 없다.**
+
+- `template_only`는 `POST /v1/reports`가 **200으로 돌려주는 정상 상태**다. 4xx·5xx가 아니다.
+- BE는 `template_only`를 오류로 처리하지 않고 재요청·재시도하지 않는다.
+- BE는 이 상태에서도 리포트를 저장·조회·강사 수정·AI 원문 복원 흐름에 그대로 태운다.
+- AI 본문 품질이 올라가도 **HTTP 계약·상태값·응답 형태는 바뀌지 않는다.** BE 구현을
+  이 개선에 맞춰 대기시키지 않는다.
+
+## 21. 운영 경로
+
+BE E2E(2026-08-24)에서 `GET /health`가 404로 보고됐다. **경로가 없어서가 아니라 이
+지시서가 운영 경로를 적지 않았기 때문이며, 누락은 AI 측 잘못이다.** 아래로 확정한다.
+
+| 경로 | 메서드 | 용도 | 인증 | LLM 호출 |
+| --- | --- | --- | --- | --- |
+| `/v1/health` | GET | 프로세스 준비 상태 | 불필요 | 없음 |
+| `/v1/ready` | GET | 의존성 포함 준비 상태 | 불필요 | 없음 |
+| `/v1/meta/versions` | GET | capability별 엔진 버전 | 불필요 | 없음 |
+
+- BE와 Adapter의 운영 헬스 체크는 **`GET /v1/health`**를 사용한다. `GET /health`는 없다.
+- **AI의 모든 경로는 `/v1` 접두를 가진다.** 접두 없는 경로는 존재하지 않는다.
+- `GET /v1/meta/versions`의 `capabilities` 키가 AI가 노출하는 기능 축이다. BE는 이 목록으로
+  연동 가능 축을 판별하고, 목록에 없는 축을 호출하지 않는다.
+
+## 22. OpenAPI 기계 판독 계약 — 현재 미충족
+
+### 22.1 현재 상태
+
+BE가 `/openapi.json`만으로 클라이언트를 생성할 수 없다고 보고했고 AI가 실측으로 확인했다.
+
+| 경로 | 메서드 | parameters | request body | 성공 응답 |
+| --- | --- | --- | --- | --- |
+| `/v1/problems` | POST | **비어 있음** | 미명명 | 202 미명명 |
+| `/v1/problems/{job_id}` | GET | `job_id` | - | 200 미명명 |
+| `/v1/problems/{set_id}/items` | GET | `set_id` | - | 200 미명명 |
+| `/v1/problems/{set_id}/items/{slot_index}` | GET | 경로 변수만 | - | 200 미명명 |
+| `/v1/problems/{set_id}/items/{slot_index}/revisions` | POST | 경로 변수만 | 미명명 | 200 미명명 |
+
+`X-Tenant-Id`·`X-Request-Id`·`Idempotency-Key`는 §3.1에 적혀 있으나 `openapi.json`의
+`parameters`에는 없다. **산문 계약과 기계 판독 계약이 갈렸고, BE가 사용하는 것은 후자다.**
+
+### 22.2 AI가 이행할 것
+
+1. 헤더 셋을 `parameters`에 노출하고 경로별 필수 여부를 명시한다.
+2. request body, 202, job 조회, item summary/detail, revision 요청·성공·409를
+   named schema로 노출한다.
+3. job phase(`queued|leased|running|paused|succeeded|failed|cancelled`)와 terminal 조합을
+   enum 또는 oneOf로 표현한다.
+4. revision 409의 `reason`·`current_revision_no`를 계약에 포함한다. 두 필드는 **응답에 이미
+   실린다.** 계약에만 없었다.
+
+### 22.3 그때까지 BE가 할 것
+
+- 자동 생성 클라이언트를 정본으로 삼지 않는다. **이 지시서의 §5~§8이 정본이다.**
+- 노출이 끝나면 AI가 통보한다. BE는 그 뒤 `/openapi.json`을 다시 읽어 클라이언트를 생성한다.
+- 노출 이후에는 `openapi.json`이 정본이 된다. 이 지시서와 갈리면 `openapi.json`이 옳다.
+  이 순서는 §19의 정본 우선순위와 같다.
+- 이미 자동 생성 이름(`post_problems_v1_problems_post` 형태)으로 구현했다면 §20.3의
+  operationId로 **한 번 바뀐다.** codegen 전에 §20.3 표로 대조한다.
+
+## 23. `generation_exhausted` — 계약상 정상 종단
+
+BE E2E에서 동일 조건 요청이 한 건은 `generated`, 한 건은 `dropped`/`generation_exhausted`로
+갈린 것이 보고됐다. **AI 수정 대상이 아니다.**
+
+- 원인은 한 문항의 **생성 시도 3회 소진**이다(`PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT = 3`).
+  스키마·검증 게이트를 3회 안에 통과하지 못하면 `dropped`로 종단한다.
+- **HTTP·Kafka 오류가 아니다.** Adapter와 Backend가 계약대로 반영한 것이 맞다.
+- **재시도로 덮지 않는 것이 설계다.** 모든 생성 루프에 상한이 있다.
+- **같은 조건에서 회차에 따라 성공·실패가 갈리는 것이 정상이다.** LLM 생성은 시도마다
+  결과가 다르며 AI는 그 편차를 재시도로 감추지 않는다.
+
+**BE 처리 규칙**
+
+- `generation_exhausted`를 통신 오류로 처리하지 않는다. 정상 종단 상태다.
+- `dropped` slot의 **`failure_detail`을 투영한다.** `failure_reason`만으로는 어떤 검사에서
+  탈락했는지 보이지 않는다(예: `생성 시도 소진: FieldMissing`). Adapter와 Backend 투영
+  경로에서 이 필드가 유실되는지 확인한다.
+- `failure_detail`은 §10대로 **비공개 필드**다. 사용자 화면에 그대로 노출하지 않고 운영
+  로그와 재현 자료로만 사용한다.
+- 자동 재요청 여부는 **제품 정책**이며 AI 계약이 아니다. BE가 정한다.
