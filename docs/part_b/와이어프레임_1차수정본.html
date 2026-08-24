@@ -9,8 +9,9 @@
    앞 세 줄은 체크온_발행내역_재사용_v1 의 것을 그대로 쓴다 — 같은 제품의 같은 셸이다.
    그 아래는 리포트 지면에만 필요해서 새로 세웠다. 색을 이 블록 밖에서 쓰지 않는다. */
 :root{
-  --ink:#1f2937;--sub:#6b7280;--line:#e5e7eb;--line2:#d1d5db;--bg:#f1f3f5;
-  --accent:#2563eb;--brand:#ff9a3c;--soft:#eff6ff;
+  /* CheckOn-App globals.css의 표면·본문·경계·행동색을 리포트 스튜디오에도 맞춘다. */
+  --ink:#202939;--sub:#667085;--line:#e2e7ee;--line2:#d2d8e0;--bg:#f7f8fa;
+  --accent:#4c75dd;--brand:#fda36a;--soft:#eef3ff;
   --d-blue:#3b82f6;--d-green:#5cb894;--d-yellow:#f0c04a;--d-red:#e2574c;--d-track:#e8eaed;
 
   /* A4 — CSS mm 은 96dpi 고정비라 화면 794×1123px 과 인쇄가 정확히 같다 */
@@ -55,7 +56,7 @@ body{background:var(--bg);color:var(--ink);font-size:13px;}
 /* ══════════ 3. 공용 컴포넌트 — 발행내역 v1 과 동일 ══════════ */
 .pgttl{font-size:var(--fs-screen-title);font-weight:800;margin-bottom:3px;}
 .pgsub{font-size:var(--fs-meta);color:var(--sub);margin-bottom:12px;line-height:1.7;}
-.panel{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;}
+.panel{background:#fff;border:1px solid var(--line);border-radius:18px;margin-bottom:10px;box-shadow:0 2px 8px rgba(32,41,57,.06);}
 .btn{padding:7px 13px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:12px;cursor:pointer;color:#374151;}
 .btn:hover{border-color:var(--accent);color:var(--accent);}
 .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;}
@@ -235,6 +236,21 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 .wxs{display:flex;gap:4px;margin-top:5px;}
 .wxs span{flex:1;text-align:center;font-size:9px;color:var(--pgray);}
 .wxs span.on{color:var(--ink);font-weight:800;}
+.week-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px;}
+.week-card{border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 14px;break-inside:avoid;}
+.week-card .label{font-size:var(--fs-caption);color:var(--sub);font-weight:700;margin-bottom:6px;}
+.week-card .value{font-size:22px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums;}
+.week-card .detail{font-size:var(--fs-footnote);color:var(--sub);line-height:1.55;margin-top:5px;}
+.week-table{width:100%;border-collapse:separate;border-spacing:0;margin-top:12px;font-size:var(--fs-meta);border:1px solid var(--line);border-radius:12px;overflow:hidden;break-inside:avoid;}
+.week-table th,.week-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums;}
+.week-table th{background:#f7f8fa;color:var(--sub);font-size:var(--fs-caption);font-weight:700;}
+.week-table th:first-child,.week-table td:first-child{text-align:left;}
+.week-table tr:last-child td{border-bottom:none;}
+.week-table .focus{font-weight:800;color:var(--ink);}
+.week-table .review{font-weight:800;color:var(--d-red);}
+.week-insight{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;break-inside:avoid;}
+.week-insight .item{border-left:3px solid var(--accent);background:#f7f9ff;border-radius:0 10px 10px 0;padding:9px 12px;font-size:var(--fs-meta);line-height:1.65;}
+.week-insight .item.warn{border-left-color:var(--d-red);background:#fff8f7;}
 .mx{width:100%;border-collapse:collapse;font-size:var(--fs-meta);}
 .mx th,.mx td{border:1px solid var(--pline);padding:7px 8px;text-align:center;}
 .mx th{background:#fafbfc;color:var(--sub);font-size:var(--fs-caption);font-weight:700;}
@@ -469,7 +485,7 @@ const MIN_N = 10;                 /* 셀 판정에 필요한 최소 문항 수 �
 const PERIOD = {y:2026, m:8};     /* 화면 기본 월 */
 
 /* ── 출제 축 → 새 화면 요소 대응표 ────────────────────────────────
-   주차별 오개념·노드 커버리지 ← DiagnosisEvent.occurred_at(월요일 버킷) + misconception_tag · skill_node_id
+   주차별 반복 실수·공부한 유형 ← DiagnosisEvent.occurred_at(월요일 버킷) + misconception_tag · skill_node_id
    셀 취약도                  ← WeaknessCell.severity
    선택 오답·형식·태그 확정   ← DiagnosisEvent.chosen_no · correct_no · item_format · tag_confirmed
    노드 판정·근거             ← WeaknessMap.nodes[*].verdict · basis
@@ -755,21 +771,21 @@ function weekChart(title, chip, color, weeks, pick, fmt){
     '<div class="wbars">'+bars+'</div><div class="wxs">'+xs+'</div></div>';
 }
 
-/* DiagnosisEvent 기반 주차 사실 — detection/features.py와 같은 occurred_at의 월요일 버킷.
-   MIN_N 미만은 막대 수치를 숨기고 판단 보류로 남긴다. */
-function weeklyFactChart(title, chip, color, weeks, pick, fmt){
-  const eligible=weeks.filter(w=>w.eventN>=MIN_N), vals=eligible.map(pick), hi=Math.max.apply(null,vals)||1;
-  let bars='', xs='';
-  weeks.forEach((w,i)=>{
-    const on=i>=weeks.length-4, hold=w.eventN<MIN_N, value=hold?0:pick(w);
-    bars += '<div class="c'+(on&&!hold?' on':'')+'" style="--bar:'+color+'">'+
-      '<span class="t">'+(on?(hold?'보류':fmt(value)):'')+'</span>'+
-      '<span class="b" style="height:'+(hold?6:Math.max(6,value/hi*100))+'%"></span></div>';
-    xs += '<span'+(on?' class="on"':'')+'>'+(on?(i-weeks.length+5)+'주':'')+'</span>';
-  });
-  return '<div class="wk"><div class="wh"><span class="tag" style="background:'+color+'">'+chip+'</span>'+
-    '<span class="meta-copy">'+title+'</span></div>'+
-    '<div class="wbars">'+bars+'</div><div class="wxs">'+xs+'</div></div>';
+function weekSummaryCard(label, value, detail){
+  return '<div class="week-card"><div class="label">'+label+'</div>'+
+    '<div class="value">'+value+'</div><div class="detail">'+detail+'</div></div>';
+}
+
+function weeklyTable(weeks){
+  const rows=weeks.map((w,i)=>{
+    const correct=Math.round(w.eventN*w.acc), review=w.eventN-correct, hold=w.eventN<MIN_N;
+    return '<tr><td class="focus">'+(i+1)+'주</td><td>'+w.eventN+'문항</td>'+
+      '<td>'+correct+'개</td><td class="review">▲ '+review+'개</td><td>'+pc(w.acc)+'%</td>'+
+      '<td>'+(hold?'판단 보류':'● '+w.mis+'건')+'</td><td>◆ '+w.nodeN+'종</td></tr>';
+  }).join('');
+  return '<table class="week-table"><thead><tr><th>주차</th><th>학습 기록</th><th>맞힌 문항</th>'+
+    '<th>다시 볼 문항</th><th>정답률</th><th>반복 실수</th><th>공부한 유형</th></tr></thead>'+
+    '<tbody>'+rows+'</tbody></table>';
 }
 
 function severityHtml(r){
@@ -919,15 +935,32 @@ function sheet(r, opt){
       : '')+
     r.blocks.map(b=>blockHtml(b, opt)).join(''));
 
-  /* 5.3 주간 분석 */
+  /* 5.3 주간 분석 — 계약·내부 용어 대신 학부모가 바로 행동으로 옮길 수 있는 말로 쓴다 */
+  const recentWeeks = r.weeks.slice(-4);
+  const eligibleWeeks = recentWeeks.filter(w=>w.eventN>=MIN_N);
+  const bestWeek = recentWeeks.reduce((a,b)=>b.acc>a.acc?b:a);
+  const latestWeek = recentWeeks[recentWeeks.length-1];
+  const previousWeek = recentWeeks[recentWeeks.length-2];
+  const weeklyRecords = recentWeeks.reduce((sum,w)=>sum+w.eventN,0);
+  const repeatedMistakes = eligibleWeeks.reduce((sum,w)=>sum+w.mis,0);
+  const reviewCounts = recentWeeks.map(w=>w.eventN-Math.round(w.eventN*w.acc));
+  const reviewIndex = reviewCounts.reduce((best,value,index)=>value>reviewCounts[best]?index:best,0);
+  const delta = pc(latestWeek.acc)-pc(previousWeek.acc);
+  const deltaMark = delta>0?'▲ ':delta<0?'▼ ':'→ ';
   page(head('주간 분석')+'<div class="rmeta">'+meta+'</div>'+
-    weekChart('주차별 정답률 — ▲ 보강 ● 상담 시점', '정답률 '+pc(r.acc)+'%', 'var(--d-green)', r.weeks, w=>pc(w.acc), v=>v)+
-    weekChart('주차별 채점 문항 수', r.items.toLocaleString()+'문항', 'var(--d-red)', r.weeks, w=>w.vol, v=>v)+
-    '<div class="addgrid mt-md">'+
-      weeklyFactChart('월요일 시작 주차의 오개념 태그 건수', '오개념', 'var(--d-yellow)', r.weeks, w=>w.mis, v=>v+'건')+
-      weeklyFactChart('월요일 시작 주차의 서로 다른 학습 노드 수', '노드 커버리지', 'var(--d-blue)', r.weeks, w=>w.nodeN, v=>v+'종')+
+    '<div class="week-summary">'+
+      weekSummaryCard('최근 주 정답률', pc(latestWeek.acc)+'%', deltaMark+Math.abs(delta)+'%p · 전주 대비')+
+      weekSummaryCard('이번 4주 학습 기록', weeklyRecords+'문항', '주차별로 확인 가능한 기록 합계')+
+      weekSummaryCard('반복해서 틀린 기록', repeatedMistakes+'건', '표본이 충분한 주만 합산')+
     '</div>'+
-    '<div class="note page-note">⚠ <b>개입 마커가 이 차트의 핵심입니다</b> — 상담·보강 이후 흐름이 어떻게 움직였는지를 보여주는 것이 목적이고, 주차 정답률 자체는 표본이 작아 단독으로 읽지 않습니다.</div>', 'weekly-pg');
+    weekChart('지난 12주 정답률 흐름 — ▲ 보강 · ● 상담', '최근 '+pc(latestWeek.acc)+'%', 'var(--d-green)', r.weeks, w=>pc(w.acc), v=>v+'%')+
+    weeklyTable(recentWeeks)+
+    '<div class="week-insight">'+
+      '<div class="item"><b>◆ 가장 잘 풀린 주</b><br>'+(recentWeeks.indexOf(bestWeek)+1)+'주 · 정답률 '+pc(bestWeek.acc)+'% ('+Math.round(bestWeek.eventN*bestWeek.acc)+' / '+bestWeek.eventN+'문항)</div>'+
+      '<div class="item warn"><b>▲ 먼저 다시 볼 주</b><br>'+(reviewIndex+1)+'주 · 다시 볼 문항 '+reviewCounts[reviewIndex]+'개, 반복 실수 '+(recentWeeks[reviewIndex].eventN<MIN_N?'판단 보류':recentWeeks[reviewIndex].mis+'건')+'</div>'+
+    '</div>'+
+    '<div class="note page-note"><b>읽는 법</b> · 「공부한 유형」은 그 주에 기록된 서로 다른 영역×문제유형 수입니다. '+
+    '<b>'+MIN_N+'문항 미만인 주는 반복 실수를 판단 보류</b>로 두며, 상담·보강 뒤의 흐름과 함께 읽습니다.</div>', 'weekly-pg');
 
   /* 5.5 영역 × 유형 성과 */
   page(head('영역·유형별 학습 성과')+
