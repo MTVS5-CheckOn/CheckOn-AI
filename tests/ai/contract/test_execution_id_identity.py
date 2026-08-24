@@ -180,3 +180,15 @@ def test_the_guard_would_catch_a_violation(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert _scan(clean).inline == [], "변수 참조를 위반으로 잡으면 안 된다"
+
+def test_the_sweep_has_something_to_sweep() -> None:
+    """🔴 **순회 대상이 0이면 이 파일의 검사들이 「조용히 사라진다」**(99 #202 · №88 실측).
+
+    `parametrize` 에 빈 목록이 가면 red 도 skip 도 아니고 **collect 조차 안 된다** —
+    실측(2026-08-24): 이 파일을 비웠더니 `19 passed` 가 `3 passed` 가 됐고 **아무도 안 빨개졌다.**
+
+    🔴 **`N` 이 아니라 「0이 아니다」로 문다** — 이 목록은 **늘어나는 것**이라 `N` 을 박으면
+    항목이 생길 때마다 그 수를 고쳐야 한다(99 #211 ⓐ 의 반대편). «수가 줄면 알아차린다»가
+    목적인 자리(코퍼스·픽스처 총수)와는 **다르다** — 여기 목적은 «**사라지면 알아차린다**» 다.
+    """
+    assert _params(), "순회 대상이 0이다 — 위 검사들이 조용히 사라졌다"
