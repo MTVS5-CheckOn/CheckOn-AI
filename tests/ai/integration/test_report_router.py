@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -21,8 +21,10 @@ from ai.api.routers.report import (
 )
 from ai.contracts.diagnosis import (
     CellVerdict,
+    DiagnosisEvent,
     MisconceptionReport,
     NodeVerdict,
+    Period,
     PropagatedNode,
     WeaknessCell,
     WeaknessMap,
@@ -39,9 +41,15 @@ from ai.contracts.report import (
     ReportRevisionKind,
     ReportUnproducedMetric,
 )
+from ai.contracts.taxonomy import AreaTag, TypeTag
 from ai.report.memory_store import InMemoryReportStore
-from ai.report.store import ReportSourceSnapshot, StoredReport
-from ai.report.vocabulary import RootCauseMetricKind, default_report_root_cause_vocabulary
+from ai.report.store import ReportSourceSnapshot, ReportTimeSeriesSnapshot, StoredReport
+from ai.report.vocabulary import (
+    RootCauseMetricKind,
+    TimeSeriesMetricKind,
+    default_report_root_cause_vocabulary,
+    default_report_time_series_vocabulary,
+)
 
 REPORT_ID = UUID("00000000-0000-4000-8000-000000000501")
 BLOCK_ID = UUID("00000000-0000-4000-8000-000000000502")
@@ -61,7 +69,29 @@ def _evidence(record_id: str = "row-1") -> tuple[ReportEvidenceRef, ...]:
     )
 
 
-def _stored_report(*, tenant_id: str = "tenant-a", gate_passed: bool = True) -> StoredReport:
+def _time_series_snapshot() -> ReportTimeSeriesSnapshot:
+    return ReportTimeSeriesSnapshot(
+        period=Period(from_date=date(2026, 8, 1), to_date=date(2026, 8, 31)),
+        events=tuple(
+            DiagnosisEvent(
+                event_id=f"time-series-{index}",
+                area_tag=AreaTag.LANGUAGE,
+                type_tag=TypeTag.CONCEPT,
+                correct=index % 2 == 0,
+                occurred_at=NOW + timedelta(hours=index),
+                tag_confirmed=True,
+            )
+            for index in range(10)
+        ),
+    )
+
+
+def _stored_report(
+    *,
+    tenant_id: str = "tenant-a",
+    gate_passed: bool = True,
+    include_time_series: bool = False,
+) -> StoredReport:
     block = ReportBlock(
         block_id=BLOCK_ID,
         seq=0,
@@ -140,6 +170,7 @@ def _stored_report(*, tenant_id: str = "tenant-a", gate_passed: bool = True) -> 
                     evidence=_evidence("teacher-metric"),
                 ),
             ),
+            time_series=_time_series_snapshot() if include_time_series else None,
             cell_min_items=1,
         ),
         blocks=(block,),
@@ -226,6 +257,36 @@ def test_detail_assembles_guardian_data_with_consistent_omissions() -> None:
     assert section_keys == studio["unproduced"]
     assert section_keys == [metric.value for metric in ReportUnproducedMetric]
     assert all(item["reason"] for item in data["unproduced_sections"])
+
+
+def test_detail_serves_time_series_metrics_through_the_http_assembly_path() -> None:
+    with _client_with(_stored_report(include_time_series=True)) as client:
+        response = client.get(f"/v1/reports/{REPORT_ID}", headers=HEADERS)
+
+    assert response.status_code == 200
+    metrics = _data(response)["studio_data"]["metrics"]
+    keys = [metric["metric_key"] for metric in metrics]
+    vocabulary = default_report_time_series_vocabulary()
+    assert vocabulary.metric_key_for(
+        TimeSeriesMetricKind.MONTHLY_GRADED_ITEMS,
+        bucket="2026-08",
+    ) in keys
+    assert vocabulary.metric_key_for(
+        TimeSeriesMetricKind.WEEKLY_ACCURACY,
+        bucket="2026-08-24",
+    ) in keys
+    assert vocabulary.metric_key_for(TimeSeriesMetricKind.BASELINE_ACCURACY) in keys
+    assert all(metric["audience"] == "guardian" for metric in metrics)
+    assert "teacher-metric" not in response.text
+
+
+def test_detail_without_time_series_snapshot_returns_normally_without_time_series() -> None:
+    with _client_with(_stored_report()) as client:
+        response = client.get(f"/v1/reports/{REPORT_ID}", headers=HEADERS)
+
+    assert response.status_code == 200
+    metrics = _data(response)["studio_data"]["metrics"]
+    assert all(not metric["metric_key"].startswith("time_series.") for metric in metrics)
 
 
 def test_detail_returns_gate_rejection_as_200_status() -> None:

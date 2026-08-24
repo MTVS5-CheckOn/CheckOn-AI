@@ -43,6 +43,7 @@ from ai.report.store import (
     ReportStore,
     StoredReport,
 )
+from ai.report.time_series import build_default_time_series_metrics_from_events
 from ai.report.vocabulary import default_report_unproduced_vocabulary
 from ai.runtime.errors import DomainException, NotFound, SnapshotInvalid
 
@@ -180,13 +181,25 @@ def _summary(report: StoredReport) -> dict[str, Any]:
 def _detail(report: StoredReport) -> dict[str, Any]:
     source = report.source
     unproduced_vocabulary = default_report_unproduced_vocabulary()
+    time_series_metrics = (
+        ()
+        if source.time_series is None
+        else build_default_time_series_metrics_from_events(
+            source.time_series.events,
+            period=source.time_series.period,
+        )
+    )
     studio_data = assemble_report_studio_data(
         source.weakness_map,
         source.misconceptions,
         source.item_results,
         cell_min_items=source.cell_min_items,
         audience=ReportAudience.GUARDIAN,
-        metrics=(*source.metrics, *build_default_root_cause_metrics(source.weakness_map)),
+        metrics=(
+            *source.metrics,
+            *build_default_root_cause_metrics(source.weakness_map),
+            *time_series_metrics,
+        ),
     )
     return {
         **_summary(report),
