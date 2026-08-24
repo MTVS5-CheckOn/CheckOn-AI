@@ -95,6 +95,16 @@ def test_the_sweeps_actually_find_something() -> None:
     assert len(_axis_rule_strings()) >= 4, "`tone_map.axis_rules` 순회가 깨졌다"
     assert len(_gate_feedback_strings()) >= 4, "게이트 사유 순회가 깨졌다"
     assert len(_buffer_lexicon_strings()) >= 20, "완충 어휘 순회가 깨졌다"
+    #: 🔴 **합친 목록도 센다** — 세 축을 따로만 세면 `_prompt_strings()` 가 비어도 안 걸린다.
+    #: ⚠ 실측(8/24 뒤집기 ③): 그 함수를 `return []` 로 바꿔도 **green 이었다** —
+    #: `parametrize` 가 빈 목록이면 그 검사들이 **collect 조차 안 되고 조용히 사라진다.**
+    #: 🔴 «검사가 0건이 되는 것» 은 red 여야 한다 — 그게 앵커 폭이다.
+    combined = _prompt_strings()
+    assert len(combined) == (
+        len(_axis_rule_strings())
+        + len(_gate_feedback_strings())
+        + len(_buffer_lexicon_strings())
+    ), f"합친 목록이 세 축의 합과 다르다 — 어느 축이 빠졌다: {len(combined)}"
 
 
 @pytest.mark.parametrize(
