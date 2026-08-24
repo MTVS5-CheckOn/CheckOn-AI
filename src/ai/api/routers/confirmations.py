@@ -74,6 +74,17 @@ LABEL_VALUE_AXIS_MISMATCH: Final = "label_value_axis_mismatch"
 #: 🔴 **400 으로 거절된 확정은 안 센다** — 「강사가 확정했다」가 부풀려진다.
 label_confirmations: Final[Counter[tuple[str, str, str, str]]] = Counter()
 
+
+def reset_label_confirmations() -> None:
+    """🔴 집계를 비운다 — **모듈 규약**을 따른다(2026-08-25 · 99 #237).
+
+    ⚠ 🔴 검사가 `label_confirmations.clear()` 를 **다섯 군데에서 손으로** 불렀다.
+    🔴 새 검사가 그걸 잊으면 **앞 검사의 수를 물려받는데, red 로도 skip 으로도 안
+    나타난다 — 수가 그냥 틀린다**(#226 «green 인데 아무것도 안 재고 있다» 의 그 종류).
+    ⇒ 같은 모듈의 `reset_inquiry_class_store()` 와 **같은 규약**으로 둔다.
+    """
+    label_confirmations.clear()
+
 #: `classification`이 받지 않는 action의 사유 코드.
 ACTION_NOT_SUPPORTED = "action_not_supported"
 
@@ -369,6 +380,8 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
 VERSION_SCOPE: Final = RouterScope("/v1/confirmations", classify_versions)
 
 __all__ = [
+    "label_confirmations",
+    "reset_label_confirmations",
     "ACTION_NOT_SUPPORTED",
     "CORRECTED_VALUE_MISSING",
     "CORRECTED_VALUE_NOT_ALLOWED",

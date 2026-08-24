@@ -16,9 +16,21 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from ai.api.app import create_app
-from ai.api.routers.confirmations import label_confirmations
+from ai.api.routers.confirmations import (
+    label_confirmations,
+    reset_label_confirmations,
+)
 
 _HEADERS = {"X-Tenant-Id": "t_lc", "X-Request-Id": "r_lc"}
+
+
+@pytest.fixture(autouse=True)
+def _reset_counts() -> None:
+    """🔴 **검사마다 자동으로 비운다**(99 #237) — 손으로 부르던 다섯 군데를 걷었다.
+
+    ⚠ 🔴 잊으면 앞 검사의 수를 물려받고 **그건 red 로도 skip 으로도 안 나타난다.**
+    """
+    reset_label_confirmations()
 
 
 @pytest.fixture
@@ -37,7 +49,6 @@ def test_a_confirmed_label_is_accepted_and_only_the_aggregate_is_logged(
     client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
     """🔴 ①·④ — 200 이고 **집계 다섯 칸이 남되 `guardian_ref` 는 안 남는다.**"""
-    label_confirmations.clear()
     with caplog.at_level(logging.INFO, logger="ai.api.routers.confirmations"):
         response = _post(
             client,
@@ -99,7 +110,6 @@ def test_a_rejected_label_is_accepted_but_classification_still_is_not(
     ⚠ classification 은 3축이 **값을 반드시 가져야** 해서 «거절» 이 정의되지 않는다.
     🔴 라벨은 «이 축을 안 쓴다» 가 뜻이 된다 — **되돌아가지 않았나** 를 같이 문다.
     """
-    label_confirmations.clear()
     label = _post(
         client,
         {"kind": "label", "suggestion_id": "gd_11b0:comm:data", "action": "rejected"},
@@ -132,7 +142,6 @@ def test_a_guardian_ref_with_colons_still_parses(
     축·값은 **우리 소유의 닫힌 열거형**이라 `:` 을 안 담으므로 오른쪽에서 둘만 떼면
     언제나 복원된다 ⇒ 🔴 **BE 에 «`:` 금지» 를 걸 필요가 없다.**
     """
-    label_confirmations.clear()
     with caplog.at_level(logging.INFO, logger="ai.api.routers.confirmations"):
         response = _post(
             client,
@@ -231,7 +240,6 @@ def test_the_key_the_suggestion_gives_is_accepted_by_the_confirmation(
 
 def test_four_confirmations_are_counted_and_split_by_key(client: TestClient) -> None:
     """🔴 ① 확정 4건 → 카운터가 4이고 **축·값·action 별로 갈린다**(99 #233)."""
-    label_confirmations.clear()
     bodies: list[dict[str, object]] = [
         {"suggestion_id": "gd_1:comm:data", "action": "confirmed"},
         {"suggestion_id": "gd_2:comm:data", "action": "confirmed"},
@@ -252,7 +260,6 @@ def test_four_confirmations_are_counted_and_split_by_key(client: TestClient) -> 
 
 def test_a_rejected_400_is_not_counted(client: TestClient) -> None:
     """🔴 ⑤ 400 으로 거절된 확정은 **안 센다** — 「강사가 확정했다」가 부풀려진다."""
-    label_confirmations.clear()
     for bad in (
         {"suggestion_id": ":comm:data", "action": "confirmed"},
         {"suggestion_id": "gd_1:없는축:data", "action": "confirmed"},
