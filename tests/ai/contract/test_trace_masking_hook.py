@@ -66,6 +66,10 @@ _ALLOWED_GATEWAY_BUILDERS: frozenset[str] = frozenset(
         #: 실린다**(BE 1차 마스킹 통과본이지만 우리 문지기를 다시 지난다 · #104 축)
         #: ⇒ 훅이 **마지막 관문**이라 조립부가 반드시 주입한다.
         "composition/labels/provider.py",
+        #: 리포트 문장화(§2-29 ⓒ · 2026-08-25) — role=reporter(#410). guardian으로
+        #: 필터한 학부모 지표·여섯 데이터 블록·미산출 축이 프롬프트에 실린다
+        #: (`teacher_only` 지표는 물리적으로 제외). ⇒ 훅이 마지막 관문이라 반드시 주입한다.
+        "report/provider.py",
     }
 )
 

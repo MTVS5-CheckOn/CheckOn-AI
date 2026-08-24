@@ -174,6 +174,34 @@ def require_report_narrator() -> ReportNarrationGenerator:
     return _narrator
 
 
+def bootstrap_report_narrator() -> None:
+    """기동 시 env 선택 provider와 필수 텍스트 게이트를 조립해 주입한다.
+
+    이미 배선돼 있으면 덮지 않는다. 테스트·평가 러너가 명시적으로 꽂은 narrator를
+    유지해야 주입 seam이 실제 경계가 된다.
+
+    fake가 선택되는 것은 사고가 아니라 선택이다. provider 조립부가 경고 로그와
+    `fake-report` 표기를 남긴다. 이 함수가 아예 돌지 않는 사건은 별개이며, 그때는
+    `require_report_narrator`가 조용한 Fake 폴백 없이 기동을 막는다.
+    """
+
+    if _narrator is not None:
+        return
+    from ai.report.provider import build_report_narrator  # noqa: PLC0415
+
+    set_report_narrator(build_report_narrator(clock=_clock))
+
+
+def _startup() -> None:
+    """기동 순서대로 narrator를 조립한 뒤 미배선 여부를 확인한다."""
+
+    bootstrap_report_narrator()
+    require_report_narrator()
+
+
+router.add_event_handler("startup", _startup)
+
+
 def set_report_clock(clock: Callable[[], datetime]) -> None:
     """복귀 감사 시각 테스트용 주입 경계."""
 
@@ -534,6 +562,7 @@ async def restore_ai_original(
 
 __all__ = [
     "VERSION_SCOPE",
+    "bootstrap_report_narrator",
     "create_report",
     "report_versions",
     "require_report_narrator",

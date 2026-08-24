@@ -15,6 +15,7 @@ from httpx import Response
 
 from ai.api.app import create_app
 from ai.api.routers.report import (
+    require_report_narrator,
     reset_report_clock,
     reset_report_narrator,
     reset_report_store,
@@ -218,6 +219,23 @@ def _client_with(
     if narrator is not None:
         set_report_narrator(narrator)
     return TestClient(create_app(), raise_server_exceptions=False)
+
+
+def test_production_app_startup_wires_report_narrator_without_test_injection() -> None:
+    """검사에서 직접 꽂지 않아도 프로덕션 startup 조립 루트가 narrator를 채운다."""
+
+    with TestClient(create_app()):
+        assert require_report_narrator() is not None
+
+
+def test_production_startup_does_not_overwrite_an_injected_narrator() -> None:
+    """평가·테스트가 명시 주입한 seam은 startup이 보존한다."""
+
+    mine = _RejectedNarrator()
+    set_report_narrator(mine)
+
+    with TestClient(create_app()):
+        assert require_report_narrator() is mine
 
 
 def _narrator(steps: tuple[str, ...]) -> tuple[ReportNarrator, FakeProvider]:
