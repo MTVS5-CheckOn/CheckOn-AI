@@ -1062,7 +1062,8 @@ class LlmCall(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     run_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("ai_run.execution_id"))
-    role: Mapped[str] = mapped_column(String)  # generator|verifier|mapper|classifier|narrator
+    # role 값 정본: ai.contracts.llm.ModelRole — 🔴 목록을 여기 옮겨 적지 않는다
+    role: Mapped[str] = mapped_column(String)
     provider: Mapped[str] = mapped_column(String)
     model: Mapped[str] = mapped_column(String)
     prompt_id: Mapped[str] = mapped_column(String)

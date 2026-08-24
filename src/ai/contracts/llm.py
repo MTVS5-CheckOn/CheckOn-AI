@@ -51,6 +51,12 @@ class ModelRole(StrEnum):
     재사용하지 않는다(role별 전송 재시도·원가 회계가 소비자마다 갈리지 않게).
     """
 
+    REPORTER = "reporter"
+    """리포트 본문 문장화 전용 (v2.3 신설).
+
+    role별 전송 재시도·원가 회계가 소비자마다 갈리지 않게 별도 role로 분리한다.
+    """
+
 
 class CallOutcome(StrEnum):
     """LLM_CALL.outcome — 내부 관측용(API 미노출). error_codes.md §3.
