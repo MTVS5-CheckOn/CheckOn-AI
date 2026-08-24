@@ -335,7 +335,7 @@ DomainException (base)
 
 | 상황 | 코드 | 사유 | 뜻 |
 | --- | --- | --- | --- |
-| `kind`가 `tag`·`label`·`draft_edit` | **400** | `kind_not_implemented` | 제안 **생성기가 없다** — 확정할 대상이 존재하지 않는다. 받아서 조용히 버리면 BE가 "저장됐다"고 오해하므로 정직하게 거절한다 |
+| `kind`가 `tag`·`label`·`draft_edit` | **400** | `kind_not_implemented` | 🔴 **그 kind 의 「확정」이 v1 미구현**이다 — ⚠ 🔴 **(8/24 정정 · 99 #221) 「제안 생성기가 없다」가 아니다**: `label` 은 생성기가 있고 `POST /v1/labels/suggest` 가 **동작한다**. 미구현인 것은 **확정을 받는 쪽**이다. 받아서 조용히 버리면 BE가 "저장됐다"고 오해하므로 정직하게 거절한다 |
 | `kind=classification` + `action=rejected` | **400** | `action_not_supported` | 3축은 값이 반드시 있어야 하는 축이라 "거절"이 정의되지 않는다 |
 | `action=corrected`인데 정정할 축이 0건 | **400** | `corrected_value_missing` | `corrected_value`가 없거나 3축이 전부 null이다. 🔴 **종전에는 200 `accepted:true`로 나갔다** — `reviewed_at`만 찍히고 그 행은 규약 ①에 의해 **이후 재예측이 영구 차단**된다("검토함"으로 굳는다). BE는 정정이 저장됐다고 믿는다 |
 | `action=confirmed`인데 `corrected_value`가 실림 | **400** | `corrected_value_not_allowed` | 값이 통째로 버려지던 조합이다. 버릴 거면 받지 않는다 — 위 두 행과 같은 원칙 |
