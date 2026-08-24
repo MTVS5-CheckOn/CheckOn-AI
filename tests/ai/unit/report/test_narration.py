@@ -17,7 +17,7 @@ from ai.contracts.diagnosis import (
     WeaknessMap,
 )
 from ai.contracts.execution import Capability, ExecutionContext, VersionSet
-from ai.contracts.llm import ModelRole
+from ai.contracts.llm import FieldMissing, ModelRole, ParseFailed, RedactionBlocked
 from ai.contracts.problem_generation import DifficultyBand, ItemResult, ProblemItemStatus
 from ai.contracts.report import (
     ReportAudience,
@@ -124,7 +124,7 @@ def _draft(content: str, *numbers_used: int) -> str:
 
 
 def _narrator(
-    steps: tuple[str, ...],
+    steps: tuple[str | Exception, ...],
     *,
     max_attempts: int = 3,
 ) -> tuple[ReportNarrator, FakeProvider]:
@@ -246,6 +246,45 @@ def test_delegated_gate_rejects_and_stops_after_three_attempts(
     assert section.reason == expected_reason
     assert section.attempts == 3
     assert len(provider.requests) == 3
+
+
+@pytest.mark.parametrize("error_type", [ParseFailed, FieldMissing])
+def test_parse_failures_use_exactly_three_attempts_before_generation_exhaustion(
+    error_type: type[ParseFailed],
+) -> None:
+    narrator, provider = _narrator(
+        tuple(error_type("구조화 출력 실패") for _ in range(3))
+    )
+
+    section = asyncio.run(
+        narrator.generate_section(
+            ReportBlockKind.FACT,
+            context=build_report_narration_context(_studio_data()),
+            execution_context=_execution_context(),
+        )
+    )
+
+    assert section.status is ReportNarrationStatus.TEMPLATE_ONLY
+    assert section.reason == "generation_exhausted"
+    assert section.attempts == 3
+    assert len(provider.requests) == 3
+
+
+def test_gateway_redaction_blocked_does_not_consume_regeneration_attempts() -> None:
+    narrator, provider = _narrator((RedactionBlocked("마스킹 차단"),))
+
+    section = asyncio.run(
+        narrator.generate_section(
+            ReportBlockKind.FACT,
+            context=build_report_narration_context(_studio_data()),
+            execution_context=_execution_context(),
+        )
+    )
+
+    assert section.status is ReportNarrationStatus.TEMPLATE_ONLY
+    assert section.reason == "redaction_blocked"
+    assert section.attempts == 1
+    assert len(provider.requests) == 1
 
 
 def test_teacher_instruction_cannot_override_the_number_gate() -> None:
