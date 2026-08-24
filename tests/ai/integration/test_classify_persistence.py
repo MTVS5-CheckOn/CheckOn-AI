@@ -276,7 +276,10 @@ def test_rejected_action_is_400(client: TestClient, store: InMemoryInquiryClassS
     assert "action_not_supported" in response.text
 
 
-@pytest.mark.parametrize("kind", ["tag", "label", "draft_edit"])
+@pytest.mark.parametrize("kind", ["tag",  "draft_edit"])
+#: 🔴 **`label` 을 뺐다(2026-08-24 · №92)** — 라벨 확정이 **구현됐다**.
+#: 이 검사는 «아직 미구현인 kind 가 400 인가» 를 재므로 구현된 축은 대상이 아니다.
+#: ⚠ 🔴 라벨은 별도 검사가 문다(`test_label_confirmation.py`).
 def test_unimplemented_kinds_are_400(
     client: TestClient, store: InMemoryInquiryClassStore, kind: str
 ) -> None:

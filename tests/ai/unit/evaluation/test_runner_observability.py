@@ -308,13 +308,6 @@ def test_uncertain_does_not_mask_a_real_residue() -> None:
     assert verdict.startswith("**데모 불가**"), verdict
 
 
-@pytest.mark.xfail(
-    reason=(
-        "🔴 `_pii_scan` 이 일부 hit 에 조각을 안 담는다 — 실측(2026-08-24 · 99 #229): "
-        "«서연이랑 동생 서진이도 같이 다녀요» 의 두 번째 hit 이 `fragment=''` 다"
-    ),
-    strict=True,
-)
 def test_pii_scan_keeps_the_fragment_that_was_masked() -> None:
     """🔴 건수만 남기면 **오탐/진탐을 영원히 못 가른다**(4차가 그랬다 · 99 ㊪).
 
@@ -344,6 +337,9 @@ def test_pii_scan_keeps_the_fragment_that_was_masked() -> None:
     assert len(detail) == scan["uncertain"]
     hits = detail[0]["hits"]
     assert hits, "불확실인데 조각이 비었다 — 무엇이 걸렸는지 알 수 없다"
+    #: 🔴 **`xfail` 을 걷었다**(2026-08-24 · 99 #229 해소) — `_redaction_hits` 가 연속된
+    #: non-equal 구간을 합치게 고쳤다. 종전에는 `insert`(정의상 `i1 == i2`)가 **빈 조각**을
+    #: 냈다. ⚠ 걷지 않으면 **고쳤는데 xpass 로 red** 가 된다(strict) — 그게 이 형식의 설계다.
     assert all(h["fragment"] and h["context"] for h in hits), hits
 
 

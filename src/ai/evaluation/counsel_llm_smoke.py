@@ -985,6 +985,12 @@ def _tracing_cell(pre: Mapping[str, Any]) -> str:
 _HIT_CONTEXT: Final = 16
 
 
+#: 🔴 **삼킬 `equal` 의 길이 상한**(99 #229) — 마스킹 토큰은 `⟪…⟫` 로 감싸므로 원문과
+#: **우연히** 겹치는 글자는 짧다(실측: 위 예가 **1자**). 이보다 길면 «정말로 떨어진 두 곳» 이다.
+#: ⚠ 🔴 값이 바뀌면 코드 diff 가 생기므로 여기 상수로 둔다(03 §1).
+_MERGE_EQUAL_MAX: Final = 2
+
+
 def _redaction_hits(text: str, masked: str) -> list[dict[str, str]]:
     """마스킹된 **조각과 그 문맥** — 🔴 오탐/진탐을 가르려면 무엇이 걸렸는지 알아야 한다.
 
@@ -992,11 +998,36 @@ def _redaction_hits(text: str, masked: str) -> list[dict[str, str]]:
     4건"* 이 정상 어휘 오탐인지 **LLM이 실명을 낸 것**인지 사후에 가를 수 없었고, 4차
     판정이 그 둘을 뭉쳐 「데모 불가」를 냈다(99 ㊪). **건수는 판정의 근거가 못 된다.**
     """
+    #: 🔴 **연속된 non-equal 구간을 하나로 합친다**(2026-08-24 · 99 #229).
+    #: ⚠ 🔴 **왜 필요한가 — `insert` 는 정의상 `i1 == i2` 라 `fragment` 가 빈다.**
+    #: 실측(opcode 표): «서연이랑 동생 서진이도 같이 다녀요» → `⟪확인필요⟫` 일 때
+    #:     replace i[0:18] j[0:4] · **equal i[18:19]='요'** · insert i[19:19] j[5:6]='⟫'
+    #: 🔴 원문의 `요` 와 토큰 `⟪확인필**요**⟫` 의 `요` 가 **우연히 같아** `equal` 로 잡히고,
+    #: 한 덩어리가 셋으로 쪼개져 **빈 조각**이 남았다 ⇒ «무엇이 걸렸는지 알 수 없다»(99 ㊪).
+    #: 🔴 **사이에 낀 짧은 `equal` 도 삼킨다** — 안 삼키면 위 예에서 여전히 빈 hit 이 남는다
+    #: (실측: 안 삼키면 replace 하나 + **빈 insert** · 삼키면 조각 하나로 온전하다).
+    #: ⚠ 🔴 **긴 `equal` 은 안 삼킨다** — 그건 정말로 떨어진 두 곳이 가려진 것이다.
+    #: 🔴 **`redact()` 가 원문 조각을 돌려주게 하는 길은 안 골랐다** — `Finding` 은
+    #: «원문 값을 담지 않는다(단방향)» 가 계약이다(`runtime/redaction.py`). 러너는 원문을
+    #: **이미 들고 있으므로** 밖에서 계산하는 지금 구조가 맞다.
     hits: list[dict[str, str]] = []
     matcher = difflib.SequenceMatcher(None, text, masked, autojunk=False)
+    spans: list[list[int]] = []
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
+            if i2 - i1 > _MERGE_EQUAL_MAX or not spans:
+                spans.append([])  # 경계 — 다음 구간은 새 hit 이다
             continue
+        if spans and spans[-1]:
+            spans[-1][1], spans[-1][3] = i2, j2
+        else:
+            if spans and not spans[-1]:
+                spans.pop()
+            spans.append([i1, i2, j1, j2])
+    for span in spans:
+        if not span:
+            continue
+        i1, i2, j1, j2 = span
         hits.append(
             {
                 "fragment": text[i1:i2],
