@@ -6,6 +6,7 @@ from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -20,6 +21,9 @@ DEFAULT_UNPRODUCED_METRICS_PATH = (
 DEFAULT_ROOT_CAUSE_METRICS_PATH = (
     Path(__file__).resolve().parent / "data" / "root_cause_metrics.yaml"
 )
+DEFAULT_TIME_SERIES_METRICS_PATH = (
+    Path(__file__).resolve().parent / "data" / "time_series_metrics.yaml"
+)
 
 
 class RootCauseMetricKind(StrEnum):
@@ -28,6 +32,18 @@ class RootCauseMetricKind(StrEnum):
     CONFIRMED = "confirmed"
     SUSPECT = "suspect"
     PROPAGATED = "propagated"
+
+
+class TimeSeriesMetricKind(StrEnum):
+    """시계열 metric_key의 닫힌 종류."""
+
+    MONTHLY_ACCURACY = "monthly_accuracy"
+    MONTHLY_GRADED_ITEMS = "monthly_graded_items"
+    WEEKLY_ACCURACY = "weekly_accuracy"
+    WEEKLY_GRADED_ITEMS = "weekly_graded_items"
+    BASELINE_ACCURACY = "baseline_accuracy"
+    BASELINE_GRADED_ITEMS_PER_WEEK = "baseline_graded_items_per_week"
+    BASELINE_WEEKS_USED = "baseline_weeks_used"
 
 
 class ReportVocabularyError(ValueError):
@@ -133,6 +149,68 @@ class ReportRootCauseVocabulary(BaseModel):
         return self.type_labels[type_tag.value]
 
 
+class ReportTimeSeriesVocabulary(BaseModel):
+    """시계열 키와 버킷·기준선 정책의 버전 정본."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: Literal["report-time-series-metrics.v1"]
+    timezone_name: str = Field(min_length=1)
+    bucket_min_items: int = Field(ge=1)
+    baseline_window_weeks: int = Field(ge=1)
+    metric_keys: dict[str, str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_policy(self) -> Self:
+        expected = {kind.value for kind in TimeSeriesMetricKind}
+        found = set(self.metric_keys)
+        if found != expected:
+            missing = sorted(expected - found)
+            unknown = sorted(found - expected)
+            raise ValueError(
+                f"리포트 시계열 어휘가 완전하지 않다: 누락={missing} 미등록={unknown}"
+            )
+        if len(set(self.metric_keys.values())) != len(self.metric_keys):
+            raise ValueError("리포트 시계열 metric_key는 중복될 수 없다")
+        bucketed = {
+            TimeSeriesMetricKind.MONTHLY_ACCURACY,
+            TimeSeriesMetricKind.MONTHLY_GRADED_ITEMS,
+            TimeSeriesMetricKind.WEEKLY_ACCURACY,
+            TimeSeriesMetricKind.WEEKLY_GRADED_ITEMS,
+        }
+        for kind in TimeSeriesMetricKind:
+            template = self.metric_keys[kind.value]
+            expected_placeholders = 1 if kind in bucketed else 0
+            if template.count("{bucket}") != expected_placeholders:
+                raise ValueError(f"시계열 metric_key 버킷 자리표시자가 잘못됐다: {kind.value}")
+            try:
+                template.format(bucket="2000-01-03")
+            except (IndexError, KeyError, ValueError) as error:
+                raise ValueError(f"시계열 metric_key 형식이 잘못됐다: {kind.value}") from error
+        try:
+            ZoneInfo(self.timezone_name)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError(f"등록되지 않은 IANA 시간대다: {self.timezone_name}") from error
+        return self
+
+    def metric_key_for(
+        self,
+        kind: TimeSeriesMetricKind,
+        *,
+        bucket: str | None = None,
+    ) -> str:
+        """종류와 버킷을 버전 어휘의 metric_key로 바꾼다."""
+
+        template = self.metric_keys[kind.value]
+        if "{bucket}" in template:
+            if bucket is None:
+                raise ValueError(f"버킷 metric_key에는 bucket이 필요하다: {kind.value}")
+            return template.format(bucket=bucket)
+        if bucket is not None:
+            raise ValueError(f"기준선 metric_key에는 bucket을 받을 수 없다: {kind.value}")
+        return template
+
+
 def load_report_block_vocabulary(
     path: Path = DEFAULT_BLOCK_KINDS_PATH,
 ) -> ReportBlockVocabulary:
@@ -184,6 +262,23 @@ def load_report_root_cause_vocabulary(
         raise ReportVocabularyError(f"리포트 근본 원인 어휘 스키마 오류: {error}") from error
 
 
+def load_report_time_series_vocabulary(
+    path: Path = DEFAULT_TIME_SERIES_METRICS_PATH,
+) -> ReportTimeSeriesVocabulary:
+    """시계열 키·버킷 정책을 엄격히 읽고 종류 전수를 실패 닫힘으로 검증한다."""
+
+    try:
+        raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise ReportVocabularyError(f"리포트 시계열 어휘 파일을 읽을 수 없다: {path}") from error
+    except yaml.YAMLError as error:
+        raise ReportVocabularyError(f"리포트 시계열 어휘 YAML 오류: {error}") from error
+    try:
+        return ReportTimeSeriesVocabulary.model_validate(raw)
+    except ValidationError as error:
+        raise ReportVocabularyError(f"리포트 시계열 어휘 스키마 오류: {error}") from error
+
+
 @lru_cache
 def default_report_block_vocabulary() -> ReportBlockVocabulary:
     """패키지 동봉 어휘를 프로세스당 한 번 검증한다."""
@@ -205,20 +300,32 @@ def default_report_root_cause_vocabulary() -> ReportRootCauseVocabulary:
     return load_report_root_cause_vocabulary()
 
 
+@lru_cache
+def default_report_time_series_vocabulary() -> ReportTimeSeriesVocabulary:
+    """패키지 동봉 시계열 어휘·정책을 프로세스당 한 번 검증한다."""
+
+    return load_report_time_series_vocabulary()
+
+
 __all__ = [
     "DEFAULT_BLOCK_KINDS_PATH",
     "DEFAULT_UNPRODUCED_METRICS_PATH",
     "DEFAULT_ROOT_CAUSE_METRICS_PATH",
+    "DEFAULT_TIME_SERIES_METRICS_PATH",
     "ReportBlockVocabulary",
     "ReportUnproducedReason",
     "ReportUnproducedVocabulary",
     "ReportRootCauseVocabulary",
+    "ReportTimeSeriesVocabulary",
     "ReportVocabularyError",
     "RootCauseMetricKind",
+    "TimeSeriesMetricKind",
     "default_report_block_vocabulary",
     "default_report_unproduced_vocabulary",
     "default_report_root_cause_vocabulary",
+    "default_report_time_series_vocabulary",
     "load_report_block_vocabulary",
     "load_report_unproduced_vocabulary",
     "load_report_root_cause_vocabulary",
+    "load_report_time_series_vocabulary",
 ]
