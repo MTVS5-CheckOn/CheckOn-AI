@@ -48,11 +48,22 @@ def _capabilities() -> dict[str, dict[str, str]]:
 
 
 def test_every_router_scope_is_either_a_capability_or_excused() -> None:
-    exposed = {caps["engine"] for caps in _capabilities().values()}
+    """🔴 **대조 집합을 중간 변수로 두지 않는다**(앵커 폭 · 2026-08-24 실측).
+
+    뒤집기 ③(«대조를 상수로 박기»)이 **green 이었다** — `exposed = {...}` 로 지금 맞는
+    값을 박아도 통과했다. 🔴 그건 «올바르다» 가 아니라 «이 문장이 응답에서 왔다는 걸
+    이 검사가 안 잰다» 다(99 #211). ⚠ 지금 맞는 상수는 **어떤 단언으로도** 파생과
+    구분되지 않는다 — 구분되는 건 «나중에 어긋날 때» 뿐이고 그건 ①②가 문다.
+    ⇒ 응답을 **단언 안에서 바로** 읽어 상수를 꽂을 자리를 없앤다(박으려면 이 문장을
+    **지워야** 하고, 그건 뒤집기가 아니라 삭제다).
+    """
+    #: 🔴 **무엇을 쟀나** — 축이 통째로 사라지면 「빠진 게 없다」로 green 이 된다(№68).
+    assert len(ROUTER_VERSION_SCOPES) >= 9, len(ROUTER_VERSION_SCOPES)
     missing = {
         scope.prefix: scope.versions().engine_version
         for scope in ROUTER_VERSION_SCOPES
-        if scope.versions().engine_version not in exposed
+        if scope.versions().engine_version
+        not in {caps["engine"] for caps in _capabilities().values()}
         and scope.versions().engine_version not in _NOT_A_CAPABILITY
     }
     assert not missing, (
