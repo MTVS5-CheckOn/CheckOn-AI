@@ -261,6 +261,24 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 .rleg b{color:var(--ink);}
 .rside .li{display:flex;align-items:center;gap:8px;border:1px solid var(--pline);border-radius:8px;padding:9px 12px;margin-bottom:6px;font-size:12px;}
 .rside .li .v{margin-left:auto;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}
+.addgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:18px;}
+.addbox{border:1px solid var(--pline);border-radius:9px;padding:11px 13px;background:#fcfcfd;}
+.addbox h5{font-size:11.5px;font-weight:800;margin-bottom:8px;}
+.mbar{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--pline);font-size:11px;}
+.mbar:last-child{border-bottom:none;}
+.mbar .nm{flex:0 0 128px;line-height:1.45;}
+.mbar .bg{height:7px;flex:1;background:var(--d-track);border-radius:99px;overflow:hidden;}
+.mbar .fg{display:block;height:100%;background:var(--d-blue);border-radius:99px;}
+.mbar .v{flex:0 0 44px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;}
+.cause{border:1px solid var(--pline);border-radius:9px;padding:10px 12px;margin-bottom:8px;font-size:11.5px;line-height:1.65;}
+.cause .ct{display:flex;align-items:center;gap:7px;font-weight:800;margin-bottom:5px;}
+.cause .score{margin-left:auto;color:var(--d-red);font-variant-numeric:tabular-nums;}
+.evidence{margin-top:5px;padding-top:5px;border-top:1px dotted var(--line2);color:var(--sub);}
+.evidence b{color:var(--ink);}
+.facttbl{width:100%;border-collapse:collapse;font-size:11px;margin-top:16px;}
+.facttbl th,.facttbl td{border-bottom:1px solid var(--pline);padding:7px 8px;text-align:left;vertical-align:top;}
+.facttbl th{background:#fafbfc;color:var(--sub);font-size:10.5px;}
+.facttbl td.num{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;}
 /* 해설 문단 — 지면에서 그대로 편집한다(강사 직접 수정 · draft_edit) */
 .blk{border-left:3px solid var(--ai);background:var(--ai-bg);border-radius:0 9px 9px 0;padding:11px 15px 12px 14px;margin-bottom:8px;font-size:12.5px;line-height:1.85;}
 .blk .bt{font-size:9.5px;font-weight:800;color:var(--ai);font-family:var(--mono);margin-bottom:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
@@ -327,6 +345,9 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
      src/ai/contracts/taxonomy.py    AreaTag · TypeTag
      src/ai/contracts/composition.py DraftStatus · DraftKind · BlockType
      src/ai/contracts/diagnosis.py   CellVerdict
+     src/ai/contracts/diagnosis.py   DiagnosisEvent · WeaknessMap
+     src/ai/contracts/problem_generation.py ItemResult
+     src/ai/contracts/report.py      MisconceptionFrequencyPayload
      docs/part_a/06_refine_policy.md preset 3종 · blocked_reason
    ══════════════════════════════════════════════════════════════════ */
 
@@ -374,6 +395,35 @@ const BLOCKED = {
 const MIN_N = 10;                 /* 셀 판정에 필요한 최소 문항 수 — 서버가 내려주는 값 */
 const PERIOD = {y:2026, m:8};     /* 화면 기본 월 */
 
+/* ── 출제 축 → 새 화면 요소 대응표 ────────────────────────────────
+   주차별 오개념·노드 커버리지 ← DiagnosisEvent.occurred_at(월요일 버킷) + misconception_tag · skill_node_id
+   셀 취약도                  ← WeaknessCell.severity
+   선택 오답·형식·태그 확정   ← DiagnosisEvent.chosen_no · correct_no · item_format · tag_confirmed
+   노드 판정·근거             ← WeaknessMap.nodes[*].verdict · basis
+   근본 원인·전파 출발        ← WeaknessMap.propagated[*].score · from_nodes
+   영역/노드별 오개념·제외     ← MisconceptionFrequencyPayload.by_area · by_node · excluded_missing_*
+   영역별 채점 모수           ← AreaAchievementPayload.areas[*].n
+   ⚠ 주차별 난이도는 ItemResult에 occurred_at이 없어 그리지 않는다.
+   ⚠ overall_low는 독립 evidence가 없어 근본 원인으로 표면화하지 않는다.
+   모든 노드 키는 curriculum graph의 AreaTag×TypeTag 한글 라벨로 바꾼 뒤 지면에 넣는다. */
+
+const MISCONCEPTION_KO = {
+  scope_confusion:'범위 혼동', relation_reversal:'관계 반전', concept_mix:'개념 혼동',
+  evidence_skip:'근거 누락', choice_attraction:'매력 오답 선택'
+};
+const NODE = [
+  {k:'language.grammar.fortition', area:'language', type:'concept'},
+  {k:'language.grammar.phonological_change', area:'language', type:'infer'},
+  {k:'reading.information.relation', area:'reading', type:'fact'},
+  {k:'reading.reasoning.inference', area:'reading', type:'infer'},
+  {k:'literature.speaker.attitude', area:'literature', type:'critic'},
+  {k:'media.reception.credibility', area:'media', type:'critic'}
+];
+function nodeLabel(nodeId){
+  const node=NODE.find(n=>n.k===nodeId), area=node&&AREA.find(a=>a.k===node.area), type=node&&TYPE.find(t=>t.k===node.type);
+  return area&&type ? area.n+' × '+type.n : '표시명 미확인';
+}
+
 /* ── 2. 목업 원본 ───────────────────────────────────────────────── */
 const BASE = [
   {id:'RP-2608-011', alias:'stu_a41c', nm:'김○○', grade:'고2', elective:'언어와 매체',   cls:'고2-1 · 목요일반',   kind:'report',        status:'generated',             sent:false, seed:41},
@@ -413,6 +463,11 @@ function build(b){
     vol: 40 + Math.floor(r()*150),
     mark: i===8 ? '보강' : (i===6 ? '상담' : null)          /* 개입 시점 마커 */
   }));
+  R.weeks.forEach((w,i)=>{
+    w.eventN = i===9 ? 7 : 12 + Math.floor(r()*34);          /* DiagnosisEvent 주차 표본 */
+    w.mis = Math.floor(r()*Math.max(2, w.eventN*.22));       /* misconception_tag 존재 건 */
+    w.nodeN = 2 + Math.floor(r()*Math.min(9, w.eventN));     /* skill_node_id distinct */
+  });
 
   /* 영역×유형 셀 — 선택과목 밖 영역은 표본이 거의 없다 */
   R.cells = {};
@@ -436,6 +491,7 @@ function build(b){
   /* 판정은 자기 평균과의 거리로 — 반 평균이 아니라 자기 평균이다 */
   Object.values(R.cells).forEach(c=>{
     c.verdict = c.n < MIN_N ? 'unknown' : (c.acc < R.acc - .10 ? 'weak' : 'ok');
+    c.severity = c.verdict==='weak' ? Math.min(1, (R.acc-c.acc)/Math.max(R.acc,.01)) : null;
   });
 
   /* 영역 레이더 — 내 성취도 vs 내 기준선. 영역별 전국 평균은 benchmarks 에 없다 */
@@ -444,6 +500,45 @@ function build(b){
     const mine = cs.length ? cs.reduce((s,c)=>s+c.acc*c.n,0)/cs.reduce((s,c)=>s+c.n,0) : null;
     return {area:a, mine, n: cs.reduce((s,c)=>s+c.n,0)};
   });
+
+  /* 아래 값은 새로 발명한 추천값이 아니라 이미 수신·조립되는 출제 축의 목업이다. */
+  R.wrongChoices = [1,2,3,4,5].map(no=>({no, count:1+Math.floor(r()*18)}));
+  R.formats = [
+    {label:'객관식', count:Math.max(1, Math.round(R.items*.92))},
+    {label:'단답형', count:Math.max(1, Math.round(R.items*.08))}
+  ];
+  R.tagConfirmed = {yes:Math.max(1, Math.round(R.items*(.78+r()*.17))), total:R.items};
+
+  const areaKeys = AREA.map(a=>a.k).sort();                  /* 조립기 group_key 사전순 */
+  R.misconceptions = {
+    byArea:areaKeys.flatMap((areaKey,ai)=>{
+      if(ai===1) return [];
+      const tags=['scope_confusion','relation_reversal','concept_mix'];
+      return tags.slice(0,1+(ai%2)).map((tag,ti)=>({
+        groupKey:areaKey, tag, count:1+((b.seed+ai*3-ti)%7)
+      })).sort((x,y)=>y.count-x.count || x.tag.localeCompare(y.tag));
+    }),
+    byNode:[
+      {groupKey:NODE[0].k, tag:'concept_mix', count:2+(b.seed%4)},
+      {groupKey:NODE[2].k, tag:'scope_confusion', count:1+(b.seed%3)}
+    ],
+    excludedMissingChosenNo:b.seed%2,
+    excludedMissingMisconceptionTag:(b.seed+1)%3
+  };
+  R.nodes = [
+    {nodeId:NODE[0].k, area:NODE[0].area, verdict:'weak_confirmed', basis:['채점 이벤트 8건','영역×유형 셀 판정 1건']},
+    {nodeId:NODE[2].k, area:NODE[2].area, verdict:'suspect', basis:['채점 이벤트 5건']},
+    {nodeId:NODE[4].k, area:NODE[4].area, verdict:'ok', basis:['채점 이벤트 12건']}
+  ];
+  R.propagated = [
+    {nodeId:NODE[1].k, area:NODE[1].area, score:.72+(r()*.12), fromNodes:[NODE[0].k]},
+    {nodeId:NODE[3].k, area:NODE[3].area, score:.54+(r()*.12), fromNodes:[NODE[2].k,NODE[4].k]}
+  ];
+  /* seed 72는 오개념·근본 원인 부재도 정상 화면인지 확인하는 고정 빈 상태 픽스처다. */
+  if(b.seed===72){
+    R.misconceptions.byArea=[]; R.misconceptions.byNode=[];
+    R.nodes=[]; R.propagated=[];
+  }
 
   R.blocks = blocksOf(R);
   return R;
@@ -586,6 +681,86 @@ function weekChart(title, chip, color, weeks, pick, fmt){
     '<div class="wbars">'+bars+'</div><div class="wxs">'+xs+'</div></div>';
 }
 
+/* DiagnosisEvent 기반 주차 사실 — detection/features.py와 같은 occurred_at의 월요일 버킷.
+   MIN_N 미만은 막대 수치를 숨기고 판단 보류로 남긴다. */
+function weeklyFactChart(title, chip, color, weeks, pick, fmt){
+  const eligible=weeks.filter(w=>w.eventN>=MIN_N), vals=eligible.map(pick), hi=Math.max.apply(null,vals)||1;
+  let bars='', xs='';
+  weeks.forEach((w,i)=>{
+    const on=i>=weeks.length-4, hold=w.eventN<MIN_N, value=hold?0:pick(w);
+    bars += '<div class="c'+(on&&!hold?' on':'')+'" style="--bar:'+color+'">'+
+      '<span class="t">'+(on?(hold?'보류':fmt(value)):'')+'</span>'+
+      '<span class="b" style="height:'+(hold?6:Math.max(6,value/hi*100))+'%"></span></div>';
+    xs += '<span'+(on?' class="on"':'')+'>'+(on?(i-weeks.length+5)+'주':'')+'</span>';
+  });
+  return '<div class="wk"><div class="wh"><span class="tag" style="background:'+color+'">'+chip+'</span>'+
+    '<span style="font-size:11px;color:var(--sub);">'+title+'</span></div>'+
+    '<div class="wbars">'+bars+'</div><div class="wxs">'+xs+'</div></div>';
+}
+
+function severityHtml(r){
+  const rows=[];
+  AREA.forEach(a=>V1_TYPE.forEach(t=>{
+    const c=r.cells[a.k+'.'+t.k];
+    if(c.severity!=null) rows.push({label:a.n+' × '+t.n, value:c.severity});
+  }));
+  rows.sort((x,y)=>y.value-x.value);
+  return '<div class="addbox"><h5>취약 확정 칸의 심각도</h5>'+
+    (rows.length?rows.slice(0,5).map(x=>'<div class="mbar"><span class="nm">'+x.label+'</span>'+
+      '<span class="bg"><span class="fg" style="width:'+pc(x.value)+'%;background:var(--d-red)"></span></span>'+
+      '<span class="v">'+pc(x.value)+'%</span></div>').join(''):
+      '<div class="empty" style="padding:16px 0;">심각도가 산출된 취약 칸이 없습니다.</div>')+'</div>';
+}
+
+function eventBreakdownHtml(r){
+  const maxChoice=Math.max.apply(null,r.wrongChoices.map(x=>x.count))||1;
+  return '<div class="addbox"><h5>선택 오답 분포</h5>'+r.wrongChoices.filter(x=>x.count>0).map(x=>
+    '<div class="mbar"><span class="nm">'+x.no+'번 선지</span><span class="bg"><span class="fg" style="width:'+(x.count/maxChoice*100)+'%"></span></span>'+
+    '<span class="v">'+x.count+'건</span></div>').join('')+'</div>'+
+    '<div class="addbox"><h5>문항 형식 · 태그 확정</h5>'+r.formats.filter(x=>x.count>0).map(x=>
+    '<div class="mbar"><span class="nm">'+x.label+'</span><span class="v" style="margin-left:auto;">'+x.count+'건</span></div>').join('')+
+    '<div class="evidence"><b>강사 확정 태그</b> '+r.tagConfirmed.yes+' / '+r.tagConfirmed.total+'건 · '+pc(r.tagConfirmed.yes/r.tagConfirmed.total)+'%</div></div>';
+}
+
+function rootEvidenceHtml(r, who, meta){
+  const verdictKo={weak_confirmed:'약점 확정', suspect:'약점 의심', ok:'양호'};
+  const roots=r.propagated.slice().sort((a,b)=>b.score-a.score);
+  const rootRows=roots.length ? roots.map(x=>'<div class="cause"><div class="ct"><span class="chip warn">근본 원인 후보</span>'+
+    '<span>'+nodeLabel(x.nodeId)+'</span><span class="score">score '+x.score.toFixed(2)+'</span></div>'+
+    '<div class="evidence"><b>전파 출발</b> '+x.fromNodes.map(nodeLabel).join(' · ')+'</div></div>').join(''):
+    '<div class="empty">근본 원인 후보가 없습니다.</div>';
+  const nodeRows=r.nodes.length ? r.nodes.map(x=>'<div class="cause"><div class="ct"><span>'+nodeLabel(x.nodeId)+'</span>'+
+    '<span class="chip '+(x.verdict==='weak_confirmed'?'warn':'b')+'">'+verdictKo[x.verdict]+'</span></div>'+
+    '<div class="evidence"><b>판정 근거</b> '+x.basis.join(' · ')+'</div></div>').join(''):
+    '<div class="empty">표시할 노드 판정 근거가 없습니다.</div>';
+  const byNode=r.misconceptions.byNode.length ? r.misconceptions.byNode.map(x=>
+    '<tr><td>'+nodeLabel(x.groupKey)+'</td><td>'+MISCONCEPTION_KO[x.tag]+'</td><td class="num">'+x.count+'건</td></tr>').join(''):
+    '<tr><td colspan="3" class="empty">노드별 오개념 기록이 없습니다.</td></tr>';
+  return '<div class="rhead"><h3>진단 근거 · 근본 원인</h3><span class="who2">'+who+'</span></div>'+
+    '<div class="rmeta">'+meta+'</div><div class="addgrid"><div><h4 style="font-size:12px;margin-bottom:8px;">근본 원인 후보</h4>'+rootRows+'</div>'+
+    '<div><h4 style="font-size:12px;margin-bottom:8px;">노드 판정과 basis</h4>'+nodeRows+'</div></div>'+
+    '<table class="facttbl"><tr><th>노드 표시</th><th>오개념</th><th style="text-align:right;">빈도</th></tr>'+byNode+'</table>'+
+    '<div class="note" style="padding:11px 0 0;">노드 ID 대신 <b>영역 × 유형 한글 표기</b>를 사용합니다. 후보 점수와 전파 출발, 판정 근거를 함께 읽어야 결론만 남지 않습니다.</div>';
+}
+
+function areaEvidenceHtml(r){
+  const summary=AREA.map(a=>{
+    const nodes=r.nodes.filter(x=>x.area===a.k), roots=r.propagated.filter(x=>x.area===a.k);
+    const radar=r.radar.find(x=>x.area.k===a.k);
+    return '<tr><td>'+a.n+'</td><td class="num">'+(radar?radar.n:0)+'문항</td>'+
+      '<td class="num">'+nodes.filter(x=>x.verdict==='weak_confirmed').length+' / '+nodes.filter(x=>x.verdict==='suspect').length+' / '+roots.length+'</td></tr>';
+  }).join('');
+  const misconceptions=r.misconceptions.byArea.length ? r.misconceptions.byArea.map(x=>{
+    const area=AREA.find(a=>a.k===x.groupKey);
+    return '<tr><td>'+(area?area.n:'표시명 미확인')+'</td><td>'+MISCONCEPTION_KO[x.tag]+'</td><td class="num">'+x.count+'건</td></tr>';
+  }).join(''):'<tr><td colspan="3" class="empty">영역별 오개념 기록이 없습니다.</td></tr>';
+  return '<div class="addgrid"><div class="addbox"><h5>영역별 채점 모수 · 노드 판정</h5>'+
+    '<table class="facttbl" style="margin-top:0;"><tr><th>영역</th><th style="text-align:right;">채점</th><th style="text-align:right;">확정 / 의심 / 근본</th></tr>'+summary+'</table></div>'+
+    '<div class="addbox"><h5>영역별 오개념 빈도</h5><table class="facttbl" style="margin-top:0;"><tr><th>영역</th><th>오개념</th><th style="text-align:right;">빈도</th></tr>'+misconceptions+'</table></div></div>'+
+    '<div class="verd hold" style="margin-top:12px;"><b>오개념 집계 제외</b> · 선택 번호 없음 '+r.misconceptions.excludedMissingChosenNo+'건 · 오개념 라벨 없음 '+r.misconceptions.excludedMissingMisconceptionTag+'건<br>'+
+    '<span style="font-size:10.5px;">0건도 그대로 표시합니다. 제외 건수를 숨기면 오개념 빈도의 분모를 전체 기록으로 오해할 수 있습니다.</span></div>';
+}
+
 /* 영역 레이더 5축 — AreaTag 정본이 5영역이다.
    회색 정오각형은 이번 달 자기 평균이고, 진단결과 면의 회색 세로선과 같은 값이다.
    ⚠ KPI 카드의 회색 점선(이동 기준선)과는 다른 값이다 — 칸끼리 비교는 그 달 평균이,
@@ -674,16 +849,24 @@ function sheet(r, opt){
   page(head('주간 분석')+'<div class="rmeta">'+meta+'</div>'+
     weekChart('주차별 정답률 — ▲ 보강 ● 상담 시점', '정답률 '+pc(r.acc)+'%', 'var(--d-green)', r.weeks, w=>pc(w.acc), v=>v)+
     weekChart('주차별 채점 문항 수', r.items.toLocaleString()+'문항', 'var(--d-red)', r.weeks, w=>w.vol, v=>v)+
+    '<div class="addgrid" style="margin-top:8px;">'+
+      weeklyFactChart('월요일 시작 주차의 오개념 태그 건수', '오개념', 'var(--d-yellow)', r.weeks, w=>w.mis, v=>v+'건')+
+      weeklyFactChart('월요일 시작 주차의 서로 다른 학습 노드 수', '노드 커버리지', 'var(--d-blue)', r.weeks, w=>w.nodeN, v=>v+'종')+
+    '</div>'+
     '<div class="note" style="padding:8px 0 0;">⚠ <b>개입 마커가 이 차트의 핵심입니다</b> — 상담·보강 이후 흐름이 어떻게 움직였는지를 보여주는 것이 목적이고, 주차 정답률 자체는 표본이 작아 단독으로 읽지 않습니다.</div>');
 
   /* 5.5 영역 × 유형 성과 */
   page(head('영역·유형별 학습 성과')+
     '<div class="rmeta">'+meta+' &nbsp;|&nbsp; 선택과목 '+r.elective+'</div>'+
     matrixHtml(r)+
+    '<div class="addgrid">'+severityHtml(r)+eventBreakdownHtml(r)+'</div>'+
     '<div class="note" style="padding:9px 0 0;">칸 아래 숫자는 채점 문항 수입니다. <b>'+MIN_N+'문항 미만은 판정하지 않고 「판단 보류」로 둡니다</b> — 표본이 적은 칸을 약점이라고 부르면 다음 달에 뒤집힙니다.</div>');
 
   /* 5.6 진단 결과 */
   page(diagHtml(r, who, meta));
+
+  /* 진단 결과 원본은 이미 A4 하단까지 차서 근거·근본 원인을 별도 면으로 나눈다 */
+  page(rootEvidenceHtml(r, who, meta));
 
   /* 5.7 영역 레이더 */
   page(head('영역별 성취도')+'<div class="rmeta">'+meta+'</div>'+
@@ -694,6 +877,7 @@ function sheet(r, opt){
       '<span class="v" style="color:'+(row.mine==null?'var(--pgray)':'var(--d-blue)')+'">'+
         (row.mine==null ? '—' : pc(row.mine)+'%')+'</span></div>').join('')+
     '</div></div>'+
+    areaEvidenceHtml(r)+
     '<div class="note" style="padding:12px 0 0;">비교선은 <b>이번 달 내 평균</b> 하나입니다 — 영역별 전국 평균은 백엔드가 내려주는 값에 없어 그리지 않습니다. '+
     '<span class="red">반 평균·석차도 담기지 않습니다</span> — 강사 화면 전용 지표라 학부모 리포트에는 조립 단계에서 제외됩니다.</div>');
 
