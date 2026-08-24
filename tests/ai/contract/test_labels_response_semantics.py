@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from typing import Final
 
@@ -28,9 +29,43 @@ from ai.composition.labels.provider import (
     GatewayLabelSuggestProvider,
     build_label_gateway,
 )
-from ai.contracts.llm import LlmError, LlmTimeout, LlmUnavailable, ModelRole
+from ai.contracts.execution import ExecutionContext
+from ai.contracts.llm import (
+    CallOutcome,
+    LlmError,
+    LLMRequest,
+    LLMResult,
+    LlmTimeout,
+    LlmUnavailable,
+    ModelRole,
+    TokenUsage,
+)
+from ai.db.repositories.run_store import default_llm_call_collector
+from ai.llm.call_timeouts import CallTimeoutTable
+from ai.llm.gateway import LlmGateway
+from ai.runtime.trace_masking import RedactionTripwireTraceHook
 
 _HEADERS: Final = {"X-Tenant-Id": "t-sem", "X-Request-Id": "r-sem"}
+
+
+class _SlowProvider:
+    """🔴 상한보다 **느린** 대역 — 실 LLM 없이 「상한 초과」를 만든다."""
+
+    name = "slow-fake"
+
+    async def complete(
+        self, request: LLMRequest, context: ExecutionContext
+    ) -> LLMResult:
+        del request, context
+        await asyncio.sleep(0.5)
+        return LLMResult(
+            outcome=CallOutcome.OK,
+            text="",
+            provider=self.name,
+            model="slow",
+            usage=TokenUsage(tokens_in=0, tokens_out=0, cost_usd=0.0),
+            latency_ms=0,
+        )
 
 
 def _item(record_id: str, text: str) -> dict[str, str]:
@@ -223,3 +258,37 @@ def test_label_gateway_resolves_the_prompt_to_twenty_seconds_and_one_attempt() -
 
     assert gateway._call_timeouts.get(PROMPT_ID) == 20.0
     assert gateway._attempts_for(ModelRole.COUNSELOR) == 1
+
+
+def test_exceeding_the_call_cap_is_a_504_not_a_500() -> None:
+    """🔴 **04 §3.7 ⑥** — 콜당 상한을 넘기면 **504 `TIMEOUT`** 이다. 500 이 아니다.
+
+    🔴 **문서에 적기 전에 이 경로가 실제로 도는지 먼저 쟀다**(2026-08-24) — #191 이
+    세운 규율(«생성기 부재를 빈 배열로 위장하지 않는다»)의 같은 결이다: **안 도는
+    상태코드를 계약에 적으면 문서가 거짓말을 한다.**
+
+    ⚠ 실 LLM 을 안 쓴다 — **느린 대역 provider** 와 **아주 작은 상한**으로 같은 경로를
+    태운다(`LlmGateway` 가 상한 초과를 `LlmTimeout` 으로 바꿔 올리고, 라우터의
+    `domain_error_for` 가 그것을 `LlmUpstreamTimeout`(504 `TIMEOUT`)으로 옮긴다).
+    """
+    gateway = LlmGateway(
+        {ModelRole.COUNSELOR: _SlowProvider()},
+        recorder=default_llm_call_collector(),
+        transport_retry={ModelRole.COUNSELOR: 0},
+        trace_masking_hook=RedactionTripwireTraceHook(),
+        call_timeouts=CallTimeoutTable(call_timeouts={PROMPT_ID: 0.05}),
+    )
+    labels_router.set_label_suggest_provider(GatewayLabelSuggestProvider(gateway))
+    try:
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            response = _post(client, _CLEAN_HISTORY)
+    finally:
+        labels_router.reset_label_suggest_provider()
+
+    assert response.status_code == 504, response.text
+    assert response.json()["error"]["code"] == "TIMEOUT"
+    #: 🔴 ②(500)와 **다른 코드**여야 한다 — 같으면 BE 가 두 사건을 못 가른다.
+    assert response.status_code != 500
+    #: ⚠ 🔴 이력 본문이 새면 안 된다(불변식 3 · 99 #80).
+    for item in _CLEAN_HISTORY:
+        assert item["text"] not in response.text
