@@ -660,6 +660,14 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 
 ### 3.7 `POST /v1/labels/suggest` — 라벨 제안 (🔴 **강사 요청**·**동기 200**·학부모 **한 명**)
 
+🔴 **v1 응답 스키마 — 확정 보류 (2026-08-24)** ⚠ **한 자리가 갈렸다.**
+**상태코드와 의미론은 확정**이다(아래 ①~⑤ · 검사가 문다). 🔴 **그러나 제안 객체의 키
+모양이 아래 예시와 실제 응답이 다르다** — 예시는 `axis`·`value` 를 **최상위**에 두는데
+실제 직렬화는 `label: {axis, value}` **중첩**이다(실측 8/24 · 99 #215).
+🔴 **어느 쪽으로 맞출지는 BE 합의 사항**이라 이 회차에서 안 골랐다 — 키 이름이 BE 파서에
+직결되고, 여기서 정하면 **남의 클라이언트 코드를 우리가 정하는 것**이 된다.
+⇒ 🔴 **그 한 자리가 합의되면 이 머리글을 「확정」으로 바꾼다.** 나머지는 안 바뀐다.
+
 ```json
 // Request — 🔴 **학부모 한 명**. 강사가 라벨 검토함에서 그 학부모를 열 때 보낸다
 //           (소통 이력 5건 이상 + 라벨 미설정인 대상만)
@@ -677,6 +685,9 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
   "data": {
     "suggestions": [{
       "suggestion_id": "uuid", "guardian_ref": "gd_11b0",
+      // 🔴 **아래 두 줄은 실제 응답과 다르다**(실측 8/24 · 99 #215) —
+      //    실제는 `"label": { "axis": "comm", "value": "data" }` **중첩**이다.
+      //    🔴 어느 쪽으로 맞출지 BE 합의 대기라 예시를 임의로 안 고쳤다.
       "axis": "comm", "value": "data",   // 4축 enum만 가능 — 자유 텍스트 라벨은 스키마상 불가
       "confidence": 0.86,
       "evidence_quotes": [               // 제안 근거 인용 — 실제 이력에 실존하는 문장만 (실존 검증 실패 시 제안 자체 폐기)
@@ -688,6 +699,40 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 ```
 
 **인용 실존 게이트 통과분만 반환** — 인용이 이력에 없으면 제안 자체가 폐기됨. 확정 전 초안 생성에 미사용.
+
+🔴 **응답 의미론 (2026-08-24 확정 · v1)** — 🔴 각 줄 끝에 **그 문면을 무는 검사**를 적는다
+(«문서에 적었다» 로 끝내지 않는다 — 표·목록을 아무도 안 물던 자리다).
+
+① `suggestions: []` — **정상 200** 이다. 「게이트를 통과한 제안이 없다」는 뜻이고, 모델이
+근거를 못 찾았거나 인용 실존 게이트가 전부 폐기한 경우다. 🔴 강사 화면에는 **「제안 없음」**
+으로 표시한다. **오류가 아니다.**
+  · 검사: `tests/ai/contract/test_labels_response_semantics.py::test_a_fully_dropped_request_is_a_normal_200`
+
+② 🔴 이력이 **마스킹 문지기에 전부 걸려 0건**이 되면 `500` + `reason` 이다.
+⚠ 「제안이 없다」(①)와 **다른 사건**이다 — 우리가 계산을 **못 한** 것이다.
+🔴 **4xx 가 아닌 이유**: 강사 입력은 조건을 만족했다. **우리 마스킹이 걸러서** 생긴 일이다.
+🔴 **200 이 아닌 이유**: BE 가 성공으로 처리하면 ①과 **구분이 사라진다**(빈 칩 영역이 뜨고
+「못 했다」가 「없다」로 보인다).
+⚠ 사유 상세·본문은 안 싣는다(원문 노출 방지 · `error_codes` §4).
+⚠ 🔴 `meta` 에 사유를 실어 200 으로 내는 안은 **버렸다** — `meta` 는 `{execution_id, versions}`
+둘뿐이고 늘리려면 `api/envelope.py`(**양자 승인 13목록**)를 열어야 한다. 라벨 하나 때문에
+**공용 envelope 를 늘리지 않는다.**
+  · 검사: `tests/ai/contract/test_labels_response_semantics.py::test_all_history_blocked_is_a_500_not_an_empty_200`
+
+③ 인용 실존 게이트는 **제안 단위**로 버린다 — 인용이 여럿인 제안에서 **하나라도** 실존하지
+않으면 **그 제안 전체**를 버린다. 🔴 「남은 인용이 하나면 유지」로 안 하는 이유: 지어낸 인용이
+진짜에 **묻어서** 통과한다.
+  · 검사: `tests/ai/unit/composition/labels/test_labels_generator.py::test_a_forged_quote_does_not_take_the_true_ones_with_it`
+
+④ 같은 `(axis, value)` 는 **두 번 오지 않는다** — 근거 인용을 합쳐 **한 건**으로 낸다.
+`confidence` 는 합친 것들 중 **최댓값**이다.
+  · 검사: `tests/ai/unit/composition/labels/test_labels_generator.py::test_the_router_actually_merges_after_the_gate`
+
+⑤ `confidence` 는 **`0.0` 이상 `1.0` 이하**다(계약이 막는다 — `SuggestedLabel.confidence`).
+🔴 **범위 밖 값은 500 이 아니라 파서가 그 줄을 버린다**(실측 8/24 — `parse_suggestions` 가
+`ValidationError` 를 받아 드롭한다). ⇒ 나머지 제안은 산다. ⚠ 🔴 **그 처리가 맞는지는 판정
+대기**(99 #207) — 지금 문면은 **현행을 적은 것**이지 정한 것이 아니다.
+  · 검사: `tests/ai/contract/test_labels_response_semantics.py::test_an_out_of_range_confidence_drops_only_that_line`
 
 🔴 **완료 통지 개념이 없다 — 동기 200 이라 응답이 곧 결과다(2026-08-22 판정).** Kafka 이벤트도 폴링도 쓰지 않고 **`job_id` 를 발급하지 않는다.** ⚠ 종전 문면은 **202 + 폴링 시절**의 것이다(8/22 이전) — «완료 통지는 폴링(`GET`)이다» 라고 적혀 있었고, 그 앞에는 «완료 통지는 Kafka 이벤트» 였다. 🔴 **형태가 세 번 바뀌는 동안 이 문단만 두 번 뒤처졌다.** ⚠ **BE 통보 대상**이다 — 기대하던 이벤트도, 폴링할 `GET` 도 없다.
 
