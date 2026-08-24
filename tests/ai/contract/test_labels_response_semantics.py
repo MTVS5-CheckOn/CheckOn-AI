@@ -6,7 +6,7 @@
 
 🔴 **①과 ②를 가르는 것이 이 파일의 목적**이다:
   ① 게이트가 전량 드롭 → **200 · `suggestions: []`** («없다»)
-  ② 이력이 전부 마스킹에 걸림 → **500 · `reason`** («못 한다»)
+  ② 이력이 전부 마스킹에 걸림 → **500 INTERNAL · 상세 미노출** («못 한다»)
 ⚠ 둘 다 «제안 0건» 으로 보이지만 **다른 사건**이다. 같은 모양으로 내보내면 BE 는 화면에
 빈 칩 영역을 띄우고 강사는 «이 학부모는 라벨이 없구나» 로 읽는다.
 """
@@ -16,16 +16,19 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Final
 
+import pytest
 from fake_provider import FakeProvider
 from fastapi.testclient import TestClient
 from httpx import Response
 
 from ai.api.app import create_app
 from ai.api.routers import labels as labels_router
+from ai.composition.labels.prompt import PROMPT_ID
 from ai.composition.labels.provider import (
     GatewayLabelSuggestProvider,
     build_label_gateway,
 )
+from ai.contracts.llm import LlmError, LlmTimeout, LlmUnavailable, ModelRole
 
 _HEADERS: Final = {"X-Tenant-Id": "t-sem", "X-Request-Id": "r-sem"}
 
@@ -59,7 +62,7 @@ _ALL_BLOCKED_HISTORY: Final = [
 ]
 
 
-def _client(llm_text: str) -> Iterator[TestClient]:
+def _client(llm_text: str | LlmError) -> Iterator[TestClient]:
     """🔴 실 `GatewayLabelSuggestProvider` + 대역 **LLM** — 우리 층은 전부 진짜로 돈다.
 
     ⚠ `FakeLabelSuggestProvider` 로는 못 잰다 — 그 대역은 **마스킹 층을 안 탄다**(99 #208).
@@ -136,12 +139,18 @@ def test_the_two_zero_cases_do_not_look_alike() -> None:
     )
 
 
-def test_the_suggestion_shape_is_pinned_and_differs_from_the_04_example() -> None:
-    """🔴 **04 예시와 실제 응답이 갈린 자리를 고정한다**(99 #215 · 2026-08-24 실측).
+def test_the_current_suggestion_shape_is_pinned_pending_be_agreement() -> None:
+    """현재 제안 객체 모양을 BE 합의 전까지 고정한다 — `label` 중첩(99 #215).
 
-    04 §3.7 예시는 `axis`·`value` 를 **최상위**에 두는데 실제는 `label` **중첩**이다.
-    🔴 어느 쪽이 맞는지는 **BE 합의 사항**이라 이 회차에서 안 골랐다 — 대신 **현행을
-    못 박아** 합의 전에 조용히 바뀌지 않게 한다. 합의가 나면 이 검사부터 고친다.
+    ⚠ PR #403에는 누가·언제·어디서 합의했는지 기록이 없다. 이 검사는 합의 전에 현행이
+    조용히 바뀌지 않게 할 뿐, v1 확정을 대신하지 않는다.
+
+    🔴 **왜 중첩인가**: `LabelSuggestion(axis, value)` 은 **재사용 모델**이고
+    `SuggestedLabel` 이 그것을 **품는다** — 4축 값의 정의를 **한 곳**에 두려는 것이다
+    (`contracts/counsel.py` 의 `LabelSuggestion` docstring). 평평하게 펴면 그 재사용이
+    깨지고 4축 정의가 **두 곳으로 갈린다.**
+    ⚠ 🔴 `operationId` 와 다르다 — 그건 **BE 의 메서드명**이 되지만(남의 코드) 응답
+    스키마도 BE가 파싱하는 접점이므로 실제 합의 기록 뒤에 확정한다.
     """
     line = "comm | data | 0.7 | r-1 | 지난주 과제를 모두 제출했습니다"
     for client in _client(line):
@@ -155,8 +164,8 @@ def test_the_suggestion_shape_is_pinned_and_differs_from_the_04_example() -> Non
         "suggestion_id",
     ], sorted(suggestion)
     assert sorted(suggestion["label"]) == ["axis", "value"]
-    #: 🔴 **04 예시가 말하는 모양은 아직 아니다** — 이 단언이 red 가 되면 합의가 반영된 것이다.
-    assert "axis" not in suggestion, "04 예시대로 평탄해졌다면 99 #215 를 닫아라"
+    #: 🔴 **평탄화 금지** — 최상위에 `axis` 가 나타나면 4축 정의가 두 곳으로 갈린 것이다.
+    assert "axis" not in suggestion, "제안 객체를 평평하게 폈다 — 04 §3.7 예시가 계약이다"
 
 
 def test_an_out_of_range_confidence_drops_only_that_line() -> None:
@@ -179,3 +188,38 @@ def test_an_out_of_range_confidence_drops_only_that_line() -> None:
     assert len(suggestions) == 1, suggestions
     #: 🔴 실제 직렬화는 `label: {axis, value}` **중첩**이다 — 04 예시(최상위)와 다르다.
     assert suggestions[0]["label"]["axis"] == "interest"
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "code"),
+    [
+        (LlmTimeout("대역 타임아웃"), 504, "TIMEOUT"),
+        (LlmUnavailable("대역 장애"), 503, "LLM_UPSTREAM_DOWN"),
+    ],
+)
+def test_gateway_failures_use_the_canonical_http_mapping_without_retry(
+    error: LlmError, status_code: int, code: str
+) -> None:
+    """실 게이트웨이 경계의 실패 매핑과 라벨 전송 재시도 0회를 함께 고정한다."""
+    fake = FakeProvider([error])
+    labels_router.set_label_suggest_provider(
+        GatewayLabelSuggestProvider(build_label_gateway(fake))
+    )
+    try:
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            response = _post(client, _CLEAN_HISTORY)
+    finally:
+        labels_router.reset_label_suggest_provider()
+
+    assert response.status_code == status_code, response.text
+    assert response.json()["error"]["code"] == code
+    assert response.json()["error"].get("detail") is None
+    assert len(fake.requests) == 1, "라벨 전송 실패를 재시도했다"
+
+
+def test_label_gateway_resolves_the_prompt_to_twenty_seconds_and_one_attempt() -> None:
+    """조립된 게이트웨이가 라벨 prompt_id를 정본 표의 20초·무재시도로 해석한다."""
+    gateway = build_label_gateway(FakeProvider(["쓰이지 않음"]))
+
+    assert gateway._call_timeouts.get(PROMPT_ID) == 20.0
+    assert gateway._attempts_for(ModelRole.COUNSELOR) == 1
