@@ -51,6 +51,12 @@ from ai.runtime.errors import SnapshotInvalid, domain_error_for
 
 logger = logging.getLogger(__name__)
 
+from ai.api.routers.classify_openapi import (  # noqa: E402
+    CLASSIFY_OPERATION_ID,
+    CLASSIFY_SUMMARY,
+    CLASSIFY_TAG,
+)
+
 router = APIRouter()
 
 #: ⚠ `Idempotency-Key`는 **없다**(위 모듈 docstring 참조).
@@ -121,7 +127,12 @@ def _format_validation_error(exc: ValidationError) -> list[dict[str, str]]:
     ]
 
 
-@router.post("/v1/classify")
+@router.post(
+    "/v1/classify",
+    operation_id=CLASSIFY_OPERATION_ID,
+    tags=[CLASSIFY_TAG],
+    summary=CLASSIFY_SUMMARY,
+)
 async def post_classify(request: Request) -> dict[str, Any]:
     """문의 1건을 3축(topic·sentiment·urgency)으로 분류한다 — 동기 200.
 
