@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from ai.api.app import create_app
+from ai.api.routers.confirmations import label_confirmations
 
 _HEADERS = {"X-Tenant-Id": "t_lc", "X-Request-Id": "r_lc"}
 
@@ -36,6 +37,7 @@ def test_a_confirmed_label_is_accepted_and_only_the_aggregate_is_logged(
     client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
     """🔴 ①·④ — 200 이고 **집계 다섯 칸이 남되 `guardian_ref` 는 안 남는다.**"""
+    label_confirmations.clear()
     with caplog.at_level(logging.INFO, logger="ai.api.routers.confirmations"):
         response = _post(
             client,
@@ -47,11 +49,14 @@ def test_a_confirmed_label_is_accepted_and_only_the_aggregate_is_logged(
         )
     assert response.status_code == 200, response.text
     assert response.json()["data"]["accepted"] is True
-    line = next(m for m in caplog.messages if "confirmations.label" in m)
-    for cell in ("axis=comm", "suggested=data", "confirmed=data", "action=confirmed"):
-        assert cell in line, line
-    #: 🔴 **이 단언이 이 판정의 전부다** — 개인 참조가 집계에 섞이면 정책이 무너진다.
-    assert "gd_11b0" not in line, line
+    #: 🔴 **줄이 아니라 카운터다**(99 #233).
+    assert label_confirmations[("comm", "data", "data", "confirmed")] == 1
+    #: 🔴 **이 단언이 #233 을 닫는다** — 줄이 남아 있으면 순서로 재식별이 된다.
+    assert not [m for m in caplog.messages if "confirmations.label" in m], caplog.messages
+    #: 🔴 개인 참조가 **카운터 키에도** 없다 — №92 판정의 전부다.
+    assert all("gd_11b0" not in "".join(key) for key in label_confirmations), (
+        list(label_confirmations)
+    )
 
 
 def test_a_corrected_label_records_the_new_value(
@@ -69,8 +74,7 @@ def test_a_corrected_label_records_the_new_value(
             },
         )
     assert response.status_code == 200, response.text
-    line = next(m for m in caplog.messages if "confirmations.label" in m)
-    assert "suggested=data" in line and "confirmed=narrative" in line, line
+    assert label_confirmations[("comm", "data", "narrative", "corrected")] == 1
 
 
 def test_a_value_outside_the_enum_is_400(client: TestClient) -> None:
@@ -95,6 +99,7 @@ def test_a_rejected_label_is_accepted_but_classification_still_is_not(
     ⚠ classification 은 3축이 **값을 반드시 가져야** 해서 «거절» 이 정의되지 않는다.
     🔴 라벨은 «이 축을 안 쓴다» 가 뜻이 된다 — **되돌아가지 않았나** 를 같이 문다.
     """
+    label_confirmations.clear()
     label = _post(
         client,
         {"kind": "label", "suggestion_id": "gd_11b0:comm:data", "action": "rejected"},
@@ -127,6 +132,7 @@ def test_a_guardian_ref_with_colons_still_parses(
     축·값은 **우리 소유의 닫힌 열거형**이라 `:` 을 안 담으므로 오른쪽에서 둘만 떼면
     언제나 복원된다 ⇒ 🔴 **BE 에 «`:` 금지» 를 걸 필요가 없다.**
     """
+    label_confirmations.clear()
     with caplog.at_level(logging.INFO, logger="ai.api.routers.confirmations"):
         response = _post(
             client,
@@ -137,9 +143,8 @@ def test_a_guardian_ref_with_colons_still_parses(
             },
         )
     assert response.status_code == 200, response.text
-    line = next(m for m in caplog.messages if "confirmations.label" in m)
-    assert "axis=interest" in line and "suggested=grade" in line, line
-    assert "gd:11:b0" not in line, line
+    assert label_confirmations[("interest", "grade", "grade", "confirmed")] == 1
+    assert all("gd:11:b0" not in "".join(key) for key in label_confirmations)
 
 
 #: 🔴 네 축 **전수** — 축마다 「남의 축 값」 하나(99 #232).
@@ -222,3 +227,40 @@ def test_the_key_the_suggestion_gives_is_accepted_by_the_confirmation(
             client, {"kind": "label", "suggestion_id": key, "action": "confirmed"}
         )
         assert confirmed.status_code == 200, (key, confirmed.text)
+
+
+def test_four_confirmations_are_counted_and_split_by_key(client: TestClient) -> None:
+    """🔴 ① 확정 4건 → 카운터가 4이고 **축·값·action 별로 갈린다**(99 #233)."""
+    label_confirmations.clear()
+    bodies: list[dict[str, object]] = [
+        {"suggestion_id": "gd_1:comm:data", "action": "confirmed"},
+        {"suggestion_id": "gd_2:comm:data", "action": "confirmed"},
+        {"suggestion_id": "gd_3:comm:data", "action": "rejected"},
+        {
+            "suggestion_id": "gd_4:interest:grade",
+            "action": "corrected",
+            "corrected_value": {"value": "attitude"},
+        },
+    ]
+    for body in bodies:
+        assert _post(client, {"kind": "label", **body}).status_code == 200
+    assert sum(label_confirmations.values()) == 4
+    assert label_confirmations[("comm", "data", "data", "confirmed")] == 2
+    assert label_confirmations[("comm", "data", "data", "rejected")] == 1
+    assert label_confirmations[("interest", "grade", "attitude", "corrected")] == 1
+
+
+def test_a_rejected_400_is_not_counted(client: TestClient) -> None:
+    """🔴 ⑤ 400 으로 거절된 확정은 **안 센다** — 「강사가 확정했다」가 부풀려진다."""
+    label_confirmations.clear()
+    for bad in (
+        {"suggestion_id": ":comm:data", "action": "confirmed"},
+        {"suggestion_id": "gd_1:없는축:data", "action": "confirmed"},
+        {
+            "suggestion_id": "gd_1:comm:data",
+            "action": "corrected",
+            "corrected_value": {"value": "anxious"},
+        },
+    ):
+        assert _post(client, {"kind": "label", **bad}).status_code == 400
+    assert sum(label_confirmations.values()) == 0, dict(label_confirmations)

@@ -133,6 +133,25 @@ class SuggestedLabel(BaseModel):
     """🔴 **비면 제안이 성립하지 않는다**(불변식 2 — evidence 없는 산출물 금지).
     타입이 막는다 — 런타임 분기로 지키면 언젠가 새어 나간다."""
 
+    @model_validator(mode="after")
+    def _key_matches_its_own_fields(self) -> SuggestedLabel:
+        """🔴 **같은 사실이 세 곳에 있는데 아무도 안 맞췄다**(2026-08-25 · 99 #236).
+
+        `suggestion_id`(축·값이 들어 있다) · `guardian_ref` · `label{axis,value}` 셋이 같은
+        것을 말하는데 🔴 **패턴은 「형식이 맞나」만 보고 `label` 과 대조하지 않는다** ⇒
+        `suggestion_id="gd_1:comm:data"` + `label={sensitivity, anxious}` 가 **통과했다.**
+        🔴 **BE 가 둘 다 받는다** — 갈리면 «어느 쪽이 참인가» 를 알 방법이 없다.
+        ⚠ 🔴 지금 **도달 가능하지 않다**(조립이 한 곳이다). 🔴 그게 「검사가 필요 없다」는
+        뜻은 아니다 — **한 곳이라는 사실을 무는 것이 없다.** #232 가 같은 형태였다.
+        🔴 패턴과 중복이 아니다 — **패턴은 「형식」을, 이건 「일치」를** 본다.
+        """
+        expected = f"{self.guardian_ref}:{self.label.axis}:{self.label.value}"
+        if self.suggestion_id != expected:
+            raise ValueError(
+                f"suggestion_id 가 자기 필드와 안 맞는다: "
+                f"{self.suggestion_id!r} != {expected!r}"
+            )
+        return self
 
 class LabelSuggestResponse(BaseModel):
     """응답 — 게이트 통과분만.

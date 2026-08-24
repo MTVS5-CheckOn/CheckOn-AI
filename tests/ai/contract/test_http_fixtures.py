@@ -1459,7 +1459,7 @@ def test_labels_suggest_fixtures() -> None:
             del history, context
             return (
                 SuggestedLabel(
-                    suggestion_id="gd_1:comm:data",
+                    suggestion_id=f"{guardian_ref}:comm:data",
                     guardian_ref=guardian_ref,
                     label=LabelSuggestion(axis="comm", value="data"),
                     confidence=0.86,
@@ -1468,7 +1468,7 @@ def test_labels_suggest_fixtures() -> None:
                     ),
                 ),
                 SuggestedLabel(
-                    suggestion_id="gd_1:frequency:frequent",
+                    suggestion_id=f"{guardian_ref}:frequency:frequent",
                     guardian_ref=guardian_ref,
                     label=LabelSuggestion(axis="frequency", value="frequent"),
                     confidence=0.51,
