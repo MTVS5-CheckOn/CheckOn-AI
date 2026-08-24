@@ -346,6 +346,13 @@ def build_label_gateway(provider: LLMProvider | None = None) -> LlmGateway:
         build_openai_compat_provider,
     )
 
+    #: 🔴 **의도적으로 `capture_payloads` 를 안 감싼다**(2026-08-24 · 99 #205).
+    #: 04 §3.7 «제안 API 는 아무것도 저장하지 않는다» 를 **LLM 원장에도** 적용한다 —
+    #: 🔴 이력 본문이 프롬프트에 실리므로 원장에 남기면 **그 정책이 무너진다**(불변식 3).
+    #: ⚠ counsel(`counsel/assembly.py`)·briefing(`composition/provider.py`)은 감싼다 —
+    #: **그 축은 산출물을 저장하는 축이라 다르다.**
+    #: 🔴 **언제 바뀌나**: 라벨에 저장 정책이 생기면(확정 경로 집계 회차).
+    #: ⚠ `LLM_CALL` 계수는 남는다(`recorder`) — **본문만** 안 남는다.
     return LlmGateway(
         {ModelRole.COUNSELOR: provider or build_openai_compat_provider()},
         recorder=default_llm_call_collector(),
