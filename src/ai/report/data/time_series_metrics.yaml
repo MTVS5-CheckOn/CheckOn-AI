@@ -1,0 +1,12 @@
+version: report-time-series-metrics.v1
+timezone_name: Asia/Seoul
+bucket_min_items: 10
+baseline_window_weeks: 6
+metric_keys:
+  monthly_accuracy: time_series.monthly.{bucket}.accuracy
+  monthly_graded_items: time_series.monthly.{bucket}.graded_items
+  weekly_accuracy: time_series.weekly.{bucket}.accuracy
+  weekly_graded_items: time_series.weekly.{bucket}.graded_items
+  baseline_accuracy: time_series.baseline.recent_six_weeks.accuracy
+  baseline_graded_items_per_week: time_series.baseline.recent_six_weeks.graded_items_per_week
+  baseline_weeks_used: time_series.baseline.recent_six_weeks.weeks_used
