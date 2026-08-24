@@ -23,11 +23,19 @@ from pydantic import ValidationError
 from ai.api.envelope import success_envelope
 from ai.api.version_scope import RouterScope
 from ai.composition.classify.classifier import classify_versions
+from ai.contracts.composition import (
+    CommStyle,
+    Frequency,
+    Interest,
+    Sensitivity,
+)
 from ai.contracts.confirmations import (
+    ClassificationCorrection,
     ConfirmationAction,
     ConfirmationKind,
     ConfirmationRequest,
     ConfirmationResponse,
+    LabelCorrection,
 )
 from ai.db.repositories.inquiry_class_store import InquiryClassStore
 from ai.db.store_factory import (
@@ -50,6 +58,8 @@ _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id")
 
 #: 미지원 kind의 사유 코드 — `error_codes.md` 등재.
 KIND_NOT_IMPLEMENTED = "kind_not_implemented"
+#: 🔴 라벨 확정 키가 `guardian_ref:axis:value` 형식이 아니거나 축·값이 열거형 밖이다.
+LABEL_KEY_INVALID: Final = "label_key_invalid"
 
 #: `classification`이 받지 않는 action의 사유 코드.
 ACTION_NOT_SUPPORTED = "action_not_supported"
@@ -92,6 +102,94 @@ def _format_validation_error(exc: ValidationError) -> list[dict[str, str]]:
     ]
 
 
+
+#: 🔴 라벨 확정 키 — `guardian_ref:axis:value`(2026-08-24 · №92).
+#: ⚠ 🔴 **`guardian_ref` 안의 `:` 을 금지하지 않는다** — 축·값은 **우리 소유의 닫힌
+#: 열거형**이라 `:` 을 안 담으므로 **오른쪽에서 둘만 떼면**(`rsplit(":", 2)`) 언제나
+#: 복원된다(실측 8/24: `gd:11b0`·`a:b:c:d`·`::` 등 8종 **전부 복원 · 깨지는 입력 0**).
+_LABEL_KEY_PARTS: Final = 3
+_LABEL_AXIS_VALUES: Final = {
+    "comm": CommStyle,
+    "sensitivity": Sensitivity,
+    "interest": Interest,
+    "frequency": Frequency,
+}
+
+
+def _accept_label(
+    confirmation: ConfirmationRequest, *, tenant_id: str
+) -> dict[str, Any]:
+    """🔴 `kind=label` 확정을 **받는다** — 🔴 **개별 확정을 영속하지 않는다**(№92 판정).
+
+    남기는 것은 **집계 다섯 칸**뿐이다: `tenant · axis · 제안값 · 확정값 · action`.
+    🔴 **`guardian_ref` 를 안 남긴다** — «새로 쌓이는 개인 데이터 0» 정책과 갈리지 않는다.
+    🔴 **새 테이블·마이그레이션을 안 만든다** — `label_suggestion` 테이블은 `created_at` 이
+    없어 **축출 근거가 없다**(`db/models.py`) ⇒ 그 두 이유를 되살리지 않는다.
+    ⇒ 자리는 **구조화 로그**다. 🔴 그 다섯 칸이 **군집의 착수 근거**다(99 #190 계열).
+
+    ⚠ 🔴 **`accepted: true` 는 «받았다» 이지 «영속했다» 가 아니다** — 04 §3.3 에 적었다.
+    🔴 `action=rejected` 는 **라벨에서 성립한다**(classification 은 3축이 값을 반드시
+    가져야 해서 «거절» 이 정의되지 않지만, 라벨은 «이 축을 안 쓴다» 가 뜻이 된다).
+    """
+    parts = confirmation.suggestion_id.rsplit(":", _LABEL_KEY_PARTS - 1)
+    if len(parts) != _LABEL_KEY_PARTS:
+        raise SnapshotInvalid(
+            "라벨 확정 키 형식 위반",
+            {
+                "reason": LABEL_KEY_INVALID,
+                "detail": "suggestion_id 는 guardian_ref:axis:value 다",
+            },
+        )
+    _, axis, suggested = parts
+    values = _LABEL_AXIS_VALUES.get(axis)
+    if values is None or suggested not in {member.value for member in values}:
+        raise SnapshotInvalid(
+            "라벨 축·값이 열거형 밖",
+            {"reason": LABEL_KEY_INVALID, "axis": axis, "detail": "4축 enum 만 받는다"},
+        )
+    #: 🔴 **kind 와 정정값의 짝이 안 맞으면 400** — label 인데 3축 정정값이 오는 경우다.
+    if confirmation.corrected_value is not None and not isinstance(
+        confirmation.corrected_value, LabelCorrection
+    ):
+        raise SnapshotInvalid(
+            "정정값이 kind 와 안 맞는다",
+            {
+                "reason": CORRECTED_VALUE_NOT_ALLOWED,
+                "detail": "kind=label 의 corrected_value 는 {value:…} 하나다",
+            },
+        )
+    corrected = (
+        confirmation.corrected_value.value
+        if isinstance(confirmation.corrected_value, LabelCorrection)
+        else None
+    )
+    if confirmation.action is ConfirmationAction.CORRECTED and corrected is None:
+        raise SnapshotInvalid(
+            "정정값 없음",
+            {"reason": CORRECTED_VALUE_MISSING, "detail": "action=corrected 는 value 를 담는다"},
+        )
+    if confirmation.action is not ConfirmationAction.CORRECTED and corrected is not None:
+        raise SnapshotInvalid(
+            "확정·거절에 정정값이 실림",
+            {"reason": CORRECTED_VALUE_NOT_ALLOWED, "detail": "값을 버리지 않는다"},
+        )
+    #: 🔴 **집계 다섯 칸** — 🔴 `guardian_ref` 는 **일부러 안 싣는다**(이 함수의 전부다).
+    logger.info(
+        "confirmations.label tenant=%s axis=%s suggested=%s confirmed=%s action=%s",
+        tenant_id,
+        axis,
+        suggested,
+        corrected if corrected is not None else suggested,
+        confirmation.action.value,
+    )
+    return success_envelope(
+        data=ConfirmationResponse(accepted=True).model_dump(mode="json"),
+        execution_id=str(uuid.uuid4()),
+        versions=classify_versions(),
+    )
+
+
+
 @router.post(
     "/v1/confirmations",
     operation_id=CONFIRMATIONS_OPERATION_ID,
@@ -118,6 +216,9 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
         raise SnapshotInvalid(
             "요청 바디 스키마 위반", _format_validation_error(exc)
         ) from exc
+
+    if confirmation.kind is ConfirmationKind.LABEL:
+        return _accept_label(confirmation, tenant_id=tenant_id)
 
     if confirmation.kind is not ConfirmationKind.CLASSIFICATION:
         # 🔴 조용히 버리지 않는다 — 제안 생성기가 없어 확정할 대상이 없다.
@@ -149,6 +250,18 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
             },
         )
 
+    #: 🔴 여기 오면 kind 는 classification 이다 — 라벨은 위에서 이미 돌려줬다.
+    #: ⚠ 🔴 그래도 타입을 좁힌다: `corrected_value` 가 `LabelCorrection` 이면 **짝이 안 맞는다**.
+    if confirmation.corrected_value is not None and not isinstance(
+        confirmation.corrected_value, ClassificationCorrection
+    ):
+        raise SnapshotInvalid(
+            "정정값이 kind 와 안 맞는다",
+            {
+                "reason": CORRECTED_VALUE_NOT_ALLOWED,
+                "detail": "kind=classification 의 corrected_value 는 3축이다",
+            },
+        )
     corrections = (
         confirmation.corrected_value.as_axis_map()
         if confirmation.corrected_value is not None

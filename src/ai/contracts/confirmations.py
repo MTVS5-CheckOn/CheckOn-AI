@@ -22,6 +22,12 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ai.contracts.composition import (
+    CommStyle,
+    Frequency,
+    Interest,
+    Sensitivity,
+)
 from ai.contracts.counsel import InquirySentiment, InquiryTopic, InquiryUrgency
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
@@ -31,7 +37,8 @@ class ConfirmationKind(StrEnum):
     """확정 대상 축 — 04 §3.3 [확정 enum].
 
     ⚠ **v1이 실제로 처리하는 것은 `CLASSIFICATION` 하나다.** 나머지 셋은 제안 생성기가
-    없어(`TAG_SUGGESTION`·`LABEL_SUGGESTION` 적재 0건 · `label_suggestions`는 v1 상수
+    없어(`TAG_SUGGESTION` 적재 0건 ·
+    ⚠ 🔴 **(8/24 정정 · №92) `label` 은 이제 확정을 받는다** — `label_suggestions`는 v1 상수
     `[]`) **확정할 대상이 존재하지 않는다.** 받아서 조용히 버리면 BE가 "저장됐다"고
     오해하므로 400으로 정직하게 거절한다(불변식 4의 반대 방향 — 안 한 일을 한 척하지
     않는다).
@@ -86,6 +93,22 @@ class ClassificationCorrection(BaseModel):
         }
 
 
+class LabelCorrection(BaseModel):
+    """🔴 `kind=label` 의 정정값 — **값만** 받는다(2026-08-24 · №92).
+
+    🔴 **축은 키에 있다** — `suggestion_id` 가 `guardian_ref:axis:value` 라 축을 또 안 받는다.
+    ⚠ 🔴 `ClassificationCorrection`(3축 한 덩어리)과 **성질이 다르다**: 라벨은 **제안 하나가
+    축 하나**이고 `suggestion_id` 도 제안마다 따로다(99 #215).
+    🔴 **값은 닫힌 열거형이다** — `contracts/composition.py` 의 네 축을 **재사용**한다
+    (새로 짓지 않는다 · 03 §1 «바퀴 재발명 금지»).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    value: CommStyle | Sensitivity | Interest | Frequency
+    """🔴 강사가 고친 최종 **값**. 축과 짝이 맞는지는 라우터가 본다."""
+
+
 class ConfirmationRequest(BaseModel):
     """§3.3 요청."""
 
@@ -96,7 +119,7 @@ class ConfirmationRequest(BaseModel):
     """kind별 참조 키 — classification은 `inquiry_ref`다(모듈 docstring)."""
 
     action: ConfirmationAction
-    corrected_value: ClassificationCorrection | None = None
+    corrected_value: ClassificationCorrection | LabelCorrection | None = None
     """`action=corrected`일 때의 정정값. 그 외에는 비운다."""
 
 
@@ -109,6 +132,7 @@ class ConfirmationResponse(BaseModel):
 
 
 __all__ = [
+    "LabelCorrection",
     "ClassificationCorrection",
     "ConfirmationAction",
     "ConfirmationKind",

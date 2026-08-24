@@ -482,7 +482,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 | `kind` | `suggestion_id` | v1 구현 |
 | --- | --- | --- |
 | `tag` | `TAG_SUGGESTION.id` | ❌ **400** `kind_not_implemented` |
-| `label` | `LABEL_SUGGESTION.id` | ❌ **400** `kind_not_implemented` |
+| `label` | 🔴 **`guardian_ref:axis:value`** | ✅ **200** (2026-08-24) — 🔴 **받되 개별 확정을 영속하지 않는다** |
 | **`classification`** | **`inquiry_ref`**(§3.5 응답이 에코한다) | ✅ **구현** |
 
 🔴 **`classification`은 초안 재생성과 짝이다** — 강사가 문의 유형을 정정하면 BE는 **이 API(평가셋 기록)와 `POST /v1/counsel/drafts`(새 키 + 정정된 `topic` · §3.9)를 둘 다** 호출한다. **하나만 하면 초안이 안 바뀌거나 평가셋이 빈다**(상세는 §3.9 재요청 규약).
@@ -491,6 +491,17 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 **미지원 3종을 400으로 거절하는 이유** — 제안 **생성기가 없다**(`TAG_SUGGESTION`·`LABEL_SUGGESTION` 적재 0건 · `label_suggestions`는 v1 상수 `[]`). 확정할 대상이 없는데 받아서 조용히 버리면 BE가 "저장됐다"고 오해한다.
 
 **`classification`이 `inquiry_ref`인 이유** — 문의 1건 = 분류 1건이고 **BE가 이미 갖고 있는 값**이라 왕복이 없다. 응답에 새 UUID를 노출하면 BE가 관리할 식별자만 는다(§3.9 refine이 `job_id`로 통일된 것과 같은 판단).
+
+🔴 **`label` 확정 (2026-08-24 · №92)** — `suggestion_id` 는 **`guardian_ref:axis:value`** 다
+(제안 응답의 `label.axis`·`label.value` 를 그대로 잇는다). 🔴 **`guardian_ref` 안의 `:` 은
+막지 않는다** — 축·값이 닫힌 열거형이라 오른쪽에서 둘만 떼면 언제나 복원된다(실측 8/24).
+`corrected_value` 는 **`{"value": …}` 하나**다 — 🔴 **축은 키에 있으므로 값만** 받는다.
+`action` 은 `confirmed`·`corrected`·`rejected` **셋 다** 받는다(🔴 라벨은 «이 축을 안 쓴다»
+가 뜻이 되므로 `rejected` 가 성립한다 — classification 과 다르다).
+⚠ 🔴 **`accepted: true` 는 「받았다」이지 「영속했다」가 아니다.** AI 는 개별 확정을 **저장하지
+않는다** — 남기는 것은 집계(`tenant · axis · 제안값 · 확정값 · action`)뿐이고 🔴 **`guardian_ref`
+는 안 남긴다**(「새로 쌓이는 개인 데이터 0」). 확정 상태의 정본은 **BE** 다.
+  · 검사: `tests/ai/integration/test_label_confirmation.py`
 
 **`corrected_value`(classification)** — 3축 **전부 nullable**이다. 축이 독립이므로 **부분 정정**이 성립한다(topic만 고치고 나머지는 그대로).
 
