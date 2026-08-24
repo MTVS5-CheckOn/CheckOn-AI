@@ -18,6 +18,7 @@ from typing import Final, Protocol
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ai.composition.labels.counters import LabelLayerCounts
 from ai.composition.labels.grounding import keep_sendable_history
 from ai.composition.labels.prompt import PROMPT_ID, PROMPT_VERSION, assemble_prompt
 from ai.contracts.composition import CommStyle, Frequency, Interest, Sensitivity
@@ -103,6 +104,7 @@ class LabelSuggestProvider(Protocol):
         guardian_ref: str,
         history: Sequence[HistoryItem],
         context: ExecutionContext,
+        counts: LabelLayerCounts | None = None,
     ) -> tuple[SuggestedLabel, ...]:
         """🔴 **`context` 를 받는다** — 원장 키가 라우터의 실행과 같아야 한다(불변식 8).
 
@@ -112,7 +114,12 @@ class LabelSuggestProvider(Protocol):
         ...
 
 
-def parse_suggestions(text: str, *, guardian_ref: str) -> tuple[SuggestedLabel, ...]:
+def parse_suggestions(
+    text: str,
+    *,
+    guardian_ref: str,
+    counts: LabelLayerCounts | None = None,
+) -> tuple[SuggestedLabel, ...]:
     """LLM 출력을 제안으로 — 🔴 **형식이 틀린 줄은 조용히 버린다**(불변식 4).
 
     ⚠ 예외를 올리면 **한 줄의 형식 오류가 나머지 제안까지 죽인다** — counsel 의 강조점
@@ -157,11 +164,15 @@ def parse_suggestions(text: str, *, guardian_ref: str) -> tuple[SuggestedLabel, 
             dropped += 1
     if dropped:
         logger.info("라벨 제안 줄 드롭 guardian=%s 수=%d", guardian_ref, dropped)
+    if counts is not None:
+        counts.record_parse(parsed=len(kept), dropped=dropped)
     return tuple(kept)
 
 
 def merge_duplicate_axes(
     suggestions: Sequence[SuggestedLabel],
+    *,
+    counts: LabelLayerCounts | None = None,
 ) -> tuple[SuggestedLabel, ...]:
     """🔴 같은 `(축, 값)` 이 여러 번 나오면 **합친다 — 버리지 않는다**(99 #204).
 
@@ -204,6 +215,8 @@ def merge_duplicate_axes(
         logger.info(
             "라벨 제안 중복 병합 %d → %d", len(suggestions), len(merged)
         )
+    if counts is not None:
+        counts.record_merge(before=len(suggestions), after=len(merged))
     return tuple(merged.values())
 
 
@@ -221,6 +234,7 @@ class MissingLabelSuggestProvider:
         guardian_ref: str,
         history: Sequence[HistoryItem],
         context: ExecutionContext,
+        counts: LabelLayerCounts | None = None,
     ) -> tuple[SuggestedLabel, ...]:
         del guardian_ref, history, context
         raise LlmUpstreamDown(
@@ -248,12 +262,13 @@ class GatewayLabelSuggestProvider:
         guardian_ref: str,
         history: Sequence[HistoryItem],
         context: ExecutionContext,
+        counts: LabelLayerCounts | None = None,
     ) -> tuple[SuggestedLabel, ...]:
         #: 🔴 **이력 한 건씩 걸러 낸다**(99 #192 ⓑ · 8/22) — 종전에는 이력을 **통째로**
         #: 조립해 선검사해서 **한 건의 오탐이 제안 전체를 500 으로 죽였다.**
         #: ⚠ 🔴 실 LLM 측정 **전에** 하는 이유: 걸리는 콜이 500 이면 그 콜이 **표본에서
         #: 빠진다** — #110(«상한이 표본을 자른다»)이 «마스킹이 자른다» 로 나타난다.
-        sendable, dropped_history = keep_sendable_history(history)
+        sendable, dropped_history = keep_sendable_history(history, counts=counts)
         #: 🔴 **조립 하한을 두지 않는다 — 1건 이상이면 조립한다**(8/24 판정 · 99 #194).
         #: 근거 넷:
         #:   ① 04 §3.7 의 「5건 이상」은 **BE 의 대상 선정 조건**이다 [읽음 `04:665` —
@@ -312,7 +327,9 @@ class GatewayLabelSuggestProvider:
             ),
             context,
         )
-        return parse_suggestions(result.text or "", guardian_ref=guardian_ref)
+        return parse_suggestions(
+            result.text or "", guardian_ref=guardian_ref, counts=counts
+        )
 
 
 class FakeLabelSuggestProvider:
@@ -322,6 +339,12 @@ class FakeLabelSuggestProvider:
     게이트를 자연히 통과하고, 그 통과는 **게이트가 판정한 것**이지 대역이 정한 것이 아니다.
     ⚠ 🔴 **프롬프트 조립을 부른다** — 안 부르면 «대역으로는 도는데 템플릿이 깨져 있다» 를
     못 잡는다(로그 129 — «대역이 우리 코드를 흉내 내면 원본을 안 잰다»).
+
+    ⚠ 🔴 **(8/24 실측) 이 대역은 마스킹 층을 안 탄다** — `keep_sendable_history` 를 안
+    부르므로 층별 수에서 `history_kept=-`(미측정)로 나온다. 🔴 그건 결함이 아니라 사실이다:
+    대역은 **아무것도 전송하지 않아** 그 층이 필요 없다. 다만 그래서 **대역으로 도는 종단
+    검사는 마스킹 배선을 재지 못한다** ⇒ §A 종단 검사는 `GatewayLabelSuggestProvider`
+    (+ 대역 LLM)로 돈다(99 #208 — «층을 직접 부르면 배선이 안 잼힌다»의 같은 결).
     """
 
     async def suggest(
@@ -330,6 +353,7 @@ class FakeLabelSuggestProvider:
         guardian_ref: str,
         history: Sequence[HistoryItem],
         context: ExecutionContext,
+        counts: LabelLayerCounts | None = None,
     ) -> tuple[SuggestedLabel, ...]:
         del context
         prompt = assemble_prompt(history)
@@ -338,7 +362,7 @@ class FakeLabelSuggestProvider:
         first = history[0]
         #: ⚠ 실 LLM 이 낼 형태 그대로 만들어 **같은 파서**를 태운다.
         line = f"comm | data | 0.5 | {first.record_id} | {first.text}"
-        return parse_suggestions(line, guardian_ref=guardian_ref)
+        return parse_suggestions(line, guardian_ref=guardian_ref, counts=counts)
 
 
 def build_label_gateway(provider: LLMProvider | None = None) -> LlmGateway:
@@ -394,6 +418,7 @@ __all__ = [
     "LabelSuggestProvider",
     "MissingLabelSuggestProvider",
     "build_label_suggest_provider",
+    "LabelLayerCounts",
     "merge_duplicate_axes",
     "parse_suggestions",
 ]
