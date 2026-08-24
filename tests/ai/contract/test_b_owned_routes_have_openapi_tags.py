@@ -28,6 +28,8 @@ from ai.api.routers.report_openapi import (
     REPORT_BLOCK_RESTORE_OPERATION_ID,
     REPORT_BLOCK_RESTORE_SUMMARY,
     REPORT_BLOCK_SUMMARY,
+    REPORT_CREATE_OPERATION_ID,
+    REPORT_CREATE_SUMMARY,
     REPORT_OPERATION_ID,
     REPORT_SUMMARY,
     REPORTS_OPERATION_ID,
@@ -86,6 +88,14 @@ _B_OWNED_ROUTES: Final = [
     ),
     ("/v1/reports", "get", REPORTS_TAG, REPORTS_OPERATION_ID, REPORTS_SUMMARY, "listReports"),
     (
+        "/v1/reports",
+        "post",
+        REPORTS_TAG,
+        REPORT_CREATE_OPERATION_ID,
+        REPORT_CREATE_SUMMARY,
+        "createReport",
+    ),
+    (
         "/v1/reports/{report_id}",
         "get",
         REPORTS_TAG,
@@ -116,8 +126,8 @@ def _spec() -> dict[str, Any]:
     return create_app().openapi()
 
 
-def test_the_b_owned_route_list_has_exactly_ten_paths() -> None:
-    assert len(_B_OWNED_ROUTES) == 10, _B_OWNED_ROUTES
+def test_the_b_owned_route_list_has_exactly_eleven_paths() -> None:
+    assert len(_B_OWNED_ROUTES) == 11, _B_OWNED_ROUTES
 
 
 @pytest.mark.parametrize(

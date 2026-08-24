@@ -184,6 +184,15 @@ def build_report_narration_context(studio_data: ReportStudioData) -> ReportNarra
     )
 
 
+def report_narration_prompt_version() -> str:
+    """본문 다섯 프롬프트가 공유하는 registry 버전을 돌려준다."""
+
+    versions = {load_prompt_template(prompt_id).version for prompt_id in _PROMPT_IDS.values()}
+    if len(versions) != 1:
+        raise ValueError("리포트 본문 프롬프트 다섯의 버전이 서로 다르다")
+    return versions.pop()
+
+
 class ReportNarrator:
     """버전 프롬프트·redaction·주입 게이트를 거쳐 다섯 섹션을 만든다."""
 
@@ -421,4 +430,5 @@ __all__ = [
     "ReportNarrationStatus",
     "ReportNarrator",
     "build_report_narration_context",
+    "report_narration_prompt_version",
 ]
