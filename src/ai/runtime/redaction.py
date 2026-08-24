@@ -18,6 +18,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import Final
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
@@ -64,6 +65,8 @@ class _Config:
     phone: tuple[re.Pattern[str], ...]
     korean_digits: dict[str, str]
     bypass_candidate: re.Pattern[str]
+    uuid_exclude: re.Pattern[str] | None
+    """🔴 마스킹 **전에** 자리를 비울 UUID 모양(99 #223). `None` 이면 축이 꺼진다."""
     separators: re.Pattern[str]
     residual: re.Pattern[str]
     contact_context: tuple[str, ...]
@@ -180,6 +183,11 @@ def _config() -> _Config:
         phone=phone,
         korean_digits={str(k): str(v) for k, v in bypass["korean_digits"].items()},
         bypass_candidate=re.compile(str(bypass["candidate"])),
+        uuid_exclude=(
+            re.compile(str(raw["uuid_exclude"]["pattern"]))
+            if "uuid_exclude" in raw
+            else None
+        ),
         separators=re.compile(str(bypass["separators"])),
         residual=re.compile(str(bypass["residual_hangul_digits"])),
         contact_context=tuple(bypass["contact_context"]),
@@ -411,7 +419,43 @@ class _Redactor:
         head = sentence[: match.start(1)].rstrip()
         return head.endswith("⟫")
 
+
+    #: 🔴 자리표 — **UUID 와 같은 36자**이고 **사설 영역 문자**(U+E000)로 시작한다.
+    #: ⚠ 길이를 맞추는 이유: 이 파일의 window 판정(`text[match.start() - 4 : …]`)이
+    #: 길이에 의존한다. 🔴 채움에 `a~f` 를 안 쓰는 이유: hex 로 읽히면 안 된다.
+    _UUID_SENTINEL: Final = "\ue000"
+
+    def _hide_uuids(self, text: str) -> tuple[str, list[str]]:
+        """UUID 를 자리표로 바꾸고 원본을 순서대로 돌려준다(마스킹 **전**)."""
+        pattern = self.cfg.uuid_exclude
+        if pattern is None:
+            return text, []
+        #: 🔴 **입력에 이미 있는 자리표를 먼저 걷는다**(뒤집기 ㉢ 이 잡은 결함 · 8/24).
+        #: 안 걷으면 되돌리기가 **사용자가 쓴 문자열을 UUID 로 바꾼다**(실측 확인).
+        #: ⚠ U+E000 은 **사설 영역**이라 본문 의미가 없다 — 걷어도 잃는 것이 없다.
+        text = text.replace(self._UUID_SENTINEL, "")
+        found: list[str] = []
+
+        def swap(match: re.Match[str]) -> str:
+            found.append(match.group())
+            #: 4자리 숫자 + `z` 채움 — 🔴 숫자가 8자리를 안 넘어 전화 패턴에 안 걸린다.
+            return f"{self._UUID_SENTINEL}{len(found) - 1:04d}" + "z" * 31
+
+        return pattern.sub(swap, text), found
+
+    def _restore_uuids(self, text: str, uuids: list[str]) -> str:
+        """자리표를 원본 UUID 로 되돌린다(마스킹 **후**)."""
+        for index, value in enumerate(uuids):
+            text = text.replace(
+                f"{self._UUID_SENTINEL}{index:04d}" + "z" * 31, value
+            )
+        return text
+
     def run(self, text: str) -> RedactionResult:
+        #: 🔴 **UUID 를 먼저 빼 둔다**(99 #223 · 2026-08-24) — 마스킹 축 전부가 그 뒤다.
+        #: 실측: `uuid4()` 20,000벌 중 **661벌(3.31%)** 이 연락처로 잡혔고, 그건 참조 ID 를
+        #: **조용히 훼손**한다(준영님 `pg.refine.v1` 의 `evidence_pack_id`).
+        text, uuids = self._hide_uuids(text)
         text = self._mask_batch(text)
         text = self._mask_honorific(text)
         text = self._mask_bypass(text)
@@ -420,7 +464,11 @@ class _Redactor:
         findings = tuple(
             Finding(type=label, token=token) for token, label in self.emitted.items()
         )
-        return RedactionResult(masked_text=text, findings=findings, uncertain=self.uncertain)
+        return RedactionResult(
+            masked_text=self._restore_uuids(text, uuids),
+            findings=findings,
+            uncertain=self.uncertain,
+        )
 
 
 def redact(text: str) -> RedactionResult:
