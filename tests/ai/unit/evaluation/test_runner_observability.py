@@ -308,21 +308,38 @@ def test_uncertain_does_not_mask_a_real_residue() -> None:
     assert verdict.startswith("**데모 불가**"), verdict
 
 
+@pytest.mark.xfail(
+    reason=(
+        "🔴 `_pii_scan` 이 일부 hit 에 조각을 안 담는다 — 실측(2026-08-24 · 99 #229): "
+        "«서연이랑 동생 서진이도 같이 다녀요» 의 두 번째 hit 이 `fragment=''` 다"
+    ),
+    strict=True,
+)
 def test_pii_scan_keeps_the_fragment_that_was_masked() -> None:
     """🔴 건수만 남기면 **오탐/진탐을 영원히 못 가른다**(4차가 그랬다 · 99 ㊪).
 
     ⚠ 여기서 쓰는 문자열은 실 산출이 아니라 **형태 확인용**이다 — `uncertain_detail`이
     조각과 문맥을 담는지만 본다.
     """
+    #: 🔴 **재료를 바꿔 켰다**(2026-08-24 · 99 #228). 종전 문장(«이번 주 제출을 이어가는
+    #: 태도가 좋았습니다.»)은 **더는 `uncertain` 을 안 낸다**(실측: `uncertain=False` ·
+    #: `findings=1`) — №54 의 `name_exclude` 처방으로 오탐이 닫힌 결과로 보인다(#77 계열).
+    #: ⇒ 🔴 **검사가 낡은 것이 아니라 재료가 낡았다** — 재려던 것(«`uncertain_detail` 이
+    #: **조각과 문맥**을 담나» · 99 ㊪)은 그대로 유효하다.
+    #: 🔴 **본문을 새로 지어내지 않았다** — `evaluation/golden/redaction` 코퍼스에 이미
+    #: 있는 가명 문장을 그대로 쓴다(불변식 3 · 99 #80).
     data = {
-        "s1": {"rows": [{"text": "이번 주 제출을 이어가는 태도가 좋았습니다."}]},
+        "s1": {"rows": [{"text": "서연이랑 동생 서진이도 같이 다녀요"}]},
         "s2": {"rows": []},
         "s3": {"rows": []},
     }
     scan = _pii_scan(data)
     assert scan["llm_texts"] == 1
-    if not scan["uncertain"]:
-        pytest.skip("이 문장이 더는 fail-closed를 만들지 않는다 — 조각 형태만 검사한다")
+    #: 🔴 **skip 을 걷었다** — 이 재료는 `uncertain` 을 낸다. 안 내면 그건 재료가 또
+    #: 낡은 것이므로 **red 가 맞다**(조용히 넘어가면 이 검사가 다시 죽는다).
+    assert scan["uncertain"], (
+        "재료가 더는 fail-closed 를 안 만든다 — 코퍼스의 uncertain 문장으로 바꿔라(99 #228)"
+    )
     detail = scan["uncertain_detail"]
     assert len(detail) == scan["uncertain"]
     hits = detail[0]["hits"]
