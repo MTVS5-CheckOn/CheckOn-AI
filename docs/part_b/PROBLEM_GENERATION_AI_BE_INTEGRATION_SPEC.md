@@ -1,21 +1,26 @@
-# AI–BE/Adapter 문제출제 통신 명세
+# AI–BE/Adapter 문제출제·리포트 통신 명세
 
 - 기준 AI 상태: ~~`cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후
   `develop`) + PR #384의 fortition 57노드 복원(검사 실측 지점 `9147cf3`)~~
   **현행화(2026-08-24 · 본 PR):** `develop` `6eb88f195d9f3e261dc1d404c377c1bbbfe554b6`
   (`6eb88f1`) + 본 PR의 진단 리포트 입력 계약 확장
+  **현행화(2026-08-24 · PR C):** `develop` `dc5c2b7cb331115c63b03ff35ecef9226f63ca9f`
+  (`dc5c2b7`, #425 머지 후) + 본 PR C의 BE 리포트 지시서 확정
 - 기준 브랜치: ~~`develop` + `codex/fortition-spec-cleanup` (PR #384)~~
   **현행화(2026-08-24 · 본 PR):** `develop` + `codex/diagnosis-report-input-contract`
+  **현행화(2026-08-24 · PR C):** `develop` + `codex/report-be-integration-spec-final`
 - 확정일: 2026-08-24 (BE 전달 명세 현행화 회차)
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 문서 개정: PR #354 enqueue-only · PR #361 재기동 복구 · PR #362 종단/수정 fixture ·
   PR #371 출제·수정 최종 실측 · PR #374 도달 불가 422 문서 제거 ·
   PR #380 import API 제거 · PR #381 BE 인계 명세 확정 · PR #382 라벨 제안 동기 200 ·
-  본 PR 전국 백분위·개입 이벤트 수신 계약 확정
+  본 PR 전국 백분위·개입 이벤트 수신 계약 확정 · PR #424 리포트 동기 생성 HTTP ·
+  PR #425 리포트 capability 노출 · 본 PR C 리포트 BE 지시서 확정
 
 ## 1. 범위와 결론
 
-이 문서는 Step1 진단부터 Step7 수정 결과 재조회까지 Backend와 Adapter가 AI FastAPI를 호출하는 계약을 고정한다.
+이 문서는 Step1 진단부터 Step7 수정 결과 재조회까지와 §13 리포트 생성·검토에서 Backend와
+Adapter가 AI FastAPI를 호출하는 계약을 고정한다.
 
 - `POST /v1/problems`는 잡을 적재하고 항상 `queued` 202를 즉시 반환한다.
 - LLM 실행은 HTTP 요청이 아니라 앱 startup의 `ProblemDrainLoop`가 맡는다.
@@ -55,6 +60,15 @@
 - offline **3,894 passed / 21 skipped / 165 deselected / 3 xfailed**
 - `develop` `6eb88f1` 기준 3,886 passed에서 늘어난 8건은 전국 백분위·개입 이벤트 계약
   7건과 실제 HTTP 전달 검사 1건이다. 그 밖의 수치는 움직이지 않았다.
+- 실 LLM·PostgreSQL integration·원격 DB는 실행하지 않았다.
+
+**현행화(2026-08-24 · `develop` `dc5c2b7` + 본 PR C):** 리포트 생성·시계열·capability가
+포함된 이 문서의 기준 지점에서 다시 실행한 결과다.
+
+- Ruff 통과
+- Mypy **547 source files** 통과
+- offline **3,940 passed / 21 skipped / 165 deselected / 3 xfailed**
+- 본 PR C는 문서 2파일만 변경하므로 기준선과 검사 수가 같다.
 - 실 LLM·PostgreSQL integration·원격 DB는 실행하지 않았다.
 
 ### 1.1 실 LLM 5영역 실측 `[2026-08-21 · PR #348]`
@@ -219,6 +233,9 @@ uv run python tests/ai/integration/test_pg_real_llm_smoke.py --area all --repeti
 - `Idempotency-Key`: 논리 작업의 멱등 키
 
 `X-Request-Id`는 응답 헤더에 echo된다. 재전송은 같은 논리 작업에 같은 `Idempotency-Key`를 사용한다.
+
+위 POST 규칙은 problem 비동기 잡 계약이다. 리포트 다섯 경로는 GET도 `X-Request-Id`가
+필수이고 `Idempotency-Key`를 읽지 않는다. 리포트 멱등·충돌 규칙은 §13.1을 따른다.
 
 CheckOn opaque alias를 그대로 사용할 수 있다.
 
@@ -951,10 +968,14 @@ Adapter→Backend가 본문을 Kafka로 전달해야 한다면 참조형, slot �
   - `manual_targets: ["grammar.sentence-structure"]`는 실제 curriculum node ID가 아니다.
   - `banned_topics_version: "v1"`은 실행 정본과 다르며 실제 값은 `pg-banned-v1`이다.
 - 실제 node ID는 diagnosis 응답의 `weakness_map.nodes`에서 얻는다.
-- 이 문서가 problem 축 HTTP 계약의 정본이다. problem 축의 기계 판독 OpenAPI 정본은 아직
-  없고 `/openapi.json`에는 FastAPI 자동 생성분만 있다. B 단독으로 닫을 수 없는 소유 경계와
-  변경 범위는 `09_integration_proposals.md` §2-26.4 2번을 가리킨다. 2026-08-22 A·B 합의에
-  따라 A 배포 보안 회차 뒤 OpenAPI 정본화를 착수한다. Pydantic 계약과의 대조는 계속 유효하다.
+- ~~이 문서가 problem 축 HTTP 계약의 정본이다. problem 축의 기계 판독 OpenAPI 정본은 아직
+  없고 `/openapi.json`에는 FastAPI 자동 생성분만 있다.~~
+  **정정(2026-08-24 · PR #402, #424):** B 소유 진단·출제·리포트 11경로의
+  tag·operationId·summary는 각 `*_openapi.py` 상수와
+  `tests/ai/contract/test_b_owned_routes_have_openapi_tags.py`가 고정한다. 이 문서와 갈리면
+  코드 상수와 계약 검사가 옳다. 전체 `/v1` 수는 이 문서에 복제하지 않고
+  `09_integration_proposals.md` §2-26.4의 정정 이력을 따른다. 그 절의 과거 총계가 현재
+  `/openapi.json`과 갈리면 현재 OpenAPI가 우선하며 09를 다시 현행화한다.
 - PR #374는 FastAPI 자동 생성 OpenAPI에서 도달 불가한 422만 제거했다.
   경로와 타입 근거는 `src/ai/api/routers/problem.py:594-596,803-804,853-855,992-994`다.
 
@@ -1033,3 +1054,122 @@ AI 오개념 연동 계약은 기준 커밋 `e4a1a4b256362e40f3a8ed01a27ad50b45b
 | Backend | 저장 정답과 선택 번호 대조, 선택 오답 라벨 복사, diagnosis 리포트 별도 저장 | AI 연동안 제시 · 상대 확인 필요 | 본 문서 §3 Step1 · §8.4 · §11 |
 
 Adapter·Backend 행은 AI가 제시한 계약이며 각 소유자의 확인 전에는 상대 서명으로 간주하지 않는다. 구현 완료 판정은 §11 인수 기준의 E2E 증적으로만 한다.
+
+## 13. 리포트 스튜디오 HTTP 확정 지시
+
+이 절은 질문이나 구현 후보가 아니다. Backend는 아래 값을 그대로 이행한다. 화면 구성과 BE
+facade 책임은 `report_studio_fr_ai_be_spec.html`을 참고하되, AI HTTP 경로·상태·OpenAPI 값이
+갈리면 현재 코드 상수와 계약 검사가 옳다. 전체 엔드포인트 총수는
+`09_integration_proposals.md` §2-26.4의 정정 이력으로만 관리하고 이 문서에 복제하지 않는다.
+
+### 13.1 다섯 경로와 공통 경계
+
+리포트 다섯 경로는 모두 `X-Tenant-Id`와 `X-Request-Id`를 요구한다. 리포트 라우터는
+`Idempotency-Key`를 읽지 않는다. `POST /v1/reports`는 같은 `report_id`와 같은
+`guardian_ref`·`source`면 저장된 결과를 다시 반환하고, 같은 `report_id`에 다른 입력이면
+`409 REVISION_CONFLICT`로 거부한다.
+
+| 메서드 | 경로 | HTTP | BE 동작 |
+| --- | --- | --- | --- |
+| POST | `/v1/reports` | **동기 200** | 다섯 본문 블록을 생성한다. 202·job polling으로 바꾸지 않는다. |
+| GET | `/v1/reports` | 200 | 현재 tenant의 `data.reports[]`만 목록에 반영한다. |
+| GET | `/v1/reports/{report_id}` | 200 | guardian 상세와 전체 블록 리비전을 조회한다. |
+| PATCH | `/v1/reports/{report_id}/blocks/{block_id}` | 200 | 강사 수정본을 새 리비전으로 저장한다. |
+| POST | `/v1/reports/{report_id}/blocks/{block_id}/restore` | 200 | 지정한 과거 AI 원문을 rollback 리비전으로 복귀한다. |
+
+생성 요청 형태는 다음과 같다. 중첩 타입을 빈 객체로 대체하지 않는다. `source`의 닫힌 상세
+타입은 `src/ai/report/store.py`의 `ReportSourceSnapshot`과 현재 `/openapi.json`이 정본이다.
+
+| 필드 | 타입·필수성 | 지시 |
+| --- | --- | --- |
+| `report_id` | UUID · 필수 | BE가 발급한 불변 리포트 ID를 보낸다. |
+| `guardian_ref` | non-empty string · 필수 | 실명 대신 opaque 참조를 보낸다. |
+| `source.weakness_map` | `WeaknessMap` · 필수 | diagnosis 응답의 검증된 구조를 보존한다. |
+| `source.misconceptions` | `MisconceptionReport` · 필수 | 오개념 리포트를 보존한다. |
+| `source.item_results` | `ItemResult[]` · 필수·1개 이상 | 출제 결과를 빈 배열로 보내지 않는다. |
+| `source.metrics` | `ReportMetricInput[]` · 선택·기본 `[]` | audience와 evidence가 붙은 값만 보낸다. |
+| `source.time_series` | `ReportTimeSeriesSnapshot` 또는 `null` · 선택 | 진단 기간과 event만 보낸다. |
+| `source.cell_min_items` | integer ≥ 1 · 필수 | 셀 최소 표본 수를 보낸다. |
+
+`source.time_series`가 있으면 `{ "period": { "from_date": "date", "to_date": "date" },
+"events": [] }` 형태다. 이 필드가 있을 때만 월별·주차별·최근 6주 기준선 산출을 시도하고,
+버킷 표본 기준을 충족한 값만 실린다. 필드 부재는 정상이며 BE는 데이터 오류나 재시도 사유로
+처리하지 않는다.
+
+강사 수정 요청은 `{ "base_revision_no": 0, "content": "..." }`, 원문 복귀 요청은
+`{ "base_revision_no": 1, "revert_to_revision_no": 0, "teacher_ref": "..." }`다.
+두 응답은 갱신된 상세 전체를 공통 envelope의 `data`에 반환한다. stale
+`base_revision_no`는 `409 REVISION_CONFLICT`, 없는 report·block은 404다.
+
+### 13.2 응답 상태와 리비전 불변식
+
+목록의 각 행은 `report_id`·`guardian_ref`·`status`·`block_count`·`updated_at`을 가진다.
+상세는 여기에 `audience="guardian"`·`created_at`·`studio_data`·`blocks`·
+`unproduced_sections`를 더한다. 생성 성공은 같은 상세와 `sections`를 반환한다.
+
+게이트 거부도 **HTTP 200**이다. `data.status`가 `rejected_insufficient` 또는
+`template_only`이고 `data.blocks=[]`이며, `sections[]`가 블록별 상태·시도 횟수·공개 사유를
+담는다. 이 둘은 실패가 아니다. BE는 5xx나 생성 장애로 번역하지 않고 “근거 부족” 또는
+“템플릿만 제공” 상태로 화면에 전달한다.
+
+- AI 원문 `ai_original`은 강사 수정 뒤에도 기존 리비전에 남는다. 덮어쓰거나 삭제하지 않는다.
+- 강사 수정분 `teacher_edit`은 AI 산출물이 아니므로 AI 텍스트 게이트 대상이 아니다.
+- `restoreReportBlock`은 원문을 복사해 덮는 경로가 아니라 `rollback` 리비전과 복귀 행위자·
+  시각을 추가하는 경로다.
+- `teacher_only` 수치는 guardian 조립 단계에서 물리적으로 제외된다. BE facade도 같은 규율을
+  지키며 AI 응답에 강사용 반 평균·석차를 합쳐 학부모에게 반환하지 않는다.
+
+### 13.3 동기 생성 최악 소요와 BE 타임아웃
+
+리포트 프롬프트 다섯(`report.greeting.v1`·`report.fact.v1`·
+`report.chart_analysis.v1`·`report.suggestion.v1`·`report.closing.v1`)은
+`call_timeouts.yaml`에 개별 상한이 없다. 로더로 다시 확인한 값은 모두 `None`이며 운영
+`OPENAI_TIMEOUT_S` **90초**를 그대로 탄다. 블록은 다섯이고 블록별 생성 시도 상한은 3이므로
+최악 LLM 호출 수는 `5 × 3 = 15`, LLM 구간 상한은 `90초 × 15 = 1,350초`, 즉
+**22분 30초**다.
+
+Backend는 `POST /v1/reports`의 클라이언트 read timeout을 **1,350초 이상**으로 지정한다.
+이는 근거 없는 여유분을 더한 값이 아니라 현재 콜당 정본과 호출 상한의 곱이다.
+`call_timeouts.yaml`은 `LlmGateway.complete()` 안의 개별 LLM 호출만 끊고 HTTP 요청 전체를
+중단하지 않는다(A의 `docs/99_open_items.md` #220 실측). 따라서 BE가 먼저 끊어
+`ReadTimeout`을 내도 AI 작업은 취소되지 않고 끝까지
+진행해 원가가 발생한다. BE는 클라이언트 timeout을 업무 취소 신호로 사용하지 않는다.
+비 LLM 조립·직렬화에는 별도 요청 전체 상한이 없으므로, 운영 실측 뒤 이 권고값을 낮추려면
+먼저 AI와 동기/비동기 계약을 다시 확정한다. 계산 형식은 `docs/04_api_contract.md` §2.4의
+`/detect` “총 예산 45초 + 마지막 콜 15초 = 60초” 선례와 같다.
+
+### 13.4 B 소유 11경로 operationId 정본
+
+| 경로 | 메서드 | tag | operationId | summary |
+| --- | --- | --- | --- | --- |
+| `/v1/diagnosis` | POST | 진단 | `createDiagnosis` | 학생 약점 진단을 생성한다 |
+| `/v1/problems` | POST | 출제 | `createProblemSet` | 문제 세트 생성 작업을 요청한다 |
+| `/v1/problems/{job_id}` | GET | 출제 | `getProblemSetJob` | 문제 세트 생성 작업을 조회한다 |
+| `/v1/problems/{set_id}/items` | GET | 출제 | `listProblemItems` | 문제 세트의 문항을 조회한다 |
+| `/v1/problems/{set_id}/items/{slot_index}` | GET | 출제 | `getProblemItem` | 문항 상세를 조회한다 |
+| `/v1/problems/{set_id}/items/{slot_index}/revisions` | POST | 출제 | `createProblemItemRevision` | 문항 수정 리비전을 생성한다 |
+| `/v1/reports` | GET | 리포트 | `listReports` | 리포트 목록을 조회한다 |
+| `/v1/reports` | POST | 리포트 | `createReport` | 리포트 본문 생성을 실행한다 |
+| `/v1/reports/{report_id}` | GET | 리포트 | `getReport` | 리포트 상세를 조회한다 |
+| `/v1/reports/{report_id}/blocks/{block_id}` | PATCH | 리포트 | `updateReportBlock` | 리포트 블록의 강사 수정본을 저장한다 |
+| `/v1/reports/{report_id}/blocks/{block_id}/restore` | POST | 리포트 | `restoreReportBlock` | 리포트 블록의 AI 원문을 복원한다 |
+
+정본은 `report_openapi.py`·`problem_openapi.py`·`diagnosis_openapi.py` 상수다.
+`tests/ai/contract/test_b_owned_routes_have_openapi_tags.py`가 11경로 수, 상수, 리터럴을 함께
+단언한다. 이 표와 코드가 갈리면 **코드 상수와 계약 검사가 옳다**. BE codegen은 그 값을 다시
+읽어 생성하고 문서의 오래된 값을 임의로 유지하지 않는다.
+
+### 13.5 부재의 세 분류
+
+1. **AI가 정해야 하지만 현재 부재 — job 취소 HTTP.** `cancelled` phase는 있으나 외부 취소
+   endpoint는 없다. AI는 PR C 머지 뒤 다음 A·B counsel/problem 공통 비동기 잡 계약 회차에서
+   메서드·경로·operationId·멱등 규칙을 확정해 BE에 통보한다. BE는 그 통보 전까지 취소 호출·
+   codegen·취소 버튼 연동을 만들지 않는다. 이번 PR에서는 endpoint를 만들지 않는다.
+2. **AI가 정할 값이 아님 — 인바운드 인증과 Kafka 운영값.** 현재 `X-Tenant-Id`만 알면 전
+   endpoint에 도달하므로 인증·인가 인프라는 A의 `docs/99_open_items.md` #222 및 배포 인프라
+   소유다. Kafka topic명·partition·retention·ACL은 BE·Adapter 운영 계약이 공동 확정한다.
+   현재 problem 완료 확인은 `GET /v1/problems/{job_id}` polling이며 Kafka는 참고 계약 뼈대일
+   뿐이다. 리포트 생성은 동기 200이므로 완료 이벤트와 polling 모두 없다.
+3. **AI 계약에 영구히 없음 — 발송.** AI는 리포트 생성·조회·수정·원문 복귀까지만 제공한다.
+   학부모 승인·PDF artifact·수신자·대기열·발송은 BE HITL 소유다. BE는 AI 발송 endpoint를
+   기다리거나 `/v1/reports/{report_id}/send`를 호출하지 않는다.
