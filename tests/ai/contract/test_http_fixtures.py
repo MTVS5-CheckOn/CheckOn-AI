@@ -1414,7 +1414,6 @@ def test_labels_suggest_fixtures() -> None:
     **없는 record_id 를 가리키는 제안** 하나를 낸다 ⇒ 픽스처가 «게이트가 실제로 드롭한다»
     까지 증명한다. 🔴 대역이 게이트를 **흉내 내지 않는다** — 게이트는 프로덕션 것이 돈다.
     """
-    from uuid import UUID  # noqa: PLC0415
 
     from ai.api.routers import labels as labels_router  # noqa: PLC0415
     from ai.contracts.counsel import LabelSuggestion  # noqa: PLC0415
@@ -1460,7 +1459,7 @@ def test_labels_suggest_fixtures() -> None:
             del history, context
             return (
                 SuggestedLabel(
-                    suggestion_id=UUID("00000000-0000-4000-8000-00000000a001"),
+                    suggestion_id="gd_1:comm:data",
                     guardian_ref=guardian_ref,
                     label=LabelSuggestion(axis="comm", value="data"),
                     confidence=0.86,
@@ -1469,7 +1468,7 @@ def test_labels_suggest_fixtures() -> None:
                     ),
                 ),
                 SuggestedLabel(
-                    suggestion_id=UUID("00000000-0000-4000-8000-00000000a002"),
+                    suggestion_id="gd_1:frequency:frequent",
                     guardian_ref=guardian_ref,
                     label=LabelSuggestion(axis="frequency", value="frequent"),
                     confidence=0.51,

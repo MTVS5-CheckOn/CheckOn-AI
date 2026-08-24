@@ -9,7 +9,6 @@ import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, Final, cast
-from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
@@ -417,7 +416,7 @@ def test_the_contract_rejects_duplicates_that_slipped_past_the_merge() -> None:
     ⚠ 모델 출력이 아니라 **우리 병합**이 안 돈 신호다(조립부가 먼저 합친다).
     """
     duplicated = SuggestedLabel(
-        suggestion_id=UUID("00000000-0000-4000-8000-00000000b001"),
+        suggestion_id="gd_1:comm:data",
         guardian_ref="gd_1",
         label=LabelSuggestion(axis="comm", value="data"),
         confidence=0.5,
@@ -497,7 +496,7 @@ async def test_the_router_actually_merges_after_the_gate() -> None:
             second = history[1]  # type: ignore[index]
             return tuple(
                 SuggestedLabel(
-                    suggestion_id=UUID(f"00000000-0000-4000-8000-00000000c00{index}"),
+                    suggestion_id="gd_1:comm:data",
                     guardian_ref=guardian_ref,
                     label=LabelSuggestion(axis="comm", value="data"),
                     confidence=0.5 + index / 10,

@@ -178,3 +178,47 @@ def test_a_corrected_value_from_another_axis_is_400(
     )
     assert bad.status_code == 400, (axis, other, bad.text)
     assert bad.json()["error"]["detail"]["reason"] == "label_value_axis_mismatch"
+
+
+def test_the_key_the_suggestion_gives_is_accepted_by_the_confirmation(
+    client: TestClient,
+) -> None:
+    """🔴 **왕복** — 제안이 낸 키를 확정에 **그대로** 넣으면 200 이다(99 #235).
+
+    ⚠ 🔴 **이 검사가 이 회차의 전부다.** №92 가 「받는 쪽」만 만들고 「내는 쪽」을 안 봐서
+    우리가 준 UUID 를 돌려주면 **400** 이었다 — 확정 경로가 서 있는데 **아무도 못 밟았다.**
+    🔴 「내는 쪽」과 「받는 쪽」을 **한 검사로 묶는다** — 그 사이가 №92 의 구멍이었다.
+    """
+    history = [
+        {
+            "record_id": f"cm_{index:02d}",
+            "text": text,
+            "direction": "inbound",
+            "at": "2026-08-20T09:00:00+09:00",
+        }
+        for index, text in enumerate(
+            [
+                "지난주 과제를 모두 제출했습니다",
+                "상담 일정을 다시 잡고 싶다고 했습니다",
+                "교재 진도를 확인했습니다",
+                "주말 보충 참여 의사를 밝혔습니다",
+                "연락이 사흘째 없습니다",
+            ],
+            1,
+        )
+    ]
+    #: 🔴 `guardian_ref` 에 `:` 을 넣어 둔다 — 왕복이 그것도 견디나(99 #231).
+    suggested = client.post(
+        "/v1/labels/suggest",
+        json={"guardian_ref": "gd:11:b0", "history": history},
+        headers=_HEADERS,
+    )
+    assert suggested.status_code == 200, suggested.text
+    keys = [s["suggestion_id"] for s in suggested.json()["data"]["suggestions"]]
+    assert keys, "제안이 0건이라 왕복을 못 잰다"
+    for key in keys:
+        assert key.startswith("gd:11:b0:"), key
+        confirmed = _post(
+            client, {"kind": "label", "suggestion_id": key, "action": "confirmed"}
+        )
+        assert confirmed.status_code == 200, (key, confirmed.text)

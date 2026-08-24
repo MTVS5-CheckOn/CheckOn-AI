@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from collections.abc import Sequence
 from typing import Final, Protocol
 
@@ -151,7 +150,9 @@ def parse_suggestions(
             enum(value)
             kept.append(
                 SuggestedLabel(
-                    suggestion_id=uuid.uuid4(),
+                    #: 🔴 **합성 키**(99 #235) — 강사가 확정에 **그대로** 보낸다.
+                    #: 조립은 **여기 한 곳**이다(두 곳에 두면 갈린다).
+                    suggestion_id=f"{guardian_ref}:{axis}:{value}",
                     guardian_ref=guardian_ref,
                     label=LabelSuggestion(axis=axis, value=value),
                     confidence=float(confidence),
