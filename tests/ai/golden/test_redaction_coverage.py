@@ -111,7 +111,19 @@ def test_every_cell_is_covered_or_a_known_gap(form: str, follower: str) -> None:
     name = _NAME_FORMS[form]
     masked = _is_masked(name, name + _FOLLOWERS[follower])
     if (form, follower) in _KNOWN_GAPS:
-        pytest.skip(f"알려진 구멍: {form} × {follower}")
+        #: 🔴 **`skip` 이 아니라 `xfail` 이다**(2026-08-24 · 99 #227).
+        #: 종전에는 `masked` 를 **계산해 놓고 skip 이 버려서**, 구멍이 **메워져도 영영
+        #: skip** 이었다 — 「알려진 구멍」 목록이 낡아도 아무도 안 알려준다.
+        #: 🔴 №89 가 켠 **`xfail_strict = true`** 가 이 자리를 자동으로 잡는다:
+        #: 메워지면 **xpass** 가 되고 strict 라 **red** 다 ⇒ 그때 이 칸을
+        #: `_KNOWN_GAPS` 에서 빼면 된다. **새 단언을 만들 필요가 없다.**
+        #: ⚠ 🔴 19칸(미탐) 자체는 **별건**이다(#178 계열) — 여기서 안 고친다.
+        if masked:
+            pytest.fail(
+                f"🔴 이 칸은 이제 마스킹된다: {form} × {follower} — "
+                "`_KNOWN_GAPS` 에서 빼라(99 #227)"
+            )
+        pytest.xfail(f"알려진 구멍: {form} × {follower}")
     got = redact(name + _FOLLOWERS[follower]).masked_text
     assert masked, (
         f"새 구멍: {form}({name}) × {follower} → {got!r} — "
