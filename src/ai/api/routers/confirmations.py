@@ -126,7 +126,15 @@ async def post_confirmations(request: Request) -> dict[str, Any]:
             {
                 "reason": KIND_NOT_IMPLEMENTED,
                 "kind": confirmation.kind.value,
-                "detail": "제안 생성기 미구현 — v1은 classification만 확정을 받는다",
+                #: ⚠ 🔴 **(8/24 정정 · 99 #221)** 종전 문면은 «**제안 생성기 미구현**» 이었는데
+                #: 🔴 **거짓이 됐다** — 라벨 생성기는 №64 이후 있고 `POST /v1/labels/suggest`
+                #: 는 **동작한다**(실측: BE 인 척 200 · 제안 1건). 미구현인 것은 **확정 경로**다.
+                #: 🔴 BE 가 종전 문면을 읽으면 «AI 가 아직 제안을 못 만든다» 로 **오독한다.**
+                "detail": (
+                    "이 kind 의 확정은 v1 미구현 — 제안 API 자체는 동작한다"
+                    "(예: POST /v1/labels/suggest). 확정을 받는 것은 v1 에서 "
+                    "classification 뿐이다"
+                ),
             },
         )
 
