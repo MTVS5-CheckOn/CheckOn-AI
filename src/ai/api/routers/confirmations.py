@@ -60,6 +60,10 @@ _REQUIRED_HEADERS = ("X-Tenant-Id", "X-Request-Id")
 KIND_NOT_IMPLEMENTED = "kind_not_implemented"
 #: 🔴 라벨 확정 키가 `guardian_ref:axis:value` 형식이 아니거나 축·값이 열거형 밖이다.
 LABEL_KEY_INVALID: Final = "label_key_invalid"
+#: 🔴 **정정값이 그 축의 열거형 밖이다**(2026-08-24 · 99 #232).
+#: ⚠ 🔴 `LABEL_KEY_INVALID` 와 **갈랐다** — 그건 «키가 틀렸다» 이고 이건 «**정정값**이
+#: 틀렸다» 다. BE 가 고쳐야 할 자리가 **다르다**(키는 우리가 준 값, 정정값은 강사 입력).
+LABEL_VALUE_AXIS_MISMATCH: Final = "label_value_axis_mismatch"
 
 #: `classification`이 받지 않는 action의 사유 코드.
 ACTION_NOT_SUPPORTED = "action_not_supported"
@@ -132,7 +136,10 @@ def _accept_label(
     가져야 해서 «거절» 이 정의되지 않지만, 라벨은 «이 축을 안 쓴다» 가 뜻이 된다).
     """
     parts = confirmation.suggestion_id.rsplit(":", _LABEL_KEY_PARTS - 1)
-    if len(parts) != _LABEL_KEY_PARTS:
+    #: 🔴 **빈 `guardian_ref` 도 거절한다**(2026-08-24 · 99 #232).
+    #: ⚠ 🔴 «파싱이 깨지기 때문» 이 **아니다** — 우리는 `guardian_ref` 를 안 싣고 안 읽는다.
+    #: 🔴 이유는 «**빈 참조에 「받았다」를 주면 BE 가 그걸 유효한 확정으로 센다**» 다.
+    if len(parts) != _LABEL_KEY_PARTS or not parts[0]:
         raise SnapshotInvalid(
             "라벨 확정 키 형식 위반",
             {
@@ -163,6 +170,22 @@ def _accept_label(
         if isinstance(confirmation.corrected_value, LabelCorrection)
         else None
     )
+    #: 🔴 **정정값이 「그 축의」 값인지 본다**(2026-08-24 · 99 #232).
+    #: ⚠ 🔴 **타입은 이걸 못 막는다** — `CommStyle | Sensitivity | Interest | Frequency` 는
+    #: **네 축 아무거나**를 받고 축을 모른다. 막을 수 있는 자리는 **라우터뿐**이고
+    #: `LabelCorrection.value` 의 문면도 «축과 짝이 맞는지는 라우터가 본다» 라 적었다 —
+    #: 🔴 종전에는 **그 문면이 코드에 대해 거짓**이었다(`corrected` 를 꺼내 로그에 찍기만 했다).
+    #: 🔴 그 다섯 칸이 **군집의 착수 근거**라, 축과 안 맞는 값이 섞이면 **로그에 남은 뒤엔
+    #: 못 가른다.**
+    if corrected is not None and corrected not in {member.value for member in values}:
+        raise SnapshotInvalid(
+            "정정값이 축과 안 맞는다",
+            {
+                "reason": LABEL_VALUE_AXIS_MISMATCH,
+                "axis": axis,
+                "detail": f"{axis} 축의 값이 아니다",
+            },
+        )
     if confirmation.action is ConfirmationAction.CORRECTED and corrected is None:
         raise SnapshotInvalid(
             "정정값 없음",

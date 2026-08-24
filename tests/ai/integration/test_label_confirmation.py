@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Final
 
 import pytest
 from fastapi.testclient import TestClient
@@ -108,7 +109,10 @@ def test_a_rejected_label_is_accepted_but_classification_still_is_not(
 
 def test_a_malformed_key_is_400(client: TestClient) -> None:
     """🔴 키가 `guardian_ref:axis:value` 가 아니면 거절한다."""
-    for bad in ("gd_11b0", "gd_11b0:comm", "gd_11b0:없는축:data"):
+    #: 🔴 **빈 `guardian_ref` 도 넣었다**(99 #232) — `rsplit` 은 `["", "comm", "data"]` 로
+    #: 멀쩡히 쪼개져 **200 이 나갔다.** ⚠ 🔴 «파싱이 깨져서» 가 아니라 «**빈 참조에
+    #: 「받았다」를 주면 BE 가 유효한 확정으로 센다**» 가 이유다.
+    for bad in ("gd_11b0", "gd_11b0:comm", "gd_11b0:없는축:data", ":comm:data"):
         response = _post(
             client, {"kind": "label", "suggestion_id": bad, "action": "confirmed"}
         )
@@ -136,3 +140,41 @@ def test_a_guardian_ref_with_colons_still_parses(
     line = next(m for m in caplog.messages if "confirmations.label" in m)
     assert "axis=interest" in line and "suggested=grade" in line, line
     assert "gd:11:b0" not in line, line
+
+
+#: 🔴 네 축 **전수** — 축마다 「남의 축 값」 하나(99 #232).
+#: ⚠ 🔴 목록이 비면 이 검사가 **조용히 사라진다**(#202) ⇒ 아래에서 수를 센다.
+_CROSS_AXIS: Final = [
+    ("comm", "data", "anxious"),
+    ("sensitivity", "anxious", "grade"),
+    ("interest", "grade", "frequent"),
+    ("frequency", "frequent", "narrative"),
+]
+
+
+def test_the_cross_axis_table_is_not_empty() -> None:
+    """🔴 **대상이 0이 아니다** — 네 축을 다 덮는다(#202 · «사라지면 알아차린다»)."""
+    assert len(_CROSS_AXIS) == 4, _CROSS_AXIS
+
+
+@pytest.mark.parametrize(("axis", "own", "other"), _CROSS_AXIS, ids=[c[0] for c in _CROSS_AXIS])
+def test_a_corrected_value_from_another_axis_is_400(
+    client: TestClient, axis: str, own: str, other: str
+) -> None:
+    """🔴 **정정값이 그 축의 값이 아니면 400**(99 #232).
+
+    ⚠ 🔴 **타입은 이걸 못 막는다** — `LabelCorrection.value` 는 네 축을 다 받고 축을
+    모른다. 🔴 종전에는 `corrected` 가 **아무 검사도 안 타고 로그에 찍혔다** — 그 다섯
+    칸이 「군집의 착수 근거」라 **오염되면 로그에 남은 뒤엔 못 가른다.**
+    """
+    bad = _post(
+        client,
+        {
+            "kind": "label",
+            "suggestion_id": f"gd_11b0:{axis}:{own}",
+            "action": "corrected",
+            "corrected_value": {"value": other},
+        },
+    )
+    assert bad.status_code == 400, (axis, other, bad.text)
+    assert bad.json()["error"]["detail"]["reason"] == "label_value_axis_mismatch"
