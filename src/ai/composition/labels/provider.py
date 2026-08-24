@@ -118,6 +118,12 @@ def parse_suggestions(text: str, *, guardian_ref: str) -> tuple[SuggestedLabel, 
     ⚠ 예외를 올리면 **한 줄의 형식 오류가 나머지 제안까지 죽인다** — counsel 의 강조점
     드롭과 같은 결이다. 다만 **몇 줄을 버렸는지는 로그로 남긴다**(조용한 드롭 금지).
     🔴 **본문·인용문을 로그에 싣지 않는다**(불변식 3 · 99 #80) — 수까지다.
+
+    ⚠ 🔴 **(8/24 정정 · 99 #206) 여기서 병합하지 않는다.** №70 이 `merge_duplicate_axes` 를
+    이 함수 **안**에 넣었더니 `ground_suggestions` 의 뜻이 조용히 바뀌었다 —
+    병합된 제안은 인용을 여럿 들고 게이트는 «하나라도 실패하면 전체 드롭» 이라,
+    🔴 **«근거 실존» 이 «근거 묶음 **전부** 실존» 이 됐다.** 두 함수 다 안 고쳤는데 뜻이 바뀌었다.
+    ⇒ **병합은 게이트 뒤**다(조립부가 부른다).
     """
     kept: list[SuggestedLabel] = []
     dropped = 0
@@ -151,7 +157,7 @@ def parse_suggestions(text: str, *, guardian_ref: str) -> tuple[SuggestedLabel, 
             dropped += 1
     if dropped:
         logger.info("라벨 제안 줄 드롭 guardian=%s 수=%d", guardian_ref, dropped)
-    return merge_duplicate_axes(kept)
+    return tuple(kept)
 
 
 def merge_duplicate_axes(

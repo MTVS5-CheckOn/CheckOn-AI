@@ -15,7 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from ai.composition.counsel.versions import counsel_versions
-from ai.composition.labels.grounding import keep_sendable_history
+from ai.composition.labels.grounding import ground_suggestions, keep_sendable_history
 from ai.composition.labels.prompt import PROMPT_VERSION, assemble_prompt
 from ai.composition.labels.provider import (
     HISTORY_ALL_BLOCKED,
@@ -25,6 +25,7 @@ from ai.composition.labels.provider import (
     LabelSettings,
     MissingLabelSuggestProvider,
     build_label_suggest_provider,
+    merge_duplicate_axes,
     parse_suggestions,
 )
 from ai.contracts.counsel import LabelSuggestion
@@ -335,15 +336,17 @@ def test_duplicate_axes_are_merged_not_dropped() -> None:
     ⚠ 🔴 **버리는 방식이 아니다** — 먼저 나온 것만 남기면 **근거가 사라지고**,
     confidence 최고만 남기면 **나머지 인용이 사라진다.**
     """
-    parsed = parse_suggestions(
-        "\n".join(
+    parsed = merge_duplicate_axes(
+        parse_suggestions(
+            "\n".join(
             (
                 _line("interest", "attitude", "0.5", "cm_88", "숫자로"),
                 _line("interest", "attitude", "0.9", "cm_89", "점수 추이"),
                 _line("interest", "attitude", "0.3", "cm_90", "표로"),
             )
-        ),
-        guardian_ref="gd_1",
+            ),
+            guardian_ref="gd_1",
+        )
     )
     assert len(parsed) == 1, [s.label.value for s in parsed]
     assert len(parsed[0].evidence_quotes) == 3, "인용이 사라졌다 — 버리는 방식이다"
@@ -353,14 +356,16 @@ def test_duplicate_axes_are_merged_not_dropped() -> None:
 
 def test_an_identical_quote_is_not_duplicated_in_the_merge() -> None:
     """같은 `record_id` + 같은 문장이면 인용을 하나로 — 근거가 부풀지 않는다."""
-    parsed = parse_suggestions(
-        "\n".join(
+    parsed = merge_duplicate_axes(
+        parse_suggestions(
+            "\n".join(
             (
                 _line("comm", "data", "0.5", "cm_88", "숫자로"),
                 _line("comm", "data", "0.7", "cm_88", "숫자로"),
             )
-        ),
-        guardian_ref="gd_1",
+            ),
+            guardian_ref="gd_1",
+        )
     )
     assert len(parsed) == 1
     assert len(parsed[0].evidence_quotes) == 1, "같은 인용이 두 번 실렸다"
@@ -372,15 +377,17 @@ def test_different_axes_are_not_merged() -> None:
     ⚠ 이 검사가 없으면 «다 합치는 구현» 도 위 둘을 통과한다. 축이 다르거나 값이
     다르면 **각자 남아야** 한다.
     """
-    parsed = parse_suggestions(
-        "\n".join(
+    parsed = merge_duplicate_axes(
+        parse_suggestions(
+            "\n".join(
             (
                 _line("comm", "data", "0.5", "cm_88", "숫자로"),
                 _line("interest", "grade", "0.6", "cm_89", "점수"),
                 _line("comm", "narrative", "0.4", "cm_90", "이야기"),
             )
-        ),
-        guardian_ref="gd_1",
+            ),
+            guardian_ref="gd_1",
+        )
     )
     assert len(parsed) == 3, [
         (s.label.axis, s.label.value) for s in parsed
@@ -389,15 +396,17 @@ def test_different_axes_are_not_merged() -> None:
 
 def test_the_merge_keeps_first_appearance_order() -> None:
     """🔴 정렬하지 않는다 — **모델의 우선순위**가 사라진다."""
-    parsed = parse_suggestions(
-        "\n".join(
+    parsed = merge_duplicate_axes(
+        parse_suggestions(
+            "\n".join(
             (
                 _line("interest", "grade", "0.5", "cm_88", "점수"),
                 _line("comm", "data", "0.5", "cm_89", "숫자로"),
                 _line("interest", "grade", "0.9", "cm_90", "정답률"),
             )
-        ),
-        guardian_ref="gd_1",
+            ),
+            guardian_ref="gd_1",
+        )
     )
     assert [s.label.axis for s in parsed] == ["interest", "comm"]
 
@@ -416,4 +425,45 @@ def test_the_contract_rejects_duplicates_that_slipped_past_the_merge() -> None:
     )
     with pytest.raises(ValidationError):
         LabelSuggestResponse(suggestions=(duplicated, duplicated))
+
+def test_a_forged_quote_does_not_take_the_true_ones_with_it() -> None:
+    """🔴 **이 검사가 「병합이 게이트 뒤」라는 순서 자체를 문다** (99 #206 · №71).
+
+    ⚠ 🔴 **병합을 게이트 앞으로 되돌리면 red 다** — 그게 이 검사의 존재 이유다.
+    앞에 두면 병합된 제안이 인용 셋을 들고, 게이트는 «하나라도 실패하면 전체 드롭» 이라
+    **진짜 인용 둘이 지어낸 하나에 딸려 사라진다**(불변식 2 의 반대편).
+
+    ⚠ 입력: 같은 `(interest, grade)` **셋** 중 **하나만** `record_id` 가 없는 것을 가리킨다.
+    ⇒ 순서가 맞으면 **거짓 하나만 떨어지고 진짜 둘이 합쳐져 나온다**.
+    """
+    history = _history_with(
+        "숫자로 정리해 주세요",
+        "점수 추이 표로 부탁드려요",
+        "지난주 결과가 궁금합니다",
+        "표로 보여 주시면 좋겠어요",
+        "이번 달 통계도 알려 주세요",
+    )
+    parsed = parse_suggestions(
+        "\n".join(
+            (
+                _line("interest", "grade", "0.5", "cm_88", "숫자로 정리해 주세요"),
+                #: 🔴 **없는 record_id** — 게이트가 이 제안만 버려야 한다.
+                _line("interest", "grade", "0.9", "cm_없음", "지어낸 인용"),
+                _line("interest", "grade", "0.7", "cm_89", "점수 추이 표로 부탁드려요"),
+            )
+        ),
+        guardian_ref="gd_1",
+    )
+    #: ① 파서는 **안 합친다** — 셋이 그대로 나온다(그래야 게이트가 하나씩 판정한다).
+    assert len(parsed) == 3, "파서가 합쳤다 — 병합이 다시 앞으로 갔다"
+
+    grounded = ground_suggestions(parsed, history=history)
+    assert len(grounded.suggestions) == 2, (
+        f"진짜 인용 둘이 지어낸 하나에 딸려 사라졌다: {len(grounded.suggestions)}개 남음"
+    )
+
+    merged = merge_duplicate_axes(grounded.suggestions)
+    assert len(merged) == 1, "게이트 통과분이 안 합쳐졌다"
+    assert len(merged[0].evidence_quotes) == 2, "합친 뒤 인용이 둘이어야 한다"
+    assert merged[0].confidence == 0.7, "게이트가 버린 0.9 가 confidence 에 남았다"
 
