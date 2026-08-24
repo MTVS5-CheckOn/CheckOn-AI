@@ -8,8 +8,11 @@ from ai.contracts.diagnosis import (
     CellVerdict,
     DiagnosisEvent,
     DiagnosisInput,
+    DiagnosisInterventionEvent,
     DiagnosisResult,
     DiagnosisStatus,
+    InterventionKind,
+    NationalPercentileBenchmark,
     NodeVerdict,
     Period,
     PropagatedNode,
@@ -92,6 +95,110 @@ def test_empty_events_are_valid_for_insufficient_path() -> None:
         snapshot_hash="sha256:empty",
     )
     assert payload.events == ()
+
+
+def test_optional_report_inputs_are_absent_by_default() -> None:
+    payload = DiagnosisInput(
+        tenant_id="teacher-alias",
+        student_ref="student-alias",
+        period=Period(from_date=date(2026, 7, 1), to_date=date(2026, 7, 15)),
+        as_of=FIXED_TIME,
+        snapshot_hash="sha256:optional-absent",
+    )
+
+    assert payload.national_percentile is None
+    assert payload.interventions == ()
+
+
+def test_report_inputs_roundtrip_with_percentile_provenance_and_interventions() -> None:
+    payload = DiagnosisInput(
+        tenant_id="teacher-alias",
+        student_ref="student-alias",
+        period=Period(from_date=date(2026, 4, 23), to_date=date(2026, 7, 15)),
+        as_of=FIXED_TIME,
+        snapshot_hash="sha256:report-inputs",
+        events=(_event(),),
+        national_percentile=NationalPercentileBenchmark(
+            value=68.0,
+            source="전국 모의평가 표준화 집계",
+            as_of=date(2026, 6, 30),
+            population_size=125_000,
+        ),
+        interventions=(
+            DiagnosisInterventionEvent(
+                event_id="intervention-1",
+                kind=InterventionKind.SUPPLEMENT,
+                occurred_at=datetime(2026, 7, 1, 10, 0, tzinfo=UTC),
+            ),
+            DiagnosisInterventionEvent(
+                event_id="intervention-2",
+                kind=InterventionKind.COUNSEL,
+                occurred_at=datetime(2026, 7, 8, 10, 0, tzinfo=UTC),
+            ),
+        ),
+    )
+
+    assert DiagnosisInput.model_validate(payload.model_dump(mode="json")) == payload
+
+
+def test_percentile_value_without_provenance_is_rejected() -> None:
+    data = {
+        "tenant_id": "teacher-alias",
+        "student_ref": "student-alias",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": FIXED_TIME.isoformat(),
+        "snapshot_hash": "sha256:missing-provenance",
+        "national_percentile": {"value": 68.0},
+    }
+
+    with pytest.raises(ValueError, match="source|as_of|population_size"):
+        DiagnosisInput.model_validate(data)
+
+
+def test_percentile_reference_date_after_snapshot_is_rejected() -> None:
+    data = {
+        "tenant_id": "teacher-alias",
+        "student_ref": "student-alias",
+        "period": {"from_date": "2026-07-01", "to_date": "2026-07-15"},
+        "as_of": FIXED_TIME.isoformat(),
+        "snapshot_hash": "sha256:future-percentile",
+        "national_percentile": {
+            "value": 68.0,
+            "source": "전국 모의평가 표준화 집계",
+            "as_of": "2026-07-16",
+            "population_size": 125000,
+        },
+    }
+
+    with pytest.raises(ValueError, match="진단 as_of보다 늦을 수 없다"):
+        DiagnosisInput.model_validate(data)
+
+
+def test_intervention_rejects_unknown_kind() -> None:
+    with pytest.raises(ValueError, match="kind"):
+        DiagnosisInterventionEvent.model_validate(
+            {
+                "event_id": "intervention-unknown",
+                "kind": "coaching",
+                "occurred_at": FIXED_TIME.isoformat(),
+            }
+        )
+
+
+def test_intervention_requires_occurred_at() -> None:
+    with pytest.raises(ValueError, match="occurred_at"):
+        DiagnosisInterventionEvent.model_validate(
+            {"event_id": "intervention-missing-time", "kind": "counsel"}
+        )
+
+
+def test_intervention_rejects_naive_occurred_at() -> None:
+    with pytest.raises(ValueError, match="timezone-aware"):
+        DiagnosisInterventionEvent(
+            event_id="intervention-naive",
+            kind=InterventionKind.COUNSEL,
+            occurred_at=datetime(2026, 7, 1, 10, 0),
+        )
 
 
 def test_event_rejects_unknown_field() -> None:

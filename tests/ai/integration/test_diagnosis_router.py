@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ai.api.app import create_app
@@ -16,6 +17,7 @@ from ai.api.routers import diagnosis as diagnosis_router
 from ai.contracts.taxonomy import V1_TYPE_TAGS, AreaTag, TypeTag
 from ai.db.repositories.run_store import InMemoryRunStore
 from ai.diagnosis.config import load_diagnosis_config
+from ai.diagnosis.diagnoser import diagnose as original_diagnose
 
 _HEADERS = {
     "X-Tenant-Id": "tenant-diagnosis",
@@ -224,6 +226,53 @@ def test_insufficient_data_is_a_200_status_not_an_error() -> None:
     # 🔴 지도가 없어도 그리드 틀은 나간다 — 화면이 빈 표를 그릴 수 있어야 한다.
     assert len(data["grid"]["cells"]) == 20
     assert all(cell["verdict"] is None for cell in data["grid"]["cells"])
+
+
+def test_report_inputs_cross_the_http_boundary_into_diagnosis_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BE가 보낸 참고치·개입이 요청 모델에서 조용히 버려지지 않는다."""
+
+    _prepare()
+    captured: dict[str, Any] = {}
+
+    def recording_diagnose(diagnosis_input: Any, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        captured["input"] = diagnosis_input
+        return original_diagnose(diagnosis_input, *args, **kwargs)
+
+    monkeypatch.setattr(diagnosis_router, "diagnose", recording_diagnose)
+    body = {
+        **_body(_mixed_events()),
+        "national_percentile": {
+            "value": 68.0,
+            "source": "전국 모의평가 표준화 집계",
+            "as_of": "2026-06-30",
+            "population_size": 125000,
+        },
+        "interventions": [
+            {
+                "event_id": "intervention-1",
+                "kind": "supplement",
+                "occurred_at": "2026-07-01T10:00:00+09:00",
+            },
+            {
+                "event_id": "intervention-2",
+                "kind": "counsel",
+                "occurred_at": "2026-07-08T10:00:00+09:00",
+            },
+        ],
+    }
+
+    with TestClient(create_app()) as client:
+        response = client.post("/v1/diagnosis", headers=_HEADERS, json=body)
+
+    assert response.status_code == 200
+    diagnosis_input = captured["input"]
+    assert diagnosis_input.national_percentile.value == 68.0
+    assert [event.kind.value for event in diagnosis_input.interventions] == [
+        "supplement",
+        "counsel",
+    ]
 
 
 def test_unknown_skill_node_is_a_400_the_caller_can_fix() -> None:

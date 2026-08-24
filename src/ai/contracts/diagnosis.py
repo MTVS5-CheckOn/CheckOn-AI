@@ -12,7 +12,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ai.contracts.taxonomy import AreaTag, ItemFormat, TypeTag
 
@@ -30,6 +30,44 @@ class Period(BaseModel):
         if self.from_date > self.to_date:
             raise ValueError("from_date는 to_date보다 늦을 수 없다")
         return self
+
+
+class NationalPercentileBenchmark(BaseModel):
+    """전국 백분위 값과 그 값을 참고치로 설명할 수 있는 산출 근거."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    value: float = Field(ge=0.0, le=100.0)
+    source: str = Field(min_length=1)
+    as_of: date
+    population_size: int = Field(ge=1)
+
+
+class InterventionKind(StrEnum):
+    """정답 여부와 무관하게 기록하는 학습 개입의 닫힌 종류."""
+
+    SUPPLEMENT = "supplement"
+    """보강 수업."""
+
+    COUNSEL = "counsel"
+    """학생·학부모 상담."""
+
+
+class DiagnosisInterventionEvent(BaseModel):
+    """주차별 추이에 표시하는 보강·상담 이벤트."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    event_id: str = Field(min_length=1)
+    kind: InterventionKind
+    occurred_at: datetime
+
+    @field_validator("occurred_at")
+    @classmethod
+    def validate_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("개입 occurred_at은 timezone-aware여야 한다")
+        return value
 
 
 class DiagnosisEvent(BaseModel):
@@ -109,6 +147,17 @@ class DiagnosisInput(BaseModel):
     as_of: datetime
     snapshot_hash: str = Field(min_length=1)
     events: tuple[DiagnosisEvent, ...] = ()
+    national_percentile: NationalPercentileBenchmark | None = None
+    interventions: tuple[DiagnosisInterventionEvent, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_benchmark_as_of(self) -> Self:
+        if (
+            self.national_percentile is not None
+            and self.national_percentile.as_of > self.as_of.date()
+        ):
+            raise ValueError("전국 백분위 기준일은 진단 as_of보다 늦을 수 없다")
+        return self
 
 
 class CellVerdict(StrEnum):
