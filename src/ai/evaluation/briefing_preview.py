@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import inspect
 import re
 import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Final
 from uuid import UUID
 
 from ai.composition.briefing import (
@@ -212,13 +214,41 @@ def _render_signal(
     return lines
 
 
+#: 🔴 **이 측정기가 스스로 말하는 자기 한계**(2026-08-24 · 99 #217).
+#: `a6a9b75` 가 라벨 측정기에 넣은 자기검증과 같은 형태다 — 「측정기가 자기 한계를 말한다」.
+_FIRST_TRY_CAVEAT: Final = (
+    "🔴 **첫 시도 통과율이다 — 프로덕션 통과율이 아니다.** 프로덕션 `make_brief` 는 "
+    "게이트 실패 시 `instruction_for(reason)` 을 붙여 `MAX_REGEN` 회 **재생성**하지만, "
+    "이 측정기는 `provider.complete` + `check_brief_gate` 를 **한 번**만 태우고 같은 "
+    "프롬프트를 반복할 뿐이다(루프·폴백 없음). ⇒ **실제 통과율은 이 수보다 높다** — "
+    "이 수는 **하한**이다(99 #217 · #27 재측정 시 오독 주의)."
+)
+
+
+def _assert_first_try_only() -> None:
+    """🔴 **측정기가 자기 한계를 잃지 않게 못 박는다**(99 #217).
+
+    누군가 이 측정기에 재생성 루프를 넣으면 위 문구가 **거짓말이 된다** — 그때 여기서
+    `AssertionError` 가 나서 «문구도 같이 고쳐라» 를 알린다.
+    ⚠ 🔴 반대로 문구를 지우면 「첫 시도 통과율」이 「통과율」로 읽히고, #27 재측정이
+    **«품질이 떨어졌다»로 오독**된다 — 그게 이 단언이 막는 일이다.
+    """
+    source = inspect.getsource(_run_variant)
+    assert "MAX_REGEN" not in source and "instruction_for" not in source, (
+        "이 측정기에 재생성 루프가 들어왔다 — `_FIRST_TRY_CAVEAT` 문구와 "
+        "「첫 시도 통과율」 라벨을 같이 고쳐라(99 #217)."
+    )
+
+
 def _summary(name: str, totals: _Totals) -> list[str]:
+    _assert_first_try_only()
     avg = sum(totals.latencies) / len(totals.latencies) if totals.latencies else 0
     rate = (totals.passed / totals.calls * 100) if totals.calls else 0
     lines = [
         f"### {name}",
-        f"- 총 호출: **{totals.calls}회** · 게이트 통과율: **{rate:.0f}%** "
+        f"- 총 호출: **{totals.calls}회** · 🔴 **첫 시도** 게이트 통과율: **{rate:.0f}%** "
         f"({totals.passed}/{totals.calls}) · 평균 응답: **{avg:.0f}ms**",
+        f"- {_FIRST_TRY_CAVEAT}",
     ]
     if totals.reasons:
         dist = " · ".join(f"{r} {c}" for r, c in totals.reasons.most_common())
