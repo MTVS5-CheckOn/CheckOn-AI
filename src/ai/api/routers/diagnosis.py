@@ -34,7 +34,9 @@ from ai.contracts.diagnosis import (
     CellVerdict,
     DiagnosisEvent,
     DiagnosisInput,
+    DiagnosisInterventionEvent,
     DiagnosisResult,
+    NationalPercentileBenchmark,
     Period,
     WeaknessCell,
 )
@@ -133,6 +135,8 @@ class DiagnosisRequestBody(BaseModel):
     as_of: datetime
     snapshot_hash: str = Field(min_length=1)
     events: tuple[DiagnosisEvent, ...] = ()
+    national_percentile: NationalPercentileBenchmark | None = None
+    interventions: tuple[DiagnosisInterventionEvent, ...] = ()
 
 
 class DiagnosisGridCell(BaseModel):
@@ -277,6 +281,8 @@ async def post_diagnosis(request: Request) -> dict[str, Any]:
         as_of=body.as_of,
         snapshot_hash=body.snapshot_hash,
         events=body.events,
+        national_percentile=body.national_percentile,
+        interventions=body.interventions,
     )
     try:
         result = diagnose(

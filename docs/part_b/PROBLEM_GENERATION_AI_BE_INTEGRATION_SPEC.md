@@ -1,13 +1,17 @@
 # AI–BE/Adapter 문제출제 통신 명세
 
-- 기준 AI 상태: `cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후
-  `develop`) + 이 PR #384의 fortition 57노드 복원(검사 실측 지점 `9147cf3`)
-- 기준 브랜치: `develop` + `codex/fortition-spec-cleanup` (PR #384)
+- 기준 AI 상태: ~~`cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후
+  `develop`) + PR #384의 fortition 57노드 복원(검사 실측 지점 `9147cf3`)~~
+  **현행화(2026-08-24 · 본 PR):** `develop` `6eb88f195d9f3e261dc1d404c377c1bbbfe554b6`
+  (`6eb88f1`) + 본 PR의 진단 리포트 입력 계약 확장
+- 기준 브랜치: ~~`develop` + `codex/fortition-spec-cleanup` (PR #384)~~
+  **현행화(2026-08-24 · 본 PR):** `develop` + `codex/diagnosis-report-input-contract`
 - 확정일: 2026-08-24 (BE 전달 명세 현행화 회차)
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 문서 개정: PR #354 enqueue-only · PR #361 재기동 복구 · PR #362 종단/수정 fixture ·
   PR #371 출제·수정 최종 실측 · PR #374 도달 불가 422 문서 제거 ·
-  PR #380 import API 제거 · PR #381 BE 인계 명세 확정 · PR #382 라벨 제안 동기 200
+  PR #380 import API 제거 · PR #381 BE 인계 명세 확정 · PR #382 라벨 제안 동기 200 ·
+  본 PR 전국 백분위·개입 이벤트 수신 계약 확정
 
 ## 1. 범위와 결론
 
@@ -26,7 +30,7 @@
 - AI의 Kafka 참고 계약은 문항 본문을 싣지 않는 참조형 알림이다. 문항 본문은 `set_id` 기반 REST API로 조회한다.
 - 이 명세는 API 계약과 서비스 흐름을 다룬다. 실 LLM 문항 품질을 보증하지 않는다.
 
-위 기준 AI 상태(PR #384 `9147cf3`)에서 다시 실행한 결과는 다음과 같다.
+아래는 PR #384 `9147cf3`에서 다시 실행했던 결과이며 정정 이력으로 보존한다.
 
 - Ruff 통과
 - ~~Mypy 543파일 통과~~ **정정(2026-08-24 · PR #384 `9147cf3` 실측):** Mypy
@@ -42,6 +46,16 @@
   같은 파일이 `len(_RUNNABLE_CURRICULUM_NODES) == 57`을 단언한다. 전용 재현 검사
   `tests/ai/unit/problem_generation/test_fortition_redaction.py`도 그대로 남아 있다.
 - PostgreSQL integration은 이 회차에서 **실행하지 않았다.** 기준 커밋 시점 수치를 이월하지도 않는다.
+
+**현행화(2026-08-24 · `develop` `6eb88f1` + 본 PR):** 문서가 주장하는 진단 입력 계약과
+같은 지점에서 다시 실행한 결과는 다음과 같다.
+
+- Ruff 통과
+- Mypy **542 source files** 통과
+- offline **3,894 passed / 21 skipped / 165 deselected / 3 xfailed**
+- `develop` `6eb88f1` 기준 3,886 passed에서 늘어난 8건은 전국 백분위·개입 이벤트 계약
+  7건과 실제 HTTP 전달 검사 1건이다. 그 밖의 수치는 움직이지 않았다.
+- 실 LLM·PostgreSQL integration·원격 DB는 실행하지 않았다.
 
 ### 1.1 실 LLM 5영역 실측 `[2026-08-21 · PR #348]`
 
@@ -249,6 +263,24 @@ AI 내부에서 `tenant_id`, `student_ref`, `target_ref`는 UUID가 아니라 �
   },
   "as_of": "2026-08-12T09:00:00Z",
   "snapshot_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "national_percentile": {
+    "value": 68.0,
+    "source": "전국 모의평가 표준화 집계",
+    "as_of": "2026-06-30",
+    "population_size": 125000
+  },
+  "interventions": [
+    {
+      "event_id": "intervention-supplement-001",
+      "kind": "supplement",
+      "occurred_at": "2026-07-10T18:30:00+09:00"
+    },
+    {
+      "event_id": "intervention-counsel-002",
+      "kind": "counsel",
+      "occurred_at": "2026-08-03T20:00:00+09:00"
+    }
+  ],
   "events": [
     {
       "event_id": "submission-correct-001",
@@ -281,6 +313,25 @@ AI 내부에서 `tenant_id`, `student_ref`, `target_ref`는 UUID가 아니라 �
 
 위 JSON은 `DiagnosisRequestBody.model_validate(...).model_dump_json(exclude_none=True)`의 실제 출력이다.
 
+리포트 입력 확정형:
+
+| 필드 | 타입 | 필수 여부 | 확정 규약·예시 |
+| --- | --- | --- | --- |
+| `national_percentile` | object | 선택 | BE가 보내지 않으면 정상이며 AI는 미산출로 둔다. 보내면 아래 네 필드가 모두 필수다. |
+| `national_percentile.value` | number (`0..100`) | 객체 수신 시 필수 | `68.0` |
+| `national_percentile.source` | non-empty string | 객체 수신 시 필수 | `전국 모의평가 표준화 집계` |
+| `national_percentile.as_of` | ISO date | 객체 수신 시 필수 | `2026-06-30`; 진단 `as_of`보다 늦으면 거절한다. |
+| `national_percentile.population_size` | integer (`>=1`) | 객체 수신 시 필수 | `125000` |
+| `interventions` | array | 선택 | 미전송 시 빈 배열이다. 문항 정오 이벤트와 분리한다. |
+| `interventions[].event_id` | non-empty string | 항목 수신 시 필수 | `intervention-supplement-001` |
+| `interventions[].kind` | enum | 항목 수신 시 필수 | `supplement | counsel` |
+| `interventions[].occurred_at` | timezone-aware datetime | 항목 수신 시 필수 | `2026-07-10T18:30:00+09:00` |
+
+`period`는 양 끝을 포함하는 임의 구간이다. 월별 정답률·채점 문항수 막대 3개를 만들려면
+BE는 **최소 3개월을 포함하는 범위**와 그 범위의 `events`를 보내는 것을 권고한다.
+`national_percentile`과 `interventions`의 부재는 오류가 아니며, 값이나 이벤트를 추정해
+메우지 않는다. 백분위 값만 보내고 출처·기준일·모수를 빼면 `400 INVALID_SCHEMA`다.
+
 - `chosen_no`: 1-based `1..5`. 비객관식이거나 선택 번호를 알 수 없으면 `null` 또는 생략한다.
 - `correct_no`: BE가 보존한 1-based 정답 번호다. 비객관식이거나 정답 번호를 알 수 없으면 `null` 또는 생략하며, 약점 판정 축에는 사용하지 않는다.
 - `misconception_tag`: 오답일 때 Step5 문항 스냅숏의 `choices[].misconception_tag`를 복사한다. 정답이면 `null` 또는 생략한다.
@@ -288,6 +339,8 @@ AI 내부에서 `tenant_id`, `student_ref`, `target_ref`는 UUID가 아니라 �
 - `chosen_no`와 `correct_no`가 모두 있으면 두 번호의 일치 여부와 `correct`가 모순될 때 `400 INVALID_SCHEMA`다.
 - `misconception_tag`가 있는데 `chosen_no`가 없거나, `correct=true`인데 라벨이 있으면 `400 INVALID_SCHEMA`다.
 - 라벨이 이벤트 영역의 YAML 닫힌 어휘를 벗어나면 `400 INVALID_SCHEMA`다.
+- `interventions`는 `correct`가 없는 별도 이벤트 축이다. `kind`는
+  `supplement | counsel`만 받고 `occurred_at`은 반드시 시간대를 포함한다.
 
 정상 응답:
 

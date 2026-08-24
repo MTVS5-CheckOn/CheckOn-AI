@@ -1,13 +1,17 @@
 # CheckOn AI–BE 문제출제 통신 규약 확정 지시서
 
 - 작성일: 2026-08-24
-- AI 기준: `develop` `cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후)
+- AI 기준: ~~`develop` `cbf5596c55df11a31938628aa59e12e7281c97ee` (`cbf5596`, #383 머지 후)~~
+  **현행화(2026-08-24 · 본 PR):** `develop` `6eb88f195d9f3e261dc1d404c377c1bbbfe554b6`
+  (`6eb88f1`) + 본 PR의 진단 리포트 입력 계약 확장
 - 문서 개정: PR #380 import API 제거 · PR #381 BE 인계 명세 확정 ·
-  PR #382 라벨 제안 동기 200
+  PR #382 라벨 제안 동기 200 · 본 PR 전국 백분위·개입 이벤트 수신 계약 확정
 - 대상: Backend, Kafka–HTTP Adapter, AI FastAPI
 - 목적: 약점 진단 → 문제 생성 → 조회 → 수정 → 오답 약점 환류의 BE 구현 계약 지시
 - 적용 방식: 이 문서의 결정은 협의 후보가 아니라 AI 통신 경계의 확정값이다. BE와 Adapter는
   구현 중 모순을 발견했을 때만 재현 자료와 함께 변경을 요청한다.
+- 동일 지점 검증: Ruff 통과 · Mypy 542 source files ·
+  3,894 passed / 21 skipped / 165 deselected / 3 xfailed
 
 ## 1. 확정 지시 요약
 
@@ -88,6 +92,24 @@ POST /v1/problems/{set_id}/items/{slot_index}/revisions
   },
   "as_of": "2026-08-12T09:00:00Z",
   "snapshot_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "national_percentile": {
+    "value": 68.0,
+    "source": "전국 모의평가 표준화 집계",
+    "as_of": "2026-06-30",
+    "population_size": 125000
+  },
+  "interventions": [
+    {
+      "event_id": "intervention-supplement-001",
+      "kind": "supplement",
+      "occurred_at": "2026-07-10T18:30:00+09:00"
+    },
+    {
+      "event_id": "intervention-counsel-002",
+      "kind": "counsel",
+      "occurred_at": "2026-08-03T20:00:00+09:00"
+    }
+  ],
   "events": [
     {
       "event_id": "submission-001",
@@ -105,6 +127,23 @@ POST /v1/problems/{set_id}/items/{slot_index}/revisions
   ]
 }
 ```
+
+| 필드 | 타입 | 필수 여부 | 확정값·예시 |
+| --- | --- | --- | --- |
+| `national_percentile` | object | 선택 | 미전송은 정상이며 미산출로 둔다. 수신 시 하위 네 필드 전부 필수다. |
+| `.value` | number (`0..100`) | 객체 수신 시 필수 | `68.0` |
+| `.source` | non-empty string | 객체 수신 시 필수 | `전국 모의평가 표준화 집계` |
+| `.as_of` | ISO date | 객체 수신 시 필수 | `2026-06-30`; 진단 `as_of` 이후 날짜는 거절한다. |
+| `.population_size` | integer (`>=1`) | 객체 수신 시 필수 | `125000` |
+| `interventions` | array | 선택 | 미전송은 빈 배열. `DiagnosisEvent`와 분리된 축이다. |
+| `[].event_id` | non-empty string | 항목 수신 시 필수 | `intervention-supplement-001` |
+| `[].kind` | enum | 항목 수신 시 필수 | `supplement | counsel` |
+| `[].occurred_at` | timezone-aware datetime | 항목 수신 시 필수 | `2026-07-10T18:30:00+09:00` |
+
+월별 막대 3개를 그릴 수 있도록 `period.from_date`부터 `period.to_date`까지 **최소 3개월을
+포함하는 범위**와 그 범위의 `events` 전송을 권고한다. 백분위 값만 보내고 출처·기준일·모수를
+빼면 `400 INVALID_SCHEMA`다. 개입 `kind`의 닫힌 어휘 밖 값이나 `occurred_at` 누락도 같은
+스키마 오류다. 선택 필드가 없을 때는 요청을 정상 처리하며 AI가 값을 지어내지 않는다.
 
 BE 책임:
 
