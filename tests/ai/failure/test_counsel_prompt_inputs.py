@@ -293,6 +293,12 @@ def test_no_combination_leaks_internal_terms_into_its_own_prompt(key: str) -> No
 def test_prompt_version_was_promoted() -> None:
     """프롬프트 문면이 바뀌었으므로 버전이 오른다(05 §6-3).
 
+    ⚠ 🔴 **0.4 → 0.5 (8/24 · 99 #198 후속)** — `tone_map.axis_rules.interest.admission` 문면이
+    바뀌었다(«백분위**는**» → «백분위 **같은 값은**»). 그 문면은 `render_tone_rules()` 가
+    **이 프롬프트에 싣는다** ⇒ 같은 컨텍스트라도 0.4 와 0.5 의 프롬프트가 다르다.
+    🔴 **05 §6-3 에 빈 자리가 있어 그 갈래를 명시했다** — 「프롬프트에 실리는 저장소 문자열」
+    (tone_map·buffer_lexicon·gate_feedback)이 바뀌면 올린다. ⚠ **`PLAN_PROMPT_VERSION` 은
+    안 올렸다** — `counsel_plan.txt` 는 `tone_rules` 를 **안 싣는다**(실측 8/24).
     ⚠ **0.3 → 0.4 (8/20)** — 지향 문구·페르소나·중복 금지·형식 규칙이 들어갔다.
     실 LLM 24조합 A/B 로 확정했다(밋밋함·기계적 반복·톤 세 축).
     ⚠ **0.2 → 0.3 (8/19)** — 완충 단계 문면에 B군 치환 어휘 28항이 들어갔다(99 #79).
@@ -300,4 +306,4 @@ def test_prompt_version_was_promoted() -> None:
     요청에서 나오는 값이고, 이건 **데이터 파일에서 오는 고정 어휘**가 모든 요청에 새로
     실리는 것이다(같은 컨텍스트라도 0.2와 0.3의 프롬프트가 다르다).
     """
-    assert PROMPT_VERSION == "0.4"
+    assert PROMPT_VERSION == "0.5"
