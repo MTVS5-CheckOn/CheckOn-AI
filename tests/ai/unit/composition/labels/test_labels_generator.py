@@ -467,3 +467,69 @@ def test_a_forged_quote_does_not_take_the_true_ones_with_it() -> None:
     assert len(merged[0].evidence_quotes) == 2, "합친 뒤 인용이 둘이어야 한다"
     assert merged[0].confidence == 0.7, "게이트가 버린 0.9 가 confidence 에 남았다"
 
+@pytest.mark.anyio
+async def test_the_router_actually_merges_after_the_gate() -> None:
+    """🔴 **배선을 잰다 — 라우터가 병합을 실제로 부르는가.**
+
+    ⚠ 🔴 **이 검사가 없어서 뒤집기 ①이 green 이었다**(8/24): 위 검사들은
+    `merge_duplicate_axes` 를 **직접** 부르고, 픽스처 검사의 대역은 **중복을 안 낸다**
+    ⇒ **라우터가 그 함수를 안 불러도 둘 다 통과한다.**
+    🔴 №66(필터 배선)·№67(0건 경로)에 이은 **세 번째 같은 형태**다.
+    """
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+
+    from ai.api.app import create_app  # noqa: PLC0415
+    from ai.api.routers import labels as labels_router  # noqa: PLC0415
+
+    class _DuplicatingProvider:
+        """같은 `(축, 값)` 을 **둘** 낸다 — 게이트는 둘 다 통과시킨다(인용이 실존)."""
+
+        async def suggest(
+            self, *, guardian_ref: str, history: object, context: object
+        ) -> tuple[SuggestedLabel, ...]:
+            del context
+            first = history[0]  # type: ignore[index]
+            second = history[1]  # type: ignore[index]
+            return tuple(
+                SuggestedLabel(
+                    suggestion_id=UUID(f"00000000-0000-4000-8000-00000000c00{index}"),
+                    guardian_ref=guardian_ref,
+                    label=LabelSuggestion(axis="comm", value="data"),
+                    confidence=0.5 + index / 10,
+                    evidence_quotes=(
+                        EvidenceQuote(record_id=item.record_id, quote=item.text),
+                    ),
+                )
+                for index, item in enumerate((first, second), start=1)
+            )
+
+    body = {
+        "guardian_ref": "gd_1",
+        "history": [
+            {
+                "record_id": item.record_id,
+                "direction": item.direction,
+                "text": item.text,
+                "at": item.at.isoformat(),
+            }
+            for item in _HISTORY
+        ],
+    }
+    try:
+        labels_router.set_label_suggest_provider(_DuplicatingProvider())
+        with TestClient(create_app()) as client:
+            response = client.post(
+                "/v1/labels/suggest",
+                headers={"X-Tenant-Id": "t1", "X-Request-Id": "r1"},
+                json=body,
+            )
+    finally:
+        labels_router.reset_label_suggest_provider()
+
+    assert response.status_code == 200, response.text
+    suggestions = response.json()["data"]["suggestions"]
+    assert len(suggestions) == 1, (
+        f"라우터가 병합을 안 불렀다 — 같은 (축,값) 이 {len(suggestions)}건 나갔다"
+    )
+    assert len(suggestions[0]["evidence_quotes"]) == 2, "합치면서 인용이 사라졌다"
+
