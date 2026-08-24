@@ -41,6 +41,7 @@ from ai.api.routers import classify as classify_router
 from ai.api.routers import confirmations as confirmations_router
 from ai.api.routers import counsel as counsel_router
 from ai.api.routers.counsel import reset_counsel_stores
+from ai.composition.counsel.settings import get_counsel_settings
 from ai.composition.counsel.stores import (
     InMemoryContextStore,
     InMemoryDraftResultStore,
@@ -507,8 +508,36 @@ def _drain(tenant: str) -> object:
     return None
 
 
+@contextmanager
+def _inline_drain(rotations: int = 3) -> Iterator[None]:
+    """🔴 **POST 가 자기 잡을 그 자리에서 끝내게** 한다 — `counsel_inline_drain_max` 를 켠다.
+
+    ⚠ 🔴 **왜 필요해졌나**(2026-08-24 · 99 #219): 이 파일의 검사 셋이 «POST 가 자기 잡을
+    집어 그 자리에서 끝낸다» 를 **전제**했는데, 기본값이 **`0`** 이 됐다(2026-08-20 준영님
+    회의 확정 — 워커가 그 일을 넘겨받았다). ⇒ 전제가 깨졌고 **`queued` 가 정상**이다.
+    🔴 그 사실이 #218 의 이벤트 루프 오류에 **가려져 있었다** — 종전엔 그 단언까지 못 갔다.
+    ⚠ 🔴 **「통과하게」 고치는 것이 아니다** — 이 검사들이 재려던 것은 «즉시 완료 경로와
+    늦은 성공 경로가 **같은 결과**를 낸다» 이고, **즉시 완료 경로는 K>0 에서만 존재한다.**
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("COUNSEL_INLINE_DRAIN_MAX", str(rotations))
+        get_counsel_settings.cache_clear()
+        try:
+            yield
+        finally:
+            get_counsel_settings.cache_clear()
+
+
+@pytest.mark.no_counsel_drain
 def test_a_late_success_is_produced_at_all() -> None:
-    """🔴 **절단 가드** — 미종단 POST가 안 만들어지면 아래 ㉻ 검사는 아무것도 안 본다."""
+    """🔴 **절단 가드** — 미종단 POST가 안 만들어지면 아래 ㉻ 검사는 아무것도 안 본다.
+
+    ⚠ 🔴 **`no_counsel_drain` 이 필요해졌다**(2026-08-24 · 99 #219): conftest 의 autouse
+    픽스처가 202 를 보면 곧바로 드레인하는데, #218 을 고치기 전에는 그 드레인이 **이벤트
+    루프 오류로 죽어** 아무 일도 안 했다. 이제 **실제로 돈다** ⇒ 미종단이어야 할 잡이
+    GET 시점엔 이미 끝나 있다. 🔴 이 검사가 재는 것은 «**미종단 POST 가 만들어지나**» 이므로
+    그 드레인을 빼는 것이 **재려던 것을 재는 것**이다(conftest 가 이 마커를 그 용도로 둔다).
+    """
     tenant = "t_flip_late"
     with instance() as app_a:
         _enqueue_decoy(app_a, tenant)
@@ -647,7 +676,8 @@ def test_the_restored_result_equals_the_immediate_one_field_by_field() -> None:
 
     #: ── ① 즉시 완료 — 큐가 비어 있어 POST가 자기 잡을 집는다.
     immediate_tenant = "t_flip_multi"
-    with instance() as app_now:
+    #: 🔴 **즉시 완료 경로는 `counsel_inline_drain_max > 0` 에서만 존재한다**(99 #219).
+    with _inline_drain(), instance() as app_now:
         posted = _post(app_now, immediate_tenant, suffix="im").json()["data"]
         assert posted["status"] == "succeeded", (
             f"즉시 완료가 아니다({posted['status']}) — 이 검사의 한쪽 축이 없다"
@@ -854,8 +884,15 @@ async def _drop_checkpoint_tables() -> None:
 
 
 def _counsel_job_phase(tenant: str) -> str:
-    """기본 pg 설정으로 상담 잡 하나를 돌리고 **잡 phase**를 돌려준다."""
-    with instance() as app:
+    """기본 pg 설정으로 상담 잡 하나를 **실제로 돌리고** 잡 phase 를 돌려준다.
+
+    ⚠ 🔴 **POST 응답의 `status` 를 읽으면 안 된다**(2026-08-24 정정 · 99 #219) —
+    `counsel_inline_drain_max` 기본값이 **`0`** 이라 POST 는 잡을 **안 돌리고** 항상
+    `queued` 다. 그러면 이 함수는 «체크포인터가 없으면 `failed`» 를 **영영 못 본다.**
+    🔴 재려던 것은 «잡을 돌리면 어떻게 되나» 이므로 **인라인 드레인을 켜고 돌린 뒤**
+    그 잡의 phase 를 읽는다.
+    """
+    with _inline_drain(), instance() as app:
         posted = _post(app, tenant, suffix="cp")
         assert posted.status_code == 202, posted.text
         return str(posted.json()["data"]["status"])
