@@ -20,7 +20,12 @@ _PRODUCTION_PACKAGES = [
     "composition",
     "diagnosis",
     "problem_generation",
-    "import_mapping",
+    #: ⚠ 🔴 **`import_mapping` 을 뺐다(2026-08-24 · 99 #226 ⓑ)** — skip 사유가
+    #: «`import_mapping/` **아직 없음**» 이었는데 🔴 **거짓이었다**: import 축은 №61 에서
+    #: **v1 범위 밖으로 삭제**됐다(«아직 없다» 가 아니라 «없앴다»). 그 디렉터리는 **영영
+    #: 안 생기므로** 그 칸은 영영 skip 이고, «22 skip 중 하나» 로 계속 세어졌다.
+    #: 🔴 나머지 넷은 그대로 돈다 — 이 검사의 대상이 0이 되는 것이 아니다.
+    #: 🔴 **되살아나는 조건**: import 축이 v1 로 돌아오면 이 줄을 되돌린다(#187).
 ]
 
 
