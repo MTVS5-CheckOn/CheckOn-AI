@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import pathlib
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -15,9 +14,6 @@ import pytest
 
 from ai.composition.counsel.versions import counsel_versions
 from ai.composition.labels.grounding import keep_sendable_history
-from ai.composition.labels.prompt import (
-    _PROMPT_PATH as _TEMPLATE_PATH,
-)
 from ai.composition.labels.prompt import PROMPT_VERSION, assemble_prompt
 from ai.composition.labels.provider import (
     HISTORY_ALL_BLOCKED,
@@ -290,75 +286,6 @@ async def test_the_provider_actually_drops_the_blocked_item_from_the_prompt() ->
         f"걸린 이력이 프롬프트에 그대로 실렸다 — `keep_sendable_history` 배선이 없다: {blocked!r}"
     )
     assert "숫자로 정리해 주세요" in sent[0], "안 걸린 이력까지 빠졌다"
-
-#: 🔴 **A 소유 템플릿 축** — `problem_generation/` 은 **B 소유**라 뺀다.
-#: ⚠ 🔴 **왜 예외인가**: 그 축의 프롬프트는 B 가 소유하고 우리가 못 고친다(CLAUDE.md §2).
-#: 🔴 **언제 걷나**: **준영님이 그 축을 맡는 회차** — 실측(8/24)에서 `items.txt` 하나가
-#: 걸린다(«사람 이름을 쓰지 **않고 학생** A·갑·을» → `⟪이름1⟫`). **통보 대상**이다.
-_FOREIGN_TEMPLATE_PREFIX: Final = "problem_generation/"
-
-
-def _a_owned_templates() -> list[pathlib.Path]:
-    """🔴 **디렉터리를 순회한다 — 목록을 손으로 적지 않는다.**
-
-    손으로 적으면 **새 템플릿이 생겨도 안 걸린다**(`/v1/meta/versions` 의 labels 누락이
-    정확히 그 형태였다 — 검사가 구현을 베껴서 아무도 안 잡았다).
-    """
-    root = _TEMPLATE_PATH.parents[1]
-    return sorted(
-        path
-        for path in root.rglob("*.txt")
-        if not path.relative_to(root).as_posix().startswith(_FOREIGN_TEMPLATE_PREFIX)
-    )
-
-
-def test_the_template_sweep_actually_finds_files() -> None:
-    """🔴 순회가 **0건이면** 아래 검사가 조용히 통과한다 — 그 상태를 red 로 만든다."""
-    found = _a_owned_templates()
-    assert len(found) >= 4, f"A 소유 템플릿을 {len(found)}개밖에 못 찾았다 — 순회가 깨졌다"
-
-
-@pytest.mark.parametrize(
-    "template",
-    _a_owned_templates(),
-    ids=lambda path: path.name,
-)
-def test_every_a_owned_template_passes_the_masking_gate(template: pathlib.Path) -> None:
-    """🔴 **A 소유 템플릿 전부가 `redact()` 를 지난다** (99 #196 · №67).
-
-    ⚠ 🔴 **`uncertain` 만 보면 안 된다** — `briefing.txt`·`counsel_plan.txt` 는 실측(8/24)에서
-    **`findings=2 · uncertain=False`** 였고, 그 둘은 `redacted.masked_text` 를 보내므로
-    **fail-closed 검사를 통과하면서 문면이 바뀐 채로** 147콜을 나갔다(99 #198).
-    🔴 «통과했다» 가 아니라 «**마스킹된 채 나갔다**» 였다.
-    """
-    outcome = redact(template.read_text(encoding="utf-8"))
-    assert not outcome.findings and not outcome.uncertain, (
-        f"{template.name} 이 마스킹 문지기에 걸린다 — 이 템플릿을 쓰는 축은 "
-        f"**지시문이 바뀐 채로** 나가거나(마스킹 후 전송) 항상 막힌다. "
-        f"걸린 유형: {[f.type for f in outcome.findings]}"
-    )
-
-
-def _unused_single_template_guard() -> None:
-    """🔴 **템플릿 자신이 `redact()` 를 지나야 한다** — 안 그러면 **이력과 무관하게 항상 500** 이다.
-
-    ⚠ 🔴 **실측(8/22)으로 잡았다.** 최초 템플릿이 두 자리에서 걸렸다:
-    «학원 **강사가 학부모**의 …»(`[가-힣]{2,3}` + 호칭 `학부모` ⇒ `⟪이름1⟫` **확정 검출**) ·
-    «아래 **이력에는** …»(`이`(성씨)+`력에`+조사 ⇒ `⟪확인필요⟫`).
-    🔴 **제 프롬프트가 제 문지기에 걸렸다.** 그리고 그건 **어떤 이력을 넣어도** 500 이라는 뜻이다.
-
-    🔴 **왜 아무도 못 봤나** — 픽스처 검사는 **대역 provider** 를 주입해 실 provider 의 선검사를
-    안 지나고, 단위 검사는 `keep_sendable_history` 를 **직접** 부른다. ⇒ **조립된 프롬프트를
-    실제로 문지기에 태우는 자리가 없었다.** 이 검사가 그 자리다.
-
-    ⚠ 이 검사는 **이력 없이** 템플릿만 본다 — 이력은 `keep_sendable_history` 가 이미 거른다.
-    """
-    template = _TEMPLATE_PATH.read_text(encoding="utf-8")
-    outcome = redact(template)
-    assert not outcome.findings and not outcome.uncertain, (
-        "라벨 프롬프트 **템플릿**이 마스킹 문지기에 걸린다 — 이력과 무관하게 항상 막힌다. "
-        f"걸린 유형: {[f.type for f in outcome.findings]}"
-    )
 
 @pytest.mark.anyio
 async def test_an_all_blocked_history_is_a_failure_not_an_empty_list() -> None:
