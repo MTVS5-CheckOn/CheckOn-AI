@@ -105,6 +105,16 @@ body{background:var(--bg);color:var(--ink);font-size:13px;}
 details summary{cursor:pointer;font-size:12px;font-weight:700;padding:11px 16px;}
 
 /* ══════════ 4. 목록 ══════════ */
+/* CheckOn-App parent-reports.tsx의 76px 카드 행·NEW 배지·메타정보·우측 이동 구조를 데스크톱 스튜디오에 확장한다. */
+.studio-hero{position:relative;overflow:hidden;display:flex;align-items:center;gap:18px;background:var(--brand);color:#4c3024;border-radius:18px;padding:20px 22px;margin-bottom:12px;box-shadow:0 2px 8px rgba(32,41,57,.06);}
+.studio-hero::after{content:'';position:absolute;right:-34px;top:-52px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.25);}
+.studio-hero .eyebrow{font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:5px;}
+.studio-hero h2{font-size:20px;line-height:1.25;letter-spacing:-.02em;}
+.studio-hero p{font-size:11px;line-height:1.65;margin-top:5px;color:#694838;}
+.studio-hero .hero-stat{margin-left:auto;display:grid;grid-template-columns:repeat(2,82px);gap:8px;position:relative;z-index:1;}
+.studio-hero .hero-stat div{background:rgba(255,255,255,.72);border-radius:12px;padding:10px;text-align:center;}
+.studio-hero .hero-stat b{display:block;font-size:20px;line-height:1.1;}
+.studio-hero .hero-stat span{font-size:9px;font-weight:700;color:#694838;}
 .mnav{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);}
 .mnav .m{font-size:var(--fs-screen-title);font-weight:800;min-width:110px;text-align:center;font-variant-numeric:tabular-nums;}
 .mnav .side{font-size:var(--fs-body);color:var(--pgray);cursor:pointer;padding:5px 9px;border-radius:6px;font-variant-numeric:tabular-nums;}
@@ -128,6 +138,19 @@ details summary{cursor:pointer;font-size:12px;font-weight:700;padding:11px 16px;
 .rt .num{font-variant-numeric:tabular-nums;font-weight:700;}
 .rt .dash{color:var(--pgray);font-weight:500;}
 .rt .acts{display:flex;gap:4px;justify-content:flex-end;}
+.report-cards{overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 2px 8px rgba(32,41,57,.06);margin-bottom:10px;}
+.report-card{display:grid;grid-template-columns:42px minmax(220px,1.4fr) minmax(130px,.8fr) repeat(3,minmax(72px,.45fr)) minmax(118px,.7fr) 112px;gap:12px;align-items:center;min-height:78px;padding:12px 16px;border-bottom:1px solid #edf0f2;cursor:pointer;}
+.report-card:last-child{border-bottom:none;}
+.report-card:hover{background:#fffdf0;}
+.report-card.dim{background:#fafbfc;}
+.report-avatar{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--soft);color:var(--accent);font-size:14px;font-weight:800;}
+.report-primary{min-width:0;}
+.report-primary .title{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:800;}
+.report-primary .meta{font-size:10px;color:var(--sub);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.new-badge{font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;background:var(--brand);color:#7d452c;}
+.report-field .label{font-size:9px;color:var(--pgray);margin-bottom:3px;}
+.report-field .value{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;}
+.report-actions{display:flex;justify-content:flex-end;gap:4px;}
 .st{font-size:11px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-weight:700;}
 .st i{width:6px;height:6px;border-radius:50%;display:inline-block;background:var(--pgray);}
 .st.done{color:#1d4ed8;} .st.done i{background:var(--d-blue);}
@@ -162,14 +185,15 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 .rev .tail{margin-left:auto;flex:0 0 auto;}
 
 /* ══════════ 6. 발송 ══════════ */
-.srow{display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;}
+/* 목록과 같은 앱 카드 문법을 유지하고, 앱 상세 화면의 sticky CTA를 다건 발송 바에 적용한다. */
+.srow{display:flex;align-items:center;gap:12px;min-height:78px;padding:12px 16px;border-bottom:1px solid #edf0f2;cursor:pointer;}
 .srow:last-child{border-bottom:none;}
 .srow:hover{background:#fbfdff;}
 .srow.dis{background:#fcfcfd;cursor:default;}
 .srow.dis:hover{background:#fcfcfd;}
 .srow .grow{flex:1;min-width:0;}
 .srow .tail{margin-left:auto;text-align:right;flex:0 0 auto;}
-.sendbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 16px;box-shadow:0 -3px 14px rgba(0,0,0,.06);}
+.sendbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px 18px;box-shadow:0 -3px 14px rgba(32,41,57,.08);}
 .drawer{position:fixed;top:0;right:0;width:640px;max-width:100vw;height:100vh;background:#fff;border-left:1px solid var(--line2);box-shadow:-8px 0 26px rgba(0,0,0,.1);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .2s;z-index:50;}
 .drawer.open{transform:none;}
 .dh{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);}
@@ -251,6 +275,30 @@ textarea.instr:focus{outline:none;border-color:var(--accent);}
 .week-insight{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;break-inside:avoid;}
 .week-insight .item{border-left:3px solid var(--accent);background:#f7f9ff;border-radius:0 10px 10px 0;padding:9px 12px;font-size:var(--fs-meta);line-height:1.65;}
 .week-insight .item.warn{border-left-color:var(--d-red);background:#fff8f7;}
+.report-data-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;break-inside:avoid;}
+.data-panel{border:1px solid var(--line);border-radius:12px;background:#fff;padding:11px 13px;break-inside:avoid;}
+.data-panel h5{font-size:var(--fs-meta);font-weight:800;margin-bottom:8px;}
+.data-panel .subcopy{font-size:var(--fs-footnote);color:var(--sub);line-height:1.55;margin-top:6px;}
+.outcome-row{display:grid;grid-template-columns:24px 1fr 92px;align-items:center;gap:8px;padding:5px 0;font-size:var(--fs-caption);}
+.outcome-row .stack{height:10px;display:flex;border-radius:99px;overflow:hidden;background:var(--d-track);}
+.outcome-row .correct{background:var(--d-green);border-top:2px solid var(--ink);}
+.outcome-row .review{background:var(--d-red);background-image:repeating-linear-gradient(135deg,transparent,transparent 3px,rgba(255,255,255,.7) 3px,rgba(255,255,255,.7) 5px);}
+.outcome-row .nums{text-align:right;font-variant-numeric:tabular-nums;}
+.week-mini{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;align-items:end;height:76px;padding-top:15px;border-bottom:1px solid var(--line);}
+.week-mini .col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;}
+.week-mini .bar{width:62%;min-height:5px;border-radius:3px 3px 0 0;background:var(--accent);}
+.week-mini .val{font-size:9px;font-weight:800;}
+.week-mini-labels{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px;font-size:9px;color:var(--sub);text-align:center;}
+.evidence-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px;break-inside:avoid;}
+.evidence-strip .item{border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 14px;}
+.evidence-strip .label{font-size:var(--fs-caption);color:var(--sub);font-weight:700;}
+.evidence-strip .value{font-size:18px;font-weight:800;margin-top:5px;}
+.evidence-strip .detail{font-size:var(--fs-footnote);color:var(--sub);line-height:1.55;margin-top:4px;}
+.dense-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:14px;font-size:var(--fs-meta);break-inside:avoid;}
+.dense-table th,.dense-table td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;}
+.dense-table th{background:#f7f8fa;color:var(--sub);font-size:var(--fs-caption);}
+.dense-table tr:last-child td{border-bottom:none;}
+.dense-table .num{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;}
 .mx{width:100%;border-collapse:collapse;font-size:var(--fs-meta);}
 .mx th,.mx td{border:1px solid var(--pline);padding:7px 8px;text-align:center;}
 .mx th{background:#fafbfc;color:var(--sub);font-size:var(--fs-caption);font-weight:700;}
@@ -615,9 +663,9 @@ function build(b){
     excludedMissingMisconceptionTag:(b.seed+1)%3
   };
   R.nodes = [
-    {nodeId:NODE[0].k, area:NODE[0].area, verdict:'weak_confirmed', basis:['채점 이벤트 8건','영역×유형 셀 판정 1건']},
-    {nodeId:NODE[2].k, area:NODE[2].area, verdict:'suspect', basis:['채점 이벤트 5건']},
-    {nodeId:NODE[4].k, area:NODE[4].area, verdict:'ok', basis:['채점 이벤트 12건']}
+    {nodeId:NODE[0].k, area:NODE[0].area, verdict:'weak_confirmed', basis:['실제 채점 기록 8건','영역×문제유형 결과 1건']},
+    {nodeId:NODE[2].k, area:NODE[2].area, verdict:'suspect', basis:['실제 채점 기록 5건']},
+    {nodeId:NODE[4].k, area:NODE[4].area, verdict:'ok', basis:['실제 채점 기록 12건']}
   ];
   R.propagated = [
     {nodeId:NODE[1].k, area:NODE[1].area, score:.72+(r()*.12), fromNodes:[NODE[0].k]},
@@ -788,6 +836,84 @@ function weeklyTable(weeks){
     '<tbody>'+rows+'</tbody></table>';
 }
 
+function weeklyOutcomePanel(weeks){
+  const rows=weeks.map((w,i)=>{
+    const correct=Math.round(w.eventN*w.acc), review=w.eventN-correct;
+    return '<div class="outcome-row"><b>'+(i+1)+'주</b><span class="stack">'+
+      '<i class="correct" style="width:'+(correct/w.eventN*100)+'%"></i>'+
+      '<i class="review" style="width:'+(review/w.eventN*100)+'%"></i></span>'+
+      '<span class="nums">◆ '+correct+' · ▲ '+review+'</span></div>';
+  }).join('');
+  return '<div class="data-panel"><h5>맞힌 문항과 다시 볼 문항</h5>'+rows+
+    '<div class="subcopy">◆ 맞힘 · ▲ 다시 보기 — 색 없이도 기호와 숫자로 구분합니다.</div></div>';
+}
+
+function weeklyMiniPanel(title, symbol, weeks, pick, holdSmall){
+  const vals=weeks.map(w=>holdSmall&&w.eventN<MIN_N?0:pick(w)), hi=Math.max.apply(null,vals)||1;
+  return '<div class="data-panel"><h5>'+title+'</h5><div class="week-mini">'+weeks.map((w,i)=>{
+    const hold=holdSmall&&w.eventN<MIN_N, value=hold?0:pick(w);
+    return '<div class="col"><span class="val">'+(hold?'보류':symbol+' '+value)+'</span>'+
+      '<span class="bar" style="height:'+Math.max(5,value/hi*100)+'%"></span></div>';
+  }).join('')+'</div><div class="week-mini-labels">'+weeks.map((_,i)=>'<span>'+(i+1)+'주</span>').join('')+'</div></div>';
+}
+
+function weeklyChangeTableHtml(weeks){
+  const recent=weeks.slice(-4), start=weeks.length-4;
+  return '<table class="dense-table"><tr><th>주차 변화</th><th>정답률</th><th>학습 기록</th><th>한눈에 보기</th></tr>'+recent.map((w,i)=>{
+    const prev=weeks[start+i-1], accDelta=pc(w.acc)-pc(prev.acc), recordDelta=w.eventN-prev.eventN;
+    const mark=accDelta>0?'▲':accDelta<0?'▼':'→', recordMark=recordDelta>0?'▲':recordDelta<0?'▼':'→';
+    return '<tr><td><b>'+(i+1)+'주</b></td><td class="num">'+mark+' '+Math.abs(accDelta)+'%p</td>'+
+      '<td class="num">'+recordMark+' '+Math.abs(recordDelta)+'문항</td><td>정답률 '+(accDelta>0?'상승':accDelta<0?'하락':'유지')+' · 기록 '+(recordDelta>0?'증가':recordDelta<0?'감소':'유지')+'</td></tr>';
+  }).join('')+'</table>';
+}
+
+function teacherEvidenceHtml(r){
+  const recent=r.weeks.slice(-4), latest=recent[recent.length-1];
+  const weak=ranked(r,'weak')[0], repeat=recent.filter(w=>w.eventN>=MIN_N).reduce((s,w)=>s+w.mis,0);
+  return '<div class="evidence-strip">'+
+    '<div class="item"><div class="label">의견에 반영한 학습량</div><div class="value">'+r.items.toLocaleString()+'문항</div><div class="detail">판정에 쓰인 채점 기록</div></div>'+
+    '<div class="item"><div class="label">먼저 보완할 유형</div><div class="value">'+(weak?weak.label:'확정 없음')+'</div><div class="detail">'+(weak?pc(weak.acc)+'% · 자기 평균 '+pc(r.acc)+'%':'표본을 더 모아 확인')+'</div></div>'+
+    '<div class="item"><div class="label">최근 4주 반복 실수</div><div class="value">'+repeat+'건</div><div class="detail">최근 주 정답률 '+pc(latest.acc)+'%</div></div>'+
+    '</div><table class="dense-table"><tr><th>선생님이 확인한 질문</th><th>기록에서 확인한 답</th></tr>'+
+    '<tr><td>이번 달에 무엇이 부족했나?</td><td><b>'+(weak?weak.label+' · '+pc(weak.acc)+'%':'확정된 약점 없음')+'</b></td></tr>'+
+    '<tr><td>최근 흐름은 어떤가?</td><td><b>'+pc(recent[0].acc)+'% → '+pc(latest.acc)+'%</b></td></tr>'+
+    '<tr><td>다음 상담에서 무엇을 볼까?</td><td><b>반복 실수 '+repeat+'건의 유형과 근거 문항</b></td></tr></table>';
+}
+
+function priorityTableHtml(r){
+  const rows=ranked(r,'weak').slice(0,4);
+  return '<table class="dense-table"><tr><th>먼저 보완할 순서</th><th>정답률</th><th>채점 문항</th><th>자기 평균과 차이</th></tr>'+
+    (rows.length?rows.map((x,i)=>'<tr><td><b>'+(i+1)+'. '+x.label+'</b></td><td class="num">'+pc(x.acc)+'%</td>'+
+      '<td class="num">'+x.n+'문항</td><td class="num">▼ '+Math.max(0,pc(r.acc)-pc(x.acc))+'%p</td></tr>').join(''):
+      '<tr><td colspan="4" class="empty compact">이번 달에 확정된 보완 유형이 없습니다.</td></tr>')+'</table>';
+}
+
+function rootAreaTableHtml(r){
+  const rows=AREA.map(a=>{
+    const nodeRows=r.nodes.filter(x=>x.area===a.k), rootRows=r.propagated.filter(x=>x.area===a.k);
+    const repeat=r.misconceptions.byArea.filter(x=>x.groupKey===a.k).reduce((s,x)=>s+x.count,0);
+    return '<tr><td><b>'+a.n+'</b></td><td class="num">'+nodeRows.filter(x=>x.verdict==='weak_confirmed').length+'건</td>'+
+      '<td class="num">'+nodeRows.filter(x=>x.verdict==='suspect').length+'건</td><td class="num">'+rootRows.length+'건</td><td class="num">'+repeat+'건</td></tr>';
+  }).join('');
+  return '<table class="dense-table"><tr><th>영역</th><th>약점 확정</th><th>더 확인</th><th>이어진 약점</th><th>반복 실수</th></tr>'+rows+'</table>';
+}
+
+function nextCheckTableHtml(r){
+  const rows=r.nodes.filter(x=>x.verdict==='suspect').map(x=>({label:nodeLabel(x.nodeId),reason:'기록을 더 모아 확인'}))
+    .concat(r.propagated.map(x=>({label:nodeLabel(x.nodeId),reason:'앞선 유형과 함께 다시 확인'})));
+  return '<table class="dense-table"><tr><th>다음 기록에서 다시 볼 유형</th><th>왜 다시 보나</th></tr>'+
+    (rows.length?rows.map(x=>'<tr><td><b>'+x.label+'</b></td><td>'+x.reason+'</td></tr>').join(''):
+      '<tr><td colspan="2" class="empty compact">다음 기록에서 별도로 다시 볼 유형이 없습니다.</td></tr>')+'</table>';
+}
+
+function areaConclusionTableHtml(r){
+  return '<table class="dense-table"><tr><th>영역</th><th>채점 문항</th><th>정답률</th><th>이번 달 해석</th></tr>'+r.radar.map(row=>{
+    const diff=row.mine==null?null:pc(row.mine)-pc(r.acc);
+    const message=diff==null?'판단할 기록이 부족해요':diff<=-10?'▲ 먼저 보완해요':diff>=5?'◆ 안정적으로 잘하고 있어요':'● 평소 수준과 비슷해요';
+    return '<tr><td><b>'+row.area.n+'</b></td><td class="num">'+row.n+'문항</td><td class="num">'+(row.mine==null?'—':pc(row.mine)+'%')+'</td><td>'+message+'</td></tr>';
+  }).join('')+'</table>';
+}
+
 function severityHtml(r){
   const rows=[];
   AREA.forEach(a=>V1_TYPE.forEach(t=>{
@@ -807,30 +933,37 @@ function eventBreakdownHtml(r){
   return '<div class="addbox"><h5>선택 오답 분포</h5>'+r.wrongChoices.filter(x=>x.count>0).map(x=>
     '<div class="mbar"><span class="nm">'+x.no+'번 선지</span><span class="bg"><span class="fg" style="width:'+(x.count/maxChoice*100)+'%"></span></span>'+
     '<span class="v">'+x.count+'건</span></div>').join('')+'</div>'+
-    '<div class="addbox"><h5>문항 형식 · 태그 확정</h5>'+r.formats.filter(x=>x.count>0).map(x=>
+    '<div class="addbox"><h5>문제 형식 · 강사 확인</h5>'+r.formats.filter(x=>x.count>0).map(x=>
     '<div class="mbar"><span class="nm">'+x.label+'</span><span class="v push">'+x.count+'건</span></div>').join('')+
-    '<div class="evidence"><b>강사 확정 태그</b> '+r.tagConfirmed.yes+' / '+r.tagConfirmed.total+'건 · '+pc(r.tagConfirmed.yes/r.tagConfirmed.total)+'%</div></div>';
+    '<div class="evidence"><b>강사가 분류를 확인한 기록</b> '+r.tagConfirmed.yes+' / '+r.tagConfirmed.total+'건 · '+pc(r.tagConfirmed.yes/r.tagConfirmed.total)+'%</div></div>';
 }
 
 function rootEvidenceHtml(r, who, meta){
   const verdictKo={weak_confirmed:'약점 확정', suspect:'약점 의심', ok:'양호'};
   const roots=r.propagated.slice().sort((a,b)=>b.score-a.score);
-  const rootRows=roots.length ? roots.map(x=>'<div class="cause"><div class="ct"><span class="chip warn">근본 원인 후보</span>'+
-    '<span>'+nodeLabel(x.nodeId)+'</span><span class="score">score '+x.score.toFixed(2)+'</span></div>'+
-    '<div class="evidence"><b>전파 출발</b> '+x.fromNodes.map(nodeLabel).join(' · ')+'</div></div>').join(''):
-    '<div class="empty">근본 원인 후보가 없습니다.</div>';
+  const rootRows=roots.length ? roots.map(x=>'<div class="cause"><div class="ct"><span class="chip warn">이어진 약점</span>'+
+    '<span>'+nodeLabel(x.nodeId)+'</span><span class="score">연결 정도 '+pc(x.score)+'/100</span></div>'+
+    '<div class="evidence"><b>함께 살펴볼 앞선 유형</b> '+x.fromNodes.map(nodeLabel).join(' · ')+'</div></div>').join(''):
+    '<div class="empty">이어져 나타난 약점이 없습니다.</div>';
   const nodeRows=r.nodes.length ? r.nodes.map(x=>'<div class="cause"><div class="ct"><span>'+nodeLabel(x.nodeId)+'</span>'+
     '<span class="chip '+(x.verdict==='weak_confirmed'?'warn':'b')+'">'+verdictKo[x.verdict]+'</span></div>'+
-    '<div class="evidence"><b>판정 근거</b> '+x.basis.join(' · ')+'</div></div>').join(''):
-    '<div class="empty">표시할 노드 판정 근거가 없습니다.</div>';
+    '<div class="evidence"><b>확인한 기록</b> '+x.basis.join(' · ')+'</div></div>').join(''):
+    '<div class="empty">표시할 학습 유형 기록이 없습니다.</div>';
   const byNode=r.misconceptions.byNode.length ? r.misconceptions.byNode.map(x=>
     '<tr><td>'+nodeLabel(x.groupKey)+'</td><td>'+MISCONCEPTION_KO[x.tag]+'</td><td class="num">'+x.count+'건</td></tr>').join(''):
-    '<tr><td colspan="3" class="empty">노드별 오개념 기록이 없습니다.</td></tr>';
-  return '<div class="rhead"><h3>진단 근거 · 근본 원인</h3><span class="who2">'+who+'</span></div>'+
-    '<div class="rmeta">'+meta+'</div><div class="addgrid"><div><h4 class="section-heading">근본 원인 후보</h4>'+rootRows+'</div>'+
-    '<div><h4 class="section-heading">노드 판정과 basis</h4>'+nodeRows+'</div></div>'+
-    '<table class="facttbl"><tr><th>노드 표시</th><th>오개념</th><th class="right">빈도</th></tr>'+byNode+'</table>'+
-    '<div class="note page-note">노드 ID 대신 <b>영역 × 유형 한글 표기</b>를 사용합니다. 후보 점수와 전파 출발, 판정 근거를 함께 읽어야 결론만 남지 않습니다.</div>';
+    '<tr><td colspan="3" class="empty">학습 유형별 반복 실수 기록이 없습니다.</td></tr>';
+  const repeat=r.misconceptions.byNode.reduce((s,x)=>s+x.count,0);
+  return '<div class="rhead"><h3>어디에서 막혔는지</h3><span class="who2">'+who+'</span></div>'+
+    '<div class="rmeta">'+meta+'</div>'+
+    '<div class="evidence-strip"><div class="item"><div class="label">약점으로 확인</div><div class="value">'+r.nodes.filter(x=>x.verdict==='weak_confirmed').length+'개 유형</div><div class="detail">기록이 충분해 확인된 항목</div></div>'+
+    '<div class="item"><div class="label">조금 더 확인</div><div class="value">'+r.nodes.filter(x=>x.verdict==='suspect').length+'개 유형</div><div class="detail">다음 기록까지 지켜볼 항목</div></div>'+
+    '<div class="item"><div class="label">유형별 반복 실수</div><div class="value">'+repeat+'건</div><div class="detail">실수 유형이 남은 기록</div></div></div>'+
+    '<div class="addgrid"><div><h4 class="section-heading">약점이 이어진 흐름</h4>'+rootRows+'</div>'+
+    '<div><h4 class="section-heading">확인한 학습 유형</h4>'+nodeRows+'</div></div>'+
+    '<table class="facttbl"><tr><th>학습 유형</th><th>반복 실수</th><th class="right">횟수</th></tr>'+byNode+'</table>'+
+    rootAreaTableHtml(r)+
+    nextCheckTableHtml(r)+
+    '<div class="note page-note">어려운 내부 이름 대신 <b>영역 × 문제유형</b>으로 표시했습니다. 약점 하나만 보지 않고, 함께 막힌 유형과 실제 기록을 같이 봅니다.</div>';
 }
 
 function areaEvidenceHtml(r){
@@ -843,12 +976,12 @@ function areaEvidenceHtml(r){
   const misconceptions=r.misconceptions.byArea.length ? r.misconceptions.byArea.map(x=>{
     const area=AREA.find(a=>a.k===x.groupKey);
     return '<tr><td>'+(area?area.n:'표시명 미확인')+'</td><td>'+MISCONCEPTION_KO[x.tag]+'</td><td class="num">'+x.count+'건</td></tr>';
-  }).join(''):'<tr><td colspan="3" class="empty">영역별 오개념 기록이 없습니다.</td></tr>';
-  return '<div class="addgrid"><div class="addbox"><h5>영역별 채점 모수 · 노드 판정</h5>'+
-    '<table class="facttbl flush"><tr><th>영역</th><th class="right">채점</th><th class="right">확정 / 의심 / 근본</th></tr>'+summary+'</table></div>'+
-    '<div class="addbox"><h5>영역별 오개념 빈도</h5><table class="facttbl flush"><tr><th>영역</th><th>오개념</th><th class="right">빈도</th></tr>'+misconceptions+'</table></div></div>'+
-    '<div class="verd hold page-callout"><b>오개념 집계 제외</b> · 선택 번호 없음 '+r.misconceptions.excludedMissingChosenNo+'건 · 오개념 라벨 없음 '+r.misconceptions.excludedMissingMisconceptionTag+'건<br>'+
-    '<span class="caption-copy">0건도 그대로 표시합니다. 제외 건수를 숨기면 오개념 빈도의 분모를 전체 기록으로 오해할 수 있습니다.</span></div>';
+  }).join(''):'<tr><td colspan="3" class="empty">영역별 반복 실수 기록이 없습니다.</td></tr>';
+  return '<div class="addgrid"><div class="addbox"><h5>영역별 판정에 사용한 문항</h5>'+
+    '<table class="facttbl flush"><tr><th>영역</th><th class="right">채점</th><th class="right">약점 / 더 확인 / 이어진 약점</th></tr>'+summary+'</table></div>'+
+    '<div class="addbox"><h5>영역별 반복 실수</h5><table class="facttbl flush"><tr><th>영역</th><th>실수 유형</th><th class="right">횟수</th></tr>'+misconceptions+'</table></div></div>'+
+    '<div class="verd hold page-callout"><b>반복 실수 집계에서 빠진 기록</b> · 선택 번호 없음 '+r.misconceptions.excludedMissingChosenNo+'건 · 실수 분류 없음 '+r.misconceptions.excludedMissingMisconceptionTag+'건<br>'+
+    '<span class="caption-copy">0건도 그대로 표시합니다. 빠진 기록을 숨기면 전체 기록이 모두 분류된 것으로 오해할 수 있습니다.</span></div>';
 }
 
 /* 영역 레이더 5축 — AreaTag 정본이 5영역이다.
@@ -913,7 +1046,7 @@ function sheet(r, opt){
     '<div class="kpis">'+
       kpi('백분위 '+r.pct, 'var(--d-blue)', r.pct, '', '전국 동일 학년 기준',
           '<div class="spark right"><span class="asof">참고치 · 기준일 '+r.pctAt+'</span></div>',
-          '전국 동일 학년 표본 대비 위치입니다. <b>백엔드 집계 API 가 내려주는 단일 값</b>이라 월별 추이는 표시하지 않습니다 — 출처·모수 확정 전이라 참고치입니다.')+
+          '전국 동일 학년 표본 대비 위치입니다. <b>현재 한 번만 제공되는 값</b>이라 월별 추이는 표시하지 않습니다 — 비교 기준과 참여 인원이 확정되기 전이라 참고치입니다.')+
       kpi('정답률 '+pc(r.acc)+'%', 'var(--d-green)', pc(r.acc), '%', '내 기준선 대비',
           spark(a3, pc(r.base.acc), 'var(--d-green)', v=>v+'%'),
           '채점 완료된 문항만 대상입니다. 회색 점선은 최근 '+r.base.weeksUsed+'주 이동 기준선으로, <b>비교 대상은 다른 학생이 아니라 본인의 평소 수준</b>입니다.')+
@@ -922,7 +1055,7 @@ function sheet(r, opt){
           '채점이 끝난 문항 수입니다(푼 문항 수와 다릅니다). 기준선은 주당 평균 '+r.base.volWeek+'문항을 4주로 환산한 값입니다.')+
       kpi('출제 난이도 '+bandKo, 'var(--d-yellow)', bandKo, '', '',
           bandBar(r.bands),
-          '체크온이 출제한 <b>'+bandN+'문항</b>의 밴드 분포입니다(하·중·상 3단계). 학원 교재·모의고사 문항은 난이도 정보가 없어 <b>모수에서 빠집니다</b> — 전체 학습량과 분모가 다릅니다.')+
+          '체크온이 출제한 <b>'+bandN+'문항</b>의 난이도 분포입니다(하·중·상 3단계). 학원 교재·모의고사 문항은 난이도 정보가 없어 <b>이 계산에서 빠집니다</b> — 전체 학습량과 문항 수가 다릅니다.')+
     '</div>', 'monthly-pg');
 
   /* 선생님 의견 — 강사가 지면에서 직접 고치는 면 */
@@ -933,7 +1066,8 @@ function sheet(r, opt){
       ? '<div class="edithint no-print">✏️ <b>문단을 눌러 그 자리에서 바로 고치세요.</b> 강사가 고친 문단은 노란 띠로 바뀌고 「강사 작성」으로 표시됩니다 — '+
         'AI 다듬기는 오른쪽 패널의 보조 수단입니다.</div>'
       : '')+
-    r.blocks.map(b=>blockHtml(b, opt)).join(''));
+    r.blocks.map(b=>blockHtml(b, opt)).join('')+
+    teacherEvidenceHtml(r));
 
   /* 5.3 주간 분석 — 계약·내부 용어 대신 학부모가 바로 행동으로 옮길 수 있는 말로 쓴다 */
   const recentWeeks = r.weeks.slice(-4);
@@ -955,6 +1089,12 @@ function sheet(r, opt){
     '</div>'+
     weekChart('지난 12주 정답률 흐름 — ▲ 보강 · ● 상담', '최근 '+pc(latestWeek.acc)+'%', 'var(--d-green)', r.weeks, w=>pc(w.acc), v=>v+'%')+
     weeklyTable(recentWeeks)+
+    '<div class="report-data-grid">'+
+      weeklyOutcomePanel(recentWeeks)+
+      weeklyMiniPanel('반복해서 틀린 기록', '●', recentWeeks, w=>w.mis, true)+
+      weeklyMiniPanel('공부한 유형 수', '◆', recentWeeks, w=>w.nodeN, false)+
+    '</div>'+
+    weeklyChangeTableHtml(r.weeks)+
     '<div class="week-insight">'+
       '<div class="item"><b>◆ 가장 잘 풀린 주</b><br>'+(recentWeeks.indexOf(bestWeek)+1)+'주 · 정답률 '+pc(bestWeek.acc)+'% ('+Math.round(bestWeek.eventN*bestWeek.acc)+' / '+bestWeek.eventN+'문항)</div>'+
       '<div class="item warn"><b>▲ 먼저 다시 볼 주</b><br>'+(reviewIndex+1)+'주 · 다시 볼 문항 '+reviewCounts[reviewIndex]+'개, 반복 실수 '+(recentWeeks[reviewIndex].eventN<MIN_N?'판단 보류':recentWeeks[reviewIndex].mis+'건')+'</div>'+
@@ -967,6 +1107,7 @@ function sheet(r, opt){
     '<div class="rmeta">'+meta+' &nbsp;|&nbsp; 선택과목 '+r.elective+'</div>'+
     matrixHtml(r)+
     '<div class="addgrid">'+severityHtml(r)+eventBreakdownHtml(r)+'</div>'+
+    priorityTableHtml(r)+
     '<div class="note page-note">칸 아래 숫자는 채점 문항 수입니다. <b>'+MIN_N+'문항 미만은 판정하지 않고 「판단 보류」로 둡니다</b> — 표본이 적은 칸을 약점이라고 부르면 다음 달에 뒤집힙니다.</div>');
 
   /* 5.6 진단 결과 */
@@ -985,8 +1126,9 @@ function sheet(r, opt){
         (row.mine==null ? '—' : pc(row.mine)+'%')+'</span></div>').join('')+
     '</div></div>'+
     areaEvidenceHtml(r)+
-    '<div class="note page-note">비교선은 <b>이번 달 내 평균</b> 하나입니다 — 영역별 전국 평균은 백엔드가 내려주는 값에 없어 그리지 않습니다. '+
-    '<span class="red">반 평균·석차도 담기지 않습니다</span> — 강사 화면 전용 지표라 학부모 리포트에는 조립 단계에서 제외됩니다.</div>');
+    areaConclusionTableHtml(r)+
+    '<div class="note page-note">비교선은 <b>이번 달 내 평균</b> 하나입니다 — 영역별 전국 평균은 현재 제공되는 기록에 없어 그리지 않습니다. '+
+    '<span class="red">반 평균·석차도 담기지 않습니다</span> — 강사 화면에서만 보는 정보라 학부모용에서는 제외됩니다.</div>');
 
   /* 쪽번호는 면 개수가 바뀌어도 따라온다 */
   const body = pages.map((html,i)=>
@@ -1007,8 +1149,8 @@ const isEdited = b => b.owner === 'teacher';
 
 function blockHtml(b, opt){
   const tag = b.chart
-    ? '<span class="cr">chart_analysis</span><span>'+CHART[b.chart]+'</span>'
-    : '<span class="cr">'+b.type+'</span><span>'+BLOCK_KO[b.type]+'</span>';
+    ? '<span class="cr no-print">chart_analysis</span><span>'+CHART[b.chart]+'</span>'
+    : '<span class="cr no-print">'+b.type+'</span><span>'+BLOCK_KO[b.type]+'</span>';
 
   if(!b.html) return '<div class="blk gone" data-seq="'+b.seq+'">'+
     '<div class="bt">'+tag+'<span class="own2">비움</span></div>'+
@@ -1020,7 +1162,7 @@ function blockHtml(b, opt){
   /* 강사 편집분은 평문으로 그린다 — 확정 수치 표시(.n)는 AI 원문에만 붙는다 */
   const body = edited ? esc(b.edited) : b.html;
   return '<div class="'+cls+'" data-seq="'+b.seq+'">'+
-    '<div class="bt">'+tag+'<span class="own2">'+(edited?'강사 작성':'AI 해설')+'</span></div>'+
+    '<div class="bt">'+tag+'<span class="own2 no-print">'+(edited?'강사 작성':'AI 해설')+'</span></div>'+
     '<div class="body2"'+(opt.editable?' contenteditable="true" data-edit="'+b.seq+'"':'')+'>'+body+'</div></div>';
 }
 
@@ -1036,7 +1178,7 @@ function matrixHtml(r){
         (c.verdict==='unknown' ? '—' : pc(c.acc)+'%')+
         '<small>'+c.n+'문항</small></span></td>';
     });
-    h += '<td class="res">v1 미산출</td></tr>';
+    h += '<td class="res">아직 제공되지 않음</td></tr>';
   });
   return h+'</table>';
 }
@@ -1099,35 +1241,32 @@ function viewList(){
   const cnt = k => REPORTS.filter(k).length;
 
   let rows = list.map(r=>{
-    const dim = r.status!=='generated' ? ' class="dim"' : '';
+    const dim = r.status!=='generated' ? ' dim' : '';
     const num = (v,suffix) => r.status==='generated'
       ? '<span class="num">'+v+(suffix||'')+'</span>' : '<span class="dash">—</span>';
-    return '<tr'+dim+' data-act="open-edit" data-id="'+r.id+'">'+
-      '<td><div class="nm">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+
-        '<small>'+r.alias+' · '+r.id+'</small></div></td>'+
-      '<td>'+r.cls+'<div class="grade-meta">'+r.grade+' · '+r.elective+'</div></td>'+
-      '<td>'+(r.kind==='report'
-        ? '<span class="chip a">월별 일괄</span>'
-        : '<span class="chip t">단건 수시</span>')+'</td>'+
-      '<td class="right">'+num(r.status==='generated'?r.items.toLocaleString():0,'문항')+'</td>'+
-      '<td class="right">'+num(r.status==='generated'?pc(r.acc):0,'%')+'</td>'+
-      '<td class="right">'+num(r.pct||0)+'</td>'+
-      '<td>'+statusChip(r)+
-        (r.sent?'<div class="sent-meta">'+r.sentAt+'</div>':'')+'</td>'+
-      '<td><div class="acts">'+
+    return '<div class="report-card'+dim+'" data-act="open-edit" data-id="'+r.id+'">'+
+      '<span class="report-avatar">'+r.nm.charAt(0)+'</span>'+
+      '<div class="report-primary"><div class="title">'+r.nm+' 학생'+(!r.sent&&r.status==='generated'?'<span class="new-badge">검토 전</span>':'')+'</div>'+
+        '<div class="meta">'+S.ym.y+'년 '+S.ym.m+'월 · '+r.alias+' · '+r.id+' · '+r.grade+' '+r.elective+'</div></div>'+
+      '<div class="report-field"><div class="label">반 · 발행 방식</div><div class="value">'+r.cls+'<br>'+(r.kind==='report'?'월별 일괄':'단건 수시')+'</div></div>'+
+      '<div class="report-field"><div class="label">학습량</div><div class="value">'+num(r.status==='generated'?r.items.toLocaleString():0,'문항')+'</div></div>'+
+      '<div class="report-field"><div class="label">정답률</div><div class="value">'+num(r.status==='generated'?pc(r.acc):0,'%')+'</div></div>'+
+      '<div class="report-field"><div class="label">백분위</div><div class="value">'+num(r.pct||0,'')+'</div></div>'+
+      '<div class="report-field"><div class="label">상태</div><div class="value">'+statusChip(r)+(r.sent?'<div class="sent-meta">'+r.sentAt+'</div>':'')+'</div></div>'+
+      '<div class="report-actions">'+
         (r.status==='generated'
           ? '<button class="btn ic" data-act="open-edit" data-id="'+r.id+'">'+(r.sent?'보기':'수정')+'</button>'+
             '<button class="btn ic" data-act="print" data-id="'+r.id+'">인쇄</button>'
           : '<button class="btn ic off">수정</button>')+
         '<button class="btn ic">⋯</button>'+
-      '</div></td></tr>';
+      '</div></div>';
   }).join('');
 
-  if(!list.length) rows = '<tr><td colspan="8" class="empty">조건에 맞는 리포트가 없습니다.</td></tr>';
+  if(!list.length) rows = '<div class="empty">조건에 맞는 리포트가 없습니다.</div>';
 
-  return '<div class="pgttl">리포트 목록</div>'+
-  '<div class="pgsub">월별 리포트는 <b>매월 1일 야간 배치</b>로 전월분이 한 번에 생성됩니다. 단건은 강사가 수시로 발행합니다.<br>'+
-  '행을 누르면 수정 화면으로 들어갑니다 — <b>발송 완료된 리포트는 읽기 전용</b>입니다.</div>'+
+  return '<div class="studio-hero"><div><div class="eyebrow">CHECKON REPORT STUDIO</div><h2>리포트 목록</h2>'+
+  '<p>학생별 월간 리포트를 검토하고, 수정한 뒤 학부모에게 발송합니다.</p></div>'+
+  '<div class="hero-stat"><div><b>'+cnt(r=>r.status==='generated')+'</b><span>생성 완료</span></div><div><b>'+cnt(r=>r.sent)+'</b><span>발송 완료</span></div></div></div>'+
 
   '<div class="panel">'+
     '<div class="mnav">'+
@@ -1153,11 +1292,7 @@ function viewList(){
     '</div>'+
   '</div>'+
 
-  '<div class="panel"><table class="rt">'+
-    '<thead><tr><th>리포트</th><th>반</th><th>종류</th>'+
-    '<th class="right">학습량</th><th class="right">정답률</th>'+
-    '<th class="right">백분위</th><th>상태</th><th></th></tr></thead>'+
-    '<tbody>'+rows+'</tbody></table></div>'+
+  '<div class="report-cards">'+rows+'</div>'+
   contractPanel();
 }
 
@@ -1289,6 +1424,7 @@ function viewSend(){
     const ok = sendable(r);
     return '<div class="srow'+(ok?'':' dis')+'" '+(ok?'data-act="open-drawer" data-id="'+r.id+'"':'')+'>'+
       '<span class="chk'+(SEL.has(r.id)?' on':'')+(ok?'':' dis')+'" '+(ok?'data-act="toggle" data-id="'+r.id+'"':'')+'></span>'+
+      '<span class="report-avatar">'+r.nm.charAt(0)+'</span>'+
       '<div class="grow"><div class="row-title">'+S.ym.y+'년 '+S.ym.m+'월 리포트 · '+r.nm+
         ' <span class="chip '+(r.kind==='report'?'a':'t')+'">'+(r.kind==='report'?'월별 일괄':'단건 수시')+'</span></div>'+
         '<div class="row-id">'+r.alias+' · '+r.id+' · '+r.cls+'</div>'+
@@ -1297,14 +1433,14 @@ function viewSend(){
       '<div class="tail">'+statusChip(r)+
         (ok?'<div class="row-stat">정답률 <b>'+pc(r.acc)+'%</b> · 백분위 <b>'+r.pct+'</b> · rev.'+revOf(r.id)+'</div>'
            :'<div class="row-empty">보낼 본문이 없습니다</div>')+
-      '</div></div>';
+      '</div><span class="meta-copy">›</span></div>';
   }).join('');
 
-  return '<div class="pgttl">리포트 발송</div>'+
-  '<div class="pgsub">이번 달 생성분 중 <b>아직 보내지 않은 리포트</b>입니다. 행을 누르면 실제 지면을 확인할 수 있고, 체크한 것만 일괄 발송합니다.<br>'+
-  '<span class="red">본문이 없는 리포트는 체크할 수 없습니다</span> — 데이터 부족·생성 실패는 보낼 내용 자체가 없습니다.</div>'+
+  return '<div class="studio-hero"><div><div class="eyebrow">CHECKON REPORT DELIVERY</div><h2>학부모에게 보낼 리포트</h2>'+
+  '<p>실제 PDF 지면을 확인하고, 검토가 끝난 리포트만 선택해 발송합니다.</p></div>'+
+  '<div class="hero-stat"><div><b>'+ready.length+'</b><span>발송 가능</span></div><div><b>'+list.length+'</b><span>미발송</span></div></div></div>'+
 
-  '<div class="panel">'+
+  '<div class="report-cards">'+
     '<div class="filters filter-edge">'+
       '<span class="chk'+(ready.length && ready.every(r=>SEL.has(r.id))?' on':'')+'" data-act="all"></span>'+
       '<span class="selection-title">보낼 수 있는 '+ready.length+'건 전체 선택</span>'+
