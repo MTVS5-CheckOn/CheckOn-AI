@@ -95,4 +95,4 @@ xfail_strict = true
 #: ⚠ 재현 안 되는 1회 red 가 **세 번** 났고 세 번 다 이름을 못 잡았다. №87 이
 #: `pre_pr_verify` 에 기록을 붙였는데 🔴 **세 번째는 `pytest` 를 직접 돌려 우회했다** —
 #: 그래서 규율이 아니라 **`pytest` 자체**에 붙인다.
-addopts = "-m 'not integration and not external' -p store_backend_pin -p llm_provider_pin -p console_env_pin -p real_llm_optin_pin -p failure_name_pin"
+addopts = "-m 'not integration and not external' -p store_backend_pin -p llm_provider_pin -p console_env_pin -p real_llm_optin_pin -p failure_name_pin -p integration_db_lock"
