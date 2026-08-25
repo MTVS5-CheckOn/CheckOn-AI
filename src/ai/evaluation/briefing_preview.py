@@ -73,6 +73,30 @@ from ai.runtime.redaction import redact
 #:
 #: ⚠ 🔴 **비교 대상이 없다** — 0.2 시절 통과율 **수치**가 저장소에 없다(#27 · 전수).
 #: ⇒ 🔴 이 줄은 «비교» 가 아니라 **«기준선을 세운 것»** 이다. 다음 측정이 여기와 비교한다.
+#:
+#: ━━ 🔴 **재측정(2026-08-25 · №110) — 덮어쓰지 않고 덧붙인다** ━━
+#: 🔴 ① 잰 날짜 : **2026-08-25 (KST)** · 같은 날 두 번째
+#: 🔴 ② 버전    : `PROMPT_VERSION` **0.3** (무변경 — 프롬프트·표본·재시도 무접촉)
+#: 🔴 ③ 표본    : **66콜** 한 번 (신호 11 × 변형 2 × 반복 3) · 예상 66 = 실제 66
+#: 🔴 ④ 수치    : v1 **70%** (23/33) 평균 **1463ms** · v3 **67%** (22/33) 평균 **1897ms**
+#:                가용성 **68%** (45/66) · 게이트 사유 실패 **0건** ⇒ 응답 온 45 는 **45/45**
+#:                ⚠ 🔴 **위 첫 측정과 통과 수가 한 건도 안 다르다**(23/33 · 22/33 · 10/11).
+#:                🔴 벤더가 흔들렸다면 이럴 수 없다 — **결정론적 원인**이라는 뜻이다.
+#: 🔴 ⑤ 하한    : 위와 같다(첫 시도 · 재생성 없음)
+#:
+#: 🔴 **⑥ 그리고 그 원인을 이번에 갈랐다(99 #255)** — 🔴 **벤더 가용성이 아니라 측정기다.**
+#:   · 신호별: 6/11 신호에 흩어졌고 실패 수가 **그 `signal_type` 건수 × 2(변형)** 에
+#:     정확히 비례한다 ⇒ 🔴 **신호 특성과 무관**하다.
+#:   · 시간별: 앞 7 · 중 7 · 뒤 7 로 **완전 균등** ⇒ 🔴 **율속·워밍업이 아니다.**
+#:   · 🔴 실패 콜 순번이 **4, 7, 10 … 64** — 공차 3 의 등차수열이고, 그건 정확히
+#:     **각 `asyncio.run()` 의 첫 콜**이다(변형 22개 중 **맨 처음 하나만 성공** = 21건).
+#:   ⇒ 🔴 `run()` 은 변형마다 `asyncio.run` 으로 **새 이벤트 루프**를 열면서 provider
+#:     (`AsyncOpenAI`)는 **한 번 만들어 22개 루프에 걸쳐 재사용**한다. 앞 루프가 닫히면
+#:     그 커넥션 풀이 죽고, 다음 루프의 **첫 콜**이 죽은 커넥션을 잡아
+#:     `APIConnectionError` → `LlmUnavailable("LLM 연결 실패")` 로 떨어진다(문면 21/21 동일).
+#:   ⚠ 🔴 **99 #218 · №100 과 같은 패턴**이다 — 「한 루프에 묶인 자원을 다른 루프에서 쓴다」.
+#:   🔴 **이 회차는 재는 회차라 안 고쳤다**(#255 에 처방 갈래를 적어 뒀다).
+#:   ⚠ 🔴 그래서 «가용성 68%」는 **벤더에 대한 사실이 아니다** — 인용하지 마라.
 #: 🔴 **산출 본문은 여기 안 적는다**(불변식 3 · 99 #80) — 통과율·지연은 개인정보가 아니다.
 _REPEATS = 3
 _RESULT_PATH = Path.cwd() / "briefing_preview_result.md"
@@ -109,12 +133,60 @@ class _Attempt:
     latency_ms: int
 
 
+@dataclass(frozen=True)
+class _Failure:
+    """실패 1건 — 🔴 **어느 신호가·언제·왜**(99 #255 · №110).
+
+    ⚠ 🔴 종전 측정기는 사유별 `Counter` 만 남겨서 «21건이 전부 `LlmUnavailable`» 까지만
+    말할 수 있었다 — 🔴 **«어느 신호에 몰렸나」와 «시간에 몰렸나」에 답을 못 했다.**
+    그 둘은 처방이 갈린다: 신호 탓이면 **표본**을 다시 봐야 하고, 앞뒤로 몰렸으면
+    **율속·워밍업**이라 간격이 처방이다(로그 193 — 측정기의 누락은 그 수를 믿고
+    값을 정하게 만든다).
+    """
+
+    ordinal: int
+    """실행 전체에서 **몇 번째 콜**인가 — 시간 축의 순번."""
+    at_s: float
+    """실행 시작으로부터 **몇 초** — 앞/중/뒤를 가른다."""
+    signal: str
+    variant: str
+    kind: str
+    """`llm:LlmUnavailable` 처럼 사유 종류."""
+    detail: str
+    """🔴 원인 문면 — **마스킹 통과분만**(`_scrub`)."""
+
+
+@dataclass
+class _Ledger:
+    """두 변형이 **함께 쓰는** 실행 원장 — 시간 축이 실행 전체로 이어져야 한다."""
+
+    started: float
+    ordinal: int = 0
+    failures: list[_Failure] = field(default_factory=list)
+
+
 @dataclass
 class _Totals:
     calls: int = 0
     passed: int = 0
     latencies: list[int] = field(default_factory=list)
     reasons: Counter[str] = field(default_factory=Counter)
+
+
+_SECRET_RE: Final = re.compile(r"sk-[A-Za-z0-9_\-]{4,}")
+_DETAIL_MAX: Final = 80
+
+
+def _scrub(text: str) -> str:
+    """🔴 원인 문면을 **밖에 낼 수 있는 형태로만** — 키는 어떤 형태로도 안 나간다.
+
+    ⚠ 🔴 어댑터가 내는 문면은 «LLM 연결 실패» · «LLM 일시 실패 429» 처럼 **짧고
+    접속정보가 없다**(실측 · `openai_compat.py`). 🔴 그래도 **여기서 한 번 더 막는다**
+    — 어댑터가 바뀌면 이 자리가 마지막 관문이다(불변식 3 의 fail-closed 방향).
+    """
+    scrubbed = _SECRET_RE.sub("sk-***", text.replace("\n", " ").strip())
+    masked = redact(scrubbed).masked_text
+    return masked[:_DETAIL_MAX]
 
 
 def _context() -> ExecutionContext:
@@ -146,6 +218,22 @@ def _v1_prompt(signal: Signal) -> str:
     )
 
 
+def _note(
+    ledger: _Ledger, signal: str, variant: str, kind: str, detail: str, start: float
+) -> None:
+    """🔴 실패를 **원장에 한 번만** 적는다 — 두 축(신호·시간)이 같은 자리에서 나온다."""
+    ledger.failures.append(
+        _Failure(
+            ordinal=ledger.ordinal,
+            at_s=start - ledger.started,
+            signal=signal,
+            variant=variant,
+            kind=kind,
+            detail=_scrub(detail),
+        )
+    )
+
+
 async def _run_variant(
     provider: LLMProvider,
     prompt: str,
@@ -153,6 +241,9 @@ async def _run_variant(
     fallback: str,
     context: ExecutionContext,
     totals: _Totals,
+    ledger: _Ledger,
+    signal_label: str,
+    variant: str,
     *,
     max_tokens: int | None = None,
 ) -> list[_Attempt]:
@@ -170,6 +261,7 @@ async def _run_variant(
     attempts: list[_Attempt] = []
     for index in range(1, _REPEATS + 1):
         totals.calls += 1
+        ledger.ordinal += 1
         start = time.monotonic()
         try:
             result = await provider.complete(request, context)
@@ -179,7 +271,9 @@ async def _run_variant(
             if gate.passed:
                 totals.passed += 1
             else:
-                totals.reasons[gate.reason.split(":")[0]] += 1
+                kind = gate.reason.split(":")[0]
+                totals.reasons[kind] += 1
+                _note(ledger, signal_label, variant, kind, gate.reason, start)
             attempts.append(
                 _Attempt(
                     index=index,
@@ -192,7 +286,9 @@ async def _run_variant(
             )
         except LlmError as exc:
             latency = int((time.monotonic() - start) * 1000)
-            totals.reasons[f"llm:{type(exc).__name__}"] += 1
+            kind = f"llm:{type(exc).__name__}"
+            totals.reasons[kind] += 1
+            _note(ledger, signal_label, variant, kind, str(exc), start)
             attempts.append(
                 _Attempt(
                     index=index,
@@ -286,6 +382,51 @@ def _summary(name: str, totals: _Totals) -> list[str]:
     return lines
 
 
+def _breakdown(ledger: _Ledger, signals: int, calls: int) -> list[str]:
+    """🔴 **갈래를 남긴다** — ① 신호별 ② 시간 분포 ③ 원인 문면(99 #255).
+
+    ⚠ 🔴 «11 신호 중 3개가 죽었다» 와 «처음 20콜이 죽었다» 는 **완전히 다른 사실**이고
+    처방이 갈린다. 그래서 셋을 **같이** 적는다 — 하나만 보면 또 못 가른다.
+    """
+    lines = ["", "## 🔴 실패 갈래(99 #255 · №110)", ""]
+    if not ledger.failures:
+        return [*lines, "- 실패 **0건** — 가를 것이 없다."]
+
+    by_signal: Counter[str] = Counter(f.signal for f in ledger.failures)
+    lines.append(f"### ① 신호별 실패 — {len(by_signal)}/{signals} 신호에서 발생")
+    lines.append("")
+    lines.append("| 신호 | 실패 | 사유 |")
+    lines.append("| --- | --- | --- |")
+    for name, count in by_signal.most_common():
+        kinds = Counter(f.kind for f in ledger.failures if f.signal == name)
+        detail = " · ".join(f"{k} {c}" for k, c in kinds.most_common())
+        lines.append(f"| {_cell(name)} | {count} | {detail} |")
+
+    #: 🔴 **콜 순번을 3등분**한다 — 앞뒤로 몰렸으면 신호가 아니라 율속·워밍업이다.
+    third = max(calls // 3, 1)
+    buckets = Counter(min((f.ordinal - 1) // third, 2) for f in ledger.failures)
+    label = ("앞 1/3", "중 1/3", "뒤 1/3")
+    spread = " · ".join(f"{label[i]} {buckets.get(i, 0)}건" for i in range(3))
+    first, last = ledger.failures[0], ledger.failures[-1]
+    lines.extend(
+        [
+            "",
+            "### ② 시간 분포 — 앞쪽인가 뒤쪽인가",
+            "",
+            f"- 콜 순번 3등분: **{spread}**",
+            f"- 첫 실패 **{first.ordinal}번째 콜**({first.at_s:.0f}초) · "
+            f"마지막 실패 **{last.ordinal}번째 콜**({last.at_s:.0f}초)",
+            "- 실패 콜 순번: "
+            + ", ".join(str(f.ordinal) for f in ledger.failures),
+        ]
+    )
+
+    causes = Counter(f.detail for f in ledger.failures)
+    lines.extend(["", "### ③ 원인 문면(🔴 마스킹 통과분)", ""])
+    lines.extend(f"- `{_cell(text)}` — **{count}건**" for text, count in causes.most_common())
+    return lines
+
+
 def run() -> int:
     provider = build_brief_provider(BriefingSettings(llm_provider="openai_compat"))
     response = detect(build_demo_request())
@@ -297,6 +438,7 @@ def run() -> int:
 
     context = _context()
     v1_totals, v2_totals = _Totals(), _Totals()
+    ledger = _Ledger(started=time.monotonic())
     body: list[str] = []
     for signal in signals:
         ctx = contexts[signal.signal_id]
@@ -308,6 +450,9 @@ def run() -> int:
                 signal.brief.text,
                 context,
                 v1_totals,
+                ledger,
+                signal.signal_type.value,
+                "v1",
             )
         )
         v2 = asyncio.run(
@@ -318,6 +463,9 @@ def run() -> int:
                 ctx.fallback_text,
                 context,
                 v2_totals,
+                ledger,
+                signal.signal_type.value,
+                "v3",
                 #: 🔴 값을 복제하지 않고 **프로덕션 파라미터에서 읽는다**(99 #02) —
                 #:   복제하면 프로덕션만 바뀌었을 때 프리뷰가 낡은 채로 초록이다.
                 #:   2026-08-13 현재 None(천장 없음 · 99 #54).
@@ -339,6 +487,7 @@ def run() -> int:
             *_summary("v1 다듬기(옛 프롬프트)", v1_totals),
             "",
             *_summary("v3 근거 작성(현 프롬프트·max_tokens=128·전체 15s)", v2_totals),
+            *_breakdown(ledger, len(signals), v1_totals.calls + v2_totals.calls),
             "",
         ]
     )
