@@ -14,6 +14,8 @@ v6 확장(2026-08-12 · ㉻): `COUNSEL_CONTEXT_BUNDLE`을 편입하고 `DRAFT.co
 
 v7 확장(2026-08-21): `PROBLEM_GENERATION_REQUEST`·`PROBLEM_GENERATION_RESULT`를 편입했다. 애플리케이션 소유 테이블은 **총 41개**다. 잡 원장만 영속하고 `payload_ref`·`result_ref` 대상이 프로세스 메모리에 있던 결손을 닫아, PG startup recovery와 다중 인스턴스 조회가 실제 본문을 복원한다.
 
+v8 확장(2026-08-25): `LABEL_CONFIRMATION_STAT`을 편입했다. 애플리케이션 소유 테이블은 **총 42개**다. 🔴 **개인 참조가 하나도 없다** — `guardian_ref`도 FK도 없고, 이 행은 「조합의 속성」이지 학부모 데이터가 아니다(`PASSAGE_TYPE_STAT`과 같은 결). 🔴 **`label_suggestion`에 안 쌓은 이유**: 그 테이블은 `created_at`이 없어 축출 근거가 없고 `guardian_ref`를 가져 「새로 쌓이는 개인 데이터 0」과 갈린다(99 #190) — 그 둘이 이 테이블에는 **없다**. ⚠ 🔴 **`week_start`는 감지 피처(`FEATURE_WEEK`·`WEAKNESS_MAP`)의 같은 이름과 「다른 규칙」이다** — BE와의 주 경계는 「월요일 기준 **[제안]**」(04:1228)이라 확정이 아니고, 이 버킷은 **확정 접수 시각**을 `Asia/Seoul`로 옮겨 계산한다. 🔴 **조인하지 마라.** 승인: 염준영 · 2026-08-25(99 #239).
+
 **`AI_RUN` 버전 세트:** 키 집합의 정본은 `contracts/execution.py`의 `VersionSet`이다. 공통 6종(`pipeline` · `engine` · `threshold` · `prompt` · `schema` · `contract`)과 [PART_B] 실행 전용 nullable 4종(`graph` · `taxonomy` · `verify_config` · `difficulty_calib`)으로 구성되며, **버전 컬럼은 총 10개**다. 실행 식별자·모델 정보·재현성 키·생성 시각까지 포함한 `AI_RUN` 전체 컬럼은 **총 18개**다.
 
 `threshold_version`은 감지 임계값 시트(`threshold_config`) 버전으로 `detection` 실행에만 의미가 있고, 그 외 실행에서는 null이다. 이 값이 없으면 과거 경보를 재현할 수 없다(CLAUDE.md 불변식 8).
@@ -157,6 +159,17 @@ erDiagram
     int responses "누적 응답 수"
     int corrects "누적 정답 수"
     timestamptz updated_at "UNIQUE(tenant·passage·type)"
+  }
+  LABEL_CONFIRMATION_STAT {
+    uuid id PK
+    varchar tenant_id "🔴 읽는 통로를 만들 때 k 임계를 같이 정한다(99 #239)"
+    date week_start "월요일(Asia/Seoul) · 🔴 확정 접수 시각에서 계산 · FEATURE_WEEK와 다른 규칙"
+    varchar axis "comm|interest|sensitivity|frequency — contracts/composition.py"
+    varchar suggested_value
+    varchar confirmed_value "corrected면 정정값 · 그 외 제안값과 같다"
+    varchar action "confirmed|corrected|rejected"
+    int count "누적 — UPSERT 증가"
+    timestamptz created_at "UNIQUE(tenant·week·axis·suggested·confirmed·action)"
   }
   EXPECTATION_INGEST {
     uuid id PK
@@ -546,6 +559,8 @@ erDiagram
 ## 보존 순서 규약 (2026-08-12 · ㉻ · 지시서 73 §8)
 
 🔴 **아래 여섯은 멱등 레코드보다 먼저 삭제되면 안 된다.**
+
+⚠ 🔴 **`LABEL_CONFIRMATION_STAT`은 이 여섯에 안 들어간다**(2026-08-25 · v8) — 개인 참조가 0이라 멱등 레코드보다 먼저 지워져도 **아무것도 안 깨진다**. 🔴 **보존 기간 숫자는 여기 안 적는다** — 이 문서는 「실제 삭제 스케줄러·TTL 숫자를 정하지 않는다」가 규약이고, 숫자만 적고 지우는 코드를 안 만들면 그게 「선언만 있고 소비 0」이다.
 
     COUNSEL_CONTEXT_BUNDLE · DRAFT · COUNSEL_PACK_RESULT · COUNSEL_DRAFT_VIEW
     · PROBLEM_GENERATION_REQUEST · PROBLEM_GENERATION_RESULT

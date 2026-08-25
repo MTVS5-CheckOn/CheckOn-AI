@@ -57,6 +57,10 @@ from ai.db.repositories.inquiry_class_store import (
     InMemoryInquiryClassStore,
     PgInquiryClassStore,
 )
+from ai.db.repositories.label_confirmation_store import (
+    InMemoryLabelConfirmationStore,
+    PgLabelConfirmationStore,
+)
 from ai.db.repositories.pack_store import PgPackResultStore
 from ai.db.repositories.problem_candidate_store import PgCandidateStore
 from ai.db.repositories.problem_revision_store import PgProblemRevisionStore
@@ -77,6 +81,12 @@ _SRC: Final = Path(__file__).resolve().parents[4] / "src" / "ai"
 #:   (`build_counsel_draft_view_store` docstring).
 _FACTORIES: Final[tuple[tuple[str, type, type], ...]] = (
     ("build_inquiry_class_store", PgInquiryClassStore, InMemoryInquiryClassStore),
+    #: 🔴 라벨 확정 집계(99 #239 · 승인: 염준영 2026-08-25) — 개인 참조 0.
+    (
+        "build_label_confirmation_store",
+        PgLabelConfirmationStore,
+        InMemoryLabelConfirmationStore,
+    ),
     ("build_run_store", PgRunStore, InMemoryRunStore),
     ("build_agent_job_store", PgJobStore, InMemoryJobStore),
     ("build_idempotency_store", PgIdempotencyStore, InMemoryIdempotencyStore),

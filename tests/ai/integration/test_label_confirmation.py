@@ -25,7 +25,7 @@ from ai.api.routers.confirmations import (
 )
 
 
-def _counts(client: TestClient) -> dict[tuple[str, str, str, str], int]:
+def _counts(client: TestClient) -> dict[tuple[str, str, str, str, str], int]:
     """🔴 집계를 **인터페이스로** 읽는다(2026-08-25 · 99 #239).
 
     ⚠ 🔴 종전에는 검사가 `Counter` **객체에 직접** 붙어 있었다 — 그래서 저장소를
@@ -93,7 +93,7 @@ def test_a_confirmed_label_is_accepted_and_only_the_aggregate_is_logged(
     assert response.status_code == 200, response.text
     assert response.json()["data"]["accepted"] is True
     #: 🔴 **줄이 아니라 카운터다**(99 #233).
-    assert _counts(client).get(("comm", "data", "data", "confirmed"), 0) == 1
+    assert _counts(client).get(("t_lc", "comm", "data", "data", "confirmed"), 0) == 1
     #: 🔴 **이 단언이 #233 을 닫는다** — 줄이 남아 있으면 순서로 재식별이 된다.
     assert not [m for m in caplog.messages if "confirmations.label" in m], caplog.messages
     #: 🔴 개인 참조가 **카운터 키에도** 없다 — №92 판정의 전부다.
@@ -117,7 +117,7 @@ def test_a_corrected_label_records_the_new_value(
             },
         )
     assert response.status_code == 200, response.text
-    assert _counts(client).get(("comm", "data", "narrative", "corrected"), 0) == 1
+    assert _counts(client).get(("t_lc", "comm", "data", "narrative", "corrected"), 0) == 1
 
 
 def test_a_value_outside_the_enum_is_400(client: TestClient) -> None:
@@ -184,7 +184,7 @@ def test_a_guardian_ref_with_colons_still_parses(
             },
         )
     assert response.status_code == 200, response.text
-    assert _counts(client).get(("interest", "grade", "grade", "confirmed"), 0) == 1
+    assert _counts(client).get(("t_lc", "interest", "grade", "grade", "confirmed"), 0) == 1
     assert all("gd:11:b0" not in "".join(key) for key in _counts(client))
 
 
@@ -285,9 +285,9 @@ def test_four_confirmations_are_counted_and_split_by_key(client: TestClient) -> 
     for body in bodies:
         assert _post(client, {"kind": "label", **body}).status_code == 200
     assert sum(_counts(client).values()) == 4
-    assert _counts(client).get(("comm", "data", "data", "confirmed"), 0) == 2
-    assert _counts(client).get(("comm", "data", "data", "rejected"), 0) == 1
-    assert _counts(client).get(("interest", "grade", "attitude", "corrected"), 0) == 1
+    assert _counts(client).get(("t_lc", "comm", "data", "data", "confirmed"), 0) == 2
+    assert _counts(client).get(("t_lc", "comm", "data", "data", "rejected"), 0) == 1
+    assert _counts(client).get(("t_lc", "interest", "grade", "attitude", "corrected"), 0) == 1
 
 
 def test_a_rejected_400_is_not_counted(client: TestClient) -> None:
@@ -322,6 +322,6 @@ def test_the_seam_survives_a_store_that_actually_awaits(
     ):
         assert _post(client, {"kind": "label", **body}).status_code == 200
     #: 🔴 **단언이 위 검사들과 똑같다** — 읽는 방법도 안 바뀌었다.
-    assert _counts(client)[("comm", "data", "data", "confirmed")] == 1
-    assert _counts(client)[("interest", "grade", "grade", "rejected")] == 1
+    assert _counts(client)[("t_lc", "comm", "data", "data", "confirmed")] == 1
+    assert _counts(client)[("t_lc", "interest", "grade", "grade", "rejected")] == 1
     assert sum(_counts(client).values()) == 2

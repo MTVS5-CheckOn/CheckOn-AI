@@ -51,6 +51,11 @@ from ai.db.repositories.inquiry_class_store import (
     InquiryClassStore,
     PgInquiryClassStore,
 )
+from ai.db.repositories.label_confirmation_store import (
+    LabelConfirmationStore,
+    PgLabelConfirmationStore,
+    default_label_confirmation_store,
+)
 from ai.db.repositories.pack_store import PgPackResultStore
 from ai.db.repositories.run_store import (
     InMemoryRunStore,
@@ -99,6 +104,24 @@ def build_inquiry_class_store(
     if settings.store_backend == _PG:
         return PgInquiryClassStore(sessionmaker=get_sessionmaker())
     return _default_inquiry_class_store()
+
+
+def build_label_confirmation_store(
+    settings: DbSettings | None = None,
+) -> LabelConfirmationStore:
+    """라벨 확정 **집계** 저장소 — 99 #239(승인: 염준영 · 2026-08-25).
+
+    🔴 인메모리도 **프로세스 공용 1개**다(`build_inquiry_class_store` 와 같은 규약) —
+    라우터와 검사가 같은 수를 봐야 한다.
+    ⚠ 🔴 **PG 는 매번 새로 만든다** — 상태가 DB 에 있어 인스턴스를 공유할 이유가 없다.
+    🔴 **분기가 여기 있는 이유**: `test_store_backend_default_assembly.py` 가
+    «`store_backend` 를 보는데 **아무도 안 보는 자리**» 를 잡는다 — 저장소 모듈 안에
+    두면 조립 루트가 그것을 안 부른다(실측 2026-08-25 · 그 가드가 이 회차에 red 를 냈다).
+    """
+    settings = settings or get_db_settings()
+    if settings.store_backend == _PG:
+        return PgLabelConfirmationStore(sessionmaker=get_sessionmaker())
+    return default_label_confirmation_store()
 
 
 def build_run_store(settings: DbSettings | None = None) -> RunStore:

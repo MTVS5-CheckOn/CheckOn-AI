@@ -70,7 +70,10 @@ def test_erd_parsed_34_tables() -> None:
     # 38 → 39(2026-08-12): counsel_context_bundle — 워커 입력 묶음의 정본(㉻).
     #   ⚠ 읽기 모델(38번)과 **다른 생애주기**라 합치지 않았다. ⚠ 양자 승인 대상.
     # 39 → 41(2026-08-21): PG 요청·결과 참조의 프로세스 간 정본.
-    assert len(ERD_TABLES) == 41, f"ERD 테이블 수 {len(ERD_TABLES)} != 41"
+    # 41 → 42(2026-08-25): label_confirmation_stat — 라벨 확정 집계의 **누적 자리**.
+    #   🔴 프로세스 안 카운터는 재배포마다 0인데 근거는 한 달 단위다(99 #239).
+    #   ⚠ 개인 참조 0(guardian_ref·FK 없음). ⚠ 양자 승인 대상 — 승인: 염준영 2026-08-25.
+    assert len(ERD_TABLES) == 42, f"ERD 테이블 수 {len(ERD_TABLES)} != 42"
 
 
 def test_table_set_matches_erd() -> None:
@@ -149,6 +152,19 @@ EXPECTED_UNIQUES: dict[str, set[frozenset[str]]] = {
         frozenset({"tenant_id", "student_ref", "week_start", "feature_version"})
     },
     "idempotency_record": {frozenset({"tenant_id", "endpoint", "idempotency_key"})},
+    #: 🔴 이 유니크가 곧 UPSERT 키다(99 #239) — 별도 인덱스를 안 만든 이유이기도 하다.
+    "label_confirmation_stat": {
+        frozenset(
+            {
+                "tenant_id",
+                "week_start",
+                "axis",
+                "suggested_value",
+                "confirmed_value",
+                "action",
+            }
+        )
+    },
     "weakness_map": {frozenset({"tenant_id", "student_ref", "graph_version", "week_start"})},
     "item_candidate": {frozenset({"tenant_id", "set_id", "slot_index", "attempt_no"})},
     "problem_item": {frozenset({"set_id", "slot_index"})},
