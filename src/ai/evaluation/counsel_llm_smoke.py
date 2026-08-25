@@ -1732,7 +1732,28 @@ def _blind_spots(usage: Mapping[str, Any], s4: Mapping[str, Any]) -> list[str]:
 # ── 실행 ─────────────────────────────────────────────────────────
 
 
-async def _main_async(run_date: str) -> int:
+def planned_calls(signals: int) -> dict[str, int]:
+    """🔴 이 회차가 태울 실 LLM 콜 수 — **단계에서 유도한다**(99 #260 ⓑ · №116).
+
+    ⚠ 🔴 **상수로 박지 않는다** — 단계가 늘거나 표본이 바뀌면 그 수가 조용히 갈리고,
+    그러면 «상한을 걸었다» 가 거짓이 된다(이 저장소가 반복해서 밟은 형태).
+    ⇒ 각 단계의 **실제 표본에서** 센다.
+    """
+    #: 🔴 `_run_s3` 와 **같은 자리에서** 읽는다(`_golden` 경유) — 다른 데서 읽으면
+    #: 그날부터 정본이 둘이 되고 예상 콜 수가 실제와 갈린다.
+    golden = _golden("tests.ai.golden.refine_attack.test_refine_attack")
+    s2 = len(_s2_cases())
+    s3 = len(golden._STATIC_ATTACKS) + len(_POST_GEN_ATTACKS)
+    return {
+        "S1": signals * _REPEATS,
+        "S2": s2,
+        #: S5 는 S2-① 을 **2회** 다시 돈다(`_run_s5`).
+        "S5": 2,
+        "S3": s3,
+    }
+
+
+async def _main_async(run_date: str, max_calls: int) -> int:
     # 🔴 산출 경로 확정·선점 검사를 **가장 먼저** — LLM 호출을 태우기 전에 충돌을 잡는다.
     report_file, raw_file = resolve_outputs(run_date)
     preflight = _preflight()
@@ -1747,6 +1768,26 @@ async def _main_async(run_date: str) -> int:
     }
     print(f"   데모: 학생 {demo['students']}명 · 신호 {demo['signals']}건 "
           f"· threshold v{demo['threshold_version']}")
+
+    #: 🔴 **시작 전에 거부한다 — 부분 실행을 지원하지 않는다**(99 #260 ⓑ · №116).
+    #: 🔴 **왜 부분 실행을 안 하나** — 이 러너는 **전량이 아니면 안전 판정이 안 선다**:
+    #: `_verdict` 가 A1~A7 을 다 못 재면 «판정 불가» 를 낸다(#259 ⓐ). ⇒ 반쯤 돌려 봐야
+    #: **얻는 것이 없고 콜만 태운다.**
+    #: ⚠ 🔴 ⓐ(예산을 세 `_CountingProvider` 에 주입) 기각 — 가장 크고, 얻는 것이 그
+    #: 쓸모없는 부분 실행이다. 🔴 ⓒ(관문에서 예외) 기각 — `LlmUnavailable` 로 던지면
+    #: 단계들이 **장애로 삼켜** 상한이 「장애」로 둔갑한다(#259 가 고친 바로 그 형태).
+    #: 🔴 **세는 곳(`_CountingProvider`)은 그대로 둔다 — 시작 전에만 본다.**
+    plan = planned_calls(demo["signals"])
+    total = sum(plan.values())
+    breakdown = " + ".join(f"{k} {v}" for k, v in plan.items())
+    print(f"   🔴 콜 상한 {max_calls} · 이 회차 예상 **{total}콜**({breakdown})")
+    if max_calls < total:
+        print(
+            f"⛔ **거부 — 안 돌린다.** {total}콜이 필요한데 상한이 {max_calls} 다."
+            " 🔴 이 러너는 **전량이 아니면 안전 판정이 안 선다**(#259 ⓐ) —"
+            " 부분 실행을 지원하지 않는다. 실 LLM **0콜**을 태웠다."
+        )
+        return 2
 
     observers: list[_CountingProvider] = []
     data: dict[str, Any] = {"run_date": run_date, "preflight": preflight, "demo": demo}
@@ -1804,6 +1845,13 @@ def main() -> None:
     # 🔴 필수다(기본값 없음). 오늘 날짜를 기본으로 넣는 것도 안 된다 — 실행일과 리포트
     #   날짜가 다를 수 있고, 명시하게 하는 편이 사고를 막는다(99 ⓝ②).
     parser.add_argument(
+        "--max-calls",
+        type=int,
+        required=True,
+        help="총 실 LLM 콜 상한(필수) — 예상보다 작으면 **시작 전에 거부**한다. "
+        "`0` 이면 0콜로 배선만 확인한다",
+    )
+    parser.add_argument(
         "--date",
         required=True,
         help="실행일 YYYY-MM-DD(같은 날 재실행은 -N 접미) — 리포트 파일명이 된다",
@@ -1812,7 +1860,9 @@ def main() -> None:
     #: 골든 공격 테이블 import(정의 중복 회피) — 🔴 종전엔 `Path.cwd()` 하나였고
     #: `tests/ai/fakes`가 빠져 **6차가 S2 문 앞에서 죽었다**. 정본은 pytest ini다.
     _ensure_test_import_path()
-    raise SystemExit(asyncio.run(_main_async(args.date)))
+    if args.max_calls < 0:
+        raise SystemExit("❌ --max-calls는 음수일 수 없다")
+    raise SystemExit(asyncio.run(_main_async(args.date, args.max_calls)))
 
 
 if __name__ == "__main__":
