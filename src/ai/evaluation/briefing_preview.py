@@ -24,6 +24,7 @@ import inspect
 import re
 import time
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
@@ -66,6 +67,9 @@ from ai.runtime.redaction import redact
 #:                ⇒ 🔴 **응답을 받은 45건은 전부 게이트를 통과했다(45/45 = 100%)**
 #:                ⇒ 위 70%·67% 는 **가용성 × 통과율**이고, 이 회차의 가용성은
 #:                  **68%**(45/66)였다. 🔴 **품질 수치로 읽으면 안 된다.**
+#:                🔴 ⚠ **(2026-08-25 · №112 정정) 이 68% 도 45/45 도 벤더에 대한
+#:                  사실이 아니었다 — 측정기 결함이 만든 수다**(99 #255). 🔴 **지우지
+#:                  않는다** — 지우면 «왜 두 수가 다른가» 를 다음 사람이 못 안다.
 #: 🔴 ⑤ 하한    : 🔴 **이 수는 「첫 시도」 통과율이고 프로덕션의 하한**이다 —
 #:                `make_brief` 는 게이트 실패 시 `MAX_REGEN` 회 **재생성**하지만
 #:                이 러너는 안 한다(`_assert_first_try_only` 가 그 사실을 못 박는다).
@@ -82,6 +86,9 @@ from ai.runtime.redaction import redact
 #:                가용성 **68%** (45/66) · 게이트 사유 실패 **0건** ⇒ 응답 온 45 는 **45/45**
 #:                ⚠ 🔴 **위 첫 측정과 통과 수가 한 건도 안 다르다**(23/33 · 22/33 · 10/11).
 #:                🔴 벤더가 흔들렸다면 이럴 수 없다 — **결정론적 원인**이라는 뜻이다.
+#:                🔴 ⚠ **(№112 정정) 이 수도 측정기 결함분이다** — 아래 세 번째 측정이
+#:                  같은 표본에서 **가용성 100%** 를 냈다. 🔴 **평균 지연도 오염돼 있었다**:
+#:                  즉시 실패한 콜(≈0ms)이 평균에 섞여 **낮게** 나왔다.
 #: 🔴 ⑤ 하한    : 위와 같다(첫 시도 · 재생성 없음)
 #:
 #: 🔴 **⑥ 그리고 그 원인을 이번에 갈랐다(99 #255)** — 🔴 **벤더 가용성이 아니라 측정기다.**
@@ -97,6 +104,24 @@ from ai.runtime.redaction import redact
 #:   ⚠ 🔴 **99 #218 · №100 과 같은 패턴**이다 — 「한 루프에 묶인 자원을 다른 루프에서 쓴다」.
 #:   🔴 **이 회차는 재는 회차라 안 고쳤다**(#255 에 처방 갈래를 적어 뒀다).
 #:   ⚠ 🔴 그래서 «가용성 68%」는 **벤더에 대한 사실이 아니다** — 인용하지 마라.
+#:
+#: ━━ 🔴 **세 번째 측정(2026-08-25 · №112) — ⓐ 적용 후. 덮어쓰지 않고 덧붙인다** ━━
+#: 🔴 ① 잰 날짜 : **2026-08-25 (KST)** · 같은 날 세 번째
+#: 🔴 ② 버전    : `PROMPT_VERSION` **0.3** (무변경 — 프롬프트·표본·재시도 무접촉)
+#: 🔴 ③ 표본    : **66콜** 한 번 (신호 11 × 변형 2 × 반복 3) · 예상 66 = 실제 66
+#: 🔴 ④ 수치    : 🔴 **가용성 100%** (66/66 · 실패 **0건**)
+#:                🔴 **첫 시도 게이트 통과율 100%** — v1 **33/33** 평균 **1963ms** ·
+#:                v3 **33/33** 평균 **2856ms**
+#:                🔴 **분모가 45 → 66 으로 늘었는데도 100% 다** — 종전 45/45 는 편향된
+#:                표본이었지만 **통과율 결론은 그대로**였다(이 회차가 답한 물음이다).
+#:                ⚠ 🔴 **평균 지연은 「올랐다」가 아니라 「이제 진짜다」** — 종전 값
+#:                (1463·1897ms)에는 즉시 실패한 콜이 섞여 있었다.
+#: 🔴 ⑤ 하한    : 위와 같다(첫 시도 · 재생성 없음) — 🔴 **프로덕션은 이보다 높다**
+#: 🔴 ⑥ 실패 순번 : **없음**(실패 0). 🔴 **공차 3 등차수열이 사라졌다 — ⓐ 의 증명이다.**
+#:                ⚠ 🔴 판정 기준은 **돌리기 전에** 정했다: «실패 0» 이 아니라
+#:                **«각 변형 첫 콜에 몰리는 수열이 없을 것»**. 실패가 남아도 수열이
+#:                없으면 처방은 든 것이다. 🔴 **이 칸을 상설로 둔다**(로그 220 —
+#:                «몇 건 실패」만 세지 말고 «몇 번째에 실패」를 같이 세라).
 #: 🔴 **산출 본문은 여기 안 적는다**(불변식 3 · 99 #80) — 통과율·지연은 개인정보가 아니다.
 _REPEATS = 3
 _RESULT_PATH = Path.cwd() / "briefing_preview_result.md"
@@ -427,8 +452,64 @@ def _breakdown(ledger: _Ledger, signals: int, calls: int) -> list[str]:
     return lines
 
 
-def run() -> int:
+async def _run_all(
+    signals: list[Signal],
+    contexts: Mapping[str, BriefingContext],
+    context: ExecutionContext,
+    v1_totals: _Totals,
+    v2_totals: _Totals,
+    ledger: _Ledger,
+) -> list[str]:
+    """🔴 **전 변형·전 신호를 한 이벤트 루프 안에서** 돈다(99 #255 ⓐ · №112).
+
+    ⚠ 🔴 종전에는 `run()` 이 **변형마다** `asyncio.run` 을 불렀다(22회). provider
+    (`AsyncOpenAI`)는 **한 번 만들어 22개 루프에 걸쳐 재사용**됐고, 앞 루프가 닫히며
+    커넥션 풀이 죽어 🔴 **다음 루프의 첫 콜이 그 시체를 잡았다** — 실패 21건이 전부
+    거기였다(실패 순번 4·7·10…64 = 공차 3 등차수열 · 99 #255).
+    🔴 그 21건이 «가용성 68%» 로 기준선에 적혔다 — **벤더에 대한 사실이 아니었다**.
+
+    🔴 **provider 도 이 안에서 만든다** — 밖에서 만들면 같은 결함이다(루프가 다르다).
+    ⚠ 🔴 ⓑ(루프마다 provider 재생성)는 기각했다 — 커넥션 재사용이 없어져 **매번 새
+    TLS 핸드셰이크**가 되고 🔴 **지연 수치가 오염된다**(측정기를 고치려다 측정을 망친다).
+    🔴 저장소 선례도 ⓐ 쪽이다 — 다른 러너 6개(`counsel_preview`·`problem_preview`·
+    `report_llm_smoke`·`classify_eval`·`counsel_llm_smoke`·`pg_ledger_preflight`)는
+    전부 **최상위에서 한 번만** 감싼다. 🔴 **이 파일만 예외였다.**
+    """
     provider = build_brief_provider(BriefingSettings(llm_provider="openai_compat"))
+    body: list[str] = []
+    for signal in signals:
+        ctx = contexts[signal.signal_id]
+        v1 = await _run_variant(
+            provider,
+            _v1_prompt(signal),
+            frozenset(_NUMBER_RE.findall(signal.brief.text)),
+            signal.brief.text,
+            context,
+            v1_totals,
+            ledger,
+            signal.signal_type.value,
+            "v1",
+        )
+        v2 = await _run_variant(
+            provider,
+            _assemble_prompt(ctx),
+            ctx.allowed_numbers(),
+            ctx.fallback_text,
+            context,
+            v2_totals,
+            ledger,
+            signal.signal_type.value,
+            "v3",
+            #: 🔴 값을 복제하지 않고 **프로덕션 파라미터에서 읽는다**(99 #02) —
+            #:   복제하면 프로덕션만 바뀌었을 때 프리뷰가 낡은 채로 초록이다.
+            #:   2026-08-13 현재 None(천장 없음 · 99 #54).
+            max_tokens=BRIEF_GEN_PARAMS.max_tokens,
+        )
+        body.extend(_render_signal(signal, ctx, v1, v2))
+    return body
+
+
+def run() -> int:
     response = detect(build_demo_request())
     signals = list(response.signals)
     if not signals:
@@ -439,40 +520,10 @@ def run() -> int:
     context = _context()
     v1_totals, v2_totals = _Totals(), _Totals()
     ledger = _Ledger(started=time.monotonic())
-    body: list[str] = []
-    for signal in signals:
-        ctx = contexts[signal.signal_id]
-        v1 = asyncio.run(
-            _run_variant(
-                provider,
-                _v1_prompt(signal),
-                frozenset(_NUMBER_RE.findall(signal.brief.text)),
-                signal.brief.text,
-                context,
-                v1_totals,
-                ledger,
-                signal.signal_type.value,
-                "v1",
-            )
-        )
-        v2 = asyncio.run(
-            _run_variant(
-                provider,
-                _assemble_prompt(ctx),
-                ctx.allowed_numbers(),
-                ctx.fallback_text,
-                context,
-                v2_totals,
-                ledger,
-                signal.signal_type.value,
-                "v3",
-                #: 🔴 값을 복제하지 않고 **프로덕션 파라미터에서 읽는다**(99 #02) —
-                #:   복제하면 프로덕션만 바뀌었을 때 프리뷰가 낡은 채로 초록이다.
-                #:   2026-08-13 현재 None(천장 없음 · 99 #54).
-                max_tokens=BRIEF_GEN_PARAMS.max_tokens,
-            )
-        )
-        body.extend(_render_signal(signal, ctx, v1, v2))
+    #: 🔴 **여기 한 번뿐이다** — 이 파일에서 `asyncio.run` 은 이 자리가 유일하다.
+    body = asyncio.run(
+        _run_all(signals, contexts, context, v1_totals, v2_totals, ledger)
+    )
 
     report = "\n".join(
         [
