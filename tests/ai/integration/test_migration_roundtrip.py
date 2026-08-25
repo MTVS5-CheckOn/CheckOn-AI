@@ -93,9 +93,39 @@ def _reset_schema() -> None:
     asyncio.run(_run("DROP SCHEMA public CASCADE", "CREATE SCHEMA public"))
 
 
+def _restore_schema() -> None:
+    """🔴 **되돌린다 — 「다시 비우기」가 아니다**(2026-08-25 · 99 #249).
+
+    ⚠ 🔴 종전 `finally` 가 `_reset_schema()` 였다. 그건 **빈 스키마로 끝내는 것**이라
+    **앞선 검사들이 `create_all` 로 만든 테이블이 사라진 채** 다음 검사가 시작했다 —
+    실측(#445): 이 파일을 단독으로 돌린 뒤 `-m integration` 전체를 돌리면
+    `test_counsel_agent_step_pg_roundtrip.py` **5건이 red** 였고, 그 파일만 단독으로는
+    5 passed 였다(**순서 의존**).
+    🔴 **선례 형식이다** — 다른 검사들이 `Base.metadata.create_all` 로 자기 것을 만든다
+    (`test_inquiry_class_schema.py` · `test_pg_default_flip_counsel.py`).
+    ⚠ 🔴 «원래대로» 보다 **넓게** 만든다(전부). 무해한 이유: 뒤따르는 검사들도
+    `create_all` 로 만드는 형식이라 **이미 있으면 그냥 지나간다**(checkfirst).
+    """
+
+    async def _create() -> None:
+        engine = create_async_engine(get_db_settings().database_url, poolclass=NullPool)
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+        finally:
+            await engine.dispose()
+
+    _reset_schema()
+    asyncio.run(_create())
+
+
 @pytest.fixture
 def clean_database() -> Iterator[None]:
-    """빈 스키마에서 시작한다 — 앞선 테스트의 `create_all` 잔재를 걷는다."""
+    """빈 스키마에서 시작하고 🔴 **끝나면 되돌린다**(99 #249).
+
+    ⚠ 🔴 시작의 «걷는다» 는 맞는 일이다 — 이 파일은 «alembic 이 **실제로** 테이블을
+    만드나» 를 재므로 **빈 스키마**라야 한다. 🔴 **틀렸던 것은 「끝내는 방식」**이다.
+    """
     try:
         asyncio.run(_run("SELECT 1"))
     except Exception:  # noqa: BLE001 — 접속 불가 → skip
@@ -104,7 +134,7 @@ def clean_database() -> Iterator[None]:
     try:
         yield
     finally:
-        _reset_schema()
+        _restore_schema()
 
 
 def test_upgrade_head_creates_exactly_the_model_tables(clean_database: None) -> None:
