@@ -11,7 +11,7 @@ from ai.evaluation.briefing_preview import _breakdown, _Failure, _Ledger, _scrub
 
 
 def _ledger(*failures: _Failure) -> _Ledger:
-    return _Ledger(started=0.0, ordinal=66, failures=list(failures))
+    return _Ledger(started=0.0, max_calls=66, ordinal=66, failures=list(failures))
 
 
 def _fail(ordinal: int, signal: str, *, kind: str = "llm:LlmUnavailable") -> _Failure:

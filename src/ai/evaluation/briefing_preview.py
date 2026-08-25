@@ -183,9 +183,17 @@ class _Failure:
 
 @dataclass
 class _Ledger:
-    """두 변형이 **함께 쓰는** 실행 원장 — 시간 축이 실행 전체로 이어져야 한다."""
+    """두 변형이 **함께 쓰는** 실행 원장 — 시간 축이 실행 전체로 이어져야 한다.
+
+    🔴 **`max_calls` 에 기본값을 두지 않는다**(99 #256 · №113) — 기본값이 있으면
+    프로그램에서 부를 때 «상한 없음» 이 다시 생긴다. 부르는 쪽이 **매번 정한다**.
+    """
 
     started: float
+    max_calls: int
+    """🔴 **총 실 LLM 콜 상한.** `0` 이면 한 콜도 안 태우고 배선만 확인한다."""
+    capped: bool = False
+    """상한에 걸려 멈췄나 — 🔴 **조용히 자르지 않기 위한 표식**."""
     ordinal: int = 0
     failures: list[_Failure] = field(default_factory=list)
 
@@ -285,6 +293,10 @@ async def _run_variant(
     )
     attempts: list[_Attempt] = []
     for index in range(1, _REPEATS + 1):
+        #: 🔴 **상한에 닿으면 여기서 멈춘다**(99 #256) — 넘긴 뒤 자르는 게 아니다.
+        if ledger.ordinal >= ledger.max_calls:
+            ledger.capped = True
+            break
         totals.calls += 1
         ledger.ordinal += 1
         start = time.monotonic()
@@ -332,6 +344,17 @@ def _cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
+_CAPPED_CELLS: Final = "(상한으로 미실행) | ⛔ 콜 상한"
+
+
+def _attempt_cells(attempt: _Attempt | None) -> str:
+    """표의 두 칸(원문 · 게이트) — 🔴 **없으면 「상한으로 미실행」이라고 적는다**."""
+    if attempt is None:
+        return _CAPPED_CELLS
+    verdict = "✅" if attempt.gate_ok else f"❌ {attempt.gate_reason}"
+    return f"{_cell(attempt.raw)} | {verdict} ({attempt.latency_ms}ms)"
+
+
 def _render_signal(
     signal: Signal,
     ctx: BriefingContext,
@@ -353,12 +376,15 @@ def _render_signal(
         "| 회차 | v1 원문(다듬기) | v1 게이트 | v3 원문(근거 작성) | v3 게이트 |"
     )
     lines.append("| --- | --- | --- | --- | --- |")
-    for a1, a2 in zip(v1, v2, strict=True):
-        v1v = "✅" if a1.gate_ok else f"❌ {a1.gate_reason}"
-        v2v = "✅" if a2.gate_ok else f"❌ {a2.gate_reason}"
+    #: 🔴 **길이가 다를 수 있다** — 콜 상한이 변형 **중간**에 걸리면 v1 만 있고 v3 은
+    #: 없다(99 #256 · №113 뒤집기 ②가 실제로 그렇게 터뜨렸다: `zip(strict=True)` →
+    #: `ValueError`). ⚠ 🔴 `strict=False` 로 **조용히 자르지 않는다** — 그러면 «그 회차는
+    #: 원래 없었다» 로 읽힌다. 🔴 **없는 칸을 「상한」이라고 적는다.**
+    for index in range(max(len(v1), len(v2))):
+        a1 = v1[index] if index < len(v1) else None
+        a2 = v2[index] if index < len(v2) else None
         lines.append(
-            f"| {a1.index} | {_cell(a1.raw)} | {v1v} ({a1.latency_ms}ms) "
-            f"| {_cell(a2.raw)} | {v2v} ({a2.latency_ms}ms) |"
+            f"| {index + 1} | {_attempt_cells(a1)} | {_attempt_cells(a2)} |"
         )
     return lines
 
@@ -405,6 +431,22 @@ def _summary(name: str, totals: _Totals) -> list[str]:
     else:
         lines.append("- 실패 사유 분포: (없음 — 전 회차 통과)")
     return lines
+
+
+def _cap_note(ledger: _Ledger, signals: int) -> str:
+    """🔴 **상한에 걸렸으면 산출 머리에 적는다**(99 #256).
+
+    ⚠ 🔴 조용히 자르면 «전량 돌았다» 로 읽힌다 — #110 이 «45 가 무작위 표본인가» 를
+    못 물었던 것과 같은 자리다. 🔴 **잘렸다는 사실이 수와 같은 화면에 있어야 한다.**
+    """
+    planned = signals * 2 * _REPEATS
+    if not ledger.capped:
+        return f"🔴 콜 상한 **{ledger.max_calls}** · 전량 **{planned}** 을 다 돌았다."
+    return (
+        f"🔴 ⚠ **콜 상한 {ledger.max_calls} 에 걸려 멈췄다 — 전량이 아니다**"
+        f"(계획 {planned} 중 **{ledger.ordinal}** 만 돌았다). "
+        "아래 수치는 **부분 표본**이다."
+    )
 
 
 def _breakdown(ledger: _Ledger, signals: int, calls: int) -> list[str]:
@@ -509,7 +551,7 @@ async def _run_all(
     return body
 
 
-def run() -> int:
+def run(max_calls: int) -> int:
     response = detect(build_demo_request())
     signals = list(response.signals)
     if not signals:
@@ -519,7 +561,7 @@ def run() -> int:
 
     context = _context()
     v1_totals, v2_totals = _Totals(), _Totals()
-    ledger = _Ledger(started=time.monotonic())
+    ledger = _Ledger(started=time.monotonic(), max_calls=max_calls)
     #: 🔴 **여기 한 번뿐이다** — 이 파일에서 `asyncio.run` 은 이 자리가 유일하다.
     body = asyncio.run(
         _run_all(signals, contexts, context, v1_totals, v2_totals, ledger)
@@ -532,6 +574,7 @@ def run() -> int:
             f"신호 {len(signals)}건 × {_REPEATS}회 × 2변형 = "
             f"{v1_totals.calls + v2_totals.calls}회 호출 · 현 프로덕션 게이트로 동일 판정 · "
             f"프롬프트·게이트 무수정(재생성 상한 {MAX_REGEN})",
+            _cap_note(ledger, len(signals)),
             *body,
             "\n## 요약",
             "",
@@ -556,8 +599,27 @@ def run() -> int:
 
 
 def main() -> None:
-    argparse.ArgumentParser(description="브리핑 품질 리뷰 v1 vs v2(실 LLM 3회/신호)").parse_args()
-    raise SystemExit(run())
+    parser = argparse.ArgumentParser(
+        description="브리핑 품질 리뷰 v1 vs v3(실 LLM · 신호당 변형 2 × 반복 3)"
+    )
+    #: 🔴 **필수다 — 기본값을 안 둔다**(99 #256 · №113).
+    #: ⚠ 🔴 `labels_llm_smoke` 는 `--max-calls` 에 기본 20 을 두는데, 🔴 **그 러너는
+    #: 전량이 20 이라 「기본값 = 전량」이고 사실상 아무것도 안 막는다.** 여기서 기본
+    #: 66 을 두면 같은 일이 된다 — **이번 사고가 정확히 「막는 것이 없어서」 났다**
+    #: (로그 221: `.env` 의 `CHECKON_ALLOW_REAL_LLM=1` 이 어떤 기동 방식으로도 산다).
+    #: 🔴 필수로 해도 **깨질 호출부가 없다** — 전수 확인: 이 러너를 코드에서 부르는
+    #: 곳은 없고 CLI 뿐이다(검사들은 `_breakdown`·`_scrub` 만 import 한다).
+    #: 🔴 그리고 `--max-calls 0` 이 **이번에 필요했던 그 동작**이다 — 0콜로 배선만 본다.
+    parser.add_argument(
+        "--max-calls",
+        type=int,
+        required=True,
+        help="총 실 LLM 콜 상한(필수) — 전량은 66. `0` 이면 0콜로 배선만 확인한다",
+    )
+    args = parser.parse_args()
+    if args.max_calls < 0:
+        raise SystemExit("--max-calls 는 0 이상이어야 한다")
+    raise SystemExit(run(args.max_calls))
 
 
 if __name__ == "__main__":
