@@ -524,6 +524,10 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 · 🔴 **`label`** — 갱신할 행이 **없다**. AI 는 개별 확정을 저장하지 않고 **집계만 늘린다**
   ⇒ 🔴 **재시도가 중복을 만든다.** 🔴 **재시도하지 마라 — 이 호출은 실패해도 된다.**
   🔴 확정의 **정본은 BE** 이고 AI 응답은 `accepted: true` 하나뿐이다(「받았다 ≠ 영속했다」).
+  🔴 **BE 도 재시도하지 않는다(2026-08-25 승우님 확정)** — 라벨 confirmation 에는
+  **주기적 재처리 흐름이 없다**: BE 가 정본으로 먼저 저장한 뒤 AI 에는 **한 번만** 전달하고,
+  실패해도 **재시도·Outbox·배치로 다시 보내지 않는다.** ⇒ 🔴 위의 «AI 집계는 재시도가
+  중복을 만든다» 와 **짝이 맞는다** — 양쪽이 같은 약속을 한 자리다.
   ⚠ 🔴 라벨을 얹으면서 위 문장의 전제가 깨졌는데 문면이 안 따라갔다 — 이 줄이 그 정정이다.
 
 ---
@@ -747,7 +751,7 @@ kind: `tag | label | classification | draft_edit`(강사 수정 diff → 문체 
 「못 했다」가 「없다」로 보인다).
 ⚠ `detail`·`reason`·본문은 응답에 싣지 않는다(원문 노출 방지 · `error_codes` §4).
 ⚠ 🔴 `meta` 에 사유를 실어 200 으로 내는 안은 **버렸다** — `meta` 는 `{execution_id, versions}`
-둘뿐이고 늘리려면 `api/envelope.py`(**양자 승인 13목록**)를 열어야 한다. 라벨 하나 때문에
+둘뿐이고 늘리려면 `api/envelope.py`(**양자 승인 목록** · `docs/02_ownership.md` §4-1)를 열어야 한다. 라벨 하나 때문에
 **공용 envelope 를 늘리지 않는다.**
   · 검사: `tests/ai/contract/test_labels_response_semantics.py::test_all_history_blocked_is_a_500_not_an_empty_200`
 

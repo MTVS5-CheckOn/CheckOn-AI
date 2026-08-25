@@ -173,7 +173,7 @@ evidence 항목마다 role/metric/observed/baseline/sample_size/occurred_on 을 
 
 ## 4. ⚠ 계약 변경 범위
 
-`contracts/detection.py`는 **양자 승인 13파일이 아니다**(CLAUDE.md §2 대조 — 비해당) —
+`contracts/detection.py`는 **양자 승인 목록에 없다**(`docs/02_ownership.md` §4-1 대조 — 비해당) —
 소유는 박진희(`02_ownership.md`). 다만 **백엔드가 소비하는 계약**이므로 합의 없이 바꾸지 않는다.
 필드 추가는 optional로 넣어 기존 소비자를 안 깨는 방향(계약 축은 `_CONTRACT_VERSION`).
 
