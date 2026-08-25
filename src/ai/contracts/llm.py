@@ -12,9 +12,9 @@ llm/providers/ 아래 B가 소유한다. 개발·테스트는 FakeProvider로 �
 """
 
 from enum import StrEnum
-from typing import Protocol, runtime_checkable
+from typing import Protocol, Self, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ai.contracts.execution import ExecutionContext, GenerationParams
 
@@ -88,6 +88,50 @@ class TokenUsage(BaseModel):
     cost_usd: float = Field(ge=0.0)
 
 
+class FinishReasonState(StrEnum):
+    """finish_reason을 읽은 층과 벤더 값의 존재 여부를 분리하는 상태."""
+
+    UNCOLLECTED = "uncollected"
+    """대역·기존 provider가 이 관측값을 채우지 않았다."""
+
+    VENDOR_NOT_PROVIDED = "vendor_not_provided"
+    """어댑터는 응답을 읽었지만 벤더 응답에 필드 자체가 없었다."""
+
+    VENDOR_PROVIDED = "vendor_provided"
+    """벤더 응답에 필드가 있었으며 value에 원문 값을 보존했다."""
+
+
+class FinishReasonObservation(BaseModel):
+    """벤더 finish_reason의 수집 상태와 열린 원문 값.
+
+    벤더 어휘는 닫지 않는다. 새 finish_reason이 추가돼도 호출을 실패시키지 않고 원문
+    문자열을 기록해야 원인 분석 자료가 사라지지 않는다.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    state: FinishReasonState
+    value: str | None = None
+
+    @model_validator(mode="after")
+    def validate_value_matches_state(self) -> Self:
+        if self.state is not FinishReasonState.VENDOR_PROVIDED and self.value is not None:
+            raise ValueError("벤더 제공 상태가 아니면 finish_reason 값이 없어야 한다")
+        return self
+
+    @classmethod
+    def uncollected(cls) -> Self:
+        return cls(state=FinishReasonState.UNCOLLECTED)
+
+    @classmethod
+    def vendor_not_provided(cls) -> Self:
+        return cls(state=FinishReasonState.VENDOR_NOT_PROVIDED)
+
+    @classmethod
+    def vendor_provided(cls, value: str | None) -> Self:
+        return cls(state=FinishReasonState.VENDOR_PROVIDED, value=value)
+
+
 class LLMRequest(BaseModel):
     """provider에 넘기는 요청.
 
@@ -128,6 +172,10 @@ class LLMResult(BaseModel):
     model: str
     usage: TokenUsage
     latency_ms: int = Field(ge=0)
+    finish_reason: FinishReasonObservation = Field(
+        default_factory=FinishReasonObservation.uncollected
+    )
+    """벤더 종료 사유 관측. 미수집·필드 미제공·제공값을 서로 다른 상태로 보존한다."""
 
 
 @runtime_checkable
