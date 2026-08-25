@@ -21,7 +21,7 @@
 
 - 폴더 구조는 지시서 고정 — **구조 재편 금지.** 소유권: `docs/02_ownership.md`.
 - capability 간 참조는 `contracts/`의 타입으로만. 상대 capability 내부 직접 import 금지.
-- **양자 승인 13파일**(`contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py·agents.py·graphrag.py`, `evidence/models.py`의 EvidenceRef, `runtime/metrics.py` 이벤트 스키마, `api/app.py·api/envelope.py`, `db/models.py·db/base.py`)은 에이전트가 임의 수정하지 말 것 — 변경이 필요하면 PR 설명에 사유를 쓰고 사람 승인을 기다린다.
+- **양자 승인 12파일**(`contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py·agents.py·graphrag.py`, `evidence/models.py`의 EvidenceRef, `api/app.py·api/envelope.py`, `db/models.py·db/base.py` — 🔴 정본은 `docs/02_ownership.md` §4-1)은 에이전트가 임의 수정하지 말 것 — 변경이 필요하면 PR 설명에 사유를 쓰고 사람 승인을 기다린다.
   - 🔴 **승인은 GitHub 리뷰 또는 슬랙·문서로 하되, PR 설명에 「누가·언제·어디서 승인했는지」를 적는다.** ⚠ GitHub `reviews=0` 그 자체는 위반이 아니다 — **PR 설명에 승인 근거가 없는 것**이 위반이다. ⚠ 🔴 승인이 없으면 **「승인 기록 없음(날짜 확인)」을 그대로 적는다.** 사후에 approve 를 누르지 않는다 — **기록을 고치는 것**이다. 🔴 그리고 그 PR 이 **어느 안건·절을 닫는가**를 같은 자리에 적는다. ⚠ 닫히는데 상태 칸이 안 갱신되면 **문서가 「아직 안 했다」고 말하는 동안 코드는 이미 돈다.**
 - 데이터 파일(`tone_map.yaml`·`buffer_lexicon.yaml`·`redaction_patterns.yaml`)은 대응 골든셋 통과가 머지 조건. 규칙을 프롬프트에 하드코딩하지 말고 데이터 파일로.
 

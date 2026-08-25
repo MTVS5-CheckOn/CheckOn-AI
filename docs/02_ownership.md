@@ -7,6 +7,8 @@
 > **v3 → v4 변경:** `db/models.py`·`db/base.py`를 공통 계약으로 편입하고, B 소유 문제생성 워커가 합류한 슈퍼바이저 경계를 확정했다. 슈퍼바이저 구현은 A 단독 소유, 공통 Job 상태·operation·결정론 라우팅 계약(`contracts/agents.py`)은 양자 승인, 각 워커 그래프는 해당 capability 오너가 소유한다. 양자 승인 대상은 **12곳**이었다(v5에서 13곳).
 >
 > **v4 → v5 변경(7/30, A 제기·B 수용):** `contracts/graphrag.py`(PR #36, B 작성)가 신설된 뒤 §3·§4·§5 어디에도 **소유 미등록**이었다 — 저장소 실측으로 이 문서와 `CLAUDE.md` 양쪽에 `graphrag` 문자열이 0건이었다. A-5(PR #37)로 **A 소유 `evidence/` resolver가 `EvidencePack`·`EvidencePackAnchor`를 직접 소비**하게 되면서 A의 계약이 B 단독 파일에 매달리는 구조가 됐다(형상을 두 곳에서 잡으면 드리프트). 따라서 공용 계약으로 편입한다 — 양자 승인 대상 **12곳 → 13곳**. 근거: `part_b/09_integration_proposals.md` §2-14(A 제기·B 수용, 2026-07-30) · `part_b/11_graphrag_knowledge_layer.md` §0.
+
+> **v5 → v6 변경(2026-08-25, B 승인):** 13곳 → **12곳**. `runtime/metrics.py` 제외 — 파일 부재 · 지표 정본은 `contracts/llm.py`(99 #240·#242·#245). 🔴 **수는 §4-1 한 곳에만 싣는다** — 참조 문서는 목록을 가리킨다.
 >
 > **원칙(불변)** — 폴더 구조는 AI 아키텍처 지시서 그대로 유지한다(사람 기준 재편 금지). 모든 폴더·파일에 단독 오너를 지정한다. "공동 소유"는 소유가 아니므로, 공동 영역은 최소화하고 변경 절차(양자 승인)로만 남긴다.
 >
@@ -56,7 +58,9 @@
 
 ## 4. 공동 영역의 변경 절차 (겹침을 규칙으로 관리)
 
-1. **양자 승인 대상 — 13곳:** `contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py·agents.py·graphrag.py`(★v5 — GraphRAG 경계 계약), `evidence/models.py`(EvidenceRef 스키마), `runtime/metrics.py`의 이벤트 스키마, `api/app.py·api/envelope.py`, `db/models.py·db/base.py`(ERD 스키마 — B의 문제·진단·워커 실행도 포함하므로 공용). 이 13곳만 두 명 승인, 나머지는 전부 단독 오너.
+1. **양자 승인 대상 — 12곳:** `contracts/execution.py·llm.py·gates.py·evaluation.py·taxonomy.py·agents.py·graphrag.py`(★v5 — GraphRAG 경계 계약), `evidence/models.py`(EvidenceRef 스키마), `api/app.py·api/envelope.py`, `db/models.py·db/base.py`
+   🔴 **이 줄이 수의 정본이다** — 다른 문서는 숫자를 싣지 말고 이 목록을 가리킨다(2026-08-25 · 99 #240). ⚠ 🔴 v5(12→13) 때 `03_coding_rules.md`·`README.md` 가 안 따라와 **stale 이었다** — 같은 드리프트를 두 번 겪었다.
+   ⚠ 🔴 **`runtime/metrics.py` 를 뺐다(v6 · B 승인 2026-08-25)** — 그 파일은 **존재하지 않고**, 만들면 «소비 0인 스키마» 가 된다. 비용·관측 지표의 정본은 **`contracts/llm.py` 의 `TokenUsage`** 이고 그건 이미 이 목록에 있다(99 #242·#245).(ERD 스키마 — B의 문제·진단·워커 실행도 포함하므로 공용). 이 13곳만 두 명 승인, 나머지는 전부 단독 오너.
    - **마이그레이션 파일은 양자 목록에 넣지 않는다** — `db/models.py`의 기계적 산출물이므로, 모델 diff가 포함된 PR에서 함께 리뷰되면 충분하다. 모델 무변경 마이그레이션(인덱스 조정 등)은 해당 테이블 오너 단독. 저장소(`db/repositories/`) 구현은 capability별 오너(detection 적재 = A).
 2. **경계를 넘는 입력:** B가 감지 산출을 더 원하면 A의 `contracts/detection.py`에 PR → A 승인. 반대 방향도 동일. **상대 capability 내부 파일 직접 수정은 금지**(지시서 2.2).
 3. **골든셋·평가:** `evaluation/detection_eval.py`·`draft_eval.py`·`import_eval.py` = A, `problem_eval.py` = B. golden/ 하위는 §5 트리의 코퍼스별 소유 — **(v2) `golden/tagging/`은 정답 라벨 확정이 [A+B]**(어휘집 §2 판정 기준 합의 후 각자 라벨링, 불일치가 경계 사례집 증보분). 엔진·프롬프트 버전업 시 골든셋 diff는 상호 리뷰(오너 아닌 쪽이 리뷰어).
@@ -119,7 +123,8 @@ ai/
 ├── registry/                           [박진희]    엔진 레지스트리 (규칙→GRU 교체 지점)
 │
 ├── runtime/                            [박진희]    관측성 · 마스킹 · 오류 분류
-│   ├── metrics.py                      [박진희+염준영]  ← 이벤트 스키마만 양자
+│   │  ⚠ 🔴 **`metrics.py` 는 없다(2026-08-25 · v6)** — 목록에서 뺐다. 만들게 되면
+│   │    그때 **편입을 협의**한다(99 #245). 지표 정본은 `contracts/llm.py`.
 │   ├── redaction.py                    [박진희]
 │   ├── redaction_patterns.yaml         [박진희]    ★v2 — 마스킹 정의서 P1~P8 (골든 코퍼스 통과가 머지 조건)
 │   └── errors.py                       [박진희]    에러·상태 코드 사전 §4 구현
@@ -132,7 +137,7 @@ ai/
 │       │  ⚠ 🔴 **`ops.py` 는 예외다(2026-08-24 · ⓒ 표기 · A 제안 · B 수용)** — 대응
 │       │    capability 가 없고 A 셋(detect·classify·counsel)·B 둘(diagnosis·problem)의
 │       │    버전 팩토리를 **전부 읽는다** ⇒ **공통 (A·B)**.
-│       │    🔴 양자 승인 13목록에는 **안 넣는다** — 읽기만 하고 시그니처를 안 정한다.
+│       │    🔴 **양자 승인 목록**(§4-1)에는 **안 넣는다** — 읽기만 하고 시그니처를 안 정한다.
 │       │    확인을 무는 검사: `tests/ai/contract/test_meta_versions_cover_every_scope.py`
 │       └── detect.py                   [박진희]    감지 라우터 (POST /v1/detect)
 │
@@ -141,7 +146,7 @@ ai/
 > 각 라우터가 `VERSION_SCOPE = RouterScope(접두, versions)`를 노출하고 `app.py`가 모은다(99 ㊓).
 > B의 pg 라우터도 `RouterScope`를 import하므로 **`RouterScope` 시그니처 변경은 B 라우터를
 > 깨뜨린다 — 바꾸려면 통보가 선행**이다.
-> ⚠ **양자로 승격하지 않았다** — 양자 13곳은 이 문서가 고정한 목록이고 늘리는 것은 B 협의
+> ⚠ **양자로 승격하지 않았다** — **양자 승인 목록**(§4-1)은 이 문서가 고정한 것이고 늘리는 것은 B 협의
 > 사항이다. 지금은 *"A 소유 · 공용 소비"* 로 적는다.
 > 🔴 **같은 자리가 셋째다** — 잡 원장(99 ㊐ · `agents/job_store.py`)·`reset_counsel_stores`(㊒)에
 > 이어서다. 로그 63이 세운 규율의 세 번째 사례: **"공용은 소유 위치가 아니라 소비자 수로

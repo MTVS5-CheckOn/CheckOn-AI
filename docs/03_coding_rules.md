@@ -91,7 +91,7 @@
 - PR은 **한 가지 일만** — "R4 구현 + 리팩토링 + 오타 수정" 금지, 3개로 쪼갠다. 목표 크기 ≤ 400줄(생성 파일 제외).
 - 커밋 메시지: `[모듈] 요약` (한국어 OK) — 예: `[detection] R4 어절 정규화 시간 비율 계산 추가`.
 - 미확정 안건에 걸린 코드는 `# TODO(Open-11):` 형식 — 안건 번호 없는 TODO 금지(추적 불가).
-- `docs/02_ownership.md` §4의 양자 승인 12곳·상대 capability 파일을 건드리는 PR은 본문 첫 줄에 `⚠ 승인 필요: [파일명]` 명시.
+- `docs/02_ownership.md` §4-1 의 **양자 승인 목록**·상대 capability 파일을 건드리는 PR은 본문 첫 줄에 `⚠ 승인 필요: [파일명]` 명시.
 - **PR을 올리기 전에** `uv run --frozen python -m ai.evaluation.pre_pr_verify`를 실행한다.
   이 명령은 ruff(`--no-cache`)·mypy(`--no-incremental`)·기본 pytest·실 PostgreSQL
   integration을 전부 실행하며, 실 LLM 보호 3건 외의 skip은 실패로 본다. 하나라도
