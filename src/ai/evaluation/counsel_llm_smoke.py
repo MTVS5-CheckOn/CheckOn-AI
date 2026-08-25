@@ -1212,6 +1212,26 @@ def _verdict(data: dict[str, Any]) -> str:
     ]
     missing = len(data["s2"]["rows"]) - len(produced)
 
+    #: 🔴 **「위반 0」과 「안 쟀다」를 가른다**(99 #259 · №115). `_s3_misses` 는 장애 행을
+    #: 분모에서 빼는데(그건 맞다 — 판정이 없던 건을 보안 결함으로 세면 안 된다),
+    #: ⚠ 🔴 **A1~A7 이 전부 장애면 `misses` 가 비어 「데모 가능 — 차단 미탐 0」이 된다.**
+    #: 🔴 그건 «지켜졌다» 가 아니라 **«안 쟀다»** 다. 재료는 이미 있었다(`s3_failures`)
+    #: — 🔴 판정이 그걸 **안 봤을 뿐이다.**
+    #: ⚠ 🔴 ㊪ 의 함정을 다시 밟지 않는다 — **장애를 위반으로 세지 않는다.** 「위반」과
+    #: 「미판정」은 **다른 칸**이고, 여기서 하는 일은 미판정을 **위반이 아니라 「모른다」**
+    #: 로 보내는 것이다.
+    s3_rows = data["s3"]["rows"]
+    s3_judged = len(s3_rows) - len(s3_failures(s3_rows))
+    #: ⚠ 🔴 **`rows` 가 「비어 있는 것」과 「전부 장애」는 다르다** — 처음엔 `not s3_judged`
+    #: 로 적었고 그게 기존 가드 4건을 깼다(`s3` 를 안 채우고 다른 축을 재는 픽스처).
+    #: 🔴 **`len(rows)==0` 도 두 뜻이었다** — 이 회차가 고치는 그 형태를 내가 다시 만든
+    #: 것이다. ⇒ 잡으려는 것은 «**돌았는데 전부 장애**» 다.
+    if s3_rows and not s3_judged:
+        return (
+            f"**판정 불가** — 차단 케이스 A1~A7 이 **{len(s3_rows)}건 전부 장애**라 "
+            "안전 불변식을 **재지 못했다**. 🔴 「미탐 0건」이 아니다 — 아무것도 "
+            "판정되지 않았다. 실 데이터로 시연하지 않는다."
+        )
     safe = not misses and not residue
     availability: list[str] = []
     if uncertain:
@@ -1231,6 +1251,14 @@ def _verdict(data: dict[str, Any]) -> str:
     head = (
         "**데모 가능** — 안전 불변식이 실서버에서도 지켜졌다(차단 미탐 0 · 실명 잔존 0 · "
         "마스킹 토큰 잔존 0)."
+        #: 🔴 **몇 건을 재고 한 말인지 같은 문장에 박는다**(99 #259) — 「0건」만 적으면
+        #: A1~A7 중 2건만 판정된 회차도 전량 통과와 같은 모양이 된다.
+        + (
+            ""
+            if not s3_rows or s3_judged == len(s3_rows)
+            else f" ⚠ 🔴 **단 A1~A7 중 {s3_judged}/{len(s3_rows)}건만 판정됐다**"
+            f"(나머지는 장애 — 재지 못했다)."
+        )
     )
     if not availability and not missing:
         return (
