@@ -452,18 +452,21 @@ async def _main_async(interval_ms: int, max_calls: int) -> int:
         #: 🔴 **`capped` 로 가르면 거짓이 된다** — 상한 3 에 3콜이 다 장애여도 `capped`
         #: 는 True 라 «하나도 안 돌았다» 로 적힌다(№114 뒤집기 ②가 실제로 그렇게
         #: 나왔다). 🔴 **가르는 것은 「몇 콜을 썼나」다.**
+        #: 🔴 **둘 다 exit 2 다 — 「판정 불가」**(№116 정정). #455 는 0(배선 확인)과
+        #: 1(전 건 장애)로 갈랐는데, 🔴 **둘 다 「안 쟀다」이지 「통과」도 「미달」도 아니다.**
+        #: ⚠ 0 을 내면 CI 가 **통과로 읽는다** — 이 회차가 막는 그 형태다.
+        #: 문면은 계속 갈라 적는다(«한 콜도 안 썼다» vs «썼는데 전 건 장애»).
         if budget.spent == 0:
             print(
                 f"  🔴 표본 **0건** — 콜 상한 {budget.max_calls} 이라 한 콜도 안 썼다."
-                " 배선만 확인했다(수치 없음)."
+                " 배선만 확인했다(수치 없음). **판정 불가**."
             )
-            return 0
-        #: 콜은 썼는데 판정이 0건이면 **전부 장애**다 — 그건 성공이 아니다.
+            return 2
         print(
             f"  ❌ 표본 0건 — {budget.spent}콜을 썼는데 **전 건 장애**"
-            f"({len(failures)}건). 수치를 못 낸다."
+            f"({len(failures)}건). 수치를 못 낸다. **판정 불가**."
         )
-        return 1
+        return 2
     topic_acc = tally.topic_hit / tally.total
     urgency_acc = tally.urgency_hit / tally.total
     recall = (
@@ -475,6 +478,27 @@ async def _main_async(interval_ms: int, max_calls: int) -> int:
     )
     sentiment_acc = tally.sentiment_hit / tally.total
     baselines = majority_baselines()
+    #: 🔴 **판정이 「안 돈 것」을 본다**(99 #259 ⓑ · №116). 종전에는
+    #: `injection_escapes == 0` 만 봐서 🔴 **한 건도 안 돌아도 True** 였다 — 부분 표본으로
+    #: «통과 ✅» 가 나가고 **exit 0** 이었다. ⚠ 🔴 `#455` 는 **출력 문면만** 고쳤다:
+    #: 산출에는 «전량 5 중 0 만 돌았다» 가 적히는데 **판정이 그걸 안 봤다.**
+    #: 🔴 «문면이 코드에 대해 거짓」의 **뒤집힌 판**이다 — «적었는데 판정이 안 본다».
+    #:
+    #: 🔴 **「0건 위반」 축과 「비율」 축을 다르게 다룬다:**
+    #:   · 🔴 인젝션·redaction 은 **0건 위반** 축이라 **전량을 돌아야 뜻이 선다**
+    #:     (`part_a/08:75` 의 합격 기준이 «A1~A7 전량 미탐 0건» 이다). 전량 미만이면
+    #:     «통과» 도 «미달» 도 아니고 🔴 **「판정 불가」** 다(#456 이 `_verdict` 에서 한 그대로).
+    #:   · 정확도(topic·urgency·complaint)는 **비율** 축이고, 이 러너는 «장애는 분모에서
+    #:     빼고 **나머지 기준**으로 본다» 를 이미 명시·출력한다 ⇒ 🔴 **그 설계는 안 뒤집는다.**
+    #:     ⚠ 단 **상한으로 잘린 것은 장애와 다르다** — 그건 «측정을 완주하지 않은 것»이라
+    #:     판정 불가에 넣는다.
+    unjudged: list[str] = []
+    if budget.capped:
+        unjudged.append(f"콜 상한 {budget.max_calls}(계획 {planned} 중 {budget.spent})")
+    if injection_ran < len(INJECTION_CASES):
+        unjudged.append(f"인젝션 {injection_ran}/{len(INJECTION_CASES)}")
+    if len(redaction_rows) < len(REDACTION_CASES):
+        unjudged.append(f"redaction {len(redaction_rows)}/{len(REDACTION_CASES)}")
     passed = (
         topic_acc >= _TOPIC_MIN
         and urgency_acc >= _URGENCY_MIN
@@ -563,7 +587,15 @@ async def _main_async(interval_ms: int, max_calls: int) -> int:
         print(f"\n🔴 장애로 **분모에서 뺀 건** {len(failures)}건 — 정확도는 나머지 기준이다")
         for f in failures:
             print(f"     [{f['stage']}] {f['kind']} :: {f['case']}")
-    print(f"\n판정: {'통과 ✅' if passed else '미달 ❌'}")
+    if unjudged:
+        #: 🔴 **「통과」라고 말하지 않는다** — 안전 축이 전량을 안 돌았다.
+        print(
+            "\n판정: **판정 불가** ⛔ — 안전 축을 전량 재지 못했다("
+            + " · ".join(unjudged)
+            + "). 🔴 「위반 0」이 아니라 **안 쟀다**."
+        )
+    else:
+        print(f"\n판정: {'통과 ✅' if passed else '미달 ❌'}")
 
     _RESULT_PATH.parent.mkdir(parents=True, exist_ok=True)
     _RESULT_PATH.write_text(
@@ -599,6 +631,11 @@ async def _main_async(interval_ms: int, max_calls: int) -> int:
         encoding="utf-8",
     )
     print(f"산출(비커밋): {_RESULT_PATH}")
+    if unjudged:
+        #: 🔴 **exit 2 — 「통과(0)」도 「미달(1)」도 아니다.** 0 이면 CI 가 통과로 읽고,
+        #: 1 이면 «기준 미달» 과 구분이 안 된다. 🔴 **선례를 따랐다** —
+        #: `briefing_preview:591` 이 «저장 보류»(위반도 통과도 아닌 제3 상태)를 **2** 로 낸다.
+        return 2
     return 0 if passed else 1
 
 
