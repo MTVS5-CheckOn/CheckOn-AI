@@ -13,7 +13,6 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 from xml.etree import ElementTree
@@ -198,13 +197,17 @@ def failed_test_ids(junit_path: Path) -> tuple[str, ...]:
     )
 
 
-def _record_failures(step: VerificationStep) -> Path | None:
-    """🔴 **실패한 검사 이름을 파일로 남긴다**(2026-08-24 · 99 #224).
+def _record_failures(step: VerificationStep) -> None:
+    """🔴 **실패한 검사 이름을 화면에 낸다**(2026-08-24 · 99 #224).
 
-    ⚠ 🔴 재현을 시도하지 않는다 — 반복 실행은 시간이 얼마나 들지 모른다. 이 함수가
-    하는 일은 «**다음에 났을 때 잡히게**» 뿐이다. 재현 안 되는 1회 red 가 **두 번**
-    났고 **두 번 다 이름을 못 잡았다**(#219 ⓒ · №85) — 그게 이 자리의 이유다.
-    🔴 **이름과 오류 첫 줄까지다** — 본문·인용문은 안 싣는다(불변식 3).
+    ⚠ 🔴 **(2026-08-25 · №105) 파일 기록은 여기가 안 한다** — 그 일은
+    `tests/ai/fakes/failure_name_pin.py`(pytest 플러그인)가 **유일하게** 한다.
+    🔴 여기서도 쓰면 pytest 단계마다 **같은 실행이 두 번 쌓인다.**
+    🔴 플러그인은 `addopts` 로 실려 **직접 실행이든 여기든 같은 자리에 남는다** —
+    세 번째 red 가 `pytest` 를 직접 돌려 이 자리를 **우회한 것**이 그 이유다(#224).
+
+    ⚠ 🔴 재현을 시도하지 않는다 — 하는 일은 «**다음에 났을 때 잡히게**» 뿐이다.
+    🔴 **이름까지다** — 본문·인용문은 안 싣는다(불변식 3).
     """
     junit = next(
         (
@@ -215,29 +218,10 @@ def _record_failures(step: VerificationStep) -> Path | None:
         None,
     )
     if junit is None:
-        return None
+        return
     names = failed_test_ids(junit)
-    if not names:
-        return None
-    if not _FAILURE_LOG_DIR.is_dir():
-        #: 🔴 디렉터리를 만들지 않는다 — 사용자 로컬 자리다. 없으면 화면 출력까지다.
+    if names:
         print("  🔴 실패 검사:", *names, sep="\n    ", flush=True)
-        return None
-    target = _FAILURE_LOG_DIR / "pre_pr_verify_failures.txt"
-    #: 🔴 **누적한다 — 덮어쓰지 않는다**(2026-08-24 · 99 #224 보완).
-    #: 재현 안 되는 red 는 **여러 실행에 걸쳐** 나타나므로 한 파일을 덮으면
-    #: «두 번째와 세 번째가 같은 검사인가» 를 못 본다 — 그게 #224 의 계기를 못 재게 만든다.
-    #: ⚠ 🔴 시각은 **파일에만** 쓴다(저장소에 커밋 안 함 · `local_data/` 는 `.gitignore:52`).
-    stamp = datetime.now(UTC).astimezone().isoformat(timespec="seconds")
-    entry = (
-        f"[{stamp}] [{step.label}] 실패 {len(names)}건\n"
-        + "".join(f"  {name}\n" for name in names)
-    )
-    previous = target.read_text(encoding="utf-8") if target.exists() else ""
-    target.write_text(_trim(previous + entry), encoding="utf-8")
-    print("  🔴 실패 검사:", *names, sep="\n    ", flush=True)
-    return target
-
 
 def _run(step: VerificationStep, *, env: dict[str, str]) -> None:
     print(f"\n== {step.label} ==", flush=True)
@@ -248,10 +232,10 @@ def _run(step: VerificationStep, *, env: dict[str, str]) -> None:
         check=False,
     )
     if completed.returncode != 0:
-        recorded = _record_failures(step)
+        _record_failures(step)
         raise PrePrVerificationError(
             f"{step.label} 실패(exit={completed.returncode})"
-            + (f" — 실패 목록: {recorded}" if recorded else "")
+            #: 🔴 목록 파일은 `failure_name_pin` 이 쌓는다(№105) — 여기서 경로를 안 만든다.
         )
 
 
