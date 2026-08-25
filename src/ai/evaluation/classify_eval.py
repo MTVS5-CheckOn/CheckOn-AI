@@ -299,6 +299,29 @@ def failure_kind(exc: BaseException) -> str:
     return _FAILURE_KINDS.get(type(exc).__name__, "llm_error")
 
 
+@dataclass
+class _Budget:
+    """🔴 총 실 LLM 콜 상한 — **세 루프가 함께 쓴다**(99 #256 축 · №114).
+
+    ⚠ 🔴 이 러너는 `CASES`(80) + `INJECTION_CASES`(5) + `REDACTION_CASES`(3) = **88콜**
+    을 태우는데 상한이 **없었다** — `briefing_preview`(66) 보다 비싸다.
+    🔴 **루프마다 세면 갈린다** — 하나로 센다.
+    """
+
+    max_calls: int
+    """🔴 기본값을 안 둔다. `0` 이면 한 콜도 안 태우고 배선만 확인한다."""
+    spent: int = 0
+    capped: bool = False
+
+    def take(self) -> bool:
+        """한 콜을 쓴다 — 남았으면 `True`. 🔴 **없으면 표식을 세우고 `False`.**"""
+        if self.spent >= self.max_calls:
+            self.capped = True
+            return False
+        self.spent += 1
+        return True
+
+
 async def _try_classify_one(
     body: str, *, interval_ms: int = 0
 ) -> tuple[ClassifyResult | None, str | None]:
@@ -317,7 +340,7 @@ async def _try_classify_one(
         return None, failure_kind(exc)
 
 
-async def _main_async(interval_ms: int) -> int:
+async def _main_async(interval_ms: int, max_calls: int) -> int:
     if external_tracing_active():
         names = ", ".join(active_tracing_env_names()) or "(env 밖)"
         raise SystemExit(f"❌ 외부 추적 활성({names}) — 평가 중단(C-1).")
@@ -325,11 +348,16 @@ async def _main_async(interval_ms: int) -> int:
     if settings.llm_provider != "openai_compat":
         raise SystemExit("❌ LLM_PROVIDER=openai_compat 이 아니다 — 실모델 평가 skip.")
 
+    budget = _Budget(max_calls=max_calls)
+    planned = len(CASES) + len(INJECTION_CASES) + len(REDACTION_CASES)
     print(f"코퍼스 {len(CASES)}건(전량 합성) · complaint 양성 {complaint_count()}건")
+    print(f"🔴 콜 상한 {max_calls} · 전량 {planned}")
     tally = _Tally()
     rows: list[CaseRow] = []
     failures: list[dict[str, str]] = []
     for case in CASES:
+        if not budget.take():
+            break
         result, failed = await _try_classify_one(case.body_text, interval_ms=interval_ms)
         if result is None:
             # 🔴 **분모에서 뺀다** — 판정이 없던 건을 오답으로 세면 정확도가 거짓이 된다.
@@ -369,7 +397,13 @@ async def _main_async(interval_ms: int) -> int:
 
     # 🔴 인젝션 — 정답이 아니라 "enum 밖으로 못 나갔는가"를 본다.
     injection_escapes = 0
+    #: 🔴 **분모를 「돈 것」으로 센다** — 상한에 걸리면 5건을 다 못 돈다. 상수 `/5` 로
+    #: 적으면 «5건 중 0건 탈출» 로 읽혀 🔴 **안 돈 것이 통과로 보인다**(#454 가 잡은 형태).
+    injection_ran = 0
     for attack in INJECTION_CASES:
+        if not budget.take():
+            break
+        injection_ran += 1
         result, failed = await _try_classify_one(attack, interval_ms=interval_ms)
         if result is None:
             # ⚠ 장애는 **탈출이 아니다** — 0으로도 1로도 세지 않고 별도 축에 남긴다.
@@ -388,6 +422,8 @@ async def _main_async(interval_ms: int) -> int:
     # 여기선 **응답이 200으로 수렴하는지**(폴백 포함)만 본다.
     redaction_rows = []
     for body in REDACTION_CASES:
+        if not budget.take():
+            break
         result, failed = await _try_classify_one(body, interval_ms=interval_ms)
         if result is None:
             failures.append({"stage": "redaction", "case": body[:24], "kind": failed or ""})
@@ -409,6 +445,25 @@ async def _main_async(interval_ms: int) -> int:
         )
         assert not redact(body).masked_text.count("010-1234-5678")
 
+    if not tally.total:
+        #: 🔴 **판정 표본이 0건이면 정확도를 못 낸다** — 나누기 전에 멈춘다.
+        #: ⚠ 🔴 №114 뒤집기 ①(`--max-calls 0`)이 여기서 `ZeroDivisionError` 를 냈다.
+        #: 🔴 **그냥 0.0 으로 채우지 않는다** — «정확도 0%» 는 «안 쟀다» 와 다르다.
+        #: 🔴 **`capped` 로 가르면 거짓이 된다** — 상한 3 에 3콜이 다 장애여도 `capped`
+        #: 는 True 라 «하나도 안 돌았다» 로 적힌다(№114 뒤집기 ②가 실제로 그렇게
+        #: 나왔다). 🔴 **가르는 것은 「몇 콜을 썼나」다.**
+        if budget.spent == 0:
+            print(
+                f"  🔴 표본 **0건** — 콜 상한 {budget.max_calls} 이라 한 콜도 안 썼다."
+                " 배선만 확인했다(수치 없음)."
+            )
+            return 0
+        #: 콜은 썼는데 판정이 0건이면 **전부 장애**다 — 그건 성공이 아니다.
+        print(
+            f"  ❌ 표본 0건 — {budget.spent}콜을 썼는데 **전 건 장애**"
+            f"({len(failures)}건). 수치를 못 낸다."
+        )
+        return 1
     topic_acc = tally.topic_hit / tally.total
     urgency_acc = tally.urgency_hit / tally.total
     recall = (
@@ -442,13 +497,24 @@ async def _main_async(interval_ms: int) -> int:
             f"  {axis:9} 정확도 {acc:.1%} (baseline {base:.2%} · "
             f"개선폭 {acc - base:+.2%}p · {gate}){weak}"
         )
+    if budget.capped:
+        #: ⚠ 🔴 **조용히 자르지 않는다** — 수와 같은 화면에 «부분 표본» 을 박는다.
+        print(
+            f"  🔴 ⚠ **콜 상한 {budget.max_calls} 에 걸려 멈췄다 — 전량이 아니다**"
+            f"(계획 {planned} 중 {budget.spent} 만 돌았다). 아래 수치는 **부분 표본**이다."
+        )
     print(f"  complaint 재현율 {recall:.1%} (기준 {_COMPLAINT_RECALL_MIN:.0%})")
     # ⚠ 기준값이 없어도 낸다 — 안 내면 다음 회차에도 "정확도는 통과"만 남는다.
     print(
         f"  immediate 재현율 {immediate_recall:.1%} "
         f"({tally.immediate_hit}/{tally.immediate_total} · 기준 [측정 대기] · 99 ㉡)"
     )
-    print(f"  미분류 {tally.unclassified}/{tally.total} · 인젝션 탈출 {injection_escapes}/5")
+    print(
+        f"  미분류 {tally.unclassified}/{tally.total} · "
+        f"인젝션 탈출 {injection_escapes}/{injection_ran}"
+        + (f" ⚠ (전량 {len(INJECTION_CASES)} 중 {injection_ran} 만 돌았다)"
+           if injection_ran < len(INJECTION_CASES) else "")
+    )
     if tally.topic_miss:
         share = tally.topic_miss_with_other_miss / tally.topic_miss
         print(f"  [관측] topic 오분류 {tally.topic_miss}건 중 타 축 동반 오분류 {share:.1%}")
@@ -542,6 +608,20 @@ def main() -> None:
     #   429가 아예 안 날 수도 있다. 0이 아닌 값을 기본으로 박으면 이후 모든 실행이 그 지연을
     #   조용히 지불하면서 "간격이 실제로 필요했는지"를 영영 못 재게 된다.
     #   값은 429를 맞은 **실행자가** 정한다(우회책 — `_classify_one` docstring · 99 ⓡ).
+    #: 🔴 **필수다 — 기본값을 안 둔다**(#454 판단 그대로 · 99 #256).
+    #: ⚠ 🔴 «기본값을 두면 「기본값 = 전량」이라 아무것도 안 막는다» — `labels_llm_smoke`
+    #: 의 기본 20 이 그 러너의 전량이라 사실상 안 막는 것이 실측이었다.
+    #: 🔴 **깨질 호출부가 없다** — 전수: `_main_async` 를 부르는 곳은 이 `main()` 뿐이고
+    #: 검사들은 `confidence_buckets`·`render_buckets`·`confusion_matrix`·
+    #: `render_confusion`·`_pii_scan` 만 import 한다.
+    #: 🔴 `--max-calls 0` 이면 **0콜로 배선만** 본다.
+    parser.add_argument(
+        "--max-calls",
+        type=int,
+        required=True,
+        help="총 실 LLM 콜 상한(필수) — 전량은 88(코퍼스 80 + 인젝션 5 + redaction 3). "
+        "`0` 이면 0콜로 배선만 확인한다",
+    )
     parser.add_argument(
         "--interval-ms",
         type=int,
@@ -551,8 +631,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.interval_ms < 0:
         raise SystemExit("❌ --interval-ms는 음수일 수 없다")
+    if args.max_calls < 0:
+        raise SystemExit("❌ --max-calls는 음수일 수 없다")
     sys.path.insert(0, str(Path.cwd()))
-    raise SystemExit(asyncio.run(_main_async(args.interval_ms)))
+    raise SystemExit(asyncio.run(_main_async(args.interval_ms, args.max_calls)))
 
 
 if __name__ == "__main__":
