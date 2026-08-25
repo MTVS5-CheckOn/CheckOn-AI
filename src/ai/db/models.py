@@ -107,6 +107,68 @@ class PassageTypeStat(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ)
 
 
+class LabelConfirmationStat(Base):
+    """라벨 확정의 **주간 집계** — 🔴 개인 참조가 하나도 없다(99 #239 · 2026-08-25).
+
+    🔴 **양자 승인 파일을 여는 근거** — 승인: 염준영 · 2026-08-25 · 회신.
+    닫는 것: 99 #239(«누적 자리 = 테이블»).
+
+    🔴 **왜 테이블인가** — 강사의 라벨 확정은 «어느 축의 제안이 얼마나 뒤집히나» 를 세는
+    **군집의 착수 근거**다. 종전에는 프로세스 안 카운터였고 🔴 **재배포마다 0** 이 됐는데
+    근거는 **한 달 단위**로 쌓여야 한다(실측 · 99 #239).
+    ⚠ 🔴 **개별 확정은 영속하지 않는다** — 이 행은 «조합의 속성» 이지 학부모 데이터가
+    아니다(`PassageTypeStat` 과 같은 결). `guardian_ref` 도 FK 도 없다.
+
+    ⚠ 🔴 **`label_suggestion` 테이블에 쌓지 않은 이유**(99 #190): 그 테이블은 `created_at`
+    이 없어 **축출 근거가 없고** `guardian_ref` 를 가져 «새로 쌓이는 개인 데이터 0» 과
+    갈린다. 🔴 그 둘이 **이 테이블에는 없다** — `created_at` 이 있고 개인 참조가 0이다.
+    """
+
+    __tablename__ = "label_confirmation_stat"
+    __table_args__ = (
+        #: 🔴 **이 유니크가 곧 UPSERT 키다** — `ON CONFLICT DO UPDATE SET count = count + 1`.
+        #: ⚠ 🔴 **별도 인덱스를 안 만든다** — 선두 두 칸(`tenant_id`·`week_start`)이 그대로
+        #: 축출·조회 축이라 이 인덱스가 그 일을 한다.
+        UniqueConstraint(
+            "tenant_id",
+            "week_start",
+            "axis",
+            "suggested_value",
+            "confirmed_value",
+            "action",
+            name="uq_label_confirmation_stat_bucket",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String)
+    """격리 술어 — 전 테이블 필수.
+
+    ⚠ 🔴 **읽는 통로를 만들 때 `k` 임계를 같이 정한다**(99 #239). 테넌트에 학부모가
+    하나면 이 집계가 **그 사람의 프로필**이 된다 — 지금은 읽는 통로가 없어 그 조건을
+    여기 박아 둔다.
+    """
+    week_start: Mapped[date] = mapped_column(Date)
+    """집계 버킷 — 월요일(`Asia/Seoul`). 🔴 **확정 접수 시각**에서 계산한다.
+
+    🔴 **감지 피처(`feature_week`·`weakness_map`)의 같은 이름과 「다른 규칙」이다.**
+    BE 와의 주 경계는 «월요일 기준 **[제안]**»(04:1228)이라 **확정이 아니고**, 우리
+    버킷은 **우리 시계**로 계산한다. 🔴 **조인하지 마라.**
+    ⚠ BE 스냅숏의 주 값이 아니라 **우리가 확정을 받은 시각**이 기준이다.
+    """
+    axis: Mapped[str] = mapped_column(String)
+    """`comm|interest|sensitivity|frequency` — 어휘 정본은 `contracts/composition.py`."""
+    suggested_value: Mapped[str] = mapped_column(String)
+    confirmed_value: Mapped[str] = mapped_column(String)
+    """`corrected` 면 정정값 · `confirmed`·`rejected` 면 제안값과 같다."""
+    action: Mapped[str] = mapped_column(String)
+    """`confirmed|corrected|rejected` — `contracts/confirmations.py` 의 `ConfirmationAction`."""
+    count: Mapped[int] = mapped_column(Integer)
+    """누적 — UPSERT 로 증가한다."""
+    created_at: Mapped[datetime] = mapped_column(_TZ)
+    """버킷이 **최초로 생긴** 시각. 🔴 **축출 축은 `week_start`** 다(이 컬럼이 아니다)."""
+
+
 class ExpectationIngest(Base):
     """기대치 통계에 반영 완료된 스냅숏 원장 — **이중 집계 방지**(결정 로그 33).
 
@@ -701,8 +763,10 @@ class InquiryClass(Base):
 
     ⚠ **폴백 건(`classified=False`)은 적재하지 않는다**(조건 4). 판정이 없는 건에 enum
     값을 채우면 불변식 2 위반이고 평가셋이 오염된다. **폴백률은 이 테이블에서 세지
-    말 것** — 관측은 구조화 로그로 하고, `runtime/metrics` 이벤트는 모듈 자체가 아직
-    없어 별도 양자 승인 대상이다(99 등재).
+    말 것** — 관측은 구조화 로그로 한다. ⚠ 🔴 **(2026-08-25 정정 · 99 #240·#245)**
+    종전 문면은 «`runtime/metrics` 이벤트는 … **별도 양자 승인 대상**이다» 였는데
+    🔴 **그 파일은 존재하지 않고 목록에서 빠진다**(B 승인) ⇒ **지금은 목록 밖**이고,
+    만들게 되면 그때 **편입을 협의**한다.
 
     값 어휘 정본은 `contracts/counsel.py`의 `InquiryTopic`·`InquirySentiment`·
     `InquiryUrgency`다. DB enum 타입을 만들지 않고 String + 주석으로 두는 것은 기존

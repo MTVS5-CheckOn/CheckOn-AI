@@ -40,11 +40,11 @@ from ai.contracts.confirmations import (
 from ai.db.repositories.inquiry_class_store import InquiryClassStore
 from ai.db.repositories.label_confirmation_store import (
     LabelConfirmationStore,
-    build_label_confirmation_store,
     reset_default_label_confirmation_store,
 )
 from ai.db.store_factory import (
     build_inquiry_class_store,
+    build_label_confirmation_store,
     reset_default_inquiry_class_store,
 )
 from ai.runtime.errors import NotFound, SnapshotInvalid
@@ -164,9 +164,12 @@ async def _accept_label(
 
     남기는 것은 **집계 다섯 칸**뿐이다: `tenant · axis · 제안값 · 확정값 · action`.
     🔴 **`guardian_ref` 를 안 남긴다** — «새로 쌓이는 개인 데이터 0» 정책과 갈리지 않는다.
-    🔴 **새 테이블·마이그레이션을 안 만든다** — `label_suggestion` 테이블은 `created_at` 이
-    없어 **축출 근거가 없다**(`db/models.py`) ⇒ 그 두 이유를 되살리지 않는다.
-    ⇒ 자리는 **구조화 로그**다. 🔴 그 다섯 칸이 **군집의 착수 근거**다(99 #190 계열).
+    ⇒ 🔴 자리는 **`LABEL_CONFIRMATION_STAT` 테이블**이다(2026-08-25 · 99 #239 ·
+    승인: 염준영). 🔴 그 다섯 칸이 **군집의 착수 근거**다(99 #190 계열).
+    ⚠ 🔴 **(정정) 종전 문면 셋이 거짓이었다** — «자리는 구조화 로그다» · «새 테이블·
+    마이그레이션을 안 만든다» · «다섯 칸»(구현은 **넷**이었다). 셋 다 이제 참이다.
+    🔴 **`label_suggestion` 테이블에는 안 쌓는다** — 그건 `created_at` 이 없어 축출 근거가
+    없고 `guardian_ref` 를 가져 정책과 갈린다(99 #190). 🔴 새 테이블에는 **그 둘이 없다.**
 
     ⚠ 🔴 **`accepted: true` 는 «받았다» 이지 «영속했다» 가 아니다** — 04 §3.3 에 적었다.
     🔴 `action=rejected` 는 **라벨에서 성립한다**(classification 은 3축이 값을 반드시
@@ -244,8 +247,10 @@ async def _accept_label(
     #: 🔴 **`tenant_id` 로 안 가른다** — «가르면 무엇이 좋아지나» 를 못 적었고, 테넌트가
     #: 적으면 **그 자체가 식별 축**이 된다(#233 이 그 얘기였다).
     #: 🔴 **`guardian_ref` 는 카운터 키에도 안 들어간다** — №92 판정의 전부다.
+    #: 🔴 키가 **5칸**이다 — `tenant_id` 가 테이블의 격리 술어라 키에 들어간다(2026-08-25).
     await label_confirmation_store().add(
         (
+            tenant_id,
             axis,
             suggested,
             corrected if corrected is not None else suggested,

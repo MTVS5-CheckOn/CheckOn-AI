@@ -17,11 +17,29 @@
 
 from __future__ import annotations
 
+import uuid
 from collections import Counter
+from collections.abc import Callable
+from datetime import date, datetime, timedelta
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
-#: 🔴 집계 키 — `(axis, 제안값, 확정값, action)`. **개인 참조가 없다.**
-LabelConfirmationKey = tuple[str, str, str, str]
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
+
+from ai.db.counsel_read_model import SessionFactory
+from ai.db.models import LabelConfirmationStat
+from ai.db.repositories.inquiry_class_store import system_utc_now
+
+#: 🔴 주 경계 기준 시계 — 팀이 KST 다(03 §1b: 시간대는 `zoneinfo`).
+_SEOUL = ZoneInfo("Asia/Seoul")
+
+#: 🔴 집계 키 — `(tenant_id, axis, 제안값, 확정값, action)`. **개인 참조가 없다.**
+#: ⚠ 🔴 **4칸 → 5칸(2026-08-25)** — `tenant_id` 가 들어갔다. 테이블의 격리 술어이고
+#: **PG 모양의 일부**라, 나중에 넣으면 같은 자리를 두 번 연다(99 #241 의 교훈).
+#: 🔴 «라우터도 검사도 안 바뀐다» 가 **이번엔 거짓이다** — 그 사실을 적어 둔다.
+#: 다만 `_accept_label` 이 이미 `tenant_id` 를 인자로 받아 **라우터는 한 줄**이다.
+LabelConfirmationKey = tuple[str, str, str, str, str]
 
 
 class LabelConfirmationStore(Protocol):
@@ -73,14 +91,98 @@ class InMemoryLabelConfirmationStore:
         self._counts.clear()
 
 
+class PgLabelConfirmationStore:
+    """PG 누적 — 🔴 **주간 버킷에 UPSERT** 한다(99 #239 · 2026-08-25).
+
+    🔴 **`week_start` 는 「확정 접수 시각」에서 계산한다** — BE 스냅숏의 주 값이 아니다.
+    `Asia/Seoul` 로 옮겨 그 주의 **월요일**을 잡는다.
+    ⚠ 🔴 **감지 피처의 같은 이름과 다른 규칙이다**(BE 주 경계는 04:1228 의 **[제안]**) —
+    조인하지 마라.
+    🔴 **clock 을 주입한다**(`PgInquiryClassStore` 선례) — 안 하면 검사가 «이번 주» 에
+    묶여 **다음 주에 red** 가 된다.
+    """
+
+    def __init__(
+        self,
+        *,
+        sessionmaker: SessionFactory,
+        clock: Callable[[], datetime] = system_utc_now,
+        new_id: Callable[[], uuid.UUID] = uuid.uuid4,
+    ) -> None:
+        self._sessionmaker = sessionmaker
+        self._clock = clock
+        self._new_id = new_id
+
+    def _bucket(self) -> date:
+        """확정 접수 시각 → `Asia/Seoul` 그 주의 **월요일**."""
+        local = self._clock().astimezone(_SEOUL)
+        return (local - timedelta(days=local.weekday())).date()
+
+    async def add(self, key: LabelConfirmationKey) -> None:
+        tenant_id, axis, suggested, confirmed, action = key
+        now = self._clock()
+        statement = (
+            insert(LabelConfirmationStat)
+            .values(
+                id=self._new_id(),
+                tenant_id=tenant_id,
+                week_start=self._bucket(),
+                axis=axis,
+                suggested_value=suggested,
+                confirmed_value=confirmed,
+                action=action,
+                count=1,
+                created_at=now,
+            )
+            #: 🔴 **유니크가 곧 UPSERT 키다** — 같은 버킷이면 행 하나에 수만 는다.
+            .on_conflict_do_update(
+                constraint="uq_label_confirmation_stat_bucket",
+                set_={"count": LabelConfirmationStat.count + 1},
+            )
+        )
+        async with self._sessionmaker() as session, session.begin():
+            await session.execute(statement)
+
+    async def snapshot(self) -> dict[LabelConfirmationKey, int]:
+        """전 버킷 합계 — 🔴 **주는 합쳐서** 돌려준다(키가 5칸이라 주가 안 들어간다).
+
+        ⚠ 🔴 읽는 통로를 만들 때 **`k` 임계**를 같이 정한다(99 #239) — 테넌트에 학부모가
+        하나면 이 집계가 그 사람의 프로필이 된다.
+        """
+        columns = (
+            LabelConfirmationStat.tenant_id,
+            LabelConfirmationStat.axis,
+            LabelConfirmationStat.suggested_value,
+            LabelConfirmationStat.confirmed_value,
+            LabelConfirmationStat.action,
+        )
+        statement = select(*columns, func.sum(LabelConfirmationStat.count)).group_by(
+            *columns
+        )
+        async with self._sessionmaker() as session:
+            rows = (await session.execute(statement)).all()
+        return {(a, b, c, d, e): int(total) for a, b, c, d, e, total in rows}
+
+    def clear(self) -> None:
+        """🔴 **아무것도 안 한다(no-op).**
+
+        ⚠ 🔴 여기서 I/O 를 하면 99 #243·#218 이 그 자리에서 재발한다 — 이 메서드는
+        **검사 격리 전용**이고 `reset_*` 규약이 **동기 픽스처**에서 부른다. 동기 자리에서
+        `asyncio.run` 으로 DB 를 건드리면 **다른 루프**가 되고 asyncpg 가 터진다.
+        🔴 PG 를 쓰는 검사는 **자기 테넌트를 나눠** 격리한다(그게 이 저장소의 격리 축이다).
+        """
+
+
 _default: LabelConfirmationStore | None = None
 
 
-def build_label_confirmation_store() -> LabelConfirmationStore:
-    """공용 저장소 — 🔴 **지금은 인메모리 하나뿐**이다(PG 는 승인 전).
+def default_label_confirmation_store() -> LabelConfirmationStore:
+    """인메모리 공용 저장소 — **프로세스 하나에 하나**다.
 
-    ⚠ `STORE_BACKEND` 로 안 가른다 — **고를 것이 하나**라 분기가 거짓이 된다.
-    승인이 나면 그때 이 함수가 가른다(`build_inquiry_class_store` 선례).
+    ⚠ 🔴 **백엔드 분기는 여기 없다** — `db/store_factory.py` 가 조립 루트다.
+    🔴 `test_store_backend_default_assembly.py` 가 «`store_backend` 를 보는데 **아무도
+    안 보는 자리**» 를 잡는다 — 저장소 모듈 안에 분기를 두면 조립 루트가 그것을 안 부른다
+    (실측 2026-08-25: 그 가드가 이 회차에 red 를 냈다).
     """
     global _default
     if _default is None:
@@ -96,8 +198,9 @@ def reset_default_label_confirmation_store() -> None:
 
 __all__ = [
     "InMemoryLabelConfirmationStore",
+    "PgLabelConfirmationStore",
     "LabelConfirmationKey",
     "LabelConfirmationStore",
-    "build_label_confirmation_store",
+    "default_label_confirmation_store",
     "reset_default_label_confirmation_store",
 ]
