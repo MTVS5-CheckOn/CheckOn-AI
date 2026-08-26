@@ -870,6 +870,11 @@ async def get_problem_items(set_id: str, request: Request) -> dict[str, Any]:
                     if item_result.failure_reason is not None
                     else None
                 ),
+                "failure_detail": item_result.failure_detail,
+                "attempt_no": item_result.attempt_no,
+                "attempts": [
+                    attempt.model_dump(mode="json") for attempt in item_result.attempts
+                ],
             }
         )
     return success_envelope(
@@ -1017,6 +1022,11 @@ async def get_problem_item(
                 if item_result.failure_reason is not None
                 else None
             ),
+            "failure_detail": item_result.failure_detail,
+            "attempt_no": item_result.attempt_no,
+            "attempts": [
+                attempt.model_dump(mode="json") for attempt in item_result.attempts
+            ],
         },
         execution_id=str(execution_id),
         versions=versions,

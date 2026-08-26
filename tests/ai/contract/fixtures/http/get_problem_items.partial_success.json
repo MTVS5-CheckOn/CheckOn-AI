@@ -14,7 +14,10 @@
         "status": "verified",
         "current_revision_no": 0,
         "review_reason": null,
-        "failure_reason": null
+        "failure_reason": null,
+        "failure_detail": null,
+        "attempt_no": 1,
+        "attempts": []
       },
       {
         "slot_index": 1,
@@ -22,7 +25,10 @@
         "status": "needs_review",
         "current_revision_no": 1,
         "review_reason": "manual_target_first",
-        "failure_reason": null
+        "failure_reason": null,
+        "failure_detail": null,
+        "attempt_no": 1,
+        "attempts": []
       },
       {
         "slot_index": 2,
@@ -30,7 +36,10 @@
         "status": "verification_unavailable",
         "current_revision_no": 0,
         "review_reason": null,
-        "failure_reason": null
+        "failure_reason": null,
+        "failure_detail": null,
+        "attempt_no": 1,
+        "attempts": []
       },
       {
         "slot_index": 3,
@@ -38,7 +47,35 @@
         "status": "dropped",
         "current_revision_no": 0,
         "review_reason": null,
-        "failure_reason": "generation_exhausted"
+        "failure_reason": "generation_exhausted",
+        "failure_detail": "교차 풀이 불일치로 생성 시도 소진",
+        "attempt_no": 3,
+        "attempts": [
+          {
+            "attempt_no": 1,
+            "stage": "cross_solve_mismatch",
+            "failed_checks": [
+              "C-10:오개념_설명_모순:2"
+            ],
+            "schema_issue_paths": []
+          },
+          {
+            "attempt_no": 2,
+            "stage": "cross_solve_mismatch",
+            "failed_checks": [
+              "C-10:오개념_설명_모순:2"
+            ],
+            "schema_issue_paths": []
+          },
+          {
+            "attempt_no": 3,
+            "stage": "cross_solve_mismatch",
+            "failed_checks": [
+              "C-10:오개념_설명_모순:2"
+            ],
+            "schema_issue_paths": []
+          }
+        ]
       }
     ]
   },

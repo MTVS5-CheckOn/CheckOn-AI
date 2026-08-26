@@ -77,7 +77,10 @@
     },
     "revisions": [],
     "review_reason": "manual_target_first",
-    "failure_reason": null
+    "failure_reason": null,
+    "failure_detail": null,
+    "attempt_no": 1,
+    "attempts": []
   },
   "error": null,
   "meta": {

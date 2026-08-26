@@ -524,6 +524,29 @@ class SetStopReason(StrEnum):
 PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT: Final = 3
 
 
+class AttemptDiagnosticStage(StrEnum):
+    """문항 생성 시도가 종료된 실패 단계."""
+
+    GENERATOR_REDACTION_BLOCKED = "generator_redaction_blocked"
+    GENERATOR_LLM_ERROR = "generator_llm_error"
+    RULE_VALIDATION = "rule_validation"
+    MISCONCEPTION_STRUCTURE = "misconception_structure"
+    CROSS_SOLVE_REDACTION_BLOCKED = "cross_solve_redaction_blocked"
+    CROSS_SOLVE_PARSE = "cross_solve_parse"
+    CROSS_SOLVE_MISMATCH = "cross_solve_mismatch"
+
+
+class AttemptDiagnostic(BaseModel):
+    """원문 없이 남기는 문항 생성 시도별 실패 진단."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    attempt_no: int = Field(ge=1, le=PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT)
+    stage: AttemptDiagnosticStage
+    failed_checks: tuple[str, ...] = ()
+    schema_issue_paths: tuple[str, ...] = ()
+
+
 class ItemResult(BaseModel):
     """문항 1개의 최종 처리 결과."""
 
@@ -534,6 +557,7 @@ class ItemResult(BaseModel):
     attempt_no: int = Field(ge=1, le=PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT)
     failure_reason: ProblemFailureReason | None = None
     failure_detail: str | None = Field(default=None, min_length=1)
+    attempts: tuple[AttemptDiagnostic, ...] = ()
     difficulty_est: float | None = None
     difficulty_band: DifficultyBand | None = None
     difficulty_fit: None = None

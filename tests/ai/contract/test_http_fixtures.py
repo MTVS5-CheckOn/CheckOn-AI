@@ -45,6 +45,8 @@ from ai.contracts.diagnosis import DiagnosisResult
 from ai.contracts.llm import LlmError, LlmTimeout, LlmUnavailable
 from ai.contracts.problem_generation import (
     Answer,
+    AttemptDiagnostic,
+    AttemptDiagnosticStage,
     Choice,
     EvidenceAnchor,
     EvidenceKind,
@@ -543,6 +545,14 @@ def test_items_partial_success_fixture() -> None:
     """
     from ai.api.envelope import success_envelope
 
+    dropped_attempts = [
+        AttemptDiagnostic(
+            attempt_no=attempt_no,
+            stage=AttemptDiagnosticStage.CROSS_SOLVE_MISMATCH,
+            failed_checks=("C-10:오개념_설명_모순:2",),
+        ).model_dump(mode="json")
+        for attempt_no in range(1, 4)
+    ]
     _fixture(
         "get_problem_items.partial_success",
         success_envelope(
@@ -562,6 +572,9 @@ def test_items_partial_success_fixture() -> None:
                         "current_revision_no": 0,
                         "review_reason": None,
                         "failure_reason": None,
+                        "failure_detail": None,
+                        "attempt_no": 1,
+                        "attempts": [],
                     },
                     {
                         "slot_index": 1,
@@ -570,6 +583,9 @@ def test_items_partial_success_fixture() -> None:
                         "current_revision_no": 1,
                         "review_reason": "manual_target_first",
                         "failure_reason": None,
+                        "failure_detail": None,
+                        "attempt_no": 1,
+                        "attempts": [],
                     },
                     {
                         "slot_index": 2,
@@ -578,6 +594,9 @@ def test_items_partial_success_fixture() -> None:
                         "current_revision_no": 0,
                         "review_reason": None,
                         "failure_reason": None,
+                        "failure_detail": None,
+                        "attempt_no": 1,
+                        "attempts": [],
                     },
                     # 🔴 폐기 문항은 `item_id`가 없다 — 저장소에 애초에 안 앉는다.
                     {
@@ -587,6 +606,9 @@ def test_items_partial_success_fixture() -> None:
                         "current_revision_no": 0,
                         "review_reason": None,
                         "failure_reason": "generation_exhausted",
+                        "failure_detail": "교차 풀이 불일치로 생성 시도 소진",
+                        "attempt_no": 3,
+                        "attempts": dropped_attempts,
                     },
                 ],
             },

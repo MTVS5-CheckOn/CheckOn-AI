@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Sequence
 from uuid import UUID
 
@@ -29,6 +30,7 @@ from ai.contracts.llm import (
 )
 from ai.contracts.problem_generation import (
     Answer,
+    AttemptDiagnosticStage,
     Choice,
     DifficultyBand,
     EvidenceAnchor,
@@ -581,6 +583,63 @@ def test_field_missing_retry_returns_sanitized_path_and_reason_to_generator() ->
     assert '"schema_issues":[]' in first_prompt
     assert '"schema_issues":[{"path":"$.rationale","reason":"missing"}]' in retry_prompt
     assert "LLM 구조화 출력이 응답 스키마를 충족하지 않는다" not in retry_prompt
+
+
+def test_three_field_missing_attempts_return_sanitized_diagnostics(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    invalid = GeneratedItem.model_validate_json(_item_json("민감한 원문")).model_dump(
+        mode="json"
+    )
+    invalid.pop("rationale")
+    invalid_json = canonical_json(invalid)
+    harness = _WorkflowHarness(
+        generator_steps=(invalid_json, invalid_json, invalid_json),
+        verifier_steps=(),
+    )
+    caplog.set_level(logging.INFO, logger=workflow_module.__name__)
+
+    result = _run(harness, harness.request())
+
+    item_result = result.items[0]
+    assert item_result.status is ProblemItemStatus.DROPPED
+    assert len(item_result.attempts) == 3
+    assert [attempt.attempt_no for attempt in item_result.attempts] == [1, 2, 3]
+    assert all(
+        attempt.stage is AttemptDiagnosticStage.GENERATOR_LLM_ERROR
+        for attempt in item_result.attempts
+    )
+    assert all(
+        attempt.failed_checks == ("generator:FieldMissing",)
+        for attempt in item_result.attempts
+    )
+    assert all(
+        attempt.schema_issue_paths == ("$.rationale:missing",)
+        for attempt in item_result.attempts
+    )
+    assert len(harness.generator_provider.requests) == 3
+    attempt_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == workflow_module.__name__
+        and record.getMessage().startswith("문제 생성 시도 실패")
+    ]
+    assert len(attempt_logs) == 3
+    assert all(
+        all(
+            field in message
+            for field in (
+                "execution_id=",
+                "set_id=",
+                "slot_index=0",
+                "attempt_no=",
+                "stage=generator_llm_error",
+                "failed_checks=",
+            )
+        )
+        for message in attempt_logs
+    )
+    assert all("민감한 원문" not in message for message in attempt_logs)
 
 
 def test_generator_prompt_uses_schema_derived_from_generated_item_contract() -> None:

@@ -9,6 +9,8 @@ from ai.contracts.gates import BlockedReason
 from ai.contracts.llm import ParseFailed
 from ai.contracts.problem_generation import (
     Answer,
+    AttemptDiagnostic,
+    AttemptDiagnosticStage,
     Choice,
     DifficultyBand,
     EvidenceAnchor,
@@ -524,6 +526,34 @@ def test_item_action_values_frozen() -> None:
 def test_dropped_item_requires_reason() -> None:
     with pytest.raises(ValueError, match="failure_reason"):
         ItemResult(status=ProblemItemStatus.DROPPED, attempt_no=3)
+
+
+def test_item_result_keeps_existing_constructors_with_empty_attempts() -> None:
+    result = ItemResult(
+        status=ProblemItemStatus.DROPPED,
+        attempt_no=3,
+        failure_reason=ProblemFailureReason.GENERATION_EXHAUSTED,
+    )
+
+    assert result.attempts == ()
+
+
+def test_attempt_diagnostic_exposes_only_non_sensitive_fields() -> None:
+    assert set(AttemptDiagnostic.model_fields) == {
+        "attempt_no",
+        "stage",
+        "failed_checks",
+        "schema_issue_paths",
+    }
+    assert {stage.value for stage in AttemptDiagnosticStage} == {
+        "generator_redaction_blocked",
+        "generator_llm_error",
+        "rule_validation",
+        "misconception_structure",
+        "cross_solve_redaction_blocked",
+        "cross_solve_parse",
+        "cross_solve_mismatch",
+    }
 
 
 def test_verification_unavailable_requires_stored_item_id() -> None:

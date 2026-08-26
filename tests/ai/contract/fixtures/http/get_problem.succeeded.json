@@ -19,6 +19,7 @@
           "attempt_no": 1,
           "failure_reason": null,
           "failure_detail": null,
+          "attempts": [],
           "difficulty_est": 1.0,
           "difficulty_band": "low",
           "difficulty_fit": null,

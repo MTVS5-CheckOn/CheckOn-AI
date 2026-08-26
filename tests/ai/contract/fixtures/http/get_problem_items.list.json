@@ -14,7 +14,10 @@
         "status": "needs_review",
         "current_revision_no": 0,
         "review_reason": "manual_target_first",
-        "failure_reason": null
+        "failure_reason": null,
+        "failure_detail": null,
+        "attempt_no": 1,
+        "attempts": []
       }
     ]
   },
