@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable, Hashable
 from dataclasses import dataclass
 from typing import Any
-from uuid import uuid5
+from uuid import UUID, uuid5
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -31,6 +32,8 @@ from ai.contracts.llm import (
 )
 from ai.contracts.problem_generation import (
     PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT,
+    AttemptDiagnostic,
+    AttemptDiagnosticStage,
     DifficultyBand,
     GeneratedItem,
     ItemResult,
@@ -109,6 +112,8 @@ from ai.problem_generation.domain.rules import (
 )
 from ai.runtime.errors import DomainException
 from ai.runtime.redaction import redact
+
+logger = logging.getLogger(__name__)
 
 type DiagnosisCallable = Callable[[ProblemRequest], Awaitable[DiagnosisResult]]
 
@@ -192,9 +197,58 @@ class GraphContextReferenceInsufficient(GraphContextError):
 
 @dataclass(frozen=True, slots=True)
 class _AttemptFeedback:
+    stage: AttemptDiagnosticStage
     failed_checks: tuple[str, ...]
     schema_issues: tuple[SchemaValidationIssue, ...] = ()
     previous_stem_hash: str | None = None
+
+
+def _record_attempt_feedback(
+    feedback: dict[tuple[int, int], _AttemptFeedback],
+    *,
+    state: ProblemGenerationState,
+    execution_id: UUID,
+    stage: AttemptDiagnosticStage,
+    failed_checks: tuple[str, ...],
+    schema_issues: tuple[SchemaValidationIssue, ...] = (),
+    previous_stem_hash: str | None = None,
+) -> None:
+    feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+        stage=stage,
+        failed_checks=failed_checks,
+        schema_issues=schema_issues,
+        previous_stem_hash=previous_stem_hash,
+    )
+    logger.info(
+        "문제 생성 시도 실패 execution_id=%s set_id=%s slot_index=%s "
+        "attempt_no=%s stage=%s failed_checks=%s",
+        execution_id,
+        state.set_id,
+        state.cursor,
+        state.item_attempt,
+        stage.value,
+        failed_checks,
+    )
+
+
+def _attempt_diagnostics(
+    state: ProblemGenerationState,
+    feedback: dict[tuple[int, int], _AttemptFeedback],
+) -> tuple[AttemptDiagnostic, ...]:
+    diagnostics: list[AttemptDiagnostic] = []
+    for attempt_no in range(1, state.item_attempt + 1):
+        attempt = feedback[(state.cursor, attempt_no)]
+        diagnostics.append(
+            AttemptDiagnostic(
+                attempt_no=attempt_no,
+                stage=attempt.stage,
+                failed_checks=attempt.failed_checks,
+                schema_issue_paths=tuple(
+                    f"{issue.path}:{issue.reason}" for issue in attempt.schema_issues
+                ),
+            )
+        )
+    return tuple(diagnostics)
 
 
 class ProblemGenerationWorkflow:
@@ -521,7 +575,11 @@ class ProblemGenerationWorkflow:
             #   대개 풀린다. 종전에는 예산을 한 번도 안 쓰고 슬롯을 통째 버렸다.
             # ⚠ 규칙을 무르는 게 아니다 — 막힌 프롬프트는 한 번도 전송되지 않는다.
             except RedactionBlocked:
-                feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+                _record_attempt_feedback(
+                    feedback,
+                    state=state,
+                    execution_id=execution_context.execution_id,
+                    stage=AttemptDiagnosticStage.GENERATOR_REDACTION_BLOCKED,
                     failed_checks=("generator:RedactionBlocked",),
                 )
                 if state.fallback_ref is not None:
@@ -531,10 +589,15 @@ class ProblemGenerationWorkflow:
                         state,
                         reason=ProblemFailureReason.GENERATION_EXHAUSTED,
                         detail="redaction 불확실로 생성 호출이 차단됨 — 시도 소진",
+                        feedback=feedback,
                     )
                 return {}
             except LlmError as error:
-                feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+                _record_attempt_feedback(
+                    feedback,
+                    state=state,
+                    execution_id=execution_context.execution_id,
+                    stage=AttemptDiagnosticStage.GENERATOR_LLM_ERROR,
                     failed_checks=(f"generator:{type(error).__name__}",),
                     schema_issues=(
                         schema_issues_from_field_missing(error)
@@ -549,6 +612,7 @@ class ProblemGenerationWorkflow:
                         state,
                         reason=ProblemFailureReason.GENERATION_EXHAUSTED,
                         detail=f"생성 시도 소진: {type(error).__name__}",
+                        feedback=feedback,
                     )
                 return {}
 
@@ -566,13 +630,18 @@ class ProblemGenerationWorkflow:
                     item=item,
                     result=rule_result,
                     feedback=feedback,
+                    execution_context=execution_context,
                 )
 
             misconception_failures = (
                 self._cross_solver.misconception_structure_failures(item)
             )
             if misconception_failures:
-                feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+                _record_attempt_feedback(
+                    feedback,
+                    state=state,
+                    execution_id=execution_context.execution_id,
+                    stage=AttemptDiagnosticStage.MISCONCEPTION_STRUCTURE,
                     failed_checks=misconception_failures,
                     previous_stem_hash=item_stem_hash(item),
                 )
@@ -583,6 +652,7 @@ class ProblemGenerationWorkflow:
                         state,
                         reason=ProblemFailureReason.GENERATION_EXHAUSTED,
                         detail="오개념 구조 검증 실패로 생성 시도 소진",
+                        feedback=feedback,
                     )
                 return {}
 
@@ -605,7 +675,11 @@ class ProblemGenerationWorkflow:
             #   `verification_unavailable` 로 확정한다(불변식 6 · 상한은 그대로).
             # ⚠ 마스킹을 무르는 게 아니다 — 차단된 프롬프트는 **한 번도 전송되지 않는다.**
             except RedactionBlocked:
-                feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+                _record_attempt_feedback(
+                    feedback,
+                    state=state,
+                    execution_id=execution_context.execution_id,
+                    stage=AttemptDiagnosticStage.CROSS_SOLVE_REDACTION_BLOCKED,
                     failed_checks=("verifier:RedactionBlocked",),
                     previous_stem_hash=item_stem_hash(item),
                 )
@@ -619,7 +693,11 @@ class ProblemGenerationWorkflow:
                     )
                 return {}
             except ParseFailed as error:
-                feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+                _record_attempt_feedback(
+                    feedback,
+                    state=state,
+                    execution_id=execution_context.execution_id,
+                    stage=AttemptDiagnosticStage.CROSS_SOLVE_PARSE,
                     failed_checks=(f"verifier:{type(error).__name__}",),
                     previous_stem_hash=item_stem_hash(item),
                 )
@@ -648,7 +726,11 @@ class ProblemGenerationWorkflow:
                 self._verify_config,
             )
             if not cross_result.passed:
-                feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
+                _record_attempt_feedback(
+                    feedback,
+                    state=state,
+                    execution_id=execution_context.execution_id,
+                    stage=AttemptDiagnosticStage.CROSS_SOLVE_MISMATCH,
                     failed_checks=cross_result.failed_checks,
                     previous_stem_hash=item_stem_hash(item),
                 )
@@ -659,6 +741,7 @@ class ProblemGenerationWorkflow:
                         state,
                         reason=ProblemFailureReason.GENERATION_EXHAUSTED,
                         detail="교차 풀이 불일치로 생성 시도 소진",
+                        feedback=feedback,
                     )
                 return {}
 
@@ -951,9 +1034,18 @@ class ProblemGenerationWorkflow:
         item: GeneratedItem,
         result: RuleValidationResult,
         feedback: dict[tuple[int, int], _AttemptFeedback],
+        execution_context: ExecutionContext,
     ) -> dict[str, object]:
         if state.fallback_ref is not None:
             return await self._restore_fallback(state)
+        _record_attempt_feedback(
+            feedback,
+            state=state,
+            execution_id=execution_context.execution_id,
+            stage=AttemptDiagnosticStage.RULE_VALIDATION,
+            failed_checks=result.failed_checks,
+            previous_stem_hash=item_stem_hash(item),
+        )
         if not result.verification_available:
             detail = (
                 "R-1 어휘 대조 구현 안 됨 — LexiconLookup 미배선"
@@ -971,11 +1063,8 @@ class ProblemGenerationWorkflow:
                 state,
                 reason=ProblemFailureReason.BANNED_TOPIC,
                 detail="R-5 금칙 오염",
+                feedback=feedback,
             )
-        feedback[(state.cursor, state.item_attempt)] = _AttemptFeedback(
-            failed_checks=result.failed_checks,
-            previous_stem_hash=item_stem_hash(item),
-        )
         if state.item_attempt == PROBLEM_GENERATION_ITEM_ATTEMPT_LIMIT:
             reason = (
                 ProblemFailureReason.SOURCE_UNVERIFIED
@@ -993,6 +1082,7 @@ class ProblemGenerationWorkflow:
                     "규칙 검증 실패로 생성 시도 소진: "
                     + ", ".join(result.failed_checks)
                 ),
+                feedback=feedback,
             )
         return {}
 
@@ -1186,12 +1276,14 @@ class ProblemGenerationWorkflow:
         *,
         reason: ProblemFailureReason,
         detail: str,
+        feedback: dict[tuple[int, int], _AttemptFeedback],
     ) -> dict[str, object]:
         item_result = ItemResult(
             status=ProblemItemStatus.DROPPED,
             attempt_no=state.item_attempt,
             failure_reason=reason,
             failure_detail=detail,
+            attempts=_attempt_diagnostics(state, feedback),
         )
         await self._item_store.save(
             set_id=state.set_id,

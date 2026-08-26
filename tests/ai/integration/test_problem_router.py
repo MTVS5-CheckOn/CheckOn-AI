@@ -555,6 +555,40 @@ def test_misconception_gate_rejection_returns_status_instead_of_5xx() -> None:
     assert len(run_store.runs) == 1
 
 
+def test_dropped_slot_queries_include_attempt_diagnostics() -> None:
+    inconsistent = _misconception_check_json(inconsistent=frozenset({2}))
+    _prepare(
+        generator_steps=tuple(_generated_item_json() for _ in range(3)),
+        verifier_steps=tuple(
+            step
+            for _ in range(3)
+            for step in (_solve_result_json(), inconsistent)
+        ),
+    )
+
+    with TestClient(create_app()) as client:
+        posted = client.post("/v1/problems", headers=_HEADERS, json=_body())
+        fetched = client.get(
+            f"/v1/problems/{posted.json()['data']['job_id']}",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+        set_id = fetched.json()["data"]["result"]["set_id"]
+        listed = client.get(
+            f"/v1/problems/{set_id}/items",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+        detailed = client.get(
+            f"/v1/problems/{set_id}/items/0",
+            headers={"X-Tenant-Id": _HEADERS["X-Tenant-Id"]},
+        )
+
+    assert listed.status_code == detailed.status_code == 200
+    for slot in (listed.json()["data"]["items"][0], detailed.json()["data"]):
+        assert slot["failure_detail"]
+        assert 1 <= slot["attempt_no"] <= 3
+        assert len(slot["attempts"]) == slot["attempt_no"]
+
+
 def test_curriculum_matrix_has_exact_five_area_distribution() -> None:
     counts = {
         area: sum(node.area_tag is area for node in _CURRICULUM_NODES)
