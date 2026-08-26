@@ -35,7 +35,7 @@ import logging
 import time
 from functools import lru_cache
 from types import SimpleNamespace
-from typing import Any, NoReturn
+from typing import Any, Final, NoReturn
 
 from openai import (
     APIConnectionError,
@@ -50,12 +50,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ai.contracts.execution import ExecutionContext
 from ai.contracts.llm import (
     CallOutcome,
+    FinishReasonObservation,
     LlmError,
     LLMRequest,
     LLMResult,
     LlmTimeout,
     LlmUnavailable,
-    ParseFailed,
     TokenUsage,
 )
 from ai.runtime.env_files import ENV_FILES
@@ -68,6 +68,20 @@ PROVIDER_NAME = "openai-compat"
 
 #: rate limit — **일시 실패**로 본다(재시도 대상). 아래 `complete()` 참조.
 _RATE_LIMITED = 429
+_VENDOR_FIELD_ABSENT: Final = object()
+
+
+def _finish_reason_of(choice: object | None) -> FinishReasonObservation:
+    """벤더 필드 부재와 제공값을 가르며, 제공값 어휘는 열어 둔다."""
+
+    if choice is None:
+        return FinishReasonObservation.vendor_not_provided()
+    raw = getattr(choice, "finish_reason", _VENDOR_FIELD_ABSENT)
+    if raw is _VENDOR_FIELD_ABSENT:
+        return FinishReasonObservation.vendor_not_provided()
+    return FinishReasonObservation.vendor_provided(
+        None if raw is None else str(raw)
+    )
 
 
 class OpenAiSettings(BaseSettings):
@@ -226,10 +240,9 @@ class OpenAICompatProvider:
             raise LlmError("LLM 호출 실패") from exc
 
         latency_ms = int((time.monotonic() - start) * 1000)
-        content = response.choices[0].message.content if response.choices else None
-        if content is None or not content.strip():
-            # 빈 응답은 ParseFailed — 상위 소비자의 재시도 예산(블록 ≤3·item_attempt)이 소진한다.
-            raise ParseFailed("LLM 빈 응답(content 없음/공백)")
+        choice = response.choices[0] if response.choices else None
+        content = choice.message.content if choice is not None else None
+        finish_reason = _finish_reason_of(choice)
 
         usage = response.usage
         token_usage = TokenUsage(
@@ -250,13 +263,17 @@ class OpenAICompatProvider:
             token_usage.tokens_out,
             latency_ms,
         )
+        content_available = content is not None and bool(content.strip())
         return LLMResult(
-            outcome=CallOutcome.OK,
-            text=content,
+            # 빈 응답의 판정은 종전과 같은 PARSE_FAIL이다. finish_reason은 판정에 쓰지 않고
+            # 기록만 하므로, `stop`이어도 content가 비면 이 결과는 그대로 PARSE_FAIL이다.
+            outcome=CallOutcome.OK if content_available else CallOutcome.PARSE_FAIL,
+            text=content if content_available else None,
             provider=self.name,
             model=self._settings.openai_model,
             usage=token_usage,
             latency_ms=latency_ms,
+            finish_reason=finish_reason,
         )
 
 

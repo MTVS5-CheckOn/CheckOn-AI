@@ -12,6 +12,8 @@ from ai.contracts.execution import Capability, ExecutionContext, VersionSet
 from ai.contracts.llm import (
     CallOutcome,
     FieldMissing,
+    FinishReasonObservation,
+    FinishReasonState,
     LlmError,
     LLMProvider,
     LLMRequest,
@@ -90,6 +92,14 @@ def test_llm_request_roundtrip() -> None:
 def test_llm_result_roundtrip() -> None:
     result = _result()
     assert LLMResult.model_validate(result.model_dump(mode="json")) == result
+
+
+def test_unfilled_finish_reason_is_explicitly_uncollected() -> None:
+    result = _result()
+
+    assert result.finish_reason == FinishReasonObservation.uncollected()
+    assert result.finish_reason.state is FinishReasonState.UNCOLLECTED
+    assert result.finish_reason.value is None
 
 
 def test_failed_result_has_no_text() -> None:

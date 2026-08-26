@@ -2,7 +2,7 @@
 
 실서버 없이 fake client를 주입해 결정론화한다(스모크는 integration 마커 별도).
 검증 초점: SDK 예외가 밖으로 새지 않고 전부 계약 예외(Llm*)로 매핑되는가 ·
-빈 응답이 재시도 대상(ParseFailed)인가 · 파라미터가 인터페이스 경로로만 전달되는가.
+빈 응답이 재시도 대상(PARSE_FAIL)인가 · 파라미터가 인터페이스 경로로만 전달되는가.
 """
 
 from __future__ import annotations
@@ -30,13 +30,15 @@ from ai.composition.counsel.provider import COUNSEL_GEN_PARAMS
 from ai.contracts.execution import Capability, ExecutionContext, GenerationParams, VersionSet
 from ai.contracts.llm import (
     CallOutcome,
+    FinishReasonState,
     LlmError,
     LLMProvider,
     LLMRequest,
+    LLMResult,
     LlmTimeout,
     LlmUnavailable,
     ModelRole,
-    ParseFailed,
+    TokenUsage,
 )
 from ai.llm.determinism import LLM_SEED, deterministic_params
 from ai.llm.providers.openai_compat import (
@@ -115,9 +117,19 @@ class _FakeClient(AsyncOpenAI):
         )
 
 
-def _ok_response(content: str | None) -> SimpleNamespace:
+_FIELD_ABSENT: Final = object()
+
+
+def _ok_response(
+    content: str | None,
+    *,
+    finish_reason: object = _FIELD_ABSENT,
+) -> SimpleNamespace:
+    choice = SimpleNamespace(message=SimpleNamespace(content=content))
+    if finish_reason is not _FIELD_ABSENT:
+        choice.finish_reason = finish_reason
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+        choices=[choice],
         usage=SimpleNamespace(prompt_tokens=12, completion_tokens=7),
     )
 
@@ -147,6 +159,48 @@ def test_happy_path_returns_ok_result() -> None:
     assert result.usage.tokens_in == 12
     assert result.usage.tokens_out == 7
     assert result.usage.cost_usd == 0.0  # 미측정 — 원가 없음이 아니다(99 ⓠ)
+
+
+def test_finish_reason_distinguishes_uncollected_absent_and_stop() -> None:
+    uncollected = LLMResult(
+        outcome=CallOutcome.OK,
+        text="대역 응답",
+        provider="fake",
+        model="fake-model",
+        usage=TokenUsage(tokens_in=1, tokens_out=1, cost_usd=0.0),
+        latency_ms=1,
+    ).finish_reason
+    absent = _run(
+        _provider(result=_ok_response("필드 없음")).complete(_request(), _context())
+    ).finish_reason
+    stopped = _run(
+        _provider(
+            result=_ok_response("정상 종료", finish_reason="stop")
+        ).complete(_request(), _context())
+    ).finish_reason
+
+    assert [item.state for item in (uncollected, absent, stopped)] == [
+        FinishReasonState.UNCOLLECTED,
+        FinishReasonState.VENDOR_NOT_PROVIDED,
+        FinishReasonState.VENDOR_PROVIDED,
+    ]
+    assert [item.value for item in (uncollected, absent, stopped)] == [
+        None,
+        None,
+        "stop",
+    ]
+
+
+def test_unknown_vendor_finish_reason_is_recorded_without_changing_outcome() -> None:
+    result = _run(
+        _provider(
+            result=_ok_response("알 수 없는 종료 사유", finish_reason="future_reason")
+        ).complete(_request(), _context())
+    )
+
+    assert result.outcome is CallOutcome.OK
+    assert result.finish_reason.state is FinishReasonState.VENDOR_PROVIDED
+    assert result.finish_reason.value == "future_reason"
 
 
 def test_injected_name_identifies_provider_and_result() -> None:
@@ -250,16 +304,22 @@ def test_cost_usd_is_zero_and_that_means_unmeasured() -> None:
 
 
 def test_empty_content_maps_to_retryable_parse_failed() -> None:
-    """빈 응답(None) = 재시도 대상 → ParseFailed(게이트웨이가 재호출)."""
-    provider = _provider(result=_ok_response(None))
-    with pytest.raises(ParseFailed):
-        _run(provider.complete(_request(), _context()))
+    """빈 응답(None)은 finish_reason과 무관하게 종전과 같은 PARSE_FAIL이다."""
+    provider = _provider(result=_ok_response(None, finish_reason="stop"))
+    result = _run(provider.complete(_request(), _context()))
+
+    assert result.outcome is CallOutcome.PARSE_FAIL
+    assert result.text is None
+    assert result.finish_reason.value == "stop"
 
 
 def test_whitespace_content_maps_to_parse_failed() -> None:
-    provider = _provider(result=_ok_response("   \n  "))
-    with pytest.raises(ParseFailed):
-        _run(provider.complete(_request(), _context()))
+    provider = _provider(result=_ok_response("   \n  ", finish_reason="length"))
+    result = _run(provider.complete(_request(), _context()))
+
+    assert result.outcome is CallOutcome.PARSE_FAIL
+    assert result.text is None
+    assert result.finish_reason.value == "length"
 
 
 def test_generation_params_passed_through_interface_path() -> None:
