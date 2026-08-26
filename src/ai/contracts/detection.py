@@ -380,6 +380,7 @@ class WeeklyActivityEvidence(_EvidenceBase):
     source_table: Literal["student_week_activity"]
     week_start: date
     activity_count: int = Field(ge=0)
+    enrolled_seconds: int | None = Field(default=None, ge=0)
 
 
 class EnrollmentTransitionEvidence(_EvidenceBase):

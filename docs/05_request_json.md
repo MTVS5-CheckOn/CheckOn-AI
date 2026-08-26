@@ -73,7 +73,8 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
       "record_id": "swa_20260810_st_8f2a",
       "student_ref": "st_8f2a",
       "week_start": "2026-08-10",
-      "activity_count": 0
+      "activity_count": 0,
+      "enrolled_seconds": 604800           // optional · 해당 주 재원 구간(초), 0 이상 · 판정에 쓰지 않음
     },
     {
       "kind": "enrollment_transition",      // R5 — 휴원→복귀 상태 전환 이력
@@ -87,6 +88,10 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
   ]
 }
 ```
+
+`weekly_activity.enrolled_seconds`는 해당 주 재원 구간을 나타내는 **선택 필드**다. 초 단위
+정수이며 값이 있으면 0 이상이어야 한다. 미전송과 `null`을 모두 허용하며, 현재 R3 판정은
+기존대로 `activity_count`만 사용한다. `enrolled_seconds`는 어떤 규칙·피처 계산에도 쓰지 않는다.
 
 > ### `[A 확정 통보 — 2026-08-03 · 승우 합의]` `passage_ref` 신설
 >

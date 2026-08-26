@@ -196,6 +196,38 @@ def test_fields_of_another_kind_are_rejected() -> None:
         )
 
 
+def test_weekly_activity_with_enrolled_seconds_is_accepted() -> None:
+    request = DetectRequest.model_validate(
+        _base_body(detection_evidence=[_activity(enrolled_seconds=604800)])
+    )
+    activity = request.detection_evidence[0]
+    assert isinstance(activity, WeeklyActivityEvidence)
+    assert activity.enrolled_seconds == 604800
+
+
+def test_weekly_activity_without_enrolled_seconds_is_still_accepted() -> None:
+    request = DetectRequest.model_validate(
+        _base_body(detection_evidence=[_activity()])
+    )
+    activity = request.detection_evidence[0]
+    assert isinstance(activity, WeeklyActivityEvidence)
+    assert activity.enrolled_seconds is None
+
+
+def test_weekly_activity_still_rejects_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        DetectRequest.model_validate(
+            _base_body(detection_evidence=[_activity(unexpected_field=1)])
+        )
+
+
+def test_weekly_activity_rejects_negative_enrolled_seconds() -> None:
+    with pytest.raises(ValidationError):
+        DetectRequest.model_validate(
+            _base_body(detection_evidence=[_activity(enrolled_seconds=-1)])
+        )
+
+
 # ───────────────────────── 요청 경계 (§9) ─────────────────────────
 
 
