@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 import time
 from collections.abc import Coroutine
@@ -37,6 +38,8 @@ from ai.contracts.llm import (
     ModelRole,
 )
 from ai.contracts.problem_generation import (
+    AttemptDiagnostic,
+    AttemptDiagnosticStage,
     GeneratedItem,
     ItemResult,
     LiteratureGenre,
@@ -44,6 +47,7 @@ from ai.contracts.problem_generation import (
     MediaSourceRequest,
     PassageDomain,
     PassageRequest,
+    ProblemFailureReason,
     ProblemItemStatus,
     ProblemRequest,
     ProblemSetResult,
@@ -268,6 +272,7 @@ class SmokeReportRow:
     final_status: str
     failure_reason: str
     failure_detail: str
+    attempts: str
     stored_body_count: int
     model: str
 
@@ -648,6 +653,16 @@ def _report_row(
         or "-"
     )
     details = ",".join(_single_line(item.failure_detail) for item in items) or "-"
+    attempts = _single_line(
+        json.dumps(
+            [
+                [attempt.model_dump(mode="json") for attempt in item.attempts]
+                for item in items
+            ],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    )
     models = sorted({observation.generator_model for observation in observations})
     return SmokeReportRow(
         area_tag=area_tag,
@@ -658,6 +673,7 @@ def _report_row(
         final_status=statuses,
         failure_reason=reasons,
         failure_detail=details,
+        attempts=attempts,
         stored_body_count=sum(len(observation.generated_items) for observation in observations),
         model=",".join(models) or "-",
     )
@@ -783,8 +799,8 @@ async def _run_matrix(
 def _render_report(rows: tuple[SmokeReportRow, ...]) -> str:
     lines = [
         "| 트랙 | 영역 | 생성 시도 N | 스키마 통과 M | 최종 status | "
-        "failure_reason | failure_detail | 저장 본문 수 | 모델명 |",
-        "| --- | --- | ---: | ---: | --- | --- | --- | ---: | --- |",
+        "failure_reason | failure_detail | attempts | 저장 본문 수 | 모델명 |",
+        "| --- | --- | ---: | ---: | --- | --- | --- | --- | ---: | --- |",
     ]
     lines.extend(
         "| "
@@ -797,6 +813,7 @@ def _render_report(rows: tuple[SmokeReportRow, ...]) -> str:
                 row.final_status,
                 row.failure_reason,
                 row.failure_detail,
+                row.attempts,
                 str(row.stored_body_count),
                 row.model,
             )
@@ -1009,7 +1026,9 @@ def test_unavailable_reason_reports_only_categorical_failure_metadata() -> None:
     )
 
 
-async def _fake_cli_observation() -> RealLlmSmokeObservation:
+async def _fake_cli_observation(
+    *, with_attempt_diagnostics: bool = False
+) -> RealLlmSmokeObservation:
     provider = FakeProvider(("RAW_COMPLETION_MUST_NOT_PRINT",), name="fake-cli")
     completion = await provider.complete(
         LLMRequest(
@@ -1022,21 +1041,46 @@ async def _fake_cli_observation() -> RealLlmSmokeObservation:
     )
     placeholder = cast(GeneratedItem, object())
     item_id = UUID("00000000-0000-4000-8000-000000000903")
+    item_result = (
+        ItemResult(
+            status=ProblemItemStatus.DROPPED,
+            attempt_no=2,
+            failure_reason=ProblemFailureReason.GENERATION_EXHAUSTED,
+            failure_detail="교차 풀이 불일치로 생성 시도 소진",
+            attempts=(
+                AttemptDiagnostic(
+                    attempt_no=1,
+                    stage=AttemptDiagnosticStage.GENERATOR_LLM_ERROR,
+                    failed_checks=("generator:FieldMissing",),
+                    schema_issue_paths=("$.answer.correct_no:missing",),
+                ),
+                AttemptDiagnostic(
+                    attempt_no=2,
+                    stage=AttemptDiagnosticStage.CROSS_SOLVE_MISMATCH,
+                    failed_checks=("C-1:정답_불일치",),
+                ),
+            ),
+        )
+        if with_attempt_diagnostics
+        else ItemResult(
+            item_id=item_id,
+            status=ProblemItemStatus.VERIFIED,
+            attempt_no=1,
+        )
+    )
     result = ProblemSetResult(
         set_id=UUID("00000000-0000-4000-8000-000000000902"),
-        status=ProblemSetStatus.GENERATED,
+        status=(
+            ProblemSetStatus.FAILED
+            if with_attempt_diagnostics
+            else ProblemSetStatus.GENERATED
+        ),
         target_source=TargetSource.TEACHER_MANUAL,
         personalized=False,
         requested_count=1,
         processed_count=1,
         unstarted_count=0,
-        items=(
-            ItemResult(
-                item_id=item_id,
-                status=ProblemItemStatus.VERIFIED,
-                attempt_no=1,
-            ),
-        ),
+        items=(item_result,),
     )
     return RealLlmSmokeObservation(
         area_tag=AreaTag.LANGUAGE,
@@ -1054,11 +1098,15 @@ async def _fake_cli_observation() -> RealLlmSmokeObservation:
         generator_completions=(completion,),
         verifier_completions=(),
         parsed_items=(placeholder,),
-        generated_items=(placeholder,),
-        refine_outcome=ProblemRefineOutcome(
-            applied=False,
-            blocked_reason=BlockedReason.ANSWER_INTEGRITY,
-            failed_checks=("R-1:테스트",),
+        generated_items=(() if with_attempt_diagnostics else (placeholder,)),
+        refine_outcome=(
+            None
+            if with_attempt_diagnostics
+            else ProblemRefineOutcome(
+                applied=False,
+                blocked_reason=BlockedReason.ANSWER_INTEGRITY,
+                failed_checks=("R-1:테스트",),
+            )
         ),
     )
 
@@ -1127,10 +1175,36 @@ def test_cli_fake_provider_renders_table_without_endpoint() -> None:
     observation = asyncio.run(_fake_cli_observation())
     rendered = _render_report((_report_row(AreaTag.LANGUAGE, (observation,)),))
 
-    assert "| T1 | language | 1 | 1 | verified | - | - | 1 | fake-model |" in rendered
+    assert "| T1 | language | 1 | 1 | verified | - | - | [[]] | 1 | fake-model |" in rendered
     assert "secret.example" not in rendered
     assert "api_key" not in rendered
     assert "RAW_COMPLETION_MUST_NOT_PRINT" not in rendered
+
+
+def test_cli_fake_attempt_diagnostics_reach_the_saved_report(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    observation = asyncio.run(_fake_cli_observation(with_attempt_diagnostics=True))
+
+    async def fake_run(_area_tag: AreaTag) -> RealLlmSmokeObservation:
+        return observation
+
+    monkeypatch.setattr(sys.modules[__name__], "run_real_llm_smoke", fake_run)
+
+    result_path = tmp_path / "report.md"
+    assert asyncio.run(_main_async("language", 1, result_path=result_path)) == 0
+    report = result_path.read_text(encoding="utf-8")
+    assert '"attempt_no":1' in report
+    assert '"stage":"generator_llm_error"' in report
+    assert '"failed_checks":["generator:FieldMissing"]' in report
+    assert '"schema_issue_paths":["$.answer.correct_no:missing"]' in report
+    assert '"attempt_no":2' in report
+    assert '"stage":"cross_solve_mismatch"' in report
+    assert '"failed_checks":["C-1:정답_불일치"]' in report
+    assert "secret.example" not in report
+    assert "api_key" not in report
+    assert "RAW_COMPLETION_MUST_NOT_PRINT" not in report
 
 
 def test_cli_preserves_success_and_failure_from_repeated_single_area(
@@ -1169,7 +1243,7 @@ def test_cli_preserves_success_and_failure_from_repeated_single_area(
     assert "secret.example" not in output
     assert "RAW_COMPLETION_MUST_NOT_PRINT" not in output
     report = result_path.read_text(encoding="utf-8")
-    assert "| T1 | language | 1 | 1 | verified | - | - | 1 | fake-model |" in report
+    assert "| T1 | language | 1 | 1 | verified | - | - | [[]] | 1 | fake-model |" in report
     assert "| language | false | - | answer_integrity | R-1:테스트 |" in report
     assert "| language | provider_error | LlmError | BadRequestError | 400 | unknown |" in report
     assert "secret.example" not in report

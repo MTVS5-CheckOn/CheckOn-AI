@@ -37,9 +37,34 @@
         "current_revision_no": 0,
         "review_reason": null,
         "failure_reason": null,
-        "failure_detail": null,
-        "attempt_no": 1,
-        "attempts": []
+        "failure_detail": "교차 풀이 파싱 시도 소진: ParseFailed",
+        "attempt_no": 3,
+        "attempts": [
+          {
+            "attempt_no": 1,
+            "stage": "cross_solve_parse",
+            "failed_checks": [
+              "verifier:ParseFailed"
+            ],
+            "schema_issue_paths": []
+          },
+          {
+            "attempt_no": 2,
+            "stage": "cross_solve_parse",
+            "failed_checks": [
+              "verifier:ParseFailed"
+            ],
+            "schema_issue_paths": []
+          },
+          {
+            "attempt_no": 3,
+            "stage": "cross_solve_parse",
+            "failed_checks": [
+              "verifier:ParseFailed"
+            ],
+            "schema_issue_paths": []
+          }
+        ]
       },
       {
         "slot_index": 3,
