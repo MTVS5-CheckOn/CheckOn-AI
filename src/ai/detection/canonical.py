@@ -52,7 +52,6 @@ def _evidence_row(item: DetectionEvidence) -> dict[str, Any]:
         row["submitted_count"] = item.submitted_count
     elif isinstance(item, WeeklyActivityEvidence):
         row["activity_count"] = item.activity_count
-        row["enrolled_seconds"] = item.enrolled_seconds
     else:
         row["from_status"] = item.from_status.value
         row["to_status"] = item.to_status.value

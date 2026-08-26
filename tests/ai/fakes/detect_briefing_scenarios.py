@@ -211,7 +211,6 @@ class ScenarioBuilder:
                 "source_table": "student_week_activity",
                 "record_id": f"wa_{ref}_{week.isoformat()}",
                 "activity_count": count,
-                "enrolled_seconds": 604800,
             }
         )
         return self

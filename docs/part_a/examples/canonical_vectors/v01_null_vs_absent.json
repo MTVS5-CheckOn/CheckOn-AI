@@ -42,8 +42,7 @@
       "student_ref": "st_1",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 0,
-      "enrolled_seconds": 604800
+      "activity_count": 0
     }
   ]
 }

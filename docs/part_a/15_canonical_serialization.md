@@ -159,7 +159,7 @@ def _evidence_row(item: DetectionEvidence) -> dict[str, Any]:
     if isinstance(item, AssignmentWindowEvidence):
         row["expected_count"], row["submitted_count"] = …
     elif isinstance(item, WeeklyActivityEvidence):
-        row["activity_count"], row["enrolled_seconds"] = …
+        row["activity_count"] = …
     else:                                    # EnrollmentTransitionEvidence
         row["from_status"], row["to_status"] = …
 ```
@@ -171,7 +171,7 @@ def _evidence_row(item: DetectionEvidence) -> dict[str, Any]:
 **대조 확인(2026-08-21 · 벡터 `v01`):** 양쪽 행이 글자 하나까지 같았다.
 
 ```
-{"activity_count":0,"at":"2026-08-10","enrolled_seconds":604800,"kind":"weekly_activity",
+{"activity_count":0,"at":"2026-08-10","kind":"weekly_activity",
  "record_id":"swa_1","source_table":"student_week_activity","student_ref":"st_1"}
 ```
 

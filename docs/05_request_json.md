@@ -73,8 +73,7 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
       "record_id": "swa_20260810_st_8f2a",
       "student_ref": "st_8f2a",
       "week_start": "2026-08-10",
-      "activity_count": 0,
-      "enrolled_seconds": 604800          // 필수 · 해당 주 재원 구간(초), 0 이상 int64
+      "activity_count": 0
     },
     {
       "kind": "enrollment_transition",      // R5 — 휴원→복귀 상태 전환 이력
