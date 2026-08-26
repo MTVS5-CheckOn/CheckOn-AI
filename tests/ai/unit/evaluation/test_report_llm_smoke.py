@@ -70,6 +70,32 @@ def test_capped_provider_never_makes_an_external_call_past_the_limit() -> None:
     assert fallback.provider == "measurement-cap"
 
 
+def test_capped_provider_records_order_timeline_and_finish_reason() -> None:
+    provider = FakeProvider(("{}", "{}", "{}"), name="observed")
+    moments = iter((0.00, 0.01, 0.05, 0.06, 0.09, 0.12))
+    capped = CappedProvider(provider, max_calls=3, clock=lambda: next(moments))
+
+    asyncio.run(capped.complete(_request(), _context()))
+    asyncio.run(capped.complete(_request(), _context()))
+    asyncio.run(capped.complete(_request(), _context()))
+
+    report = report_llm_smoke._render_report(
+        defaultdict(report_llm_smoke.PromptStats),
+        reports=0,
+        external_calls=3,
+        regenerations=0,
+        statuses=Counter(),
+        models=set(),
+        observations=capped.observations,
+    )
+
+    assert [item.sequence for item in capped.observations] == [1, 2, 3]
+    assert "timeline_phases=back=1,front=1,middle=1 total_ms=120" in report
+    assert "| 1 | 0 | front | `report.greeting.v1` | ok | uncollected | - |" in report
+    assert "| 2 | 50 | middle | `report.greeting.v1` | ok | uncollected | - |" in report
+    assert "| 3 | 90 | back | `report.greeting.v1` | ok | uncollected | - |" in report
+
+
 def test_measurement_refuses_to_start_without_explicit_opt_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import time
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
@@ -91,14 +92,36 @@ class MeasurementLimitExceeded(RuntimeError):
     """외부 호출 100회를 넘기려 해 측정 결과를 폐기해야 하는 경우."""
 
 
+@dataclass(frozen=True)
+class CallObservation:
+    """본문 없이 남기는 외부 콜 순번·벽시계·종단 관측."""
+
+    sequence: int
+    prompt_id: str
+    started_offset_ms: int
+    completed_offset_ms: int
+    outcome: str
+    finish_reason_state: str
+    finish_reason_value: str | None
+
+
 class CappedProvider:
     """외부 provider 호출 직전에 승인된 총량을 강제하는 측정 전용 래퍼."""
 
-    def __init__(self, inner: LLMProvider, *, max_calls: int) -> None:
+    def __init__(
+        self,
+        inner: LLMProvider,
+        *,
+        max_calls: int,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._inner = inner
         self._max_calls = max_calls
+        self._clock = clock
+        self._started_at: float | None = None
         self.external_calls = 0
         self.denied_calls = 0
+        self.observations: list[CallObservation] = []
 
     @property
     def name(self) -> str:
@@ -117,8 +140,40 @@ class CappedProvider:
                 usage=TokenUsage(tokens_in=0, tokens_out=0, cost_usd=0.0),
                 latency_ms=0,
             )
+        started_at = self._clock()
+        if self._started_at is None:
+            self._started_at = started_at
         self.external_calls += 1
-        return await self._inner.complete(request, context)
+        sequence = self.external_calls
+        try:
+            result = await self._inner.complete(request, context)
+        except Exception as error:
+            completed_at = self._clock()
+            self.observations.append(
+                CallObservation(
+                    sequence=sequence,
+                    prompt_id=request.prompt_id,
+                    started_offset_ms=int((started_at - self._started_at) * 1000),
+                    completed_offset_ms=int((completed_at - self._started_at) * 1000),
+                    outcome=f"exception:{type(error).__name__}",
+                    finish_reason_state="uncollected",
+                    finish_reason_value=None,
+                )
+            )
+            raise
+        completed_at = self._clock()
+        self.observations.append(
+            CallObservation(
+                sequence=sequence,
+                prompt_id=request.prompt_id,
+                started_offset_ms=int((started_at - self._started_at) * 1000),
+                completed_offset_ms=int((completed_at - self._started_at) * 1000),
+                outcome=result.outcome.value,
+                finish_reason_state=result.finish_reason.state.value,
+                finish_reason_value=result.finish_reason.value,
+            )
+        )
+        return result
 
 
 @dataclass
@@ -338,6 +393,46 @@ def _counter_text[CounterKey: (str, int)](values: Counter[CounterKey]) -> str:
     return ",".join(f"{key}={values[key]}" for key in sorted(values, key=str))
 
 
+def _timeline_phase(observation: CallObservation, total_ms: int) -> str:
+    """첫 외부 콜 시작부터 마지막 종료까지의 벽시계를 3등분한다."""
+
+    if total_ms <= 0:
+        return "front"
+    position = observation.started_offset_ms / total_ms
+    if position < 1 / 3:
+        return "front"
+    if position < 2 / 3:
+        return "middle"
+    return "back"
+
+
+def _ascii_cell(value: str | None) -> str:
+    if value is None:
+        return "-"
+    return value.encode("ascii", errors="backslashreplace").decode("ascii")
+
+
+def _timeline_lines(observations: Sequence[CallObservation]) -> list[str]:
+    if not observations:
+        return ["timeline_phases=none"]
+    total_ms = max(item.completed_offset_ms for item in observations)
+    phases = Counter(_timeline_phase(item, total_ms) for item in observations)
+    lines = [
+        f"timeline_phases={_counter_text(phases)} total_ms={total_ms}",
+        "| call_no | started_ms | phase | prompt_id | outcome | "
+        "finish_reason_state | finish_reason |",
+        "| ---: | ---: | --- | --- | --- | --- | --- |",
+    ]
+    lines.extend(
+        f"| {item.sequence} | {item.started_offset_ms} | "
+        f"{_timeline_phase(item, total_ms)} | `{item.prompt_id}` | "
+        f"{_ascii_cell(item.outcome)} | {_ascii_cell(item.finish_reason_state)} | "
+        f"{_ascii_cell(item.finish_reason_value)} |"
+        for item in observations
+    )
+    return lines
+
+
 def _render_report(
     stats: dict[str, PromptStats],
     *,
@@ -346,6 +441,7 @@ def _render_report(
     regenerations: int,
     statuses: Counter[str],
     models: set[str],
+    observations: Sequence[CallObservation] = (),
 ) -> str:
     model = ",".join(sorted(models)) or "unknown"
     lines = [
@@ -376,6 +472,7 @@ def _render_report(
             f"{_counter_text(item.gate_rejections)} | "
             f"{_counter_text(item.attempt_outcomes)} |"
         )
+    lines.extend(["", *_timeline_lines(observations)])
     report = "\n".join(lines) + "\n"
     report.encode("ascii")
     return report
@@ -458,6 +555,7 @@ async def _run_measurement(*, runs: int, max_calls: int, output_path: Path) -> N
         regenerations=regenerations,
         statuses=statuses,
         models=models,
+        observations=capped.observations,
     )
     _emit_report(report, output_path)
 
@@ -488,4 +586,10 @@ if __name__ == "__main__":
     main()
 
 
-__all__ = ["CappedProvider", "MeasurementLimitExceeded", "main", "run_measurement"]
+__all__ = [
+    "CallObservation",
+    "CappedProvider",
+    "MeasurementLimitExceeded",
+    "main",
+    "run_measurement",
+]
