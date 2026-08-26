@@ -175,6 +175,7 @@ _EVIDENCE_VIOLATIONS: dict[str, dict[str, Any]] = {
         "record_id": "swa_bad",
         "week_start": "2026-12-28",
         "activity_count": 0,
+        "enrolled_seconds": 604800,
     },
     "timezone 없는 전환": {
         "kind": "enrollment_transition",

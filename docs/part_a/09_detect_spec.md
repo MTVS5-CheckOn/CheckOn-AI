@@ -153,13 +153,16 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 | kind | 규칙 | 고유 필드 | 판정 |
 | --- | --- | --- | --- |
 | `assignment_window` | **R2** | `week_start` · `expected_count` · `submitted_count` | 연속 미제출 한 주 = `expected > 0 AND submitted == 0`. **`expected == 0`은 미제출이 아니다**(방학·휴강 — 연속에서 제외). 일부 제출은 **연속 종료** |
-| `weekly_activity` | **R3** | `week_start` · `activity_count` | 이 값이 **판정값이자 evidence**다. **0건도 실존 레코드**. ⚠ `learning_events` 개수와 섞지 않는다 |
+| `weekly_activity` | **R3** | `week_start` · `activity_count` · `enrolled_seconds` | `activity_count`가 **판정값이자 evidence**다. **0건도 실존 레코드**. `enrolled_seconds`는 해당 주 재원 구간(초)의 필수 strict 정수(`1..604800`, 7일)이며 판정에는 쓰지 않는다. ⚠ `learning_events` 개수와 섞지 않는다 |
 | `enrollment_transition` | **R5** | `occurred_at`(tz 필수) · `from_status` · `to_status` | `to_status == returned` + **전환 주 == 분석 주** + `students[].status == returned` |
 
 **공통 필드:** `kind` · `source_table`(정본 테이블 **논리명**) · `record_id`(원본 PK) · `student_ref`.
 ⚠ **실명·연락처·자유 원문이 들어올 자리가 없다**(`extra="forbid"` · 불변식 3).
 ⚠ **AI는 `source_table`을 SQL 식별자로 쓰지 않는다** — 응답 evidence에 그대로 실어 **BE가
 자기 원본을 조회**하게 하는 값이다. **원본 전문을 AI PG에 복제 저장하지 않는다.**
+
+**정본 계약:** 신규 `weekly_activity` 행은 `enrolled_seconds`를 반드시 보내며 값은
+`1..604800`이다. **수신 구현의 legacy 관용:** 없음. 누락·`null`·범위 밖 값은 거부한다.
 
 **없으면 어떻게 되나** — R1·R4·R6는 기존대로, **R2·R3·R5는 미판정 + `rules_skipped`에
 `authoritative_evidence_missing`**. 🔴 **다른 기록으로 대신하지 않는다**(fail-closed).

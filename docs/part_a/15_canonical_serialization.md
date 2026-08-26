@@ -130,6 +130,10 @@ AI       6자리 고정 (후행 0 보존)
 ```
 
 ⚠ 현행 payload 에 부동소수는 **0개**다 **[읽음 `contracts/detection.py`]**. `enrolled_days`(소수) 대신 `enrolled_seconds`(정수)를 요청한 근거가 ②다.
+`enrolled_seconds`의 **정본 계약**은 신규 `weekly_activity` 행의 필수 strict 정수
+`1..604800`(7일)이다. canonical 해시에는 포함하지만 R3 판정에는 쓰지 않는다.
+**수신 구현의 legacy 관용은 없다** — 누락·`null`·범위 밖 값을 canonical 단계까지
+보내지 않고 요청 검증에서 거부한다.
 ⚠ `AxisConfidence`(classify 응답의 0.0~1.0)는 해당 없다 — 응답에만 실리고 해시 표면이 아니다. 🔴 **②는 「해시되는 입력」에만 건다.**
 
 ### 2-3. ⑥ null 과 키 부재 — 🔴 **범위 정정 (2026-08-21)**
@@ -159,7 +163,7 @@ def _evidence_row(item: DetectionEvidence) -> dict[str, Any]:
     if isinstance(item, AssignmentWindowEvidence):
         row["expected_count"], row["submitted_count"] = …
     elif isinstance(item, WeeklyActivityEvidence):
-        row["activity_count"] = …
+        row["activity_count"], row["enrolled_seconds"] = …
     else:                                    # EnrollmentTransitionEvidence
         row["from_status"], row["to_status"] = …
 ```
@@ -171,7 +175,7 @@ def _evidence_row(item: DetectionEvidence) -> dict[str, Any]:
 **대조 확인(2026-08-21 · 벡터 `v01`):** 양쪽 행이 글자 하나까지 같았다.
 
 ```
-{"activity_count":0,"at":"2026-08-10","kind":"weekly_activity",
+{"activity_count":0,"at":"2026-08-10","enrolled_seconds":604800,"kind":"weekly_activity",
  "record_id":"swa_1","source_table":"student_week_activity","student_ref":"st_1"}
 ```
 

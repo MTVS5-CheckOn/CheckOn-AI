@@ -162,6 +162,7 @@ _V01: Final[dict[str, Any]] = {
             "source_table": "student_week_activity",
             "week_start": _WEEK,
             "activity_count": 0,
+            "enrolled_seconds": 604800,
         }
     ],
 }
@@ -253,6 +254,7 @@ _V06: Final[dict[str, Any]] = {
             "source_table": "student_week_activity",
             "week_start": _WEEK,
             "activity_count": 4,
+            "enrolled_seconds": 604800,
         },
         {
             "kind": "assignment_window",
@@ -406,6 +408,7 @@ _V08: Final[dict[str, Any]] = {
             "source_table": "student_week_activity",
             "week_start": _WEEK,
             "activity_count": 21,
+            "enrolled_seconds": 604800,
         }
     ],
 }

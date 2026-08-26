@@ -63,7 +63,12 @@ brief 문장에만 녹아 있고, 그 문장은 LLM 산출이라 재현이 보�
 (*"판정에 쓴 값과 응답 evidence가 갈리면 BE가 원본을 열었을 때 숫자가 안 맞는다"*)에 어긋난다.
 
 R3만 되는 이유: `WeeklyActivityEvidence`가 **주 단위 백엔드 레코드**라
-`record_id`와 `activity_count`가 1:1로 붙는다.
+`record_id`와 `activity_count`가 1:1로 붙는다. 같은 행의 `enrolled_seconds`는 해당 주
+재원 구간을 나타내는 필수 strict 정수 초 값(`1..604800`, 7일)이며 canonical 입력에도
+포함되지만 판정에는 쓰지 않는다.
+
+**정본 계약:** 신규 `weekly_activity` 행은 이 필드를 반드시 보낸다. **수신 구현의 legacy
+관용:** 없음. 누락·`null`·범위 밖 값은 거부한다.
 
 ### 3-2. 채택 — 비교는 신호가, 출처는 evidence가 든다
 

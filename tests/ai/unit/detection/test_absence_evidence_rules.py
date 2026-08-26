@@ -183,6 +183,7 @@ def test_a_zero_count_aggregate_is_still_evidence() -> None:
         student_ref="st_zero",
         week_start=monday,
         activity_count=0,
+        enrolled_seconds=604800,
     )
     items = resolve_r3_evidence(
         EvidenceRequest(

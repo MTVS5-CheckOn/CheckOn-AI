@@ -374,13 +374,15 @@ class WeeklyActivityEvidence(_EvidenceBase):
     🔴 **0건도 실존하는 집계 레코드다** — 「기록이 없다」와 「집계가 0이다」는 다른 사실이고
     앞은 증명할 수 없다. R3는 이 값을 **판정과 evidence에 함께** 쓴다.
     ⚠ `learning_events` 개수로 다시 센 값을 정본처럼 섞지 않는다.
+    `enrolled_seconds`는 해당 주 재원 구간을 초 단위로 나타낸 BE 필수값이다.
+    0초 행은 전송하지 않으므로 1초 이상, 한 주 상한인 604800초 이하의 정수만 받는다.
     """
 
     kind: Literal[EvidenceKind.WEEKLY_ACTIVITY]
     source_table: Literal["student_week_activity"]
     week_start: date
     activity_count: int = Field(ge=0)
-    enrolled_seconds: int | None = Field(default=None, ge=0)
+    enrolled_seconds: int = Field(ge=1, le=604800, strict=True)
 
 
 class EnrollmentTransitionEvidence(_EvidenceBase):
