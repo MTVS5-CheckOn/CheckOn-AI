@@ -153,7 +153,7 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 | kind | 규칙 | 고유 필드 | 판정 |
 | --- | --- | --- | --- |
 | `assignment_window` | **R2** | `week_start` · `expected_count` · `submitted_count` | 연속 미제출 한 주 = `expected > 0 AND submitted == 0`. **`expected == 0`은 미제출이 아니다**(방학·휴강 — 연속에서 제외). 일부 제출은 **연속 종료** |
-| `weekly_activity` | **R3** | `week_start` · `activity_count` | 이 값이 **판정값이자 evidence**다. **0건도 실존 레코드**. ⚠ `learning_events` 개수와 섞지 않는다 |
+| `weekly_activity` | **R3** | `week_start` · `activity_count` · `enrolled_seconds` | `activity_count`가 **판정값이자 evidence**다. **0건도 실존 레코드**. `enrolled_seconds`는 해당 주 재원 구간(초)의 필수 int64(`0..2^63-1`). ⚠ `learning_events` 개수와 섞지 않는다 |
 | `enrollment_transition` | **R5** | `occurred_at`(tz 필수) · `from_status` · `to_status` | `to_status == returned` + **전환 주 == 분석 주** + `students[].status == returned` |
 
 **공통 필드:** `kind` · `source_table`(정본 테이블 **논리명**) · `record_id`(원본 PK) · `student_ref`.

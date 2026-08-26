@@ -83,6 +83,7 @@ def _activity(back: int, *, count: int) -> dict[str, Any]:
         "student_ref": _STUDENT,
         "week_start": stamp,
         "activity_count": count,
+        "enrolled_seconds": 604800,
     }
 
 
