@@ -553,6 +553,14 @@ def test_items_partial_success_fixture() -> None:
         ).model_dump(mode="json")
         for attempt_no in range(1, 4)
     ]
+    verification_attempts = [
+        AttemptDiagnostic(
+            attempt_no=attempt_no,
+            stage=AttemptDiagnosticStage.CROSS_SOLVE_PARSE,
+            failed_checks=("verifier:ParseFailed",),
+        ).model_dump(mode="json")
+        for attempt_no in range(1, 4)
+    ]
     _fixture(
         "get_problem_items.partial_success",
         success_envelope(
@@ -594,9 +602,9 @@ def test_items_partial_success_fixture() -> None:
                         "current_revision_no": 0,
                         "review_reason": None,
                         "failure_reason": None,
-                        "failure_detail": None,
-                        "attempt_no": 1,
-                        "attempts": [],
+                        "failure_detail": "교차 풀이 파싱 시도 소진: ParseFailed",
+                        "attempt_no": 3,
+                        "attempts": verification_attempts,
                     },
                     # 🔴 폐기 문항은 `item_id`가 없다 — 저장소에 애초에 안 앉는다.
                     {

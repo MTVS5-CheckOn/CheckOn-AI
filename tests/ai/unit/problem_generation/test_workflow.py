@@ -603,7 +603,7 @@ def test_three_field_missing_attempts_return_sanitized_diagnostics(
 
     item_result = result.items[0]
     assert item_result.status is ProblemItemStatus.DROPPED
-    assert len(item_result.attempts) == 3
+    assert len(item_result.attempts) == item_result.attempt_no == 3
     assert [attempt.attempt_no for attempt in item_result.attempts] == [1, 2, 3]
     assert all(
         attempt.stage is AttemptDiagnosticStage.GENERATOR_LLM_ERROR
@@ -933,6 +933,37 @@ def test_verifier_outage_is_domain_result_not_execution_exception() -> None:
     assert result.items[0].status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
     stored = asyncio.run(harness.items.list_all())[0]
     assert stored.item is not None
+
+
+def test_verification_unavailable_only_carries_recorded_attempts() -> None:
+    no_reference = _WorkflowHarness(
+        generator_steps=(),
+        verifier_steps=(),
+        graph_steps=((),),
+    )
+
+    immediate = _run(
+        no_reference,
+        no_reference.request(target_source=TargetSource.TEACHER_MANUAL),
+    ).items[0]
+
+    assert immediate.status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
+    assert immediate.attempt_no == 1
+    assert immediate.attempts == ()
+
+    parse_failures = _WorkflowHarness(
+        generator_steps=tuple(_item_json(f"파싱-{attempt}") for attempt in range(1, 4)),
+        verifier_steps=tuple(ParseFailed("민감 원문") for _ in range(3)),
+    )
+
+    recorded = _run(parse_failures, parse_failures.request()).items[0]
+
+    assert recorded.status is ProblemItemStatus.VERIFICATION_UNAVAILABLE
+    assert len(recorded.attempts) == recorded.attempt_no == 3
+    assert all(
+        attempt.stage is AttemptDiagnosticStage.CROSS_SOLVE_PARSE
+        for attempt in recorded.attempts
+    )
 
 
 @pytest.mark.parametrize(

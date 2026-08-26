@@ -237,7 +237,9 @@ def _attempt_diagnostics(
 ) -> tuple[AttemptDiagnostic, ...]:
     diagnostics: list[AttemptDiagnostic] = []
     for attempt_no in range(1, state.item_attempt + 1):
-        attempt = feedback[(state.cursor, attempt_no)]
+        attempt = feedback.get((state.cursor, attempt_no))
+        if attempt is None:
+            continue
         diagnostics.append(
             AttemptDiagnostic(
                 attempt_no=attempt_no,
@@ -541,6 +543,7 @@ class ProblemGenerationWorkflow:
                     item=None,
                     detail=f"기준 자료 조회 불가: {type(error).__name__}",
                     failure_reason=ProblemFailureReason.SOURCE_UNVERIFIED,
+                    feedback=feedback,
                 )
 
             if not has_reference_data(context_pack):
@@ -556,6 +559,7 @@ class ProblemGenerationWorkflow:
                     item=None,
                     detail="R-1 기준 자료가 없어 검증할 수 없음",
                     failure_reason=ProblemFailureReason.SOURCE_UNVERIFIED,
+                    feedback=feedback,
                 )
 
             retry_context = self._retry_context(state, feedback, request)
@@ -690,6 +694,7 @@ class ProblemGenerationWorkflow:
                         state,
                         item=item,
                         detail="교차 풀이 redaction 불확실 — 시도 소진",
+                        feedback=feedback,
                     )
                 return {}
             except ParseFailed as error:
@@ -708,6 +713,7 @@ class ProblemGenerationWorkflow:
                         state,
                         item=item,
                         detail=f"교차 풀이 파싱 시도 소진: {type(error).__name__}",
+                        feedback=feedback,
                     )
                 return {}
             except LlmError as error:
@@ -717,6 +723,7 @@ class ProblemGenerationWorkflow:
                     state,
                     item=item,
                     detail=f"교차 풀이 서비스 불가: {type(error).__name__}",
+                    feedback=feedback,
                 )
 
             cross_result = validate_cross_solve(
@@ -1057,6 +1064,7 @@ class ProblemGenerationWorkflow:
                 item=item,
                 detail=detail,
                 failure_reason=ProblemFailureReason.SOURCE_UNVERIFIED,
+                feedback=feedback,
             )
         if result.banned_topic:
             return await self._finalize_drop(
@@ -1252,6 +1260,7 @@ class ProblemGenerationWorkflow:
         *,
         item: GeneratedItem | None,
         detail: str,
+        feedback: dict[tuple[int, int], _AttemptFeedback],
         failure_reason: ProblemFailureReason | None = None,
     ) -> dict[str, object]:
         item_result = ItemResult(
@@ -1260,6 +1269,7 @@ class ProblemGenerationWorkflow:
             attempt_no=state.item_attempt,
             failure_reason=failure_reason,
             failure_detail=detail,
+            attempts=_attempt_diagnostics(state, feedback),
         )
         await self._item_store.save(
             set_id=state.set_id,
