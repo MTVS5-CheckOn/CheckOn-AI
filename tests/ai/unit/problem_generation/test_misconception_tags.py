@@ -29,11 +29,31 @@ def test_misconception_tags_match_the_strict_schema() -> None:
     config = load_misconception_tags()
 
     assert config.version
-    assert all(3 <= len(tags) <= 6 for tags in config.areas.values())
+    assert all(
+        3 <= len(tags) <= 6
+        for area, tags in config.areas.items()
+        if area is not AreaTag.LANGUAGE
+    )
     assert all(
         tag.id and tag.label_ko and tag.description
         for tags in config.areas.values()
         for tag in tags
+    )
+
+
+def test_language_loader_exposes_all_thirteen_misconception_tags() -> None:
+    tags = load_misconception_tags().tags_for(AreaTag.LANGUAGE)
+
+    assert len(tags) == 13
+
+
+def test_existing_language_misconception_tag_ids_are_unchanged() -> None:
+    tags = load_misconception_tags().tags_for(AreaTag.LANGUAGE)
+
+    assert tuple(tag.id for tag in tags[:3]) == (
+        "application_target_substitution",
+        "adjacent_change_type_confusion",
+        "process_order_reversal",
     )
 
 

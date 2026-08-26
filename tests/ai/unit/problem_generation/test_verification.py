@@ -351,6 +351,58 @@ def test_cross_gate_rejects_why_wrong_and_misconception_contradiction() -> None:
     assert result.failed_checks == ("C-10:오개념_설명_모순:3",)
 
 
+@pytest.mark.parametrize(
+    ("skill_node_id", "misconception_tag", "why_wrong"),
+    [
+        (
+            "language.grammar.morpheme.concept",
+            "morpheme_boundary_misanalysis",
+            "어근과 접사의 경계를 잘못 나눴다.",
+        ),
+        (
+            "language.grammar.sentence.structure",
+            "embedded_clause_type_confusion",
+            "명사절과 관형절을 혼동했다.",
+        ),
+    ],
+)
+def test_language_subbranch_items_pass_with_matching_new_misconception_tags(
+    skill_node_id: str,
+    misconception_tag: str,
+    why_wrong: str,
+) -> None:
+    item = _item().model_copy(
+        update={
+            "skill_node_id": skill_node_id,
+            "choices": tuple(
+                choice.model_copy(
+                    update={
+                        "misconception_tag": misconception_tag,
+                        "why_wrong": why_wrong,
+                    }
+                )
+                if choice.no != 1
+                else choice
+                for choice in _item().choices
+            ),
+        }
+    )
+    solve = _solve(
+        target_skill_node_id=skill_node_id,
+        measured_skill_node_id=skill_node_id,
+    )
+
+    assert validate_misconception_structure(item, load_misconception_tags()) == ()
+    result = validate_cross_solve(
+        item,
+        solve,
+        _misconception_check(),
+        load_verify_config(),
+    )
+    assert result.passed
+    assert not any(check.startswith("C-10:") for check in result.failed_checks)
+
+
 def test_reserved_type_tag_weight_lookup_is_an_error_not_a_zero() -> None:
     """🔴 예약 태그의 가중치 조회는 **명시적 오류**다 — `.get(tag, 0.0)`이 아니다 (99 ㊣).
 

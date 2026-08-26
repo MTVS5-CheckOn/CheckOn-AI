@@ -9,14 +9,14 @@ snapshots:
     file: source_material.snapshot.txt
     review_status: expert_review_pending
   - prompt_id: pg.items.v1
-    version: v1
+    version: v7
     file: items.snapshot.txt
     review_status: expert_review_pending
   - prompt_id: pg.cross_solve.v1
-    version: v1
+    version: v7
     file: cross_solve.snapshot.txt
     review_status: expert_review_pending
   - prompt_id: pg.misconception_check.v1
-    version: v6
+    version: v7
     file: misconception_check.snapshot.txt
     review_status: expert_review_pending

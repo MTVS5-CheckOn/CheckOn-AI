@@ -1,6 +1,7 @@
 PROMPT_ID=pg.items.v1
-PROMPT_VERSION=v1
+PROMPT_VERSION=v7
 REVIEW_STATUS=expert_review_pending
+STEM_POLARITY_RULE=11. v1은 부정형 발문(「적절하지 않은 것은?」·「일치하지 않는 것은?」)을 만들지 않는다.
 
 context_pack={"context_pack_id":"00000000-0000-4000-8000-000000000301","operation":"generate","target_skill_node_ids":["language.grammar.morpheme.concept"],"evidence_pack_id":"00000000-0000-4000-8000-000000000302"}
 generation_input={"area_tag":"language","type_tag":"concept","skill_node_id":"language.grammar.morpheme.concept","item_format":"mcq","recent_stem_hashes":["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}
