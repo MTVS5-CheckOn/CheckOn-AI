@@ -151,6 +151,28 @@ fi
 [ $SRC_CHANGED -eq 1 ] && [ -n "$CONT_H" ] && echo "  소스 차이 있음"
 [ -n "$PENDING" ] && echo "  다시 만들 컨테이너: $(echo "$PENDING" | tr '\n' ' ')"
 
+# ── 재생성 직전 로그 덤프 ───────────────────────────────────────────────
+# 🔴 json-file 드라이버는 로그를 **컨테이너 수명에 묶는다.** `up -d` 가 다시 만들면 그때까지의
+#    400 detail·`req=` 줄이 통째로 사라진다 — 2026-08-27 05:25:39 UTC 의 400 이 실제로 그렇게
+#    없어졌다(찍혔는데 20분 뒤 재생성이 지웠다 · 99 #267).
+# 🔴 **조건문 밖이다.** 안에 넣으면 「우리가 예측한 재생성」만 덮는데 이번 사고가 정확히
+#    예측 못 한 재생성이었고, 위 compose 의 `logging:` 추가도 그 자체로 재생성을 부른다.
+# ⚠ **전량이다** — `--tail` 로 자르지 않는다. 자르면 무엇을 왜 잘랐는지 아무도 모른다.
+# ⚠ 두 서비스만 뜬다 — 요청 detail(`app`)과 LLM 산출(`counsel-drain`)이 거기 있다.
+#    `db`·`migrate`·`cloudflared` 는 이 회차 대상이 아니다(안 뜬다는 것을 여기 적어 둔다).
+step "로그 덤프 (재생성 대비)"
+mkdir -p logs
+DUMP_TS=$(date -u +%Y%m%dT%H%M%SZ)
+for svc in app counsel-drain; do
+    DUMP="logs/${svc}-${DUMP_TS}.log"
+    if docker compose logs --no-color --timestamps "$svc" > "$DUMP" 2>&1; then
+        echo "  → $DUMP ($(wc -l < "$DUMP") 줄)"
+    else
+        #: 🔴 조용히 넘기지 않는다. 다만 배포를 막지도 않는다 — 로그는 배포의 전제가 아니다.
+        red "  로그 덤프 실패 — 이번 재생성의 ${svc} 증거는 남지 않는다: $DUMP"
+    fi
+done
+
 if [ $FORCE -eq 0 ] && [ -n "$CONT_H" ] && [ $SRC_CHANGED -eq 0 ] && [ -z "$PENDING" ]; then
     echo "  소스·설정 동일 — 빌드·재시작을 건너뛴다 (강제하려면 --force)"
 elif [ -z "$CONT_H" ] || [ $SRC_CHANGED -eq 1 ] || [ $FORCE -eq 1 ]; then
@@ -272,6 +294,18 @@ for p in /v1/health /v1/ready /openapi.json; do
     fi
 done
 [ $FAIL -eq 1 ] && { red "공개 경로 실패 — 터널을 확인하라: docker compose logs cloudflared --tail 30"; exit 1; }
+
+# ── 콘솔 플래그 가시화 ─────────────────────────────────────────────────
+# 🔴 `.env` 주석이 「운영 상시 활성 금지」라 적어 둔 스위치를 **무는 것이 문면뿐**이다.
+#    테스트는 못 잡는다 — `tests/ai/fakes/console_env_pin.py` 가 `.env` 를 통째로 끊기 때문이고
+#    (99 #63) 그건 옳다. 그래서 **배포할 때마다 눈에 보이게** 한다(99 #266).
+# ⚠ 못 읽으면 `?` 다. 🔴 `0` 으로 채우지 마라 — 「모른다」와 「꺼져 있다」는 다른 사실이다.
+# 🔴 **차단하지 않는다 — 경고만 한다.** 차단으로 올릴지는 사람 판정이다(99 #266).
+step "콘솔 플래그"
+LLM_LOG=$(docker compose exec -T app printenv CONSOLE_LLM_LOG 2>/dev/null | tr -d '\r' || true)
+[ -z "$LLM_LOG" ] && LLM_LOG="?"
+echo "  CONSOLE_LLM_LOG=${LLM_LOG}"
+[ "$LLM_LOG" = "1" ] && red "  🔴 프롬프트·응답이 로그에 쌓인다 — .env 주석이 운영 상시 활성을 금지한다."
 
 grn "
 재배포 완료 — $(git rev-parse --short HEAD)
