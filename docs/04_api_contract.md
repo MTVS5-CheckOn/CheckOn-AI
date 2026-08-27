@@ -387,6 +387,8 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
       "students_evaluated": 58,
       "signals_raised": 3,
       "excluded_under_2w": 4,            // ★(7/16) 재원 2주 미만 제외 수 — 구 observed_only 목록을 숫자로 대체
+      "excluded_paused": 2,              // 휴원 제외 수
+      "excluded_no_consent": 1,          // 무동의 제외 수(휴원과 겹치면 이쪽에 우선 집계)
       "capped_out": 2,                   // lifecycle 억제 후 new·follow_up 후보의 탈락 수만 (advisory 제외)
       "r1_threshold_pp": 17.4,           // ★(8/3 신설) 이번 실행에 실제로 쓴 R1 임계 — 아래 [A 확정 통보]
       "r1_threshold_source": "quantile", // quantile | fallback — 표본 부족 시 고정 15%p로 폴백
@@ -435,6 +437,10 @@ counsel(§3.9)·pg(§3.11) **둘 다 202에 `job_id`와 `status` 2키를 싣는�
 > 외부 대규모 로그 검증([`part_a/13_threshold_validation.md`](part_a/13_threshold_validation.md)) 결과에 따른 확정분 둘이다. **이의는 회신으로.**
 >
 > **① R4(숨은 위기)를 advisory로 강등한다 — 판정은 그대로다.**
+제외 통계는 학생 alias 목록 없이 건수만 제공한다. `excluded_under_2w`는 재원 2주 미만,
+`excluded_paused`는 휴원, `excluded_no_consent`는 무동의 제외 수다. 무동의와 휴원이 겹치면
+개인정보 경계를 우선해 `excluded_no_consent`에만 집계한다.
+
 > R4는 지금처럼 평가·기록되고 **응답에도 그대로 실린다**(evidence 포함). 바뀌는 것은 소비 방식뿐이다 — **TOP N 랭킹 비참여 · 상한 슬롯 미소비 · `capped_out` 미산입**. 응답의 **`advisory: true`** 로 구분되니 **알림·신호 카드에서 빼고 학생 상세의 참고 표시로** 보내면 된다.
 > ⚠ **`signal_type`에서 `hidden_risk`가 사라지는 게 아니다** — 값 삭제가 아니라 **주장 강도**를 내린 것이다. 그리고 **R4가 다른 규칙과 함께 발화하면 그 경보는 정식**이다(`advisory`는 병합 규칙이 전부 R4일 때만 `true`).
 > 근거: 성과 하락 선행성은 근거를 찾지 못했고, 활동 종료 연관은 방향성이 있으나 검열 분리 불가로 확정할 수 없다(13 §3). 파일럿에서 우리 데이터로 재검증한다.

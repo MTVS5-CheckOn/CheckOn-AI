@@ -202,6 +202,8 @@ def test_detect_response_roundtrip() -> None:
             students_evaluated=58,
             signals_raised=3,
             excluded_under_2w=4,
+            excluded_paused=2,
+            excluded_no_consent=1,
             capped_out=2,
             rules_skipped=(RuleSkipped(rule_id=RuleId.R4, reason="duration_missing", students=5),),
         ),
@@ -289,7 +291,11 @@ def test_alert_open_forbids_resolved_at() -> None:
 def test_response_has_no_observed_only() -> None:
     """observed_only 제거 확정 (명세 §3) — 응답에 학생 목록 필드가 없다."""
     assert "observed_only" not in DetectResponse.model_fields
-    assert "excluded_under_2w" in DetectStats.model_fields
+    assert {
+        "excluded_under_2w",
+        "excluded_paused",
+        "excluded_no_consent",
+    } <= set(DetectStats.model_fields)
 
 
 def test_rank_must_be_positive() -> None:

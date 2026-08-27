@@ -221,6 +221,10 @@ class StudentInput(BaseModel):
     """등원 주차 — OBSERVED_ONLY_MIN_WEEKS 미만은 조용히 판정 제외."""
 
     status: StudentStatus
+    """분석 주 종료 시점(`snapshot_meta.week_start`)의 상태.
+
+    현재 시각의 상태가 아니다. 같은 분석 주 재실행이 현재 시각에 따라 달라지지 않게 한다.
+    """
     consent: str = Field(min_length=1)
     """CONSENT_GRANTED가 아니면 이 학생의 learning_events를 전부 버린다."""
 
@@ -501,9 +505,12 @@ class DetectRequest(BaseModel):
         #: 🔴 **상태와 전환이 갈리면 조용히 한쪽을 고르지 않는다** — 어느 쪽이 사실인지
         #:   AI가 정할 수 없다. 요청을 거부해 BE가 맞춰 보내게 한다.
         for student_ref in returned_transition:
-            if status_of.get(student_ref) is not StudentStatus.RETURNED:
+            if status_of.get(student_ref) not in {
+                StudentStatus.RETURNED,
+                StudentStatus.PAUSED,
+            }:
                 raise ValueError(
-                    "복귀 전환 이력이 있는데 students[].status가 returned가 아니다: "
+                    "복귀 전환 이력이 있는데 students[].status가 returned 또는 paused가 아니다: "
                     f"{student_ref!r}"
                 )
 
@@ -749,7 +756,9 @@ class DetectStats(BaseModel):
     """운영 지표 — 명세 §3 stats. [로그] 화면 미노출.
 
     excluded_under_2w는 관찰 중(재원 2주 미만) 제외 수 — 백엔드의 '관찰 중' 계산과
-    대조용 숫자다. AI는 학생 목록(구 observed_only)을 돌려주지 않는다 (명세 §3).
+    대조용 숫자다. excluded_no_consent와 excluded_paused는 해당 제외 수이며, 둘 다
+    해당하면 개인정보 경계인 무동의를 우선 집계한다. AI는 학생 목록(구 observed_only)을
+    돌려주지 않는다 (명세 §3).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -757,6 +766,8 @@ class DetectStats(BaseModel):
     students_evaluated: int = Field(ge=0)
     signals_raised: int = Field(ge=0)
     excluded_under_2w: int = Field(ge=0)
+    excluded_paused: int = Field(ge=0)
+    excluded_no_consent: int = Field(ge=0)
     capped_out: int = Field(ge=0)
     """lifecycle 억제 후 `new`·`follow_up` 후보의 탈락 수만 (04 §3 · 99 #14).
 

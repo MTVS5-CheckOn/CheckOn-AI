@@ -271,8 +271,8 @@ def test_the_boundary_rejects(case: str, rows: list[dict[str, Any]]) -> None:
         DetectRequest.model_validate(_base_body(detection_evidence=rows))
 
 
-def test_a_returned_transition_requires_a_returned_student() -> None:
-    """🔴 상태와 이력이 갈리면 **조용히 한쪽을 고르지 않는다** — 요청을 거부한다."""
+def test_a_returned_transition_rejects_an_enrolled_student() -> None:
+    """🔴 복귀 이력과 enrolled 상태가 갈리면 조용히 한쪽을 고르지 않는다."""
     with pytest.raises(ValidationError, match="returned"):
         DetectRequest.model_validate(_base_body(detection_evidence=[_transition()]))
 
@@ -280,6 +280,12 @@ def test_a_returned_transition_requires_a_returned_student() -> None:
 def test_a_returned_student_with_a_matching_transition_is_accepted() -> None:
     body = _base_body(detection_evidence=[_transition()])
     body["students"][0]["status"] = "returned"
+    assert len(DetectRequest.model_validate(body).detection_evidence) == 1
+
+
+def test_a_paused_student_after_a_returned_transition_is_accepted() -> None:
+    body = _base_body(detection_evidence=[_transition()])
+    body["students"][0]["status"] = "paused"
     assert len(DetectRequest.model_validate(body).detection_evidence) == 1
 
 

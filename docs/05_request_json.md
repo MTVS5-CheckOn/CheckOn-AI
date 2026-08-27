@@ -26,7 +26,7 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
       "student_ref": "st_8f2a",            // alias
       "class_ref": "cl_a1",
       "enrolled_weeks": 14,                 // 2 미만이면 '관찰 중' 처리됨
-      "status": "enrolled",                 // enrolled | paused | returned(복귀 첫 주)
+      "status": "enrolled",                 // 분석 주 종료 시점 상태: enrolled | paused | returned(복귀 첫 주)
       "consent": "granted"                  // granted 외에는 이벤트가 와도 폐기
     }
   ],
@@ -83,7 +83,7 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
       "student_ref": "st_8f2a",
       "occurred_at": "2026-08-10T09:00:00+09:00",  // timezone-aware 필수
       "from_status": "paused",
-      "to_status": "returned"               // students[].status도 returned여야 한다(불일치 시 400)
+      "to_status": "returned"               // students[].status는 returned 또는 이후 재휴원한 paused(그 외 400)
     }
   ]
 }
@@ -111,7 +111,16 @@ v0.1.1 동기화:** ① `area_tag` 수능 6영역 enum + `item_format` 추가(`[
 >
 > **언제부터:** 기대치 층이 켜지는 시점부터. **그전에 보내도 무해**하고(무시됨), 안 보내도 전량 폴백으로 동작한다.
 
-→ 응답: 신호 목록(evidence·브리핑 문장 + display_label·lifecycle 포함) + stats. **observed_only 목록은 제거(7/16)** — `stats.excluded_under_2w` 숫자만. 상세는 명세 `docs/part_a/09_detect_spec.md` §3.
+`students[].status`는 요청을 보내는 현재 시각의 상태가 아니라 **분석 주 종료 시점**
+(`snapshot_meta.week_start`가 가리키는 주)의 상태다. 감지 엔진은 현재 시각을 읽지 않고 모든
+시간 기준을 `week_start`에서 유도하므로, 같은 분석 주 재실행의 입력과 결과가 보존된다.
+
+→ 응답: 신호 목록(evidence·브리핑 문장 + display_label·lifecycle 포함) + stats.
+**observed_only 목록은 제거(7/16)** — 학생 alias 목록 대신 제외 사유별 숫자만 반환한다.
+`stats.excluded_under_2w`는 재원 2주 미만, `stats.excluded_paused`는 휴원,
+`stats.excluded_no_consent`는 무동의 제외 수다. 무동의와 휴원이 겹치면 개인정보 경계인
+`excluded_no_consent`에 우선 집계하며, 세 필드 모두 학생 식별자를 담지 않는다. 상세는 명세
+`docs/part_a/09_detect_spec.md` §3.
 
 ---
 
