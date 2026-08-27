@@ -24,7 +24,7 @@
       "schema": "0.1",
       "contract": "0.1",
       "threshold": null,
-      "prompt": "v7",
+      "prompt": "v8",
       "graph": "curriculum-five-area-v1",
       "taxonomy": null,
       "verify_config": "verify-config.v1",

@@ -45,18 +45,22 @@ def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
     registry = load_prompt_registry(REGISTRY_PATH)
     template = load_prompt_template("pg.items.v1", REGISTRY_PATH, TEMPLATES_ROOT)
 
-    assert "사람 이름을 쓰지 않고 학생 A·갑·을 같은 비인명 표기" in template.content
-    assert "교차 풀이가 fail-closed로 차단" in template.content
-    # 🔴 v7 — v1 발문을 긍정형으로 제한.
+    assert "예문·선지·지문에 사람 이름을 쓰지 않는다" in template.content
+    assert "인명 대신 '갑·을', '가·나' 또는 사물·역할 명사를 쓴다" in template.content
+    # ⚠ 이 규칙은 **인명만** 막는다 — 국어 문법 어휘가 성씨로 읽히는 오탐은 프롬프트가
+    #   아니라 `redaction_patterns.yaml` 의 `name_exclude` 가 막는다(99 #178 · 8/27 실측).
+    #   두 자리를 헷갈리면 «규칙을 넣었는데 또 막힌다» 가 반복된다.
+    assert "검증 단계에서 폐기된다" in template.content
+    # 🔴 v8 — 생성 문항 인명 금지 명시(v7 은 v1 발문을 긍정형으로 제한).
     #    프롬프트 문면이 바뀌면 버전이 바뀐다(불변식 8).
-    assert template.version == "v7"
+    assert template.version == "v8"
     assert "영역 출제 규격" in template.content
     assert "발문 정형 중 하나를 따른다" in template.content
     assert "v1은 부정형 발문" in template.content
     assert "모든 오답 선지에\n    오개념 라벨" in template.content
     # 짝이다 — workflow가 두 버전이 다르면 기동에서 거부한다.
-    assert registry.get("pg.cross_solve.v1").version == "v7"
-    assert registry.get("pg.misconception_check.v1").version == "v7"
+    assert registry.get("pg.cross_solve.v1").version == "v8"
+    assert registry.get("pg.misconception_check.v1").version == "v8"
 
 
 @pytest.mark.parametrize(

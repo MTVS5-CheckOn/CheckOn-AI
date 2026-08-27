@@ -517,11 +517,11 @@ def test_problem_router_roundtrip_and_prompt_version_ledger_match() -> None:
     assert fetched.json()["data"]["status"] == "succeeded"
     assert fetched.json()["data"]["result"]["outcome"] == "problem_set"
     prompt_version = posted.json()["meta"]["versions"]["prompt"]
-    assert prompt_version == "v7"
+    assert prompt_version == "v8"
     assert len(run_store.runs) == 1
     run = next(iter(run_store.runs.values()))
     assert run.prompt_version == prompt_version
-    assert {call.prompt_version for call in run_store.calls} == {"v7"}
+    assert {call.prompt_version for call in run_store.calls} == {"v8"}
     assert len(posted.json()["meta"]["versions"]) == 10
     assert len(generator.requests) == 1
     assert len(verifier.requests) == 2
@@ -1409,7 +1409,7 @@ class _ExplodingWorkflow:
             LlmCallRecord(
                 role=ModelRole.GENERATOR,
                 prompt_id="pg.items.v1",
-                prompt_version="v7",
+                prompt_version="v8",
                 provider="failure-provider",
                 model="failure-model",
                 usage=None,
@@ -1464,7 +1464,7 @@ def test_problem_ledger_survives_every_failure_kind(
             run_store=run_store,
             call_log=collector,
             verify_config_version="verify-config.v1",
-            prompt_version="v7",
+            prompt_version="v8",
             lease_owner="problem-router",
             lease_heartbeat_seconds=60.0,
             lease_heartbeat_max_seconds=12_000.0,
@@ -1505,7 +1505,7 @@ def test_failed_path_ledger_error_does_not_replace_the_original_error() -> None:
             run_store=_FailingRunStore(),
             call_log=collector,
             verify_config_version="verify-config.v1",
-            prompt_version="v7",
+            prompt_version="v8",
             lease_owner="problem-router",
             lease_heartbeat_seconds=60.0,
             lease_heartbeat_max_seconds=12_000.0,

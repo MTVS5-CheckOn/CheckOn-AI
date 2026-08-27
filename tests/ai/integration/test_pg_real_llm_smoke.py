@@ -1000,7 +1000,7 @@ def test_unavailable_reason_reports_only_categorical_failure_metadata() -> None:
     record = LlmCallRecord(
         role=ModelRole.GENERATOR,
         prompt_id="pg.items.v1",
-        prompt_version="v7",
+        prompt_version="v8",
         provider="local-generator",
         model=None,
         usage=None,
@@ -1035,7 +1035,7 @@ async def _fake_cli_observation(
             role=ModelRole.GENERATOR,
             prompt="[마스킹 통과 프롬프트]",
             prompt_id="pg.items.v1",
-            prompt_version="v7",
+            prompt_version="v8",
         ),
         _execution_context(),
     )
