@@ -951,7 +951,7 @@ def test_the_command_does_not_depend_on_the_backend_flag() -> None:
         get_db_settings.cache_clear()
 
 
-def test_an_unreachable_database_fails_the_command_loudly() -> None:
+def test_an_unreachable_database_fails_the_command_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
     """🔴 **접속 실패는 종료 코드 0이 아니다** — 배포가 그걸 보고 중단한다.
 
     ⚠ 성공 문면이 같이 나오면 안 된다(로그만 보고 넘어간다).
@@ -962,7 +962,10 @@ def test_an_unreachable_database_fails_the_command_loudly() -> None:
     os.environ["DATABASE_URL"] = "postgresql+asyncpg://checkon@localhost:1/checkon_ai"
     get_db_settings.cache_clear()
     try:
-        assert checkpointer_main() == 1, "접속 못 하는데 성공으로 끝났다"
+        # 게이트가 주입한 정상 체크포인트 URL도 이 검사의 접속 불가 전제에 맞춘다.
+        with monkeypatch.context() as patch:
+            patch.setenv("AGENT_CHECKPOINT_DATABASE_URL", os.environ["DATABASE_URL"])
+            assert checkpointer_main() == 1, "접속 못 하는데 성공으로 끝났다"
     finally:
         if original is None:
             os.environ.pop("DATABASE_URL", None)
