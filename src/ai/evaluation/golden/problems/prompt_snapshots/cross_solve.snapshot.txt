@@ -1,5 +1,5 @@
 PROMPT_ID=pg.cross_solve.v1
-PROMPT_VERSION=v7
+PROMPT_VERSION=v8
 REVIEW_STATUS=expert_review_pending
 
 {"blind_item":{"passage":"형태소 분석용 지문 초안","stem":"다음 설명으로 가장 적절한 것은?","choices":[{"no":1,"text":"선지 1"},{"no":2,"text":"선지 2"},{"no":3,"text":"선지 3"},{"no":4,"text":"선지 4"},{"no":5,"text":"선지 5"}]},"target_metadata":{"area_tag":"language","type_tag":"concept","skill_node_id":"language.grammar.morpheme.concept","skill_description":"형태소의 개념과 분류 기준 초안 — 전문가 검수 대기"}}

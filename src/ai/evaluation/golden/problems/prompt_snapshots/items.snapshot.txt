@@ -1,6 +1,9 @@
 PROMPT_ID=pg.items.v1
-PROMPT_VERSION=v7
+PROMPT_VERSION=v8
 REVIEW_STATUS=expert_review_pending
+PERSON_NAME_RULE=7. 예문·선지·지문에 사람 이름을 쓰지 않는다. 문장 성분·높임·피동·사동·인용절처럼
+   행위자가 둘 필요한 예문은 인명 대신 '갑·을', '가·나' 또는 사물·역할 명사를 쓴다.
+   개인정보 마스킹이 인명 밀도를 보고 전송을 막으므로 인명이 든 문항은 검증 단계에서 폐기된다.
 STEM_POLARITY_RULE=11. v1은 부정형 발문(「적절하지 않은 것은?」·「일치하지 않는 것은?」)을 만들지 않는다.
 
 context_pack={"context_pack_id":"00000000-0000-4000-8000-000000000301","operation":"generate","target_skill_node_ids":["language.grammar.morpheme.concept"],"evidence_pack_id":"00000000-0000-4000-8000-000000000302"}
