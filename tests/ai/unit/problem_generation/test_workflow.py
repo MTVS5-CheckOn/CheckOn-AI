@@ -303,7 +303,7 @@ class _WorkflowHarness:
                 engine_version="engine-v1",
                 schema_version="schema-v1",
                 contract_version="contract-v1",
-                prompt_version="v6",
+                prompt_version="v7",
                 graph_version=_GRAPH_VERSION,
                 taxonomy_version=_TAXONOMY_VERSION,
                 verify_config_version="verify-config.v1",

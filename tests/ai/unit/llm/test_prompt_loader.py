@@ -47,14 +47,16 @@ def test_items_prompt_forbids_person_names_and_promotes_active_pair() -> None:
 
     assert "사람 이름을 쓰지 않고 학생 A·갑·을 같은 비인명 표기" in template.content
     assert "교차 풀이가 fail-closed로 차단" in template.content
-    # 🔴 v6 — 오개념 닫힌 어휘 라벨 생성 지시 추가.
+    # 🔴 v7 — v1 발문을 긍정형으로 제한.
     #    프롬프트 문면이 바뀌면 버전이 바뀐다(불변식 8).
-    assert template.version == "v6"
+    assert template.version == "v7"
     assert "영역 출제 규격" in template.content
     assert "발문 정형 중 하나를 따른다" in template.content
+    assert "v1은 부정형 발문" in template.content
+    assert "모든 오답 선지에\n    오개념 라벨" in template.content
     # 짝이다 — workflow가 두 버전이 다르면 기동에서 거부한다.
-    assert registry.get("pg.cross_solve.v1").version == "v6"
-    assert registry.get("pg.misconception_check.v1").version == "v6"
+    assert registry.get("pg.cross_solve.v1").version == "v7"
+    assert registry.get("pg.misconception_check.v1").version == "v7"
 
 
 @pytest.mark.parametrize(
