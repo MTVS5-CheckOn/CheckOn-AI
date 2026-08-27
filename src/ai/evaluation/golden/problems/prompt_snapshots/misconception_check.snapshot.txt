@@ -1,5 +1,5 @@
 PROMPT_ID=pg.misconception_check.v1
-PROMPT_VERSION=v7
+PROMPT_VERSION=v8
 REVIEW_STATUS=expert_review_pending
 
 역할: 오답 선지 오개념 의미 검증기

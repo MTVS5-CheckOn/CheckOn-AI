@@ -10,11 +10,11 @@ prompts:
     role: generator
     template: problem_generation/source_material.txt
     response_schema_name: SourceMaterialDraft
-  # v7(2026-08-27) — v1 발문을 긍정형으로 제한.
+  # v8(2026-08-27) — 예문·선지·지문의 인명 금지와 대체 표현을 명시.
   # 🔴 프롬프트 문면이 바뀌면 버전이 바뀐다(불변식 8) — 같은 버전으로 다른 문면을 보내면
   # AI_RUN의 prompt_version이 재현 근거가 못 된다.
   - prompt_id: pg.items.v1
-    version: v7
+    version: v8
     role: generator
     template: problem_generation/items.txt
     response_schema_name: GeneratedItem
@@ -23,12 +23,12 @@ prompts:
   # 교차 풀이는 **그 생성물**을 검증하므로 한쪽 문면만 바뀌면 "무엇을 검증한 결과인가"가
   # 원장에서 갈린다(불변식 8). 문면 무변경이어도 짝을 따라 올린다(v4 → v5).
   - prompt_id: pg.cross_solve.v1
-    version: v7
+    version: v8
     role: verifier
     template: problem_generation/cross_solve.txt
     response_schema_name: SolveResult
   - prompt_id: pg.misconception_check.v1
-    version: v7
+    version: v8
     role: verifier
     template: problem_generation/misconception_check.txt
     response_schema_name: MisconceptionCheckResult
