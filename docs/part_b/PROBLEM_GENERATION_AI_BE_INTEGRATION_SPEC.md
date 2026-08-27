@@ -660,7 +660,7 @@ lease 기본값은 300초, 실행 중 heartbeat 주기는 60초, heartbeat 포�
       "schema": "0.1",
       "contract": "0.1",
       "threshold": null,
-      "prompt": "v6",
+      "prompt": "v7",
       "graph": "curriculum-five-area-v1",
       "taxonomy": "v1",
       "verify_config": "verify-config.v1",

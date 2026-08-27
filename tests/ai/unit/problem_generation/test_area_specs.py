@@ -119,3 +119,13 @@ def test_language_and_media_stay_separate() -> None:
     media = specs.spec_for(AreaTag.MEDIA)
     assert language.measures != media.measures
     assert set(language.stem_forms).isdisjoint(media.stem_forms)
+
+
+def test_v1_stem_forms_are_positive_for_every_area() -> None:
+    specs = load_area_specs()
+
+    assert all(
+        "적절하지 않은" not in stem and "일치하지 않는" not in stem
+        for spec in specs.areas.values()
+        for stem in spec.stem_forms
+    )

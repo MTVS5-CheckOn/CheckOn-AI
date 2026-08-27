@@ -368,10 +368,17 @@ class MisconceptionTagsConfig(BaseModel):
         invalid_counts = {
             area.value: len(tags)
             for area, tags in self.areas.items()
-            if not 3 <= len(tags) <= 6
+            if (
+                len(tags) != 13
+                if area is AreaTag.LANGUAGE
+                else not 3 <= len(tags) <= 6
+            )
         }
         if invalid_counts:
-            raise ValueError(f"영역별 오개념 라벨은 3~6개여야 한다: {invalid_counts}")
+            raise ValueError(
+                "language 오개념 라벨은 13개, 다른 영역은 3~6개여야 한다: "
+                f"{invalid_counts}"
+            )
 
         ids = [tag.id for tags in self.areas.values() for tag in tags]
         duplicate_ids = sorted({tag_id for tag_id in ids if ids.count(tag_id) > 1})

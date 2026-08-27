@@ -11,6 +11,7 @@ from ai.evaluation.problem_eval import (
     ProblemGoldenEvaluator,
     _load_suite,
 )
+from ai.llm.prompts.loader import load_prompt_template
 
 GOLDEN_ROOT = (
     Path(__file__).resolve().parents[3]
@@ -130,6 +131,19 @@ def test_cross_solve_snapshot_has_no_blind_fields() -> None:
     assert '"rationale"' not in content
     assert '"evidence"' not in content
     assert '"target_metadata"' in content
+
+
+def test_items_snapshot_pins_the_v1_negative_stem_ban() -> None:
+    snapshot = (
+        GOLDEN_ROOT / "prompt_snapshots" / "items.snapshot.txt"
+    ).read_text(encoding="utf-8")
+    rule = next(
+        line.removeprefix("STEM_POLARITY_RULE=")
+        for line in snapshot.splitlines()
+        if line.startswith("STEM_POLARITY_RULE=")
+    )
+
+    assert rule in load_prompt_template("pg.items.v1").content
 
 
 def test_problem_golden_rejects_missing_suite(tmp_path: Path) -> None:

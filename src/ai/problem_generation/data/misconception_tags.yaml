@@ -17,6 +17,46 @@ areas:
     - id: process_order_reversal
       label_ko: 적용 순서 뒤바꿈
       description: 둘 이상의 규칙이나 변동이 적용되는 순서를 반대로 이해함.
+    # 근거: "어근과 접사의 경계를 잘못 나눈 선지"
+    - id: morpheme_boundary_misanalysis
+      label_ko: 형태소 경계 오분석
+      description: 어근과 접사의 경계를 잘못 나눔.
+    # 근거: "파생접사와 굴절접사, 접두와 접미를 뒤바꾼 선지"
+    - id: affix_function_confusion
+      label_ko: 접사 기능 혼동
+      description: 파생접사와 굴절접사, 접두와 접미를 뒤바꿈.
+    # 근거: "합성·파생·단일어를 서로 잘못 판정한 선지"
+    - id: word_formation_type_confusion
+      label_ko: 단어 형성 방식 혼동
+      description: 합성·파생·단일어를 서로 잘못 판정.
+    # 근거: "주어·목적어·보어·부사어를 혼동한 선지"
+    - id: sentence_component_misidentification
+      label_ko: 문장 성분 오식별
+      description: 주어·목적어·보어·부사어를 혼동.
+    # 근거: "명사절·관형절·부사절·서술절·인용절을 혼동한 선지"
+    - id: embedded_clause_type_confusion
+      label_ko: 안은문장 유형 혼동
+      description: 명사절·관형절·부사절·서술절·인용절을 혼동.
+    # 근거: "높임·시제·피동·사동·부정 중 다른 범주로 바꾼 선지"
+    - id: grammatical_category_substitution
+      label_ko: 문법 범주 바꿔치기
+      description: 높임·시제·피동·사동·부정 중 다른 범주로 바꿈.
+    # 근거: "지시·대용 표현이 가리키는 대상을 잘못 연결한 선지"
+    - id: reference_target_misresolution
+      label_ko: 지시 대상 오연결
+      description: 지시·대용 표현이 가리키는 대상을 잘못 연결.
+    # 근거: "발화 상황·전제를 빼고 문장 단위로만 해석한 선지"
+    - id: discourse_context_neglect
+      label_ko: 담화 맥락 무시
+      description: 발화 상황·전제를 빼고 문장 단위로만 해석.
+    # 근거: "중세·근대 국어의 특징을 서로 뒤섞은 선지"
+    - id: historical_stage_confusion
+      label_ko: 시대 층위 혼동
+      description: 중세·근대 국어의 특징을 서로 뒤섞음.
+    # 근거: "현대 국어 규칙을 옛말 자료에 그대로 적용한 선지"
+    - id: historical_form_modern_projection
+      label_ko: 현대어 투사
+      description: 현대 국어 규칙을 옛말 자료에 그대로 적용.
 
   media:
     # 근거: "매체 특성과 무관한 일반 독해 진술"
