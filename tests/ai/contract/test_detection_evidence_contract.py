@@ -76,6 +76,7 @@ def _activity(**over: Any) -> dict[str, Any]:  # noqa: ANN401 — 픽스처 오�
         "student_ref": _STUDENT,
         "week_start": _WEEK,
         "activity_count": 0,
+        "enrolled_seconds": 604800,
     }
     row.update(over)
     return row
@@ -196,6 +197,51 @@ def test_fields_of_another_kind_are_rejected() -> None:
         )
 
 
+@pytest.mark.parametrize("value", [1, 604800])
+def test_weekly_activity_accepts_enrolled_seconds_boundaries(value: int) -> None:
+    request = DetectRequest.model_validate(
+        _base_body(detection_evidence=[_activity(enrolled_seconds=value)])
+    )
+    activity = request.detection_evidence[0]
+    assert isinstance(activity, WeeklyActivityEvidence)
+    assert activity.enrolled_seconds == value
+
+
+@pytest.mark.parametrize("value", [-1, 0, 604801])
+def test_weekly_activity_rejects_enrolled_seconds_outside_week(value: int) -> None:
+    with pytest.raises(ValidationError):
+        DetectRequest.model_validate(
+            _base_body(detection_evidence=[_activity(enrolled_seconds=value)])
+        )
+
+
+def test_weekly_activity_requires_enrolled_seconds() -> None:
+    field = WeeklyActivityEvidence.model_fields["enrolled_seconds"]
+    assert field.is_required()
+
+    missing = _activity()
+    del missing["enrolled_seconds"]
+    with pytest.raises(ValidationError):
+        DetectRequest.model_validate(_base_body(detection_evidence=[missing]))
+
+
+def test_weekly_activity_still_rejects_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        DetectRequest.model_validate(
+            _base_body(detection_evidence=[_activity(unexpected_field=1)])
+        )
+
+
+@pytest.mark.parametrize("invalid", [1.5, "604800", True])
+def test_weekly_activity_requires_strict_integer_enrolled_seconds(
+    invalid: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        DetectRequest.model_validate(
+            _base_body(detection_evidence=[_activity(enrolled_seconds=invalid)])
+        )
+
+
 # ───────────────────────── 요청 경계 (§9) ─────────────────────────
 
 
@@ -225,8 +271,8 @@ def test_the_boundary_rejects(case: str, rows: list[dict[str, Any]]) -> None:
         DetectRequest.model_validate(_base_body(detection_evidence=rows))
 
 
-def test_a_returned_transition_requires_a_returned_student() -> None:
-    """🔴 상태와 이력이 갈리면 **조용히 한쪽을 고르지 않는다** — 요청을 거부한다."""
+def test_a_returned_transition_rejects_an_enrolled_student() -> None:
+    """🔴 복귀 이력과 enrolled 상태가 갈리면 조용히 한쪽을 고르지 않는다."""
     with pytest.raises(ValidationError, match="returned"):
         DetectRequest.model_validate(_base_body(detection_evidence=[_transition()]))
 
@@ -234,6 +280,12 @@ def test_a_returned_transition_requires_a_returned_student() -> None:
 def test_a_returned_student_with_a_matching_transition_is_accepted() -> None:
     body = _base_body(detection_evidence=[_transition()])
     body["students"][0]["status"] = "returned"
+    assert len(DetectRequest.model_validate(body).detection_evidence) == 1
+
+
+def test_a_paused_student_after_a_returned_transition_is_accepted() -> None:
+    body = _base_body(detection_evidence=[_transition()])
+    body["students"][0]["status"] = "paused"
     assert len(DetectRequest.model_validate(body).detection_evidence) == 1
 
 
@@ -296,7 +348,7 @@ _HASH_LEGACY: Final = (
     "sha256:4e90fe4929dced9d3fed2a4c8585766569dd7680a8c50a1be7e1f282c59d8e54"
 )
 _HASH_AGGREGATE: Final = (
-    "sha256:42bf93a71cdaecc0b3d6e4348ba8eddaf0f556894a81869285fade630c4e265d"
+    "sha256:af17b16ba3517d7507c697940b8c43e76acb211c3468243a5c541d4f92c2c179"
 )
 _HASH_TRANSITION: Final = (
     "sha256:103fd498b6bc7e09f0bc981acf8cde9a839981b81e398761d37af1a5a1ffb732"
@@ -343,7 +395,8 @@ def test_the_canonical_json_text_is_pinned() -> None:
         '{"at":"2026-08-10","expected_count":3,"kind":"assignment_window",'
         '"record_id":"aws_1","source_table":"assignment_week_summary",'
         '"student_ref":"st_1","submitted_count":0},'
-        '{"activity_count":0,"at":"2026-08-10","kind":"weekly_activity",'
+        '{"activity_count":0,"at":"2026-08-10","enrolled_seconds":604800,'
+        '"kind":"weekly_activity",'
         '"record_id":"swa_1","source_table":"student_week_activity",'
         '"student_ref":"st_1"}],"learning_events":[],'
         '"snapshot_meta":{"term_context":"normal","week_start":"2026-08-10"},'

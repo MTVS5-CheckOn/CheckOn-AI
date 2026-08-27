@@ -40515,7 +40515,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_01",
@@ -40532,7 +40533,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_01",
@@ -40549,7 +40551,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_01",
@@ -40566,7 +40569,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_01",
@@ -40583,7 +40587,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_01",
@@ -40600,7 +40605,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_01",
@@ -40617,7 +40623,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_01",
@@ -40634,7 +40641,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_01",
@@ -40651,7 +40659,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_01",
@@ -40668,7 +40677,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 8
+      "activity_count": 8,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_01",
@@ -40685,7 +40695,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 8
+      "activity_count": 8,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_01",
@@ -40702,7 +40713,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 8
+      "activity_count": 8,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_02",
@@ -40719,7 +40731,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_02",
@@ -40736,7 +40749,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_02",
@@ -40753,7 +40767,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_02",
@@ -40770,7 +40785,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_02",
@@ -40787,7 +40803,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_02",
@@ -40804,7 +40821,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_02",
@@ -40821,7 +40839,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_02",
@@ -40838,7 +40857,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_02",
@@ -40855,7 +40875,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_02",
@@ -40872,7 +40893,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_02",
@@ -40889,7 +40911,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_02",
@@ -40906,7 +40929,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_03",
@@ -40923,7 +40947,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_03",
@@ -40940,7 +40965,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_03",
@@ -40957,7 +40983,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_03",
@@ -40974,7 +41001,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_03",
@@ -40991,7 +41019,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_03",
@@ -41008,7 +41037,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_03",
@@ -41025,7 +41055,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_03",
@@ -41042,7 +41073,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_03",
@@ -41059,7 +41091,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_03",
@@ -41076,7 +41109,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_03",
@@ -41093,7 +41127,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_03",
@@ -41110,7 +41145,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_04",
@@ -41127,7 +41163,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_04",
@@ -41144,7 +41181,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_04",
@@ -41161,7 +41199,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_04",
@@ -41178,7 +41217,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_04",
@@ -41195,7 +41235,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_04",
@@ -41212,7 +41253,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_04",
@@ -41229,7 +41271,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_04",
@@ -41246,7 +41289,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_04",
@@ -41263,7 +41307,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 8
+      "activity_count": 8,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_04",
@@ -41280,7 +41325,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 8
+      "activity_count": 8,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_04",
@@ -41297,7 +41343,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 8
+      "activity_count": 8,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_04",
@@ -41314,7 +41361,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 8
+      "activity_count": 8,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_05",
@@ -41331,7 +41379,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_05",
@@ -41348,7 +41397,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_05",
@@ -41365,7 +41415,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_05",
@@ -41382,7 +41433,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_05",
@@ -41399,7 +41451,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_05",
@@ -41416,7 +41469,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_05",
@@ -41433,7 +41487,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_05",
@@ -41450,7 +41505,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_05",
@@ -41467,7 +41523,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_05",
@@ -41484,7 +41541,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_05",
@@ -41501,7 +41559,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_05",
@@ -41518,7 +41577,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_07",
@@ -41535,7 +41595,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_07",
@@ -41552,7 +41613,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_07",
@@ -41569,7 +41631,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_07",
@@ -41586,7 +41649,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_07",
@@ -41603,7 +41667,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_07",
@@ -41620,7 +41685,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_07",
@@ -41637,7 +41703,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_07",
@@ -41654,7 +41721,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_07",
@@ -41671,7 +41739,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_07",
@@ -41688,7 +41757,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_07",
@@ -41705,7 +41775,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_07",
@@ -41722,7 +41793,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 3
+      "activity_count": 3,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_08",
@@ -41739,7 +41811,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_08",
@@ -41756,7 +41829,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_08",
@@ -41773,7 +41847,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_08",
@@ -41790,7 +41865,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_08",
@@ -41807,7 +41883,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_08",
@@ -41824,7 +41901,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_08",
@@ -41841,7 +41919,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_08",
@@ -41858,7 +41937,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_08",
@@ -41875,7 +41955,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_08",
@@ -41892,7 +41973,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_08",
@@ -41909,7 +41991,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_08",
@@ -41926,7 +42009,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_09",
@@ -41943,7 +42027,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_09",
@@ -41960,7 +42045,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_09",
@@ -41977,7 +42063,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_09",
@@ -41994,7 +42081,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_09",
@@ -42011,7 +42099,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_09",
@@ -42028,7 +42117,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_09",
@@ -42045,7 +42135,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_09",
@@ -42062,7 +42153,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_09",
@@ -42079,7 +42171,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_09",
@@ -42096,7 +42189,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_09",
@@ -42113,7 +42207,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 13
+      "activity_count": 13,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_09",
@@ -42130,7 +42225,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 3
+      "activity_count": 3,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_10",
@@ -42147,7 +42243,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_10",
@@ -42164,7 +42261,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_10",
@@ -42181,7 +42279,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_10",
@@ -42198,7 +42297,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_10",
@@ -42215,7 +42315,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_10",
@@ -42232,7 +42333,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_10",
@@ -42249,7 +42351,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_10",
@@ -42266,7 +42369,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_10",
@@ -42283,7 +42387,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_10",
@@ -42300,7 +42405,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_10",
@@ -42317,7 +42423,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_10",
@@ -42334,7 +42441,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_11",
@@ -42351,7 +42459,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_11",
@@ -42368,7 +42477,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_11",
@@ -42385,7 +42495,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_11",
@@ -42402,7 +42513,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_11",
@@ -42419,7 +42531,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_11",
@@ -42436,7 +42549,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_11",
@@ -42453,7 +42567,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_11",
@@ -42470,7 +42585,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_11",
@@ -42487,7 +42603,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_11",
@@ -42504,7 +42621,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_11",
@@ -42521,7 +42639,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_11",
@@ -42538,7 +42657,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 25
+      "activity_count": 25,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_12",
@@ -42555,7 +42675,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_12",
@@ -42572,7 +42693,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_12",
@@ -42589,7 +42711,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_12",
@@ -42606,7 +42729,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_12",
@@ -42623,7 +42747,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_12",
@@ -42640,7 +42765,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_12",
@@ -42657,7 +42783,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_12",
@@ -42674,7 +42801,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_12",
@@ -42691,7 +42819,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_12",
@@ -42708,7 +42837,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_12",
@@ -42725,7 +42855,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_12",
@@ -42742,7 +42873,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "ssh_st_12_2026-08-10",
@@ -42768,7 +42900,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_13",
@@ -42785,7 +42918,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_13",
@@ -42802,7 +42936,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_13",
@@ -42819,7 +42954,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_13",
@@ -42836,7 +42972,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_13",
@@ -42853,7 +42990,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_13",
@@ -42870,7 +43008,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_13",
@@ -42887,7 +43026,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_13",
@@ -42904,7 +43044,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_13",
@@ -42921,7 +43062,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_13",
@@ -42938,7 +43080,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 11
+      "activity_count": 11,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_13",
@@ -42955,7 +43098,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 4
+      "activity_count": 4,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_14",
@@ -42972,7 +43116,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_14",
@@ -42989,7 +43134,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_14",
@@ -43006,7 +43152,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_14",
@@ -43023,7 +43170,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_14",
@@ -43040,7 +43188,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_14",
@@ -43057,7 +43206,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_14",
@@ -43074,7 +43224,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_14",
@@ -43091,7 +43242,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_14",
@@ -43108,7 +43260,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_14",
@@ -43125,7 +43278,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_14",
@@ -43142,7 +43296,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_14",
@@ -43159,7 +43314,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_16",
@@ -43176,7 +43332,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_16",
@@ -43193,7 +43350,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_16",
@@ -43210,7 +43368,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_16",
@@ -43227,7 +43386,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_16",
@@ -43244,7 +43404,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_16",
@@ -43261,7 +43422,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_16",
@@ -43278,7 +43440,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_16",
@@ -43295,7 +43458,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_16",
@@ -43312,7 +43476,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_16",
@@ -43329,7 +43494,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_16",
@@ -43346,7 +43512,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_16",
@@ -43363,7 +43530,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 9
+      "activity_count": 9,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-05-25_st_17",
@@ -43380,7 +43548,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-05-25",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-01_st_17",
@@ -43397,7 +43566,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-01",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-08_st_17",
@@ -43414,7 +43584,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-08",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-15_st_17",
@@ -43431,7 +43602,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-15",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-22_st_17",
@@ -43448,7 +43620,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-22",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-06-29_st_17",
@@ -43465,7 +43638,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-06-29",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-06_st_17",
@@ -43482,7 +43656,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-06",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-13_st_17",
@@ -43499,7 +43674,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-13",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-20_st_17",
@@ -43516,7 +43692,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-20",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-07-27_st_17",
@@ -43533,7 +43710,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-07-27",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-03_st_17",
@@ -43550,7 +43728,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-03",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     },
     {
       "record_id": "aws_2026-08-10_st_17",
@@ -43567,7 +43746,8 @@
       "kind": "weekly_activity",
       "source_table": "student_week_activity",
       "week_start": "2026-08-10",
-      "activity_count": 21
+      "activity_count": 21,
+      "enrolled_seconds": 604800
     }
   ]
 }

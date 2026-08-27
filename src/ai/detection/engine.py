@@ -114,6 +114,8 @@ def detect(
     student_evidence = build_student_evidence(request)
 
     excluded_under_2w = 0
+    excluded_paused = 0
+    excluded_no_consent = 0
     evaluated = 0
     skip_counter: dict[tuple[str, str], int] = defaultdict(int)
     class_alerts: dict[str, list[StudentAlert]] = defaultdict(list)
@@ -123,8 +125,13 @@ def detect(
     #     한 번만 만들어 판정 단계에서 재사용한다(중복 계산 없음).
     prepared: list[tuple[StudentInput, StudentFeatures, Baseline, Segment]] = []
     for student in request.students:
-        # ① 제외 — 무동의는 이벤트가 딸려 와도 폐기, paused는 판정 제외
-        if student.consent != CONSENT_GRANTED or student.status is StudentStatus.PAUSED:
+        # ① 제외 — 둘 다 해당하면 개인정보 경계인 무동의를 우선 집계한다. 따라서 제외
+        #    카운터는 서로 배타적이며 학생 alias 없이 건수만 응답한다.
+        if student.consent != CONSENT_GRANTED:
+            excluded_no_consent += 1
+            continue
+        if student.status is StudentStatus.PAUSED:
+            excluded_paused += 1
             continue
         if student.enrolled_weeks < OBSERVED_ONLY_MIN_WEEKS:
             excluded_under_2w += 1
@@ -185,6 +192,8 @@ def detect(
         students_evaluated=evaluated,
         signals_raised=len(signals),
         excluded_under_2w=excluded_under_2w,
+        excluded_paused=excluded_paused,
+        excluded_no_consent=excluded_no_consent,
         capped_out=capped_out,
         r1_threshold_pp=round(r1_threshold_pp, 4),
         r1_threshold_source=r1_threshold_source.value,

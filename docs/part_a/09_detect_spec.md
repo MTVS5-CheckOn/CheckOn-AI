@@ -60,7 +60,8 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
           // ("관찰 중" 화면 표시는 백엔드가 enrolled_at으로 직접 계산 — AI는 목록을 안 돌려줌)
 
       "status": "enrolled",
-          // enrolled(재원) | paused(휴원 중 — 판정 제외) | returned(복귀 첫 주 — R5 복귀 케어 발동)
+          // 분석 주 종료 시점 상태. enrolled(재원) | paused(휴원 중 — 판정 제외)
+          // | returned(복귀 첫 주 — R5 복귀 케어 발동)
 
       "consent": "granted"
           // 개인정보 동의 상태. granted가 아니면 이 학생의 learning_events가 와도 AI가 전부 버림
@@ -128,6 +129,11 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 }
 ```
 
+`students[].status`는 요청 시점의 현재 상태가 아니라 **분석 주 종료 시점**
+(`snapshot_meta.week_start`가 가리키는 주)의 상태다. 엔진은 현재 시각을 읽지 않고 모든 시간
+기준을 `week_start`에서 유도한다. 그래야 같은 분석 주를 나중에 다시 실행해도 상태 입력과
+판정 결과가 달라지지 않는다.
+
 > **[PART_B 크로스체킹 요청 · 미확정 — §2 입력 계약]** 위 A 계약 값은 이번 리뷰에서 변경하지 않았다. 다만 구현 편입 전 아래 해결안이 의도와 맞는지 A·백엔드 확인을 요청한다.
 >
 > - 외부 계약은 `learning_events`를 지난 주 증분만 보내지만 현재 v0 엔진은 요청 안의 과거 8주로 baseline을 계산한다. **제안 해결안:** Open-4c·ERD 흐름대로 AI가 `FEATURE_WEEK`·`BASELINE`을 영속 축적하거나, 백엔드가 rolling 10주 원천을 매번 동봉하는 대안을 계약에 명시한다. B는 전자를 우선안으로 보되 최종 선택은 A·백엔드가 확인한다.
@@ -153,20 +159,23 @@ AI가 보내는 신호는 아래 6종이 전부입니다. `signal_type`은 코�
 | kind | 규칙 | 고유 필드 | 판정 |
 | --- | --- | --- | --- |
 | `assignment_window` | **R2** | `week_start` · `expected_count` · `submitted_count` | 연속 미제출 한 주 = `expected > 0 AND submitted == 0`. **`expected == 0`은 미제출이 아니다**(방학·휴강 — 연속에서 제외). 일부 제출은 **연속 종료** |
-| `weekly_activity` | **R3** | `week_start` · `activity_count` | 이 값이 **판정값이자 evidence**다. **0건도 실존 레코드**. ⚠ `learning_events` 개수와 섞지 않는다 |
-| `enrollment_transition` | **R5** | `occurred_at`(tz 필수) · `from_status` · `to_status` | `to_status == returned` + **전환 주 == 분석 주** + `students[].status == returned` |
+| `weekly_activity` | **R3** | `week_start` · `activity_count` · `enrolled_seconds` | `activity_count`가 **판정값이자 evidence**다. **0건도 실존 레코드**. `enrolled_seconds`는 해당 주 재원 구간(초)의 필수 strict 정수(`1..604800`, 7일)이며 판정에는 쓰지 않는다. ⚠ `learning_events` 개수와 섞지 않는다 |
+| `enrollment_transition` | **R5** | `occurred_at`(tz 필수) · `from_status` · `to_status` | `to_status == returned` + **전환 주 == 분석 주** + `students[].status`가 `returned` 또는 이후 재휴원한 `paused`. 단 R5는 `returned`일 때만 발화 |
 
 **공통 필드:** `kind` · `source_table`(정본 테이블 **논리명**) · `record_id`(원본 PK) · `student_ref`.
 ⚠ **실명·연락처·자유 원문이 들어올 자리가 없다**(`extra="forbid"` · 불변식 3).
 ⚠ **AI는 `source_table`을 SQL 식별자로 쓰지 않는다** — 응답 evidence에 그대로 실어 **BE가
 자기 원본을 조회**하게 하는 값이다. **원본 전문을 AI PG에 복제 저장하지 않는다.**
 
+**정본 계약:** 신규 `weekly_activity` 행은 `enrolled_seconds`를 반드시 보내며 값은
+`1..604800`이다. **수신 구현의 legacy 관용:** 없음. 누락·`null`·범위 밖 값은 거부한다.
+
 **없으면 어떻게 되나** — R1·R4·R6는 기존대로, **R2·R3·R5는 미판정 + `rules_skipped`에
 `authoritative_evidence_missing`**. 🔴 **다른 기록으로 대신하지 않는다**(fail-closed).
 
 **요청 경계(전부 `400 INVALID_SCHEMA`)** — `students[]`에 없는 `student_ref` · 같은 학생·주차
 집계 중복(값이 같아도) · 같은 `(source_table, record_id)`에 다른 내용 · 분석 주차보다 미래 ·
-naive `occurred_at` · `submitted > expected` · 복귀 전환과 `students[].status` 불일치.
+naive `occurred_at` · `submitted > expected` · 복귀 전환과 `students[].status=enrolled` 불일치.
 ⚠ **상태와 이력이 갈리면 조용히 한쪽을 고르지 않는다** — 어느 쪽이 사실인지 AI가 정할 수 없다.
 
 🔴 **부재형 셋의 시간축은 `learning_events`가 아니다**(8/12 · 99 #44). `StudentFeatures.weeks`는
@@ -294,6 +303,8 @@ skip된다 — 분자와 분모를 **같은 자로** 재야 하고, 섞느니 �
       "students_evaluated": 58,      // 이번에 실제로 판정한 학생 수 (동의 있음 + 재원 2주 이상)
       "signals_raised": 3,           // 상한 밖 합류를 포함한 최종 반환 신호 수
       "excluded_under_2w": 4,        // 재원 2주 미만이라 제외된 학생 수 — 백엔드 '관찰 중' 계산과 맞는지 대조용
+      "excluded_paused": 2,          // 휴원이라 제외된 학생 수
+      "excluded_no_consent": 1,      // 개인정보 동의가 없어 제외된 학생 수
       "capped_out": 2,               // lifecycle 억제 후 new·follow_up 후보의 탈락 수만
       "rules_skipped": [             // 데이터가 없어서 판정 못 한 규칙 — 데이터 품질 모니터링용
         { "rule_id": "R4", "reason": "duration_missing", "students": 5 }
@@ -315,6 +326,9 @@ skip된다 — 분자와 분모를 **같은 자로** 재야 하고, 섞느니 �
   }
 }
 ```
+
+제외 카운터는 서로 겹치지 않는다. 한 학생이 무동의이면서 휴원 상태면 개인정보 경계를 먼저
+적용해 `excluded_no_consent`에만 집계한다. 응답에는 학생 alias 목록을 싣지 않는다.
 
 > ✅ **A+BE+FE 확인 완료(2026-07-30) — §3 ongoing 상한 응답.** TOP 3~5 상한은 `new`·`follow_up`에만 적용하며, `ongoing`과 `return_care`(R5)는 상한 밖으로 추가되어 `signals` 길이와 `rank`가 5를 초과할 수 있다. 백엔드·프론트 모두 응답 길이 ≤5 또는 `rank` ≤5를 가정하지 않는다. `signals_raised`=상한 밖 합류 포함 최종 신호 수 · `capped_out`=`new`·`follow_up` 탈락 수만 · `rank`=최종 표시 순번. 정본: 04 §3 · 09 §4 · 99 #14.
 

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 from ai.contracts.detection import (
     AlertContextItem,
+    DetectRequest,
     Lifecycle,
     RuleId,
     Signal,
@@ -140,6 +141,28 @@ def test_r5_fires_on_returned() -> None:
     assert "return_care" in _signal_types(plan)
 
 
+def test_returned_then_paused_is_excluded_and_does_not_fire_r5() -> None:
+    request = build_detect_request(
+        week_start=WEEK_START,
+        seed=1,
+        students=[
+            StudentPlan(
+                student_ref="st_repaused",
+                class_ref="cl_a1",
+                weeks=10,
+                status=StudentStatus.RETURNED,
+            )
+        ],
+    )
+    payload = request.model_dump(mode="json")
+    payload["students"][0]["status"] = StudentStatus.PAUSED.value
+
+    response = detect(DetectRequest.model_validate(payload))
+
+    assert response.stats.excluded_paused == 1
+    assert all(signal.rule_id is not RuleId.R5 for signal in response.signals)
+
+
 # ── 제외 처리 ──
 
 
@@ -158,6 +181,37 @@ def test_no_consent_events_discarded() -> None:
     resp = detect(req)
     assert len(resp.signals) == 0
     assert resp.stats.students_evaluated == 0
+    assert resp.stats.excluded_no_consent == 1
+    assert resp.stats.excluded_paused == 0
+
+
+def test_paused_student_is_counted_without_exposing_an_alias() -> None:
+    plan = StudentPlan(
+        student_ref="st_paused",
+        class_ref="cl_a1",
+        weeks=10,
+        status=StudentStatus.PAUSED,
+    )
+    resp = detect(build_detect_request(week_start=WEEK_START, seed=1, students=[plan]))
+    dumped = resp.model_dump(mode="json")
+
+    assert resp.stats.excluded_paused == 1
+    assert resp.stats.excluded_no_consent == 0
+    assert "st_paused" not in str(dumped["stats"])
+
+
+def test_no_consent_takes_precedence_over_paused_exclusion() -> None:
+    plan = StudentPlan(
+        student_ref="st_both",
+        class_ref="cl_a1",
+        weeks=10,
+        status=StudentStatus.PAUSED,
+        consent="revoked",
+    )
+    resp = detect(build_detect_request(week_start=WEEK_START, seed=1, students=[plan]))
+
+    assert resp.stats.excluded_no_consent == 1
+    assert resp.stats.excluded_paused == 0
 
 
 def test_under_2_weeks_excluded_and_counted() -> None:

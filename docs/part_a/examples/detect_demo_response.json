@@ -565,6 +565,8 @@
       "students_evaluated": 14,
       "signals_raised": 11,
       "excluded_under_2w": 1,
+      "excluded_paused": 1,
+      "excluded_no_consent": 1,
       "capped_out": 1,
       "r1_threshold_pp": 30.0,
       "r1_threshold_source": "quantile",

@@ -423,6 +423,7 @@ def _detection_evidence(
                 "student_ref": plan.student_ref,
                 "week_start": stamp,
                 "activity_count": per_week_events.get(monday, 0),
+                "enrolled_seconds": 7 * 24 * 60 * 60,
             }
         )
     if plan.status is StudentStatus.RETURNED:

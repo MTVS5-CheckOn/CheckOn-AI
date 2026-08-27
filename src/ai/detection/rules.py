@@ -428,8 +428,8 @@ def _r5(
     if analysis_week is None:
         return None, None
     if features.status is not StudentStatus.RETURNED:
-        #: ⚠ **이중 방어**다 — 계약 검증이 「복귀 이력 ⇒ status=returned」를 이미 강제하지만,
-        #:   규칙이 자기 조건을 스스로 말하지 않으면 다음 사람이 그 결합을 못 본다.
+        #: ⚠ **규칙 자체의 방어**다 — 계약은 복귀 뒤 다시 휴원한 상태도 허용하지만,
+        #:   R5는 분석 주 종료 상태가 returned일 때만 발화한다.
         return None, None
     if not evidence.returns_in_week(analysis_week):
         #: 상태만 returned이고 이력이 없다 — 발화하지 않고 사유를 남긴다.
