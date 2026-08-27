@@ -15,6 +15,18 @@
 #    호스트 기준이다. 아래 두 서비스가 environment로 db:5432를 덮어쓴다(environment가
 #    env_file보다 이긴다). ⚠ .dockerignore가 .env를 이미지에서 빼는 것도 같은 이유다.
 
+#: 🔴 **로그를 컨테이너 수명에서 떼어내지는 못한다**(json-file 드라이버). 여기서는 상한만 건다.
+#:   보존은 `scripts/redeploy.sh` 가 **재생성 직전에 덤프**해서 한다 — 그 순서가 계약이다(99 #267).
+#: ⚠ 이 블록을 처음 얹는 `up -d` 는 컨테이너를 **재생성한다.** 그래서 덤프가 먼저 들어갔다.
+#: ⚠ `20m × 5` 는 **측정해서 정한 값이 아니다** — 서비스당 100MB 라는 천장을 세운 것뿐이다.
+#:   실제 증가율을 재면 그때 근거와 함께 고쳐라.
+#: ⚠ `db` 는 여기 없다 — `docker-compose.yml`(공통)이 소유하고 이 회차에서 안 건드렸다.
+x-logging: &log-rotation
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 x-app-env: &app-env
   # .env의 API 키·LLM_PROVIDER·CHECKON_ALLOW_REAL_LLM 등을 그대로 넘긴다.
   # 🔴 CHECKON_ALLOW_REAL_LLM이 없으면 서버가 기동되지 않는다(.env 주석 · 99 #58).
@@ -48,6 +60,7 @@ services:
       - "-c"
       - "alembic upgrade head && python -m ai.agents.checkpointer"
     restart: "no"
+    logging: *log-rotation
     depends_on:
       db:
         condition: service_healthy
@@ -58,6 +71,7 @@ services:
     ports:
       - "${APP_PORT:?APP_PORT 가 .env 에 없다 — BE 계약 포트 9000이고 Cloudflare 대시보드의 localhost:9000 과 짝이다}:8000"
     restart: unless-stopped
+    logging: *log-rotation
     depends_on:
       db:
         condition: service_healthy
@@ -93,6 +107,7 @@ services:
     <<: *app-env
     command: ["python", "-m", "ai.composition.counsel.drain"]
     restart: unless-stopped
+    logging: *log-rotation
     depends_on:
       db:
         condition: service_healthy
@@ -119,6 +134,7 @@ services:
     command: ["tunnel", "--no-autoupdate", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN 이 .env 에 없다}"]
     network_mode: host
     restart: unless-stopped
+    logging: *log-rotation
     depends_on:
       app:
         condition: service_healthy
