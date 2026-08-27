@@ -157,7 +157,7 @@ async def _lease_and_exit(
             engine_version="problem-generation-0.1",
             schema_version="0.1",
             contract_version="0.1",
-            prompt_version="v7",
+            prompt_version="v8",
             graph_version="curriculum-five-area-v1",
             taxonomy_version=request.taxonomy_version,
             verify_config_version="verify-config.v1",
