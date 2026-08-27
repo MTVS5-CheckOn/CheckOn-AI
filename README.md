@@ -41,26 +41,25 @@ uv run python -m ai.evaluation.backend_sim   # 기본 3일치, 신호·lifecycle
 
 **PR 전 로컬 검증** (필수 — GitHub Actions 대신 아래 한 명령이 전체 게이트다):
 
-> **고정 접속값:** `postgres:16` · `checkon`/`checkon`/`checkon_ai` · `5432`.
-> `DATABASE_URL` 예: `postgresql+asyncpg://checkon:checkon@localhost:5432/checkon_ai`
-> 🔴 integration에는 스키마 재생성·마이그레이션 왕복이 포함된다. 검증기는 원격 호스트나
-> `checkon_ai`가 아닌 DB를 거부하지만, 이 로컬 DB도 반드시 **폐기 가능한 테스트 전용**으로 둔다.
+> 🔴 **배포 DB `checkon_ai` 사용 금지.** 2026-08-27 integration의 스키마 재생성이
+> 같은 장비의 배포 DB 산출물을 소실시켰다. **같은 PostgreSQL 컨테이너 안의 별도 DB
+> `checkon_ai_test`**만 폐기 가능한 검증 대상으로 사용한다. 새 컨테이너는 띄우지 않는다.
+> `DbSettings.verification_database_url`이 `.env`의 `DATABASE_URL`에서 호스트·포트·계정을
+> 그대로 읽고 DB 이름만 `checkon_ai_test`로 바꾼다. 배포용 `DATABASE_URL`은 바꾸지 않는다.
+> 별도 접속정보가 필요하면 `TEST_DATABASE_URL`로 지정한다. 원격 호스트나 전용 이름이 아닌
+> URL은 **검사 subprocess 실행 전에 거부**하며, 직접 `pytest -m integration`도 같은 가드를 쓴다.
 
-🔴 **로컬 DB 정의는 이 저장소에 없다.** `docker-compose.yml`·`docker-compose.yaml`은
-`.gitignore` 대상이라 **clone만 해서는 `docker compose up -d`가 안 된다.** 접속값 정본은
-**위 문단**이고, 아래 둘 중 하나로 그 값을 갖는 DB를 띄우면 된다.
-
-**ⓐ 파일 없이 한 줄로**(clone 직후 그대로 된다):
+기존 배포 compose의 `db` 서비스에 테스트 DB를 **최초 한 번만** 만든다(기본 DB 사용자 `checkon`):
 
 ```bash
-docker run -d --name checkon-ai-db \
-  -e POSTGRES_USER=checkon -e POSTGRES_PASSWORD=checkon -e POSTGRES_DB=checkon_ai \
-  -p 5432:5432 postgres:16
-docker start checkon-ai-db                   # 두 번째부터는 이것만
+docker compose exec -T db psql -U checkon -d postgres -c 'CREATE DATABASE checkon_ai_test OWNER checkon;'
 ```
 
-**ⓑ compose를 쓰고 싶으면** 위 고정 접속값으로 `docker-compose.yml`을 **직접 만든다**
-(`.gitignore`라 커밋되지 않는다) — 그 뒤 `docker compose up -d`.
+이미 존재하면 다시 만들지 않는다. `CREATE DATABASE`는 alembic이 하지 않는다.
+마이그레이션은 생성된 테스트 DB 안에서 실행되며, 테스트의 스키마 초기화도 그 DB에만 적용된다.
+호스트 5434 매핑 환경의 테스트 URL은 `postgresql+asyncpg://checkon:<비밀번호>@localhost:5434/checkon_ai_test`다.
+체크포인트 URL도 검사 프로세스에서 이 테스트 DB로 고정하며, 배포 DB를 명시한 별도
+`AGENT_CHECKPOINT_DATABASE_URL`은 거부한다. `.env`의 배포 설정은 변경하지 않는다.
 
 ```bash
 uv run --frozen python -m ai.evaluation.pre_pr_verify
@@ -76,6 +75,7 @@ pass/skip 수를 적습니다. OS 민감 변경은 macOS와 Windows에서 각각
 | 키 | 용도 | 기본/비고 |
 | --- | --- | --- |
 | `DATABASE_URL` | AI PG 접속(asyncpg) | `STORE_BACKEND=pg`일 때만 실접속 |
+| `TEST_DATABASE_URL` | 폐기 가능한 integration DB 접속 | 미지정 시 `DbSettings`가 배포 URL의 DB 이름만 `checkon_ai_test`로 변경 |
 | `STORE_BACKEND` | 저장소 선택 | `memory`(기본·오프라인 테스트) \| `pg` |
 | `OPENAI_BASE_URL` | **코드가 읽는다** — OpenAI API 엔드포인트 | `https://api.openai.com/v1` |
 | `OPENAI_API_KEY` | **코드가 읽는다** — OpenAI API 키 | 제한 키면 completion·model read scope 필요 |

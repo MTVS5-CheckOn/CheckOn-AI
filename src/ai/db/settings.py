@@ -6,15 +6,19 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 from ai.runtime.env_files import ENV_FILES
 
 #: 지원하는 저장소 백엔드 — 🔴 **허용 값의 정본**이다(99 #38).
 type StoreBackend = Literal["memory", "pg"]
+
+# 2026-08-27: 같은 장비의 배포 DB를 integration이 재생성한 사고를 막는 전용 이름.
+TEST_DATABASE_NAME: Final = "checkon_ai_test"
 
 
 class DbSettings(BaseSettings):
@@ -44,6 +48,22 @@ class DbSettings(BaseSettings):
 
     ⚠ 값 자체가 №20 ⑤ 의 범인은 **아니었다**(아래 참조). 다만 «몇 개를 쓰는지 아무도 안
     적어 뒀다»가 관계식을 못 세우게 하고 있었다."""
+
+    test_database_url: str | None = Field(default=None, repr=False)
+    """테스트 전용 접속정보. 미지정 시 배포 URL의 DB 이름만 전용 이름으로 바꾼다.
+
+    배포용 database_url 자체는 변경하지 않는다. 테스트 진입점은 별도로 로컬 호스트와
+    전용 DB 이름을 검증한 뒤 자식 프로세스에도 같은 URL을 전달해야 한다.
+    """
+
+    @property
+    def verification_database_url(self) -> str:
+        """게이트·직접 integration 실행이 공유하는 테스트 URL의 유일한 조립 경로."""
+        if self.test_database_url is not None:
+            return self.test_database_url
+        return make_url(self.database_url).set(database=TEST_DATABASE_NAME).render_as_string(
+            hide_password=False
+        )
 
     db_max_overflow: int = Field(default=10, ge=0)
     """풀을 넘겼을 때 임시로 더 여는 수. `db_pool_size + db_max_overflow` 가 **프로세스 하나의

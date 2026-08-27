@@ -86,9 +86,36 @@ def _sync_dsn() -> str:
 
 def pytest_configure(config: pytest.Config) -> None:
     """🔴 수집 전에 잡는다 — 첫 검사가 스키마를 만지기 전이어야 한다."""
-    global _held
     if not wants_integration(str(config.option.markexpr or "")):
         return
+    _lock_integration_database()
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """-m '' 등으로 선택해도 실제 integration 실행이면 DB 방어를 빠뜨리지 않는다."""
+    if _held is None and any(item.get_closest_marker("integration") for item in items):
+        _lock_integration_database()
+
+
+def _lock_integration_database() -> None:
+    """검사 경로와 관계없이 같은 테스트 DB를 검증·선택하고 잠근다."""
+    global _held
+    # 2026-08-27: 직접 pytest도 배포 DB에 drop_all을 실행할 수 있었다. 잠금을 잡기
+    # 전에 게이트와 같은 Settings 경로·가드를 적용하고 자식 프로세스에도 전달한다.
+    from ai.db.settings import DbSettings, get_db_settings
+    from ai.evaluation.pre_pr_verify import (
+        PrePrVerificationError,
+        verification_environment,
+    )
+
+    try:
+        env = verification_environment(DbSettings(), env=os.environ.copy())
+    except PrePrVerificationError as error:
+        raise pytest.UsageError(str(error)) from error
+    for key in ("DATABASE_URL", "TEST_DATABASE_URL", "AGENT_CHECKPOINT_DATABASE_URL"):
+        os.environ[key] = env[key]
+    get_db_settings.cache_clear()
     try:
         import psycopg
 

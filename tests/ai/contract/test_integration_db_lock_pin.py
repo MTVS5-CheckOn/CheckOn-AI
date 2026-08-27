@@ -14,11 +14,15 @@ import inspect
 import tomllib
 from pathlib import Path
 from typing import Final
+from unittest.mock import MagicMock
 
+import integration_db_lock
 import pytest
 from integration_db_lock import wants_integration
 
 from ai.db.settings import DbSettings
+from ai.evaluation import pre_pr_verify
+from ai.evaluation.pre_pr_verify import PrePrVerificationError
 
 #: 🔴 이름을 상수로 적는다 — 플러그인이 사라지면 이 검사가 **먼저** 죽어야 한다.
 PLUGIN: Final = "integration_db_lock"
@@ -59,3 +63,35 @@ def test_the_default_run_is_not_serialized() -> None:
 )
 def test_only_integration_runs_take_the_lock(markexpr: str, locked: bool) -> None:
     assert wants_integration(markexpr) is locked
+
+
+def test_direct_integration_refuses_unsafe_database_before_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = MagicMock()
+    config.option.markexpr = "integration"
+    guard = MagicMock(side_effect=PrePrVerificationError("배포 DB 거부"))
+    monkeypatch.setattr(pre_pr_verify, "verification_environment", guard)
+    dsn = MagicMock()
+    monkeypatch.setattr(integration_db_lock, "_sync_dsn", dsn)
+
+    with pytest.raises(pytest.UsageError, match="배포 DB 거부"):
+        integration_db_lock.pytest_configure(config)
+
+    guard.assert_called_once()
+    dsn.assert_not_called()
+
+
+@pytest.mark.parametrize("has_integration", [True, False])
+def test_selected_items_cannot_bypass_database_guard_with_another_mark_expression(
+    has_integration: bool, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    item = MagicMock()
+    item.get_closest_marker.return_value = object() if has_integration else None
+    lock = MagicMock()
+    monkeypatch.setattr(integration_db_lock, "_held", None)
+    monkeypatch.setattr(integration_db_lock, "_lock_integration_database", lock)
+
+    integration_db_lock.pytest_collection_modifyitems([item])
+
+    assert lock.call_count == int(has_integration)

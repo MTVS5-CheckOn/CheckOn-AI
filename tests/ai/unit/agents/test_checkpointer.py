@@ -8,7 +8,9 @@ from ai.db.settings import DbSettings
 
 def test_asyncpg_url_is_converted_to_psycopg_connection_string() -> None:
     settings = DbSettings(
-        database_url="postgresql+asyncpg://worker:secret@db.internal:5432/checkon"
+        database_url="postgresql+asyncpg://worker:secret@db.internal:5432/checkon",
+        # 게이트가 격리 URL을 환경에 넣어도 이 검사는 '별도 URL 없음'을 재야 한다.
+        agent_checkpoint_database_url=None,
     )
 
     assert (
@@ -44,7 +46,9 @@ def test_explicit_checkpoint_url_is_validated_and_normalized() -> None:
 
 
 def test_non_postgres_database_is_rejected() -> None:
-    settings = DbSettings(database_url="sqlite+aiosqlite:///local.db")
+    settings = DbSettings(
+        database_url="sqlite+aiosqlite:///local.db", agent_checkpoint_database_url=None
+    )
 
     with pytest.raises(ValueError, match="PostgreSQL"):
         checkpoint_connection_string(settings)

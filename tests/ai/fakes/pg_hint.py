@@ -18,8 +18,9 @@ from typing import Final
 #: 🔴 **저장소에 로컬 DB 정의가 없다는 사실**까지 말한다 — 그걸 안 적으면 다음 사람이
 #: *"compose 파일이 어디 있지"* 를 다시 찾는다(그게 이 결함의 실제 증상이었다).
 PG_UNAVAILABLE: Final = (
-    "실 PG 미가용 — README 「PR 전 로컬 검증」의 DB 기동 절차를 따른다"
-    "(로컬 DB 정의는 저장소에 없다 · `.gitignore`)"
+    "실 PG 미가용 — README 「PR 전 로컬 검증」의 기존 컨테이너·테스트 DB 준비 절차를 따른다"
+    "(로컬 DB 정의는 저장소에 없다 · checkon_ai_test는 CREATE DATABASE로 먼저 만든다 · "
+    "배포 DB 사용 금지)"
 )
 
 

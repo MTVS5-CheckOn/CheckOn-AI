@@ -17,14 +17,15 @@ from pathlib import Path
 from typing import Final
 from xml.etree import ElementTree
 
+import psycopg
 from sqlalchemy.engine import make_url
 
-from ai.db.settings import DbSettings
+from ai.db.settings import TEST_DATABASE_NAME, DbSettings
 from ai.runtime.real_llm import REAL_LLM_OPTIN_ENV, real_llm_optin
 
 _REPO_ROOT: Final = Path(__file__).resolve().parents[3]
 _LOCAL_DATABASE_HOSTS: Final = frozenset({"localhost", "127.0.0.1", "::1"})
-_LOCAL_DATABASE_NAME: Final = "checkon_ai"
+_LOCAL_DATABASE_NAME: Final = TEST_DATABASE_NAME
 _REAL_LLM_SKIPS: Final = frozenset(
     {
         (
@@ -152,8 +153,11 @@ def require_postgres(database_url: str) -> None:
     if host not in _LOCAL_DATABASE_HOSTS or url.database != _LOCAL_DATABASE_NAME:
         raise PrePrVerificationError(
             "integration은 스키마를 재생성한다. 원격·공용 DB를 거부하며 "
-            f"로컬 전용 {_LOCAL_DATABASE_NAME} DB만 허용한다"
+            f"로컬 전용 {_LOCAL_DATABASE_NAME} DB만 허용한다. "
+            "2026-08-27 배포 DB checkon_ai의 산출물 소실 사고 재발 방지"
         )
+    if set(url.query) & {"host", "hostaddr", "dbname", "database", "service"}:
+        raise PrePrVerificationError("테스트 DB의 호스트·이름을 query로 덮어쓸 수 없다")
     port = url.port or 5432
     try:
         with socket.create_connection((host, port), timeout=3.0):
@@ -161,9 +165,34 @@ def require_postgres(database_url: str) -> None:
     except OSError as exc:
         raise PrePrVerificationError(
             f"PostgreSQL에 연결할 수 없다({host}:{port}). "
-            "README 「PR 전 로컬 검증」의 DB 기동 절차를 따른다"
-            "(로컬 DB 정의는 저장소에 없다 · `.gitignore`)"
+            "README 「PR 전 로컬 검증」의 기존 컨테이너·테스트 DB 준비 절차를 따른다"
         ) from exc
+    try:
+        dsn = url.set(drivername="postgresql").render_as_string(hide_password=False)
+        with psycopg.connect(dsn, connect_timeout=3) as connection:
+            connection.execute("SELECT 1")
+    except psycopg.Error as exc:
+        raise PrePrVerificationError(
+            f"테스트 DB {_LOCAL_DATABASE_NAME}에 접속할 수 없다({type(exc).__name__}). "
+            "README 「PR 전 로컬 검증」의 CREATE DATABASE 한 줄을 먼저 실행한다. "
+            "alembic은 데이터베이스 자체를 만들지 않는다"
+        ) from exc
+
+
+def verification_environment(settings: DbSettings, *, env: dict[str, str]) -> dict[str, str]:
+    """어떤 검사 subprocess보다 먼저 대상 DB를 검증하고 체크포인트까지 격리한다."""
+    database_url = settings.verification_database_url
+    require_postgres(database_url)
+    if settings.agent_checkpoint_database_url is not None:
+        require_postgres(settings.agent_checkpoint_database_url)
+    child_env = env.copy()
+    child_env["DATABASE_URL"] = database_url
+    child_env["TEST_DATABASE_URL"] = database_url
+    # pop만 하면 자식의 Settings가 .env의 배포 체크포인트 URL을 다시 읽는다.
+    child_env["AGENT_CHECKPOINT_DATABASE_URL"] = make_url(database_url).set(
+        drivername="postgresql"
+    ).render_as_string(hide_password=False)
+    return child_env
 
 
 #: 🔴 실패 목록을 남길 자리 — **비추적**이다(`.gitignore:52` 에 `local_data/` 가 있다 · 확인함).
@@ -248,20 +277,14 @@ def main() -> int:
             )
 
         settings = DbSettings()
-        if settings.agent_checkpoint_database_url is not None:
-            require_postgres(settings.agent_checkpoint_database_url)
-        env = os.environ.copy()
+        env = verification_environment(settings, env=os.environ.copy())
         env.pop(REAL_LLM_OPTIN_ENV, None)
-        env.pop("AGENT_CHECKPOINT_DATABASE_URL", None)
-        env["DATABASE_URL"] = settings.database_url
         env["STORE_BACKEND"] = "memory"
         env["LLM_PROVIDER"] = "fake"
 
         with tempfile.TemporaryDirectory(prefix="checkon-pre-pr-") as temp_dir:
             junit_path = Path(temp_dir) / "integration.xml"
             for step in verification_steps(junit_path):
-                if step.label == "Pytest (PostgreSQL integration)":
-                    require_postgres(settings.database_url)
                 _run(step, env=env)
             assert_only_real_llm_tests_skipped(junit_path)
     except PrePrVerificationError as exc:
